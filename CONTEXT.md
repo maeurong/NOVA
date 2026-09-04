@@ -197,10 +197,23 @@ regola del 30 % sono post-processing del programma, non del solutore.
 _Avoid_: analisi sismica (è ambiguo: anche la statica equivalente lo è)
 
 **Analisi pushover**:
-Analisi statica non lineare in controllo di spostamento con distribuzioni di
-forze prescritte; curva di capacità, sistema equivalente, spostamento
-obiettivo sono post-processing del programma. Se e quando entra in perimetro:
-**[DA DECIDERE]**.
+Analisi statica non lineare in controllo di spostamento: una distribuzione di
+forze (nodale, uniforme, proporzionale al primo modo), un nodo di controllo,
+un incremento, uno spostamento massimo. In v1 dopo la statica con legami non
+lineari; sistema equivalente e spostamento obiettivo restano post-processing
+di fase 2. La prova ai pistoni sul telaio di laboratorio è una pushover.
+_Avoid_: analisi non lineare (da sola: anche la statica con le fibre lo è)
+
+**Curva di capacità**:
+Taglio alla base contro spostamento del nodo di controllo, un punto per passo
+convergente. Finisce dove il solutore cade, e dice dove e con quale algoritmo.
+_Avoid_: curva forza-spostamento (generico), pushover (che è l'analisi)
+
+**Stato della sezione**:
+Condizione di una stazione a un passo, letta dalle fibre: elastica,
+fessurata, snervata, schiacciata. Quattro valori, mostrati su due canali.
+_Avoid_: danno (che è il dato del rilievo), cerniera plastica (è ciò che lo
+stato rivela, non lo stato)
 
 **Check Model**:
 Controllo deterministico del modello prima di ogni corsa del solutore: nodi
