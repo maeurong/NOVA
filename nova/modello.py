@@ -248,6 +248,19 @@ class Modello(_Base):
     def combinazione(self, id: int) -> Combinazione | None:
         return next((c for c in self.combinazioni if c.id == id), None)
 
+    @model_validator(mode="after")
+    def _niente_id_duplicati(self):
+        """Vincolo del piano: «Identificatori: interi per tipo, mai riusati»."""
+        for tipo, lista in (("nodo", self.nodi), ("asta", self.aste), ("sezione", self.sezioni),
+                            ("materiale", self.materiali), ("azione", self.azioni),
+                            ("combinazione", self.combinazioni)):
+            visti = set()
+            for el in lista:
+                if el.id in visti:
+                    raise ValueError(f"id duplicato: {tipo} {el.id}")
+                visti.add(el.id)
+        return self
+
 
 MIGRAZIONI: dict[int, callable] = {}  # {da_versione: fn(dati) -> dati}; vuoto finché lo schema è 1
 

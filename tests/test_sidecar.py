@@ -179,6 +179,18 @@ def test_materiale_classe_ignota_nomina_classe_e_catalogo():
         carica(d)
 
 
+@pytest.mark.parametrize("chiave, tipo", [
+    ("nodi", "nodo"), ("aste", "asta"), ("sezioni", "sezione"),
+    ("materiali", "materiale"), ("azioni", "azione"), ("combinazioni", "combinazione"),
+], ids=["nodo", "asta", "sezione", "materiale", "azione", "combinazione"])
+def test_id_duplicato_e_rifiutato_in_fase_modello(chiedi, chiave, tipo):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m[chiave].append(dict(m[chiave][0]))  # stesso id del primo elemento della lista: id riusato
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello"
+    assert tipo in r[-1]["motivo"] and str(m[chiave][0]["id"]) in r[-1]["motivo"]
+
+
 def test_personalizzato_con_valori_vuoti_prende_la_norma():
     from nova.catalogo import valori
     from nova.modello import Materiale
@@ -287,7 +299,8 @@ def test_carico_termico_e_rifiutato_in_v1(chiedi):
     m = leggi_fixture("telaio_2x1.nova.json")
     m["azioni"][0]["carichi"].append({"tipo": "termico", "asta": 4, "dT_uniforme": 20})
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
-    assert _esiti(r[-1]["verdetti"])["carico_termico"] == "non_passato"
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "carico_termico")
+    assert v["esito"] == "non_passato" and v["azione"] == "togli il carico termico"
 
 
 def test_riferimenti_rotti_sono_sconnessi(chiedi):
