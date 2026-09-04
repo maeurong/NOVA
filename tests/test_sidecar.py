@@ -128,10 +128,12 @@ def test_check_modello_assente_o_null(chiedi):
                              "motivo": "il modello deve essere un oggetto JSON"}
 
 
-def test_check_accetta_modello_vuoto(chiedi):
+def test_check_modello_vuoto_e_ora_rifiutato_dal_check_model(chiedi):
+    # Task 2 stubbava comando_check a "ok" sempre; Task 3 introduce i controlli veri
+    # e un modello senza nodi/aste non ha massa ne' vincoli: deve essere rifiutato.
     m = {"schema_version": 1, "unita": "mm-N-MPa-t-s"}
     (risposte,) = chiedi({"id": 1, "comando": "check", "modello": m})
-    assert risposte[-1]["esito"] == "ok"
+    assert risposte[-1]["esito"] == "rifiutato"
 
 
 def test_schema_version_assente_e_trattata_come_1():
@@ -233,3 +235,215 @@ def test_impronta_invariante_a_ordine_chiavi_e_null_espliciti():
     }
     b = carica(riordinato)
     assert impronta(a) == impronta(b)
+
+
+# --- Task 3: Check Model (C1) -----------------------------------------------
+
+
+def _esiti(verdetti):
+    return {v["controllo"]: v["esito"] for v in verdetti}
+
+
+def test_telaio_sano_passa_il_check(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r[-1]["esito"] == "ok"
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["nodi_coincidenti"] == "passato" and esiti["vincoli"] == "passato"
+    assert esiti["moti_rigidi"] == "non_applicabile"
+    assert set(esiti) >= {"unita", "nodi_coincidenti", "aste_sconnesse", "aste_lunghezza_zero", "aste_duplicate",
+                          "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "massa_nulla", "vincoli",
+                          "carico_termico", "moti_rigidi"}
+
+
+def test_asta_a_lunghezza_zero_e_rifiutata(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("asta_lunghezza_zero.nova.json")})
+    assert r[-1]["esito"] == "rifiutato"
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["aste_lunghezza_zero"] == "non_passato" and esiti["nodi_coincidenti"] == "non_passato"
+
+
+def test_nodo_libero_e_rifiutato(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("nodo_libero.nova.json")})
+    assert r[-1]["esito"] == "rifiutato"
+    assert _esiti(r[-1]["verdetti"])["nodi_liberi"] == "non_passato"
+
+
+def test_nodi_coincidenti_e_asta_duplicata_sono_rifiutati(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("nodi_coincidenti.nova.json")})
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["nodi_coincidenti"] == "non_passato" and esiti["aste_duplicate"] == "non_passato"
+
+
+def test_nodo_su_asta_chiede_di_spezzare(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 7, "x": 2500, "y": 0, "z": 3200})
+    m["aste"].append({"id": 6, "nodo_i": 7, "nodo_j": 2, "sezione": 1})
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodo_su_asta")
+    assert v["esito"] == "non_passato" and v["azione"] == "spezza asta" and [7, 4] in v["oggetto"]
+
+
+def test_carico_termico_e_rifiutato_in_v1(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"][0]["carichi"].append({"tipo": "termico", "asta": 4, "dT_uniforme": 20})
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["carico_termico"] == "non_passato"
+
+
+def test_riferimenti_rotti_sono_sconnessi(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["nodo_j"] = 99
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["aste_sconnesse"] == "non_passato"
+
+
+def test_modello_vuoto_e_rifiutato_senza_eccezioni(chiedi):
+    m = {"schema_version": 1, "unita": "mm-N-MPa-t-s"}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "rifiutato"
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["massa_nulla"] == "non_passato" and esiti["vincoli"] == "non_passato"
+
+
+# --- Ingressi degeneri non coperti dal blocco sopra -------------------------
+
+
+def test_aste_sconnesse_nomina_id_non_solleva(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["nodo_j"] = 99
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "aste_sconnesse")
+    assert v["esito"] == "non_passato" and v["oggetto"] == [1]
+
+
+def test_asta_auto_riferita_e_sconnessa_non_lunghezza_zero(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["nodo_j"] = m["aste"][0]["nodo_i"]  # nodo_i == nodo_j: due nodi veri, stesso id
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["aste_sconnesse"] == "non_passato"
+    assert esiti["aste_lunghezza_zero"] == "passato"  # richiede due nodi distinti, qui non ci sono
+
+
+def test_tre_nodi_coincidenti_tutte_le_coppie(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 7, "x": 5000.0002, "y": 0, "z": 3200})  # 0.2 micron da nodo 5
+    m["nodi"].append({"id": 8, "x": 5000.0004, "y": 0, "z": 3200})  # 0.4/0.2 micron da 5/7
+    m["contatori"]["nodo"] = 8
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodi_coincidenti")
+    coppie = {frozenset(p) for p in v["oggetto"]}
+    assert coppie == {frozenset((5, 7)), frozenset((5, 8)), frozenset((7, 8))}
+
+
+def test_nodo_a_esattamente_1mm_non_coincidente(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    # esattamente 1.0 mm da nodo 5: la soglia nodi_coincidenti e' "<", non "<=" -> non coincide
+    m["nodi"].append({"id": 7, "x": 5001.0, "y": 0, "z": 3200})
+    m["contatori"]["nodo"] = 7
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["nodi_coincidenti"] == "passato"
+
+
+def test_aste_duplicate_anche_con_verso_invertito(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"].append({"id": 6, "nodo_i": 5, "nodo_j": 4, "sezione": 2})  # asta 4 e' 4->5, questa e' 5->4
+    m["contatori"]["asta"] = 6
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "aste_duplicate")
+    assert v["esito"] == "non_passato" and [4, 6] in v["oggetto"]
+
+
+def test_nodo_vicino_a_un_estremo_e_coincidente_non_su_asta(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 7, "x": 0.5, "y": 0, "z": 3200})  # 0.5 mm da nodo 4, estremo delle aste 1 e 4
+    m["contatori"]["nodo"] = 7
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    esiti = _esiti(r[-1]["verdetti"])
+    assert esiti["nodi_coincidenti"] == "non_passato"
+    assert esiti["nodo_su_asta"] == "passato"  # sull'estremo (t~0): e' coincidenza, non "sull'asta"
+
+
+def test_nodo_a_1mm_da_asta_e_rifiutato(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 7, "x": 2500, "y": 1.0, "z": 3200})  # 1.0 mm dall'asse dell'asta 4: soglia inclusiva
+    m["contatori"]["nodo"] = 7
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodo_su_asta")
+    assert v["esito"] == "non_passato" and [7, 4] in v["oggetto"]
+
+
+def test_nodo_a_2mm_da_asta_passa(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 7, "x": 2500, "y": 2.0, "z": 3200})  # 2 mm: fuori tolleranza
+    m["contatori"]["nodo"] = 7
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["nodo_su_asta"] == "passato"
+
+
+def test_sezione_inesistente_nomina_id(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["sezione"] = 99
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "sezione_nulla")
+    assert v["esito"] == "non_passato" and v["oggetto"] == [1]
+
+
+def test_riferimenti_nomina_sezione_e_materiale(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0]["calcestruzzo"] = 9
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "non_passato" and v["azione"] == "correggi il riferimento"
+    assert {"sezione": 1, "calcestruzzo": 9} in v["oggetto"]
+
+
+@pytest.mark.parametrize("muta", [
+    lambda m: m["sezioni"][0].__setitem__("calcestruzzo", 99),
+    lambda m: m["sezioni"][0].__setitem__("acciaio", 99),
+    lambda m: m["azioni"][1]["carichi"][0].__setitem__("nodo", 99),
+    lambda m: m["azioni"][0]["carichi"].append({"tipo": "cedimento", "nodo": 99}),
+    lambda m: m["azioni"][0]["carichi"][0].__setitem__("asta", 99),
+    lambda m: m["combinazioni"][0]["termini"][0].__setitem__("azione", 99),
+    lambda m: m["analisi"][0].__setitem__("casi", ["Z1", "Z99", "C1"]),
+], ids=["sezione-calcestruzzo", "sezione-acciaio", "carico-nodale-nodo", "cedimento-nodo",
+        "distribuito-asta", "termine-azione", "analisi-caso"])
+def test_riferimento_rotto_e_rifiutato_prima_del_deck(chiedi, muta):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    muta(m)
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["riferimenti"] == "non_passato"
+
+
+def test_nodi_liberi_azione_ed_id(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("nodo_libero.nova.json")})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodi_liberi")
+    assert v["oggetto"] == [7] and v["azione"] == "elimina il nodo"
+
+
+def test_nessun_nodo_vincolato_e_rifiutato(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        n.pop("vincolo", None)
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "vincoli")
+    assert v["esito"] == "non_passato" and v["azione"] == "vincola un nodo"
+
+
+def test_tutti_i_nodi_incastrati_su_sei_gradi_e_rifiutato(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    incastro = {"ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True}
+    for n in m["nodi"]:
+        n["vincolo"] = incastro
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "vincoli")
+    assert v["esito"] == "non_passato" and "nulla da calcolare" in v["ragione"]
+
+
+def test_un_solo_dof_bloccato_su_un_nodo_basta(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        n.pop("vincolo", None)
+    m["nodi"][0]["vincolo"] = {"uz": True}  # un solo grado, un solo nodo: non e' un falso rifiuto
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert _esiti(r[-1]["verdetti"])["vincoli"] == "passato"

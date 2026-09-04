@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 
+from nova import check as _check
 from nova import modello as _modello
 
 COMANDI = ("verifica", "check", "deck", "corsa", "fine")
@@ -31,7 +32,8 @@ def _carica(req: dict):
 
 def comando_check(req: dict) -> dict:
     m, _ = _carica(req)
-    return {"esito": "ok", "verdetti": [], "nodi": len(m.nodi), "aste": len(m.aste)}
+    verdetti = _check.check_model(m)
+    return {"esito": "rifiutato" if _check.rifiutato(verdetti) else "ok", "verdetti": verdetti}
 
 
 def rispondi(req: dict, emetti) -> dict:

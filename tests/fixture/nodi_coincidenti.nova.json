@@ -1,0 +1,247 @@
+{
+  "schema_version": 1,
+  "unita": "mm-N-MPa-t-s",
+  "contatori": {
+    "nodo": 7,
+    "asta": 6,
+    "sezione": 2,
+    "materiale": 2,
+    "azione": 2,
+    "combinazione": 1
+  },
+  "materiali": [
+    {
+      "id": 1,
+      "nome": "C25/30",
+      "tipo": "calcestruzzo",
+      "classe": "C25/30"
+    },
+    {
+      "id": 2,
+      "nome": "B450C",
+      "tipo": "acciaio",
+      "classe": "B450C"
+    }
+  ],
+  "sezioni": [
+    {
+      "id": 1,
+      "nome": "30×30 4Ø16",
+      "b": 300,
+      "h": 300,
+      "calcestruzzo": 1,
+      "acciaio": 2,
+      "copriferro": 30,
+      "file": [
+        {
+          "lato": "inf",
+          "n": 2,
+          "diametro": 16
+        },
+        {
+          "lato": "sup",
+          "n": 2,
+          "diametro": 16
+        }
+      ],
+      "staffe": {
+        "diametro": 8,
+        "passo": 150,
+        "bracci": 2
+      }
+    },
+    {
+      "id": 2,
+      "nome": "30×50 3+3Ø16",
+      "b": 300,
+      "h": 500,
+      "calcestruzzo": 1,
+      "acciaio": 2,
+      "copriferro": 30,
+      "file": [
+        {
+          "lato": "inf",
+          "n": 3,
+          "diametro": 16
+        },
+        {
+          "lato": "sup",
+          "n": 3,
+          "diametro": 16
+        }
+      ],
+      "staffe": {
+        "diametro": 8,
+        "passo": 150,
+        "bracci": 2
+      }
+    }
+  ],
+  "nodi": [
+    {
+      "id": 1,
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "vincolo": {
+        "ux": true,
+        "uy": true,
+        "uz": true,
+        "rx": true,
+        "ry": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 2,
+      "x": 5000,
+      "y": 0,
+      "z": 0,
+      "vincolo": {
+        "ux": true,
+        "uy": true,
+        "uz": true,
+        "rx": true,
+        "ry": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 3,
+      "x": 9000,
+      "y": 0,
+      "z": 0,
+      "vincolo": {
+        "ux": true,
+        "uy": true,
+        "uz": true,
+        "rx": true,
+        "ry": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 4,
+      "x": 0,
+      "y": 0,
+      "z": 3200
+    },
+    {
+      "id": 5,
+      "x": 5000,
+      "y": 0,
+      "z": 3200
+    },
+    {
+      "id": 6,
+      "x": 9000,
+      "y": 0,
+      "z": 3200
+    },
+    {
+      "id": 7,
+      "x": 5000,
+      "y": 0,
+      "z": 3200
+    }
+  ],
+  "aste": [
+    {
+      "id": 1,
+      "nodo_i": 1,
+      "nodo_j": 4,
+      "sezione": 1
+    },
+    {
+      "id": 2,
+      "nodo_i": 2,
+      "nodo_j": 5,
+      "sezione": 1
+    },
+    {
+      "id": 3,
+      "nodo_i": 3,
+      "nodo_j": 6,
+      "sezione": 1
+    },
+    {
+      "id": 4,
+      "nodo_i": 4,
+      "nodo_j": 5,
+      "sezione": 2
+    },
+    {
+      "id": 5,
+      "nodo_i": 5,
+      "nodo_j": 6,
+      "sezione": 2
+    },
+    {
+      "id": 6,
+      "nodo_i": 4,
+      "nodo_j": 7,
+      "sezione": 2
+    }
+  ],
+  "azioni": [
+    {
+      "id": 1,
+      "nome": "permanenti travi",
+      "natura": "G2",
+      "carichi": [
+        {
+          "tipo": "distribuito",
+          "asta": 4,
+          "q": -12.5,
+          "direzione": "z"
+        },
+        {
+          "tipo": "distribuito",
+          "asta": 5,
+          "q": -12.5,
+          "direzione": "z"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "nome": "spinta in testa",
+      "natura": "Q",
+      "categoria": "vento",
+      "carichi": [
+        {
+          "tipo": "nodale",
+          "nodo": 4,
+          "Fx": 20000
+        }
+      ]
+    }
+  ],
+  "combinazioni": [
+    {
+      "id": 1,
+      "nome": "SLU",
+      "tipo": "fondamentale",
+      "termini": [
+        {
+          "azione": 1,
+          "coefficiente": 1.5
+        },
+        {
+          "azione": 2,
+          "coefficiente": 1.5
+        }
+      ]
+    }
+  ],
+  "analisi": [
+    {
+      "tipo": "statica",
+      "casi": [
+        "Z1",
+        "Z2",
+        "C1"
+      ]
+    }
+  ]
+}
