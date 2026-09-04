@@ -5,6 +5,8 @@
   quadro d'insieme, contraddizioni, diciassette domande aperte, raccomandazioni
   convergenti. Si parte dalla sintesi.
 
+- [`agents/`](agents/) — configurazione per le skill di ingegneria: tracker (GitHub Issues), layout dei domain doc.
+
 Cartelle previste, non ancora esistenti:
 
 - `superpowers/specs/` — spec di design, dopo il brainstorming.

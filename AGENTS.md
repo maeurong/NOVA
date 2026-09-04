@@ -163,6 +163,18 @@ parole.
 - Il grafo non contiene codice perché non esiste codice. Quando arriverà, la
   parte AST è gratuita; i documenti costano estrazione semantica.
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues su `maeurong/NOVA`, via `gh`; la mappa wayfinder e i suoi ticket
+vivono lì. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` alla radice, ADR in `docs/adr/` quando arriverà la
+prima decisione. See `docs/agents/domain.md`.
+
 ## Roster e ciclo di sviluppo
 
 Il roster dei subagenti, il ciclo di sviluppo e le sue regole vincolanti sono in

@@ -62,7 +62,8 @@ vincoli, convenzioni.
 
 ## Licenza
 
-**Non decisa.** La scelta è una delle domande aperte del brainstorming
-(`docs/ricerca/README.md`, §3, domanda 9) e dipende anche dalla licenza di
-OpenSees (domanda 8). Fino ad allora nessun file di questo repository dichiara
-una licenza.
+NOVA è rilasciato sotto licenza [MIT](LICENSE). OpenSees non è incluso: NOVA lo
+cerca sul sistema e, se manca, dice dove trovarlo. OpenSees resta sotto i
+termini dei Regents of the University of California (gratuito per uso di
+ricerca, didattico e interno; vedi `docs/ricerca/01-opensees-integrazione.md`
+§3).
