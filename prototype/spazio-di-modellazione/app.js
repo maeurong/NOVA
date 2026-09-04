@@ -25,6 +25,9 @@ function monta(v) {
   corrente = ({ A: varianteA, B: varianteB, C: varianteC })[v](document.getElementById("app"));
   montaSwitcher();
   stato.emetti();
+  // ?demo=momento|deformata|modo carica l'esempio, analizza e mostra: per screenshot e link diretti
+  const demo = url.searchParams.get("demo");
+  if (demo && !stato.modello.nodi.length) requestAnimationFrame(() => { stato.esempio(); corrente.ctx.piano?.fit(); corrente.ctx.analizza(); corrente.ctx.mostra(demo === "1" ? "deformata" : demo); if (demo !== "modo") stato.seleziona({ tipo: "asta", id: "A4" }); });
 }
 
 // ---------- contesto comune ----------
@@ -171,7 +174,7 @@ function varianteA(root) {
   piano.on("render", posiziona);
   const off = stato.on(() => { alto.aggiorna(); UI.ispettore(isp, stato, ctx); UI.controlli(boxC, stato); UI.modi(boxM, stato, ctx); UI.cronologia(boxH, stato); scala.aggiorna(); aggiornaVuoto(); piano.render(); spazio.ricostruisci(); posiziona(); });
   requestAnimationFrame(() => { piano.fit(); piano.render(); });
-  return { smonta: () => { off(); ctx.smonta(); } };
+  return { ctx, smonta: () => { off(); ctx.smonta(); } };
 }
 
 // ---------- B «Doppia vista» ----------
@@ -200,7 +203,7 @@ function varianteB(root) {
   };
   const off = stato.on(() => { alto.aggiorna(); UI.albero(albero, stato); UI.ispettore(boxI, stato, ctx); UI.controlli(boxC, stato); UI.modi(boxM, stato, ctx); UI.cronologia(boxH, stato); scala.aggiorna(); aggiornaVuoto(); piano.render(); spazio.ricostruisci(); UI.diagrammaSrotolato(diag, stato); });
   requestAnimationFrame(() => { piano.fit(); piano.render(); });
-  return { smonta: () => { off(); ctx.smonta(); } };
+  return { ctx, smonta: () => { off(); ctx.smonta(); } };
 }
 
 // ---------- C «Foglio» ----------
@@ -268,7 +271,7 @@ function varianteC(root) {
   };
   const off = stato.on(() => { alto.aggiorna(); renderSchede(); scala.aggiorna(); aggiornaVuoto(); piano.render(); spazio?.ricostruisci(); });
   requestAnimationFrame(() => { piano.fit(); piano.render(); inp.focus(); });
-  return { smonta: () => { off(); ctx.smonta(); } };
+  return { ctx, smonta: () => { off(); ctx.smonta(); } };
 }
 
 // ---------- switcher del prototipo ----------

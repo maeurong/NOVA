@@ -7,7 +7,9 @@ import { SEZIONI, ingombro } from "./model.js";
 export class Spazio {
   constructor(contenitore, stato) {
     this.c = contenitore; this.s = stato;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    try { this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); }
+    catch (e) { this.renderer = null; contenitore.appendChild(Object.assign(document.createElement("div"), { className: "vuoto", textContent: "WebGL non disponibile: la vista spaziale resta vuota" })); }
+    if (!this.renderer) { this.ricostruisci = () => {}; this.anima = () => {}; this.disegna = () => {}; return; }
     this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     contenitore.appendChild(this.renderer.domElement);
     this.scena = new THREE.Scene();
