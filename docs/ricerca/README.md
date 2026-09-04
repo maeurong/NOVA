@@ -1,6 +1,6 @@
 # Ricerca pre-brainstorming — quadro d'insieme
 
-Sette ricerche indipendenti, condotte in parallelo il 04/09/2026 da sette `researcher`, prima di qualunque decisione di prodotto. Repo di riferimento per il contesto: `~/GitHub/Tesi` a `782f507`. Questo file è la sintesi: non ripete i numeri, li indirizza, e mette in fila ciò che le sette ricerche dicono **insieme** — comprese le contraddizioni.
+Sette ricerche indipendenti, condotte in parallelo il 04/09/2026 da sette `researcher`, prima di qualunque decisione di prodotto, più un'ottava mirata dispacciata subito dopo sui modelli dati di riferimento. Repo di riferimento per il contesto: `~/GitHub/Tesi` a `782f507`. Questo file è la sintesi: non ripete i numeri, li indirizza, e mette in fila ciò che le sette ricerche dicono **insieme** — comprese le contraddizioni.
 
 | documento | cosa contiene |
 |---|---|
@@ -11,6 +11,7 @@ Sette ricerche indipendenti, condotte in parallelo il 04/09/2026 da sette `resea
 | [`05-archeologia-linea-integrata.md`](05-archeologia-linea-integrata.md) | la linea rimossa il 2-3/09 da MeshRec: inventario per modulo con righe e test, come parlava con OpenSees/CalculiX, verifiche di norma implementate, schermata dismessa, validazione uscita, cosa è riusabile |
 | [`06-dominio-analisi-verifiche-formati.md`](06-dominio-analisi-verifiche-formati.md) | catalogo analisi e verifiche NTC 2018/EC8 con articolo; tre strade d'ingresso del modello; formati di scambio (SAF, IFC, e2k); relazione §10.2.1; caso studio e benchmark aperti; stato normativo 2026-2028 |
 | [`07-ux-modellatore.md`](07-ux-modellatore.md) | punti di dolore per fase con citazioni; pattern eccellenti (Blender, Plasticity, Onshape, Shapr3D, Figma, Linear); risultati come UX; inventario skill di design locali; motion/a11y/aula; metodo per sviluppatore singolo; **10 principi UX candidati** |
+| [`08-modelli-dati-riferimento.md`](08-modelli-dati-riferimento.md) | schema comparato di opensees-studio `.osmodel`, awatif, SAF 2.2, PyNite/pynite-tools, Speckle Structural, `printModel -JSON`: tabella entità × formato; **14 lezioni per il modello dati** (ID stabili, asta fisica ≠ elemento, risultati per combinazione con tre forme, verdetto come entità, armatura costruttiva → fibre derivate) |
 
 Convenzione dei tag, valida per tutti: **[V]** verificato su fonte primaria · **[M]** misurato in sessione con comando · **[INF]** inferenza · **[NON TROVATO]**. Notazione numerica italiana (virgola decimale) fuori dalle citazioni verbatim.
 
@@ -92,6 +93,7 @@ Quelle che almeno due ricerche fanno indipendentemente:
 - three.js moderno + `camera-controls` + `three-mesh-bvh`; awatif come riferimento MIT dello stesso dominio (`03`).
 - Licenza OpenSees/OpenSeesPy chiusa prima del codice; non ridistribuire la ruota (`01`, `04`).
 - Benchmark: Morandi-Hak-Magenes 2018 (CC BY) per il telaio nudo; mensola analitica e `RCFrameGravity` per il generatore (`05`, `06`).
+- Modello dati in tre schemi distinti con versione — modello, risultati per caso/combinazione con provenienza, verdetti — perché nessun formato esistente copre i tre insieme; forma tecnica da opensees-studio, vocabolario di nature e categorie da SAF (`06`, `08`).
 
 ---
 

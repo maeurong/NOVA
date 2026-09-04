@@ -6,7 +6,7 @@ contano. I termini marcati **[DA DECIDERE]** non hanno ancora una definizione
 stabilita: la definizione riportata è quella che la ricerca usa, non una
 decisione. Fonti: `docs/ricerca/05-*.md` (linea rimossa di MeshRec),
 `docs/ricerca/06-*.md` (norma, analisi, formati), `docs/ricerca/01-*.md`
-(solutore).
+(solutore), `docs/ricerca/08-*.md` (modelli dati di riferimento).
 
 ## Geometria e modello
 

@@ -12,7 +12,7 @@ deck `.inp`.
 Il progetto attraversa tre fasi in sequenza. Al 04/09/2026 la prima è chiusa e
 la seconda non è iniziata:
 
-1. **Ricerca** — chiusa il 04/09/2026. Sette report in `docs/ricerca/`, sintesi
+1. **Ricerca** — chiusa il 04/09/2026. Otto report in `docs/ricerca/`, sintesi
    in `docs/ricerca/README.md`.
 2. **Brainstorming** — da fare. Chiude le diciassette domande aperte di
    `docs/ricerca/README.md` §3 e produce le decisioni di prodotto.
@@ -110,10 +110,10 @@ non è mai verde e non è mai rosso; è una terza cosa e va mostrata come tale
 
 ## Come citare le ricerche
 
-I sette report sono la fonte di ogni affermazione sul dominio, sul mercato,
+Gli otto report sono la fonte di ogni affermazione sul dominio, sul mercato,
 sullo stack e sulla UX finché il brainstorming non produce decisioni. Si citano
 per file e sezione: `docs/ricerca/06-dominio-analisi-verifiche-formati.md` §2.
-Se un'affermazione non sta in nessuno dei sette, non è stabilita: si scrive che
+Se un'affermazione non sta in nessuno degli otto, non è stabilita: si scrive che
 non è decisa, o si dispaccia un `researcher` mirato.
 
 Le ricerche si contraddicono in sei punti (soglia di massa partecipante 85 %
@@ -134,7 +134,7 @@ Attuale:
 ├── PRODUCT.md       bozza di prodotto, schema impeccable
 └── docs/
     ├── README.md    indice di docs/
-    └── ricerca/     sette report + sintesi, chiusi il 04/09/2026
+    └── ricerca/     otto report + sintesi, chiusi il 04/09/2026
 ```
 
 Prevista, quando servirà:

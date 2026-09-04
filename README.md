@@ -47,10 +47,10 @@ il codice riusabile si legge dalla sua cronologia git, non si modifica.
 
 ## Dove guardare
 
-- [`docs/ricerca/README.md`](docs/ricerca/README.md) — sintesi delle sette
+- [`docs/ricerca/README.md`](docs/ricerca/README.md) — sintesi delle otto
   ricerche: cosa dicono insieme, dove si contraddicono, le diciassette domande
   aperte, le raccomandazioni convergenti. Si parte da qui.
-- [`docs/ricerca/01-*.md` … `07-*.md`](docs/ricerca/) — i sette report, con i
+- [`docs/ricerca/01-*.md` … `08-*.md`](docs/ricerca/) — gli otto report, con i
   numeri e le fonti.
 - [`CONTEXT.md`](CONTEXT.md) — glossario del dominio: i termini che il progetto
   usa e le distinzioni che contano.

@@ -1,6 +1,6 @@
 # docs/
 
-- [`ricerca/`](ricerca/) — le sette ricerche pre-brainstorming, chiuse il
+- [`ricerca/`](ricerca/) — le otto ricerche pre-brainstorming, chiuse il
   04/09/2026, e la loro sintesi in [`ricerca/README.md`](ricerca/README.md):
   quadro d'insieme, contraddizioni, diciassette domande aperte, raccomandazioni
   convergenti. Si parte dalla sintesi.
