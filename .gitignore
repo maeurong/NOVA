@@ -12,3 +12,6 @@ runs/
 # artefatti di sessione
 .scratch-ui/
 *.log
+
+# dati del caso studio (272 MB, non versionati)
+lab_telaio_v2/
