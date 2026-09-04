@@ -5,7 +5,8 @@
 > Bozza del 04/09/2026, scritta prima del brainstorming. Riempie solo ciò che
 > la ricerca in `docs/ricerca/` sostiene. Ogni campo che dipende da una
 > decisione non ancora presa è marcato `[DA DECIDERE AL BRAINSTORMING — vedi
-> docs/ricerca/README.md §3 domanda N]`. Il nome del prodotto non è deciso.
+> docs/ricerca/README.md §3 domanda N]`. Nome del prodotto: **NOVA** — Nonlinear
+> OpenSees Visualization & Analysis (deciso il 04/09/2026).
 
 ## Platform
 

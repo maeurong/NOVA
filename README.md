@@ -1,6 +1,4 @@
-# Analisi strutturale
-
-> Nome della cartella provvisorio. Il nome del progetto non è ancora deciso.
+# NOVA — Nonlinear OpenSees Visualization & Analysis
 
 Software di modellazione e analisi strutturale per telai in cemento armato, con
 [OpenSees](https://opensees.berkeley.edu/) come solutore e le verifiche a

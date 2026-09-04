@@ -222,7 +222,7 @@ Legenda: **P** presente · **∅** assente · **~** parziale.
 
 ## Fonti
 
-Ricerche pre-brainstorming: `/Users/mario/GitHub/analisi-strutturale/docs/ricerca/{README,02-panorama-software,03-stack-tecnico,05-archeologia-linea-integrata,06-dominio-analisi-verifiche-formati}.md`.
+Ricerche pre-brainstorming: `/Users/mario/GitHub/NOVA/docs/ricerca/{README,02-panorama-software,03-stack-tecnico,05-archeologia-linea-integrata,06-dominio-analisi-verifiche-formati}.md`.
 
 Web: https://github.com/ogunc/opensees-studio · https://github.com/madil4/awatif · https://github.com/JWock82/Pynite · https://pypi.org/project/pynite-tools/0.7.0/ · https://github.com/admindev-buildwellai/MCP-Pynite · https://github.com/specklesystems/speckle-sharp (`Objects/Objects/Structural/`) · https://github.com/StructuralAnalysisFormat/StructuralAnalysisFormat-Doc (tag 2.2.0) · https://www.saf.guide/en/stable/structural-analysis-elements/structuralmaterial.html · …/structuralcrosssection.html · …/structuralpointconnection.html · …/structuralcurvemember.html · https://www.saf.guide/en/stable/supports-and-hinges/structuralpointsupport.html · https://www.saf.guide/en/stable/loads/structuralloadcase.html · …/structuralloadcombination.html · …/structuralcurveaction.html · https://www.saf.guide/en/stable/results/resultinternalforce1d.html · https://www.saf.guide/en/stable/annexes/units.html · https://www.saf.guide/en/stable/getting-started/saf-versions.html · https://openseespydoc.readthedocs.io/en/latest/src/printModel.html
 

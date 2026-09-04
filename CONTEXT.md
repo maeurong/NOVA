@@ -1,4 +1,4 @@
-# Analisi strutturale — glossario
+# NOVA — glossario
 
 Modellazione e analisi di telai in cemento armato con OpenSees, verificati a
 NTC 2018. Questo file fissa i termini che il progetto usa e le distinzioni che

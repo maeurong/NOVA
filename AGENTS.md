@@ -1,6 +1,7 @@
 # AGENTS.md
 
-Istruzioni per chi lavora su questo repository con un agente di codice.
+Istruzioni per chi lavora su NOVA (Nonlinear OpenSees Visualization & Analysis)
+con un agente di codice.
 
 ## Cos'è e in che fase è
 
