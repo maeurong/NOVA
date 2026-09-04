@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>NOVA — prototipo spazio di modellazione</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+THESIS: il foglio obbedisce alla rete delle aste — etichette agganciate a nodi
+e aste con linee di richiamo, non a una griglia di pagina; rifiuta il modellatore
+scuro con albero-a-sinistra/ispettore-a-destra come unico ordine.
+OWN-WORLD: terreno calcestruzzo chiaro senza cornici; aste nero carbone; un solo
+rosso (#b8321e) per sollecitazione, fallimento, cambiamento non visto; pannelli a
+filo sottile con angolo tagliato; mono tabulare per numeri ed etichette.
+STORY: l'utente disegna, seleziona, agisce; ogni numero mostrato porta la sua
+scala e il suo controllo; il risultato stantio resta acceso finché non è visto.
+FIRST VIEWPORT: piano XZ a tutta larghezza con il telaio 2×1, richiami sulla
+selezione, barra dei tasti in basso; la palette ⌘K al centro quando serve.
+FORM: sfidante «colonna tensegrale» (vincente sul roll), seed db5e63c5.
+FINISH: prototipo usa-e-getta — la finish review e DESIGN.md arrivano con la
+spec, non con questo ramo.
+-->
+<style>
+  :root {
+    --terra: #dcdad5; --terra-2: #d2d0ca; --inchiostro: #141414; --grigio: #6f6f6b; --grigio-2: #a9a8a3;
+    --rosso: #b8321e; --rosso-tenue: rgba(184, 50, 30, .14); --carta: #e9e8e4;
+    --mono: "SF Mono", Menlo, Consolas, monospace; --sans: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --filo: 1px solid var(--inchiostro);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--terra); color: var(--inchiostro); font: 13px/1.4 var(--sans); overflow: hidden; }
+  ::selection { background: var(--inchiostro); color: var(--terra); }
+  :focus-visible { outline: 2px solid var(--inchiostro); outline-offset: 2px; }
+  button, input { font: inherit; color: inherit; }
+  button { background: none; border: var(--filo); padding: 3px 9px; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+  button:hover { background: var(--inchiostro); color: var(--terra); }
+  button.rosso { border-color: var(--rosso); color: var(--rosso); }
+  button.rosso:hover { background: var(--rosso); color: var(--terra); }
+  input[type=text], input[type=number] { background: transparent; border: 0; border-bottom: var(--filo); padding: 2px 4px; font-family: var(--mono); font-size: 12px; width: 100%; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .app { display: grid; height: 100%; }
+  .barra-alto { height: 40px; display: flex; align-items: center; gap: 22px; padding: 0 16px; font-family: var(--mono); font-size: 12px; }
+  .barra-alto b { font-weight: 700; letter-spacing: .04em; }
+  .barra-alto .dx { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .stato-corsa { padding: 2px 8px; border: var(--filo); }
+  .stato-corsa.stantio { border-color: var(--rosso); color: var(--rosso); animation: pulsa 1.6s ease-in-out 3; }
+  @keyframes pulsa { 50% { background: var(--rosso-tenue); } }
+  .barra-basso { height: 34px; display: flex; align-items: center; gap: 12px; padding: 0 12px; font-family: var(--mono); font-size: 11px; border-top: var(--filo); white-space: nowrap; overflow: hidden; }
+  .barra-basso .k { display: inline-block; border: 1px solid var(--inchiostro); padding: 0 5px; margin-right: 4px; min-width: 18px; text-align: center; }
+  .barra-basso .dx { margin-left: auto; color: var(--grigio); }
+  .barra-basso .suggerimento { color: var(--rosso); }
+  .vp { position: relative; overflow: hidden; background: var(--terra); }
+  .vp svg.piano { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .vp canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .vp .titolo { position: absolute; left: 12px; top: 8px; font-family: var(--mono); font-size: 11px; color: var(--grigio); pointer-events: none; }
+  .vp .scala { position: absolute; right: 12px; bottom: 10px; font-family: var(--mono); font-size: 12px; pointer-events: none; }
+  .vp .scala b { color: var(--inchiostro); }
+  .vuoto { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--grigio); font-family: var(--mono); font-size: 13px; line-height: 2; pointer-events: none; }
+  .vuoto b { color: var(--inchiostro); }
+  .vuoto .k { border: 1px solid currentColor; padding: 0 5px; }
+  /* pannello a filo sottile con angolo tagliato */
+  .pannello { border-left: 2px solid var(--inchiostro); padding: 0 0 0 12px; font-family: var(--mono); font-size: 12px; }
+  .pannello h2 { margin: 0 0 6px; font: 700 12px var(--mono); letter-spacing: .02em; }
+  .pannello .riga { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--terra-2); }
+  .pannello .riga:last-child { border-bottom: 0; }
+  .pannello .riga span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .pannello select { font: inherit; background: transparent; border: 0; border-bottom: var(--filo); color: inherit; }
+  .controlli .riga { align-items: baseline; }
+  .punto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--inchiostro); }
+  .non_applicabile { color: var(--grigio); } .non_applicabile .punto { background: none; border: 1.5px solid var(--grigio); }
+  .non_passato { color: var(--rosso); font-weight: 700; } .non_passato .punto { background: var(--rosso); }
+  .margine { color: var(--grigio); font-size: 11px; }
+  .cronologia { font-family: var(--mono); font-size: 11.5px; }
+  .cronologia div { padding: 2px 0; color: var(--grigio); cursor: pointer; }
+  .cronologia div:hover { color: var(--inchiostro); }
+  .cronologia .corrente { color: var(--inchiostro); }
+  .cronologia .corrente::before { content: "● "; } .cronologia div:not(.corrente)::before { content: "○ "; }
+  /* palette ⌘K */
+  .palette { position: fixed; left: 50%; top: 80px; transform: translateX(-50%); width: 520px; background: var(--inchiostro); color: var(--terra); font-family: var(--mono); font-size: 13px; z-index: 50; box-shadow: 0 18px 40px -18px rgba(0,0,0,.6); }
+  .palette input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid #444; color: var(--terra); padding: 11px 14px; font: inherit; outline: none; }
+  .palette .voce { display: flex; justify-content: space-between; padding: 7px 14px; }
+  .palette .voce.attiva { background: #2c2c2c; }
+  .palette .voce .k { color: #9a9a9a; }
+  .palette .voce.rosso .k { color: var(--rosso); }
+  .palette .nulla { padding: 10px 14px; color: #9a9a9a; }
+  /* richiami sul piano */
+  .richiamo { position: absolute; font-family: var(--mono); font-size: 11.5px; background: var(--terra); padding: 2px 5px; white-space: nowrap; pointer-events: auto; }
+  .richiamo b { font-weight: 700; }
+  .richiamo .r { color: var(--rosso); font-weight: 700; }
+  .ispettore { position: absolute; min-width: 230px; background: var(--terra); }
+  /* albero */
+  .albero { font-family: var(--mono); font-size: 12px; padding: 8px 0; overflow: auto; border-right: 1px solid var(--inchiostro); }
+  .albero .g { color: var(--grigio); font-size: 11px; padding: 8px 12px 2px; letter-spacing: .06em; }
+  .albero div.v { padding: 3px 12px; cursor: pointer; }
+  .albero div.v:hover { background: var(--terra-2); }
+  .albero div.v.sel { background: var(--inchiostro); color: var(--terra); }
+  /* tabella (variante C) */
+  table.foglio { border-collapse: collapse; font-family: var(--mono); font-size: 12px; width: 100%; }
+  table.foglio th { text-align: left; font-weight: 400; color: var(--grigio); border-bottom: var(--filo); padding: 4px 8px; }
+  table.foglio td { padding: 3px 8px; border-bottom: 1px solid var(--terra-2); font-variant-numeric: tabular-nums; }
+  table.foglio tr.sel td { background: var(--inchiostro); color: var(--terra); }
+  table.foglio tr:hover td { background: var(--terra-2); }
+  table.foglio tr.sel:hover td { background: var(--inchiostro); }
+  .schede { display: flex; gap: 0; border-bottom: var(--filo); font-family: var(--mono); font-size: 12px; }
+  .schede button { border: 0; border-right: var(--filo); padding: 6px 14px; }
+  .schede button.attiva { background: var(--inchiostro); color: var(--terra); }
+  .riga-comando { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-top: var(--filo); font-family: var(--mono); font-size: 12px; }
+  .riga-comando input { border: 0; border-bottom: var(--filo); }
+  .riga-comando .eco { color: var(--grigio); }
+  .riga-comando .eco.rosso { color: var(--rosso); }
+  /* switcher del prototipo — non fa parte del design */
+  .switcher { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); background: #fff; color: #000; border: 2px solid #000; border-radius: 999px; padding: 4px 8px; display: flex; gap: 10px; align-items: center; font: 12px var(--sans); z-index: 60; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  .switcher button { border: 0; border-radius: 999px; padding: 2px 8px; font-family: var(--sans); }
+  .switcher button:hover { background: #000; color: #fff; }
+  .switcher .n { font-weight: 700; }
+  .diagramma { font-family: var(--mono); font-size: 11px; }
+  .split { display: grid; grid-template-rows: 1fr 220px; height: 100%; }
+  .split .diag { border-top: var(--filo); position: relative; overflow: hidden; }
+  .sr-only { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
