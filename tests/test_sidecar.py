@@ -2,6 +2,7 @@
 import io
 import json
 import math
+import os
 
 import pytest
 
@@ -595,17 +596,16 @@ def test_lasta_a_coseno_099_prende_la_proiezione_di_z():
     assert abs(float(np.linalg.norm(e2)) - 1.0) < 1e-12 and not np.isnan(e1).any()
 
 
-@pytest.mark.parametrize("gradi", [90, -90])
-def test_la_rotazione_cambia_il_vecxz(chiedi, tmp_path, gradi):
-    dritta = leggi_fixture("trave_appoggiata.nova.json")
-    ruotata = leggi_fixture("trave_appoggiata.nova.json")
-    ruotata["aste"][0]["rotazione_deg"] = gradi
-    _deck(chiedi, tmp_path / "a", dritta)
-    r = _deck(chiedi, tmp_path / "b", ruotata)
+@pytest.mark.parametrize("gradi,atteso", [(0, (0, 0, 1)), (90, (0, -1, 0)), (-90, (0, 1, 0))])
+def test_la_rotazione_gira_il_vecxz_in_verso_destrorso(chiedi, tmp_path, gradi, atteso):
+    # trave lungo +x: a vecxz fermo il local y è +Y, e +90 destrorsi lo portano a +Z
+    m = leggi_fixture("trave_appoggiata.nova.json")
+    m["aste"][0]["rotazione_deg"] = gradi
+    r = _deck(chiedi, tmp_path, m)
     assert r["esito"] == "ok"
-    prima = [x for x in _tcl(tmp_path / "a").splitlines() if x.startswith("geomTransf")]
-    dopo = [x for x in _tcl(tmp_path / "b").splitlines() if x.startswith("geomTransf")]
-    assert prima != dopo and "nan" not in "".join(dopo)
+    righe = [x for x in _tcl(tmp_path).splitlines() if x.startswith("geomTransf")]
+    vecxz = [float(v) for v in righe[0].split()[3:6]]
+    assert all(abs(v - atteso[k]) < 1e-9 for k, v in enumerate(vecxz))
 
 
 def test_sezione_senza_staffe_finisce_in_sezioni_senza_barre(chiedi, tmp_path):
@@ -666,6 +666,8 @@ def test_la_cartella_inesistente_viene_creata(chiedi, tmp_path):
 
 
 def test_la_cartella_non_scrivibile_da_errore_di_fase_deck(chiedi, tmp_path):
+    if os.geteuid() == 0:
+        pytest.skip("da root i permessi della cartella non fermano nulla")
     chiusa = tmp_path / "chiusa"
     chiusa.mkdir()
     chiusa.chmod(0o500)
@@ -702,3 +704,75 @@ def test_il_deck_rifiuta_il_modello_bocciato_dal_check(chiedi, tmp_path):
 def test_forza_scavalca_il_check(chiedi, tmp_path):
     r = _deck(chiedi, tmp_path, leggi_fixture("nodo_libero.nova.json"), forza=True)
     assert r["esito"] == "ok" and (tmp_path / "13_telaio.tcl").exists()
+
+
+# --------------------------------------------------- deck: giro di correzioni 1
+
+
+def test_la_stessa_sezione_su_trave_e_pilastro_da_due_fibre(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for a in m["aste"]:
+        a["sezione"] = 2  # 300×500 su pilastri e travi: due orientamenti, due geometrie
+    _deck(chiedi, tmp_path, m)
+    tcl = _tcl(tmp_path)
+    assert tcl.count("section Fiber") == 2
+    assert "patch rect 1 10 10 -250 -150 250 150" in tcl  # pilastro: h lungo e1
+    assert "patch rect 3 10 10 -150 -250 150 250" in tcl  # trave: b lungo e1, ±250 su local z
+
+
+def test_leleload_porta_i_numeri_del_carico(chiedi, tmp_path):
+    _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"))
+    tcl = _tcl(tmp_path)
+    assert "eleLoad -ele 4 -type -beamUniform 0 -12.5 0" in tcl  # trave, carico in local z
+    assert "eleLoad -ele 1 -type -beamUniform 0 0 -2.291814849" in tcl  # pilastro, peso assiale
+
+
+def test_due_termini_sulla_stessa_azione_si_sommano(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["combinazioni"][0]["termini"] = [{"azione": 1, "coefficiente": 1.0}, {"azione": 1, "coefficiente": 1.0}]
+    r = _deck(chiedi, tmp_path, m, casi=["C1"])
+    assert abs(r["resoconto"]["carico_totale"]["C1"][2] - (-2 * 12.5 * 9000)) < 1e-6
+
+
+def test_le_barre_inf_stanno_sulle_facce_di_h_anche_in_piedi(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0].update({"b": 300, "h": 600, "file": [{"lato": "inf", "n": 3, "diametro": 20}]})
+    _deck(chiedi, tmp_path, m)
+    # pilastro: h sta lungo e1, quindi le barre «inf» stanno a −(600/2 − 30 − 8 − 10) sul local y
+    blocco = _tcl(tmp_path).split("section Fiber")[1]  # la sezione 1, quella dei pilastri
+    fibre = [x for x in blocco.splitlines() if x.strip().startswith("fiber ")]
+    y = {float(x.split()[1]) for x in fibre}
+    assert y == {-252.0} and len(fibre) == 3
+
+
+def test_senza_azione_di_peso_proprio_e_un_rifiuto_di_fase_deck():
+    from nova import modello, sidecar
+    m = modello.carica(leggi_fixture("telaio_2x1.nova.json"))  # senza assicura_peso_proprio
+    with pytest.raises(sidecar._Rifiuto) as e:
+        sidecar._casi_delle_analisi(m)
+    assert e.value.fase == "deck" and "peso proprio" in e.value.motivo
+
+
+def test_due_file_sullo_stesso_lato_sono_rifiutate(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0]["file"].append({"lato": "inf", "n": 2, "diametro": 20})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "sezione 1" in r["motivo"] and "inf" in r["motivo"]
+
+
+def test_il_rifiuto_non_crea_la_cartella(chiedi, tmp_path):
+    fuori = tmp_path / "mai"
+    r = _deck(chiedi, fuori, leggi_fixture("telaio_2x1.nova.json"), casi=["Z9"])
+    assert r["esito"] == "errore" and not fuori.exists()
+
+
+def test_il_carico_per_elemento_e_di_float_puri(tmp_path):
+    from nova import deck as _d
+    from nova import modello
+    dati = leggi_fixture("telaio_2x1.nova.json")
+    for c in dati["azioni"][0]["carichi"]:
+        c["direzione"] = "locale_z"  # la direzione locale viene dai versori numpy
+    m = modello.assicura_peso_proprio(modello.carica(dati))
+    d = _d.scrivi(m, ["Z1", "Z3"], tmp_path)
+    assert all(type(x) is float for e in d.elementi for w in e.w.values() for x in w)

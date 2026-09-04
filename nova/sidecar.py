@@ -44,7 +44,9 @@ def _casi_delle_analisi(m) -> list[str]:
     for an in m.analisi:
         if an.tipo == "statica":
             casi += [c for c in an.casi if c not in casi]
-    peso = next(f"Z{a.id}" for a in m.azioni if a.generata)
+    peso = next((f"Z{a.id}" for a in m.azioni if a.generata), None)
+    if peso is None:
+        raise _Rifiuto("deck", "nessuna azione di peso proprio nel modello")
     if peso not in casi:
         casi.append(peso)
     return casi

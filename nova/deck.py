@@ -75,7 +75,12 @@ class _ArmaturaDuck(NamedTuple):
 def _terna(a: np.ndarray, rotazione_deg: float) -> tuple[np.ndarray, np.ndarray]:
     """`(e1, e2)`: e2 è la verticale proiettata (per un'asta verticale, la y globale),
     e1 = e2 × a. OpenSees deriva l'asse locale y come vecxz × asse, quindi vecxz = e2 e
-    localy = e1 (misurato in MeshRec il 30/08/2026). `rotazione_deg` ruota la coppia attorno ad a."""
+    localy = e1 (misurato in MeshRec il 30/08/2026).
+
+    `rotazione_deg` ruota la coppia attorno ad `a` in verso **destrorso rispetto all'asse i→j**:
+    su un'asta lungo +x (a = +X, e1 = +Y, e2 = +Z), `+90` porta l'asse locale y da +Y a +Z e il
+    `vecxz` da +Z a −Y; `−90` fa il contrario.
+    """
     z = np.array([0.0, 0.0, 1.0])
     if abs(float(np.dot(a, z))) > _COSENO_VERTICALE:
         e2 = np.array([0.0, 1.0, 0.0])
@@ -89,48 +94,58 @@ def _terna(a: np.ndarray, rotazione_deg: float) -> tuple[np.ndarray, np.ndarray]
     return e1, e2
 
 
-def _dimensioni_lungo(s: Sezione, a: np.ndarray) -> tuple[float, float]:
+def _dimensioni_lungo(s: Sezione, verticale: bool) -> tuple[float, float]:
     """(lungo e1, lungo e2): per un'asta coricata b sta lungo e1 (orizzontale) e h lungo e2 (verticale);
     per un'asta in piedi h sta lungo e1 (nel piano del telaio) e b lungo e2 (fuori piano)."""
-    verticale = abs(float(a[2])) > _COSENO_VERTICALE
     return (s.h, s.b) if verticale else (s.b, s.h)
 
 
-def _barre(s: Sezione, lungo_e1: float, lungo_e2: float) -> list[Barra]:
-    """Posizioni delle barre centrate sul baricentro, y lungo e1 e z lungo e2.
+def _barre(s: Sezione, verticale: bool) -> list[Barra]:
+    """Posizioni delle barre nel piano locale (e1, e2), centrate sul baricentro.
+
+    Convenzione, **per qualunque orientamento dell'asta**: `inf`/`sup` sono le file alle due facce
+    perpendicolari ad `h` (distese lungo `b`), `sx`/`dx` quelle alle facce perpendicolari a `b`
+    (distese lungo `h`). `colloca` riceve sempre la sezione nominale `(b, h)` e le coordinate si
+    portano sugli assi locali dopo, con la stessa rotazione della `patch rect`: un pilastro 300×600
+    con `inf` tiene le barre a −260 dal baricentro lungo `h`, non spalmate sui 600.
 
     `inf`/`sup` passano da `armatura.colloca` (verificata in MeshRec); `sx`/`dx` a filo dei lati,
     equidistanti fra i due strati (ponytail: una fila per lato, senza interferro verificato).
     La geometria impossibile che `colloca` solleva si rilancia col numero della sezione: il
     messaggio di MeshRec parla di millimetri e non sa quale sezione stia misurando.
     """
+    lati = [f.lato for f in s.file]
+    doppio = next((x for x in lati if lati.count(x) > 1), None)
+    if doppio:
+        raise ValueError(f"sezione {s.id} «{s.nome}»: due file sul lato {doppio}, una fila per lato in v1")
     file = {f.lato: f for f in s.file}
     st = s.staffe
     if not file or st is None:
         return []
     inf, sup = file.get("inf"), file.get("sup")
-    barre: list[Barra] = []
+    piano: list[Barra] = []  # y lungo b, z lungo h, dal baricentro
     try:
         if inf is not None:
             duck = _ArmaturaDuck(inf.n, inf.diametro, sup.n if sup else 0,
                                  sup.diametro if sup else inf.diametro, st.diametro, s.copriferro)
-            for b in armatura.colloca(duck, (lungo_e1, lungo_e2)):
-                barre.append(Barra(b.y - lungo_e1 / 2, b.z - lungo_e2 / 2, b.diametro))
+            for b in armatura.colloca(duck, (s.b, s.h)):
+                piano.append(Barra(b.y - s.b / 2, b.z - s.h / 2, b.diametro))
         elif sup is not None:
             duck = _ArmaturaDuck(sup.n, sup.diametro, 0, sup.diametro, st.diametro, s.copriferro)
-            for b in armatura.colloca(duck, (lungo_e1, lungo_e2)):
-                barre.append(Barra(b.y - lungo_e1 / 2, lungo_e2 / 2 - b.z, b.diametro))  # specchiata: sta in alto
+            for b in armatura.colloca(duck, (s.b, s.h)):
+                piano.append(Barra(b.y - s.b / 2, s.h / 2 - b.z, b.diametro))  # specchiata: sta in alto
     except ValueError as e:
         raise ValueError(f"sezione {s.id} «{s.nome}»: {e}") from None
     for lato, segno in (("sx", -1.0), ("dx", 1.0)):
         f = file.get(lato)
         if f is None:
             continue
-        y = segno * (lungo_e1 / 2 - s.copriferro - st.diametro - f.diametro / 2)
-        z0 = -(lungo_e2 / 2 - s.copriferro - st.diametro - f.diametro / 2)
+        y = segno * (s.b / 2 - s.copriferro - st.diametro - f.diametro / 2)
+        z0 = -(s.h / 2 - s.copriferro - st.diametro - f.diametro / 2)
         passo = (-2 * z0) / (f.n + 1)
-        barre += [Barra(y, z0 + passo * (k + 1), f.diametro) for k in range(f.n)]
-    return barre
+        piano += [Barra(y, z0 + passo * (k + 1), f.diametro) for k in range(f.n)]
+    # l'asta in piedi porta h lungo e1 e b lungo e2: le due coordinate si scambiano
+    return [Barra(x.z, x.y, x.diametro) for x in piano] if verticale else piano
 
 
 def _massa_lineare(s: Sezione, barre: list[Barra], m: Modello) -> float:
@@ -156,7 +171,10 @@ def _fattori(m: Modello, caso: str) -> dict[int, float]:
         if caso[0] == "Z" and m.azione(n) is not None:
             return {n: 1.0}
         if caso[0] == "C" and m.combinazione(n) is not None:
-            return {t.azione: t.coefficiente for t in m.combinazione(n).termini}
+            fattori: dict[int, float] = {}
+            for t in m.combinazione(n).termini:  # due termini sulla stessa azione si sommano
+                fattori[t.azione] = fattori.get(t.azione, 0.0) + t.coefficiente
+            return fattori
     raise ValueError(f"caso {caso!r} non dichiarato: i casi sono {casi_dichiarati(m)}")
 
 
@@ -169,7 +187,6 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
     `nodeDisp 2 3 = -5` e la reazione EA/L·5 corretta. Il `fix` non va tolto.
     """
     cartella = Path(cartella)
-    cartella.mkdir(parents=True, exist_ok=True)
     casi = list(dict.fromkeys(casi))  # due volte lo stesso caso sono due pattern e un'uscita sola
     for s in m.sezioni:
         r = s.riduzione
@@ -184,7 +201,9 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
         nodi_xyz[tag] = (n.x, n.y, n.z)
     prossimo_nodo = len(m.nodi) + 1
 
-    sezioni_tag = {s.id: k for k, s in enumerate(m.sezioni, start=1)}
+    # una sezione a fibre per (sezione, orientamento): la stessa 300×500 in piedi e coricata sono due
+    # geometrie diverse nel piano locale, e un tag solo darebbe alla trave l'inerzia del pilastro
+    sezioni_tag: dict[tuple[int, bool], int] = {}
     elementi: list[Elemento] = []
     mappa_asta: dict[int, list[int]] = {}
     for a in m.aste:
@@ -195,8 +214,9 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
             raise ValueError(f"asta {a.id}: i nodi {a.nodo_i} e {a.nodo_j} coincidono, la lunghezza è zero")
         asse = (q - p) / L
         e1, e2 = _terna(asse, a.rotazione_deg)
-        lungo_e1, lungo_e2 = _dimensioni_lungo(s, asse)
-        massa = _massa_lineare(s, _barre(s, lungo_e1, lungo_e2), m)
+        verticale = abs(float(asse[2])) > _COSENO_VERTICALE
+        tag_sezione = sezioni_tag.setdefault((a.sezione, verticale), len(sezioni_tag) + 1)
+        massa = _massa_lineare(s, _barre(s, verticale), m)
         tags_nodi = [mappa_nodo[a.nodo_i]]
         for k in range(1, a.suddivisioni):
             xyz = tuple(float(v) for v in p + (q - p) * k / a.suddivisioni)
@@ -205,7 +225,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
         mappa_asta[a.id] = []
         for i, j in zip(tags_nodi, tags_nodi[1:]):
             tag = len(elementi) + 1
-            elementi.append(Elemento(tag, a.id, i, j, L / a.suddivisioni, asse, e1, e2, sezioni_tag[a.sezione], massa))
+            elementi.append(Elemento(tag, a.id, i, j, L / a.suddivisioni, asse, e1, e2, tag_sezione, massa))
             mappa_asta[a.id].append(tag)
 
     # ---- carichi per caso: nodali (globali), distribuiti per elemento (vettore globale per lunghezza), cedimenti
@@ -228,7 +248,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
                     for e in per_asta[c.asta]:
                         d = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1),
                              "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[c.direzione]
-                        e.w[caso] = tuple(w + coeff * c.q * dk for w, dk in zip(e.w[caso], d))
+                        e.w[caso] = tuple(float(w + coeff * c.q * dk) for w, dk in zip(e.w[caso], d))
                 elif c.tipo == "gravita":
                     for e in elementi:
                         g = e.massa_lineare * GRAVITA
@@ -264,28 +284,27 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
     r += ["", "# --- materiali elastici (T1) e sezioni a fibre ---"]
     sezioni_senza_barre: list[int] = []
     tag_mat = 1
-    for s in m.sezioni:
+    for (id_sezione, verticale), tag_sezione in sezioni_tag.items():
+        s = m.sezione(id_sezione)
         cls = catalogo.valori(m.materiale(s.calcestruzzo)); acc = catalogo.valori(m.materiale(s.acciaio))
         r.append(f"uniaxialMaterial Elastic {tag_mat} {cls['E']:.10g}"
                  f"    ;# {m.materiale(s.calcestruzzo).classe}, sezione {s.id}")
         r.append(f"uniaxialMaterial Elastic {tag_mat + 1} {acc['E']:.10g}"
                  f"    ;# {m.materiale(s.acciaio).classe}, sezione {s.id}")
-        asse_tipo = next((e.a for e in elementi if e.sezione_tag == sezioni_tag[s.id]), np.array([1.0, 0, 0]))
-        lungo_e1, lungo_e2 = _dimensioni_lungo(s, asse_tipo)
+        lungo_e1, lungo_e2 = _dimensioni_lungo(s, verticale)
         rid = s.riduzione
         y0, y1 = -lungo_e1 / 2, lungo_e1 / 2
         z0, z1 = -lungo_e2 / 2, lungo_e2 / 2
         if rid:  # il contorno si restringe, le barre restano dove il copriferro nominale le mette
-            verticale = abs(float(asse_tipo[2])) > _COSENO_VERTICALE
             y0 += rid.inf if verticale else rid.sx; y1 -= rid.sup if verticale else rid.dx
             z0 += rid.sx if verticale else rid.inf; z1 -= rid.dx if verticale else rid.sup
         G = cls["E"] / (2 * (1 + cls["nu"]))
         gj = G * opensees._costante_torsionale(lungo_e1, lungo_e2)
         n_f = m.impostazioni_analisi.fibre
-        r.append(f"section Fiber {sezioni_tag[s.id]} -GJ {gj:.10g} {{")
+        r.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
         r.append(f"    patch rect {tag_mat} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
-        barre = _barre(s, lungo_e1, lungo_e2)
-        if not barre:
+        barre = _barre(s, verticale)
+        if not barre and s.id not in sezioni_senza_barre:
             sezioni_senza_barre.append(s.id)
         for b in barre:
             r.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_mat + 1}")
@@ -325,6 +344,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
               "remove recorders", "wipeAnalysis", f"remove loadPattern {k}", "reset"]
     r += ["", "wipe", f'set _fine [open "{opensees.NOME_FINE}" w]', f'puts $_fine "{opensees.MARCA_FINE}"',
           "close $_fine", ""]
+    cartella.mkdir(parents=True, exist_ok=True)  # dopo le validazioni: un rifiuto non lascia cartelle
     percorso = cartella / NOME_TCL
     percorso.write_text("\n".join(r), encoding="utf-8")
     resoconto = {"tcl": str(percorso), "nodi": n_nodi, "elementi": n_el, "casi": list(casi),
