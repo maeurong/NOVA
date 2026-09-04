@@ -117,22 +117,35 @@ _Avoid_: fonte, provenienza (nei report vuol dire la fonte bibliografica)
 ## Azioni e combinazioni
 
 **Azione**:
-Un carico o un insieme di carichi con una natura dichiarata (permanente,
-variabile con categoria d'uso, sismica). Ha un nome. Un'azione senza natura non
-può entrare in una combinazione.
+Un insieme di carichi con un nome e una natura NTC dichiarata (G1, G2, Q con
+categoria d'uso, E). Un'azione senza natura non può entrare in una
+combinazione. Il peso proprio è l'unica azione che il programma genera da sé;
+ogni altro carico esiste solo se l'utente lo inserisce.
 _Avoid_: carico (da solo), forza
 
+**Carico**:
+Un termine di un'azione applicato a un nodo o a un'asta: forza nodale,
+distribuito uniforme, gravità, cedimento vincolare, termico. Il termico ha il
+suo posto nel modello ma in v1 non gira: il Check Model lo rifiuta.
+_Avoid_: azione (che è l'insieme), forza (che è un tipo)
+
+**Massa**:
+Ciò che la modale muove: la densità delle aste, le masse aggiunte ai nodi e
+la quota gravitazionale delle azioni che l'utente elenca con un coefficiente
+(NTC [2.5.7], con i ψ2 scritti a mano in v1).
+_Avoid_: peso (che è una forza), carico sismico
+
 **Caso di carico**:
-Un'analisi del solutore per una singola azione o per una singola combinazione,
-con un risultato proprio e con segno. Nella linea rimossa: un campo per caso
-(`U_<CASO>`, `N_<CASO>`…).
+Una corsa del solutore per una singola azione o per una singola combinazione,
+con i carichi già sommati coi coefficienti e un risultato proprio, con segno.
+Mai sovrapposizione di casi nel post: la stessa via regge il non lineare.
 _Avoid_: combinazione, step, pattern
 
 **Combinazione**:
-Somma pesata di azioni secondo la norma (fondamentale, caratteristica,
-frequente, quasi permanente, sismica), con i coefficienti γ e ψ che citano la
-tabella da cui vengono. Una combinazione è generata dal programma o corretta a
-mano: le due cose si distinguono. Come mostrarlo a video: **[DA DECIDERE]**.
+Somma pesata di azioni con coefficienti e un tipo NTC facoltativo
+(fondamentale, caratteristica, frequente, quasi permanente, sismica). In v1 la
+scrive l'utente; quando il programma la genererà, generata e corretta a mano
+resteranno distinte. Come mostrarlo a video: **[DA DECIDERE]**.
 _Avoid_: caso di carico, load case
 
 **Inviluppo**:
@@ -143,9 +156,29 @@ _Avoid_: massimo (da solo)
 **Combinazione modale**:
 Composizione dei risultati per modo (SRSS o CQC) e della regola del 30 % fra
 direzioni. Produce grandezze **senza segno** che non appartengono a nessun caso
-di carico: il modello dati deve prevederle come cosa distinta. La linea rimossa
-le escludeva per contratto.
+di carico: nei risultati ha un posto suo, marcato «senza segno», anche se v1
+non la calcola.
 _Avoid_: combinazione (da sola), inviluppo
+
+**Analisi**:
+Ciò che una corsa esegue: statica su un elenco di casi di carico, oppure
+modale con un numero di modi fisso o «automatico» fino alla soglia di massa
+partecipante. La modale non è un caso di carico.
+_Avoid_: calcolo, run (che è la corsa intera)
+
+**Corsa**:
+Un'esecuzione del solutore su uno stato del modello: produce un file di
+risultati a sé, con l'impronta del modello, la versione di OpenSees, il deck e
+la mappa fra identificatori e tag. Se il modello cambia, la corsa resta e i
+suoi risultati sono **stantii**: mostrati, mai cancellati.
+_Avoid_: run, sessione
+
+**Stazione**:
+Punto lungo un'asta in cui il solutore restituisce le sollecitazioni: i punti
+di integrazione degli elementi, ricomposti sull'asta come frazione della
+lunghezza. Non le sole estremità: con un carico distribuito il momento fra le
+estremità non è lineare.
+_Avoid_: sezione (che è la forma), nodo
 
 ## Analisi
 
@@ -185,10 +218,11 @@ _Avoid_: check, controllo (che è il termine dei controlli sul modello e sui
 risultati, non sulla norma)
 
 **Verdetto**:
-Esito di una verifica o di un controllo. Ha **tre** valori, non due: passato,
-non passato, **non applicabile**. Non applicabile non è non passato e non è
-passato: un controllo che non vale per un modello (`applicabile: False`) non è
-mai verde. Ereditato dalla tabella dei sette verdetti di `solve.py`.
+Esito di una verifica o di un controllo. Ha **tre** valori in un solo campo,
+non due: passato, non passato, **non applicabile**. Non applicabile non è non
+passato e non è passato: un controllo che non vale per un modello non è mai
+verde. Porta la ragione, l'oggetto, il caso e, per le verifiche, l'articolo
+di norma e i valori. Vive nel file della corsa.
 _Avoid_: esito (troppo generico), risultato, OK/KO
 
 **Controllo**:
@@ -230,9 +264,10 @@ _Avoid_: output, dump
 
 **Modello dati**:
 La rappresentazione interna del telaio con sezioni, armature, materiali,
-vincoli, azioni, combinazioni e norma. È indipendente dal solutore e dagli
+vincoli, azioni, combinazioni e analisi. È indipendente dal solutore e dagli
 importatori. Su disco: un file JSON per modello, con versione dello schema e
-unità dichiarate (mm, N, MPa, t, s); i risultati stanno in un file a parte.
+unità dichiarate (mm, N, MPa, t, s); ogni corsa scrive il suo file di
+risultati a parte, mai dentro il modello.
 _Avoid_: schema, modello (da solo)
 
 **Importatore**:
@@ -266,7 +301,8 @@ Identificatori, non parole: restano ASCII e invariati in ogni lingua.
 - Marcatori della linea rimossa, se riusati: `MESHREC_FINE`, `fine.out`,
   `WARNING` (senza asterisco: `ccx` scrive `*WARNING`).
 - Classi d'acciaio e calcestruzzo secondo NTC: `B450C`, `C25/30`.
-- Nomi dei campi di risultato, se il contratto resta: `U_<CASO>`, `N_<CASO>`,
-  `V_<CASO>`, `M_<CASO>`, `MODO_<n>`.
+- Nomi dei campi di risultato della linea rimossa, solo leggendo i suoi
+  `.vtu`: `U_<CASO>`, `N_<CASO>`, `V_<CASO>`, `M_<CASO>`, `MODO_<n>`. NOVA non
+  li produce.
 - Articoli di norma nella forma della norma: `§7.3.3.1`, `[4.1.45]`,
   `Tab. 2.5.I`.
