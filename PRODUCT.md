@@ -91,10 +91,14 @@ e NTC §10.2.1 chiede riproducibilità, quindi nessun numero può dipendere da u
 LLM (`04-funzioni-intelligenti.md` §5, § responsabilità).
 `[DA DECIDERE AL BRAINSTORMING — vedi docs/ricerca/README.md §3 domanda 17]`.
 
-Finestra nativa (menu, dock, associazione file) dal primo giorno o dopo:
-`[DA DECIDERE AL BRAINSTORMING — vedi docs/ricerca/README.md §3 domanda 12]`.
-Proiezione in aula prevista: `[DA DECIDERE AL BRAINSTORMING — vedi
-docs/ricerca/README.md §3 domanda 16]`.
+Finestra nativa (menu, dock, associazione file): dopo la tesi (Rust/Tauri
+scartato per v1, ticket #2). Proiezione in aula: sì, discussione dal vivo.
+Aula dichiarata (ticket #14): schermo di 2 m di base, ultimo posto a 8 m,
+1920 px → 20 arcmin = 45 px di altezza carattere. Modo presentazione (tasto
+`P`): albero e pannello destro ritratti, barra dei tasti e cronologia
+nascoste, viewport con scala e striscia compatta dei controlli; etichette nel
+viewport ≥ 46 px, testo dei pannelli ≥ 32 px, aste ≥ 6 px, nodi ≥ 14 px,
+contrasto ≥ 3:1. È un layout a sé, non lo zoom del browser.
 
 ## Capabilities and Constraints
 
@@ -179,9 +183,18 @@ messaggi di commit. Gli identificatori tecnici restano invariati.
 verificato, dichiara ciò che non lo è, distingue un esito negativo documentato
 da un fallimento. Vale per etichette e messaggi dell'interfaccia.
 
-**Convenzioni grafiche** (M sul lato teso; rosso = compressione o rosso =
-fallito; scala della deformata sempre dichiarata): `[DA DECIDERE AL
-BRAINSTORMING — vedi docs/ricerca/README.md §3 domanda 15]`.
+**Convenzioni grafiche** (decise il 04/09/2026, ticket #14): tema chiaro,
+mondo «colonna tensegrale» (fondo `#dcdad5`, inchiostro `#141414`, un solo
+rosso `#b8321e`, mono tabulare per i numeri). Il rosso vuol dire una cosa
+sola: attenzione (selezione, fallito, risultati stantii). Diagrammi M/V/N in
+inchiostro con riempimento tratteggiato; M sul lato teso, etichetta al picco
+con segno (+ = fibre inferiori tese); segno di N dal tratteggio, non da un
+secondo colore; scalari sulle aste con viridis e legenda, mai rainbow; tutto
+leggibile in B/N. Scala della deformata sempre stampata «×n (auto | a mano)»
+nel viewport e in ogni export, ombra indeformata di default. Unità dichiarate
+in un punto e su ogni numero. Fallimento a doppio canale (rosso + tratto +
+etichetta + riga in tabella); verdetti a tre stati con punto pieno / vuoto /
+rosso e testo. Niente percentuali inventate: fasi nominate, durata misurata.
 
 Nessuna identità visiva d'ateneo da rispettare è stata dichiarata per questo
 progetto.
