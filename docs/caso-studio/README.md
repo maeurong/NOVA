@@ -12,10 +12,10 @@ modella il solo telaio in cemento armato (decisione di Mario, 05/09/2026).
   base della zapata alla sommità (250 + 1520 + 180 in corte; 1945 in alzado: differenza di 5 mm fra
   le due viste, si prende 175 per la trave come nella tabella dei volumi).
 - Pianta: due zapatas 700 × 700 alle estremità, trave inferiore 250 (larghezza) fra le due, pilastri
-  172 × 172 centrati sulle zapatas; asse dei pilastri a 700/2 = 350 dal bordo esterno → interasse
-  pilastri 2700 − 2·350 = **2000**? No: in alzado i pilastri stanno a 133 dal bordo, quindi asse a
-  133 + 86 = **219** dal bordo e interasse **2262** (2090 netti + 172). La pianta disegna i pilastri
-  a 350: le due viste non coincidono; **vale l'alzado (2262) per la luce, da confermare con Mario**.
+  172 × 172 sulle zapatas. In alzado i pilastri stanno a 133 dal bordo: asse a 133 + 86 = 219 dal
+  bordo, **interasse 2262** (2090 netti + 172). In pianta i pilastri sembrano centrati sulle zapatas
+  (asse a 350, interasse 2000): le due viste non coincidono. **Vale l'alzado (2262), da confermare
+  con Mario.**
 
 | membro | b × h | lunghezza | n. | volume cad. |
 |---|---|---|---|---|
