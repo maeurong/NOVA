@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unita": "mm-N-MPa-t-s",
+  "contatori": {"nodo": 2, "asta": 1, "sezione": 2, "materiale": 2, "azione": 1, "combinazione": 0},
+  "materiali": [
+    {"id": 1, "nome": "C25/30", "tipo": "calcestruzzo", "classe": "C25/30"},
+    {"id": 2, "nome": "B450C", "tipo": "acciaio", "classe": "B450C"}
+  ],
+  "sezioni": [
+    {"id": 2, "nome": "30×50 3+3Ø16", "b": 300, "h": 500, "calcestruzzo": 1, "acciaio": 2, "copriferro": 30,
+     "file": [{"lato": "inf", "n": 3, "diametro": 16}, {"lato": "sup", "n": 3, "diametro": 16}],
+     "staffe": {"diametro": 8, "passo": 150, "bracci": 2}}
+  ],
+  "nodi": [
+    {"id": 1, "nome": "cerniera", "x": 0, "y": 0, "z": 0,
+     "vincolo": {"ux": true, "uy": true, "uz": true, "rx": true}},
+    {"id": 2, "nome": "carrello", "x": 6000, "y": 0, "z": 0,
+     "vincolo": {"uy": true, "uz": true, "rx": true}}
+  ],
+  "aste": [
+    {"id": 1, "nodo_i": 1, "nodo_j": 2, "sezione": 2, "suddivisioni": 2}
+  ],
+  "azioni": [
+    {"id": 1, "nome": "carico di esercizio", "natura": "G2",
+     "carichi": [{"tipo": "distribuito", "asta": 1, "q": -10, "direzione": "z"}]}
+  ],
+  "combinazioni": [],
+  "analisi": [{"tipo": "statica", "casi": ["Z1"]}]
+}

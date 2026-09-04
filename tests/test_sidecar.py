@@ -460,3 +460,245 @@ def test_un_solo_dof_bloccato_su_un_nodo_basta(chiedi):
     m["nodi"][0]["vincolo"] = {"uz": True}  # un solo grado, un solo nodo: non e' un falso rifiuto
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     assert _esiti(r[-1]["verdetti"])["vincoli"] == "passato"
+
+
+# ---------------------------------------------------------------- il deck .tcl
+
+
+def _deck(chiedi, cartella, modello, **extra):
+    (r,) = chiedi({"id": 1, "comando": "deck", "modello": modello, "cartella": str(cartella), **extra})
+    return r[-1]
+
+
+def _tcl(cartella):
+    return (cartella / "13_telaio.tcl").read_text(encoding="utf-8")
+
+
+def test_il_deck_scrive_fix_dai_vincoli_dichiarati(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"))
+    assert r["esito"] == "ok"
+    tcl = _tcl(tmp_path)
+    assert tcl.count("\nfix ") == 3 and "fix 1 1 1 1 1 1 1" in tcl
+    assert "eleLoad -ele" in tcl and "-beamUniform" in tcl
+    assert "load 4 20000 0 0 0 0 0" in tcl
+    assert "section 3 force" in tcl and "MESHREC_FINE" in tcl
+    assert r["resoconto"]["casi"] == ["Z1", "Z2", "C1", "Z3"]  # Z3 = peso proprio generato
+
+
+def test_la_combinazione_somma_i_carichi_con_i_coefficienti(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=["C1"])
+    assert "load 4 30000 0 0 0 0 0" in _tcl(tmp_path)  # 1,5 × 20 000
+    tot = r["resoconto"]["carico_totale"]["C1"]
+    assert abs(tot[0] - 30000) < 1e-6 and abs(tot[2] - (-1.5 * 12.5 * 9000)) < 1e-6
+
+
+def test_il_carrello_lascia_ux_libero(chiedi, tmp_path):
+    _deck(chiedi, tmp_path, leggi_fixture("trave_appoggiata.nova.json"))
+    tcl = _tcl(tmp_path)
+    # i nodi del modello tengono i tag 1..N: il nodo interno della suddivisione prende il 3
+    assert "fix 1 1 1 1 1 0 0" in tcl and "fix 2 0 1 1 1 0 0" in tcl
+
+
+def test_le_suddivisioni_creano_nodi_interni(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("trave_appoggiata.nova.json"))
+    res = r["resoconto"]
+    assert res["nodi"] == 3 and res["elementi"] == 2 and res["mappa_asta"]["1"] == [1, 2]
+    assert res["mappa_nodo"] == {"1": 1, "2": 2}
+
+
+@pytest.mark.parametrize("caso", ["Z9", "C9"])
+def test_il_deck_rifiuta_un_caso_non_dichiarato(chiedi, tmp_path, caso):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=[caso])
+    assert r["esito"] == "errore" and r["fase"] == "deck" and caso in r["motivo"]
+    assert "Z1" in r["motivo"] and "C1" in r["motivo"]  # i casi validi
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+@pytest.mark.parametrize("caso", ["pippo", 5, "Z"])
+def test_il_deck_rifiuta_un_caso_di_forma_sbagliata(chiedi, tmp_path, caso):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=[caso])
+    assert r["esito"] == "errore" and r["fase"] == "deck" and str(caso) in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_il_cedimento_scrive_sp(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 3, "nome": "cedimento", "natura": "G1",
+                        "carichi": [{"tipo": "cedimento", "nodo": 2, "uz": -5.0}]})
+    m["contatori"]["azione"] = 3
+    _deck(chiedi, tmp_path, m, casi=["Z3"])
+    assert "sp 2 3 -5" in _tcl(tmp_path)  # uz del nodo 2, già bloccato dal suo fix
+
+
+def test_il_cedimento_tutto_nullo_non_scrive_sp(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 3, "nome": "cedimento", "natura": "G1",
+                        "carichi": [{"tipo": "cedimento", "nodo": 2}]})
+    m["contatori"]["azione"] = 3
+    r = _deck(chiedi, tmp_path, m, casi=["Z3"])
+    assert r["esito"] == "ok" and "\n    sp " not in _tcl(tmp_path)
+
+
+def test_senza_analisi_statiche_resta_il_solo_peso_proprio(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["analisi"] = []
+    r = _deck(chiedi, tmp_path, m, casi=[])
+    assert r["resoconto"]["casi"] == ["Z3"]
+
+
+def test_i_casi_duplicati_danno_un_solo_pattern(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=["Z1", "Z1"])
+    tcl = _tcl(tmp_path)
+    assert r["resoconto"]["casi"] == ["Z1"]
+    assert tcl.count("pattern Plain") == 1 and tcl.count("Z1_spostamenti.out") == 1
+
+
+def test_azione_senza_carichi_da_pattern_vuoto(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"][1]["carichi"] = []
+    r = _deck(chiedi, tmp_path, m, casi=["Z2"])
+    assert r["esito"] == "ok" and r["resoconto"]["carico_totale"]["Z2"] == [0.0, 0.0, 0.0]
+    assert "pattern Plain 1 1 {\n}" in _tcl(tmp_path)
+
+
+def test_asta_a_lunghezza_zero_forzata_nomina_lasta(chiedi, tmp_path):
+    m = leggi_fixture("asta_lunghezza_zero.nova.json")
+    m["nodi"][6]["z"] = 3200  # esattamente sopra il nodo 4: l'asta 6 è lunga zero
+    r = _deck(chiedi, tmp_path, m, forza=True)
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "asta 6" in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_asta_di_un_millimetro_con_una_suddivisione(chiedi, tmp_path):
+    m = leggi_fixture("trave_appoggiata.nova.json")
+    m["nodi"][1]["x"] = 1
+    m["aste"][0]["suddivisioni"] = 1
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "ok" and r["resoconto"]["elementi"] == 1
+    assert "node 2 1 0 0" in _tcl(tmp_path)
+
+
+@pytest.mark.parametrize("asse", [(0.0, 0.0, 1.0), (0.0316069, 0.0, 0.9995004)])
+def test_lasta_verticale_prende_la_y_globale(asse):
+    import numpy as np
+    from nova.deck import _terna
+    e1, e2 = _terna(np.array(asse), 0.0)
+    assert tuple(e2) == (0.0, 1.0, 0.0) and not np.isnan(e1).any()
+
+
+def test_lasta_a_coseno_099_prende_la_proiezione_di_z():
+    import numpy as np
+    from nova.deck import _terna
+    a = np.array([math.sqrt(1 - 0.99 ** 2), 0.0, 0.99])
+    e1, e2 = _terna(a, 0.0)
+    assert abs(float(np.dot(e2, a))) < 1e-12 and e2[2] > 0.0
+    assert abs(float(np.linalg.norm(e2)) - 1.0) < 1e-12 and not np.isnan(e1).any()
+
+
+@pytest.mark.parametrize("gradi", [90, -90])
+def test_la_rotazione_cambia_il_vecxz(chiedi, tmp_path, gradi):
+    dritta = leggi_fixture("trave_appoggiata.nova.json")
+    ruotata = leggi_fixture("trave_appoggiata.nova.json")
+    ruotata["aste"][0]["rotazione_deg"] = gradi
+    _deck(chiedi, tmp_path / "a", dritta)
+    r = _deck(chiedi, tmp_path / "b", ruotata)
+    assert r["esito"] == "ok"
+    prima = [x for x in _tcl(tmp_path / "a").splitlines() if x.startswith("geomTransf")]
+    dopo = [x for x in _tcl(tmp_path / "b").splitlines() if x.startswith("geomTransf")]
+    assert prima != dopo and "nan" not in "".join(dopo)
+
+
+def test_sezione_senza_staffe_finisce_in_sezioni_senza_barre(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    del m["sezioni"][0]["staffe"]
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "ok" and r["resoconto"]["sezioni_senza_barre"] == [1]
+
+
+def test_barre_che_non_ci_stanno_nominano_la_sezione(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0]["copriferro"] = 140  # 140 + 8 + 8 ≥ 300/2: i due strati si attraversano
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "sezione 1" in r["motivo"]
+
+
+def test_la_riduzione_che_divora_la_sezione_e_rifiutata(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0]["riduzione"] = {"sup": 150, "inf": 150}
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "sezione 1" in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_classe_di_materiale_ignota_e_leggibile(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["materiali"][0].update({"classe": "C99/110", "personalizzato": True})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and "C99/110" in r["motivo"]
+
+
+def test_il_distribuito_nullo_non_scrive_eleload(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for c in m["azioni"][0]["carichi"]:
+        c["q"] = 0
+    r = _deck(chiedi, tmp_path, m, casi=["Z1"])
+    assert r["esito"] == "ok" and "eleLoad" not in _tcl(tmp_path)
+
+
+def test_la_massa_nodale_nulla_non_scrive_mass(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"][3]["massa_nodale"] = 0
+    _deck(chiedi, tmp_path, m)
+    assert "\nmass " not in _tcl(tmp_path)
+
+
+def test_la_massa_nodale_dichiarata_scrive_mass(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"][3]["massa_nodale"] = 1.25
+    _deck(chiedi, tmp_path, m)
+    assert "mass 4 1.25 1.25 1.25 0 0 0" in _tcl(tmp_path)
+
+
+def test_la_cartella_inesistente_viene_creata(chiedi, tmp_path):
+    fuori = tmp_path / "corsa" / "uno"
+    r = _deck(chiedi, fuori, leggi_fixture("telaio_2x1.nova.json"))
+    assert r["esito"] == "ok" and (fuori / "13_telaio.tcl").exists()
+
+
+def test_la_cartella_non_scrivibile_da_errore_di_fase_deck(chiedi, tmp_path):
+    chiusa = tmp_path / "chiusa"
+    chiusa.mkdir()
+    chiusa.chmod(0o500)
+    try:
+        r = _deck(chiedi, chiusa / "dentro", leggi_fixture("telaio_2x1.nova.json"))
+    finally:
+        chiusa.chmod(0o700)
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "Errno 13" in r["motivo"]
+
+
+def test_il_coefficiente_zero_azzera_e_il_negativo_inverte(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["combinazioni"][0]["termini"] = [{"azione": 1, "coefficiente": 0}, {"azione": 2, "coefficiente": -1}]
+    r = _deck(chiedi, tmp_path, m, casi=["C1"])
+    tcl = _tcl(tmp_path)
+    assert r["esito"] == "ok" and "load 4 -20000 0 0 0 0 0" in tcl and "eleLoad" not in tcl
+
+
+def test_il_carico_totale_del_peso_proprio_pesa_le_aste(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=["Z3"])
+    tot = r["resoconto"]["carico_totale"]["Z3"]
+    # volume 2 214·10⁶ mm³: cls solo → 55 350 N, con le barre d'acciaio poco più
+    assert abs(tot[0]) < 1e-9 and abs(tot[1]) < 1e-9 and -57000 < tot[2] < -55000
+
+
+def test_il_deck_rifiuta_il_modello_bocciato_dal_check(chiedi, tmp_path):
+    m = leggi_fixture("nodo_libero.nova.json")
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "check"
+    assert any(v["esito"] == "non_passato" for v in r["verdetti"])
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_forza_scavalca_il_check(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("nodo_libero.nova.json"), forza=True)
+    assert r["esito"] == "ok" and (tmp_path / "13_telaio.tcl").exists()

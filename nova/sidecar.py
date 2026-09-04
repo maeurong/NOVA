@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from nova import check as _check
+from nova import deck as _deck
 from nova import modello as _modello
 
 COMANDI = ("verifica", "check", "deck", "corsa", "fine")
@@ -36,11 +38,41 @@ def comando_check(req: dict) -> dict:
     return {"esito": "rifiutato" if _check.rifiutato(verdetti) else "ok", "verdetti": verdetti}
 
 
+def _casi_delle_analisi(m) -> list[str]:
+    """I casi delle analisi statiche dichiarate, più il peso proprio generato se non c'è già."""
+    casi: list[str] = []
+    for an in m.analisi:
+        if an.tipo == "statica":
+            casi += [c for c in an.casi if c not in casi]
+    peso = next(f"Z{a.id}" for a in m.azioni if a.generata)
+    if peso not in casi:
+        casi.append(peso)
+    return casi
+
+
+def comando_deck(req: dict) -> dict:
+    """Il deck si scrive dopo il Check Model: `forza` scavalca il rifiuto, non lo cancella."""
+    m, _ = _carica(req)
+    verdetti = _check.check_model(m)
+    if _check.rifiutato(verdetti) and not req.get("forza"):
+        bocciati = [v["controllo"] for v in verdetti if v["esito"] == "non_passato"]
+        return {"esito": "errore", "fase": "check", "verdetti": verdetti,
+                "motivo": f"il Check Model rifiuta il modello: {', '.join(bocciati)} "
+                          "(rilancia con «forza»: true per scrivere lo stesso)"}
+    try:
+        d = _deck.scrivi(m, req.get("casi") or _casi_delle_analisi(m), Path(req.get("cartella") or "corsa"))
+    except (ValueError, OSError) as e:
+        raise _Rifiuto("deck", str(e)) from None
+    return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
+
+
 def rispondi(req: dict, emetti) -> dict:
     comando = req.get("comando")
     try:
         if comando == "check":
             return comando_check(req)
+        if comando == "deck":
+            return comando_deck(req)
         if comando == "fine":
             return {"esito": "ciao"}
         return {"esito": "errore", "fase": "protocollo",
