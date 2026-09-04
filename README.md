@@ -4,13 +4,11 @@ Software di modellazione e analisi strutturale per telai in cemento armato, con
 [OpenSees](https://opensees.berkeley.edu/) come solutore e le verifiche a
 NTC 2018. Applicazione locale, per macOS e Windows.
 
-## Stato al 04/09/2026
+## Stato al 05/09/2026
 
-**Non esiste codice.** Esiste una ricerca preliminare, chiusa il 04/09/2026, e
-nient'altro. Il brainstorming di prodotto non è ancora stato fatto: nessuna
-decisione su perimetro, utenti, stack, licenza o nome è stata presa. Le
-diciassette domande che il brainstorming deve chiudere stanno in
-[`docs/ricerca/README.md`](docs/ricerca/README.md), §3.
+**Lo scaffold è presente.** Pacchetto `nova` installabile, copie verbatim di
+MeshRec in `meshrec/core/` con impronta sha256 verificata da test
+(`meshrec/IMPRONTE.md`). Test: `uv run pytest`.
 
 Tre fatti sono già stabiliti dalla ricerca, misurati e non opinabili:
 
@@ -22,9 +20,10 @@ Tre fatti sono già stabiliti dalla ricerca, misurati e non opinabili:
   `COPYRIGHT` del repository e la documentazione ufficiale non coincidono; la
   ruota OpenSeesPy vieta la redistribuzione commerciale senza licenza
   (`docs/ricerca/01-opensees-integrazione.md`, §3).
-- **Circa 1.500 righe sono già scritte e testate**, nella cronologia di MeshRec
-  a `9716f6e`: scrittura del modello a fibre per OpenSees, telaio dal prior
-  geometrico, collocazione delle armature, combinazioni NTC
+- **Circa 2.300 righe sono già scritte e testate** (misurate il 04/09/2026:
+  1037+452+308+530), nella cronologia di MeshRec a `9716f6e`: scrittura del
+  modello a fibre per OpenSees, telaio dal prior geometrico, collocazione
+  delle armature, combinazioni NTC
   (`docs/ricerca/05-archeologia-linea-integrata.md`, §7).
 
 ## A chi serve

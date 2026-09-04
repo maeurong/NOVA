@@ -10,22 +10,23 @@ OpenSees come solutore, verifiche a NTC 2018, applicazione locale per macOS e
 Windows. Completa il lato analisi di MeshRec (`~/GitHub/Tesi`), che si chiude al
 deck `.inp`.
 
-Il progetto attraversa tre fasi in sequenza. Al 04/09/2026 la prima è chiusa e
-la seconda non è iniziata:
+Il progetto attraversa tre fasi in sequenza. Al 05/09/2026 tutte e tre sono
+chiuse:
 
 1. **Ricerca** — chiusa il 04/09/2026. Otto report in `docs/ricerca/`, sintesi
    in `docs/ricerca/README.md`.
-2. **Brainstorming** — da fare. Chiude le diciassette domande aperte di
-   `docs/ricerca/README.md` §3 e produce le decisioni di prodotto.
-3. **Spec** — da scrivere dopo il brainstorming, in `docs/superpowers/specs/`.
+2. **Brainstorming** — chiuso. Le diciassette domande aperte di
+   `docs/ricerca/README.md` §3 hanno prodotto le decisioni di prodotto.
+3. **Spec** — chiusa il 05/09/2026:
+   `docs/superpowers/specs/2026-09-05-nova-v1-design.md`.
 
-Solo dopo la spec si scrive codice.
+Il codice si scrive dai piani in `docs/superpowers/plans/`, uno per task.
 
 ## Cosa NON fare adesso
 
-- **Nessun codice prima della spec.** Non esiste `src/`, non esiste
-  `pyproject.toml`, e non devono esistere finché la spec non è approvata. Un
-  prototipo usa-e-getta per rispondere a una domanda di design è ammesso solo se
+- **Nessun codice fuori da un piano.** La spec è approvata, il codice si scrive
+  dai piani in `docs/superpowers/plans/`, non a memoria. Un prototipo
+  usa-e-getta per rispondere a una domanda di design è ammesso solo se
   dichiarato tale e non committato.
 - **Nessuna modifica a `~/GitHub/Tesi`.** Il repository della tesi è in sola
   lettura da qui. Il codice riusabile si legge dalla sua cronologia git (vedi
@@ -36,8 +37,8 @@ Solo dopo la spec si scrive codice.
   chiude Mario nel brainstorming. Se un task le presuppone decise, fermati e
   chiedi. Le raccomandazioni in §4 dello stesso file sono raccomandazioni, non
   decisioni: ciascuna è marcata «non decisioni» nel report che la produce.
-- **Nessun ADR.** `docs/adr/` non esiste perché non c'è ancora una decisione da
-  registrare. Si crea quando la prima arriva.
+- **ADR solo per decisioni difficili da invertire**, in `docs/adr/`. Non ogni
+  decisione ne merita uno.
 
 ## Vincoli già noti e misurati
 
@@ -70,9 +71,8 @@ Questi non si riaprono nel brainstorming: sono fatti misurati, non opinioni.
   Righe misurate il 04/09/2026: 1037, 452, 308, 530. Inventario, firme
   pubbliche, cosa è riusabile e cosa l'autore stesso marca «non deciso»:
   `docs/ricerca/05-archeologia-linea-integrata.md` §1, §2, §4, §7.
-- **OpenSees non è installato sulla macchina di sviluppo** (`which OpenSees`
-  vuoto al 04/09/2026, `05-*.md` §2). I test sul binario vero non girano qui
-  finché non lo si installa.
+- **OpenSees è installato** (`~/.local/bin/OpenSees`, 3.8.0, misurato il
+  05/09/2026). I test sul binario vero possono girare.
 
 ## Regola di casa, ereditata da MeshRec
 
@@ -133,17 +133,18 @@ Attuale:
 ├── AGENTS.md        questo file
 ├── CONTEXT.md       glossario del dominio
 ├── PRODUCT.md       bozza di prodotto, schema impeccable
+├── pyproject.toml   pacchetto nova, dipendenze, config pytest
+├── nova/            codice del prodotto
+├── meshrec/         copie verbatim da MeshRec (Tesi@9716f6e), impronte in IMPRONTE.md
+├── tests/           test pytest
+├── static/          segnaposto, vuota fino a T5
 └── docs/
-    ├── README.md    indice di docs/
-    └── ricerca/     otto report + sintesi, chiusi il 04/09/2026
-```
-
-Prevista, quando servirà:
-
-```
-docs/
-├── superpowers/specs/   spec di design, dopo il brainstorming
-└── adr/                 decisioni architetturali, YYYY-MM-DD-<slug>.md
+    ├── README.md            indice di docs/
+    ├── ricerca/             otto report + sintesi, chiusi il 04/09/2026
+    ├── adr/                 decisioni architetturali difficili da invertire
+    └── superpowers/
+        ├── specs/           spec di design
+        └── plans/           piani di esecuzione, uno per task
 ```
 
 ## Grafo di conoscenza (graphify)
@@ -160,8 +161,9 @@ parole.
   `/graphify --update` prima di chiudere la sessione — non `graphify update .`
   da riga di comando (le due vie tengono contabilità diverse, vedi
   `~/CLAUDE.md`). Un grafo scaduto è falso in silenzio.
-- Il grafo non contiene codice perché non esiste codice. Quando arriverà, la
-  parte AST è gratuita; i documenti costano estrazione semantica.
+- Il grafo non contiene ancora il codice aggiunto con lo scaffold: si aggiorna
+  con `/graphify --update` a fine sessione. La parte AST è gratuita; i
+  documenti costano estrazione semantica.
 
 ## Agent skills
 
