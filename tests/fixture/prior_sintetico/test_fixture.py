@@ -5,6 +5,7 @@ Solo stdlib: nessuna dipendenza da MeshRec, la fixture e' versionata apposta.
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,8 +46,20 @@ def test_zero_membrature_non_scrive_e_riporta_le_scartate(tmp_path):
     assert not (tmp_path / "12_wall.json").exists()
 
 
-def test_un_nan_fa_fallire_il_generatore_senza_scrivere(tmp_path):
-    esito = {"membrature": [{"lunghezza": float("nan")}], "giunzioni": [], "scartate": []}
+@pytest.mark.parametrize("valore", [float("nan"), float("inf")])
+def test_un_nan_o_inf_fa_fallire_il_generatore_senza_scrivere(tmp_path, valore):
+    esito = {"membrature": [{"lunghezza": valore}], "giunzioni": [], "scartate": []}
     with pytest.raises(ValueError):
         _genera().scrivi(esito, tmp_path / "12_wall.json")
+    assert not (tmp_path / "12_wall.json").exists()
+
+
+def test_senza_meshrec_il_generatore_si_ferma_all_import_senza_scrivere(tmp_path, monkeypatch):
+    modulo = _genera()
+    monkeypatch.setattr(sys, "path", list(sys.path))  # main() antepone TESI a sys.path
+    monkeypatch.setattr(modulo, "TESI", tmp_path / "tesi_assente")
+    monkeypatch.setattr(modulo, "QUI", tmp_path)
+    with pytest.raises(ModuleNotFoundError) as errore:
+        modulo.main()
+    assert errore.value.name == "test_wall"
     assert not (tmp_path / "12_wall.json").exists()

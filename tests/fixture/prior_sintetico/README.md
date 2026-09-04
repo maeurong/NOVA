@@ -88,6 +88,7 @@ Chiavi di ogni membratura: `asse`, `asse_ideale`, `base_sezione`, `contorno`,
 ## Test
 
 `test_fixture.py` (pytest, solo stdlib): file presente, JSON valido, chiavi
-`membrature` e `giunzioni`, `len(membrature) == 4`; più le due guardie del
-generatore (zero membrature → non scrive e riporta le `scartate`; NaN →
-`ValueError`, non scrive). Nessuna dipendenza da MeshRec.
+`membrature` e `giunzioni`, `len(membrature) == 4`; più le tre guardie del
+generatore (zero membrature → non scrive e riporta le `scartate`; NaN o inf →
+`ValueError`, non scrive; MeshRec non importabile → `ModuleNotFoundError`
+prima di ogni scrittura). Nessuna dipendenza da MeshRec.
