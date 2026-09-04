@@ -1,0 +1,14 @@
+# derivati e ambiente
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.cache/
+.pytest_cache/
+graphify-out/
+runs/
+
+# artefatti di sessione
+.scratch-ui/
+*.log
