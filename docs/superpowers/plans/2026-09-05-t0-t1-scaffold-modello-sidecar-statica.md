@@ -27,6 +27,54 @@
 
 ---
 
+## Annotazione di architect
+
+Scritta il 05/09/2026 da `main` @ `6561030`, dopo aver letto il piano intero e la spec, e verificato le firme di MeshRec con `git -C /Users/mario/GitHub/Tesi show 9716f6e:meshrec/src/meshrec/core/<file>.py` — non a memoria. Non riscrive nessuno step: aggiunge assegnazione, sequenza, skill-gate, contratto degli ingressi (sezione `## Ingressi degeneri` in ogni task) e le incoerenze trovate.
+
+### Assegnazione e skill-gate
+
+| Task | Subagente | Skill-gate | Perché |
+|---|---|---|---|
+| 1 | `coder` | **false** | Scaffold meccanico dettato riga per riga: copie via `git show`, stub, `pyproject.toml`, un test di fumo, due paragrafi di doc. Nessuna logica di dominio, nessuna scelta. `coder` non ha il tool `Skill`: coerente con il gate a false. `backend-engineer` sarebbe sprecato. |
+| 2 | `backend-engineer` | **true** | Modello dati e protocollo: TDD sui test di Step 1 prima del codice. |
+| 3 | `backend-engineer` | **true** | Dodici controlli con oracolo: TDD sulle fixture malate. |
+| 4 | `backend-engineer` | **true** | Qui sta la fisica (terne, proiezione dei carichi, barre, tag): TDD, e il lancio a mano di Step 5 è una misura, non un test. |
+| 5 | `backend-engineer` | **true** | Corsa e letture; i test sul binario saltano senza `OpenSees`, il solutore finto no. |
+| 6 | `backend-engineer` | **true** | Ponte HTTP; `apri`/`salva` prendono percorsi dal corpo: `security-reviewer` obbligatorio nel round. |
+
+Il gate vale per task: l'agente invoca almeno una skill del proprio roster prima di chiudere (per chi scrive codice, il TDD); quale skill, la sceglie lui. Dentro un task gated gli step di commit e le fixture JSON restano meccanici e non richiedono una skill a parte.
+
+### Sequenziamento
+
+Tutto sequenziale: **1 → 2 → 3 → 4 → 5 → 6**. Nessun gruppo parallelo.
+
+- Task 1 da solo, su `feat/scaffold`, PR e merge prima degli altri: 2–6 importano `meshrec.core.*` e usano il venv che crea.
+- 2 → 3 → 4 → 5 condividono `nova/sidecar.py` e `tests/test_sidecar.py`; 4 consuma `modello`/`catalogo` di 2; 5 consuma `deck.Deck`, `Elemento`, `XI_LOBATTO`, `STAZIONI` di 4.
+- Task 6 **non** parte in parallelo a Task 5 pur toccando file disgiunti (`nova/server.py`, `nova/__main__.py`, `static/`, `tests/test_server.py`): (a) `test_salute` chiama `verifica` e `test_corsa_e_risultati` chiama `corsa`, comandi che esistono solo dopo Task 5; (b) stesso ramo e stesso worktree: Task 5 Step 5 fa `git add nova/corsa.py nova/sidecar.py tests` e trascinerebbe nel proprio commit il `tests/test_server.py` di Task 6. Il parallelo costerebbe un worktree e un rebase per guadagnare meno di mezza giornata: non vale.
+- Round di review pre-merge (`security-reviewer`, `code-reviewer`, `test-writer`, `craft-reviewer`) in parallelo, una volta per PR: due PR (`feat/scaffold`, `feat/sidecar-statica`).
+
+### Incoerenze trovate (segnalate, non corrette)
+
+1. **`tests/__init__.py` contro `from conftest import leggi_fixture`.** Task 1 crea `tests/__init__.py`; Task 2–6 importano `from conftest import ...`. Con `__init__.py` pytest (importmode `prepend`) mette in `sys.path` la radice del repo, non `tests/`, e `import conftest` fallisce. Misurato il 05/09/2026 nello scratchpad con `uv run --no-project --with pytest python -m pytest -q`: con `__init__.py` → `ModuleNotFoundError: No module named 'conftest'`; senza → `1 passed`. Togliere `tests/__init__.py` da Task 1 (o scrivere `from tests.conftest import`).
+2. **Campi di `VoceMateriale`.** `catalogo.py` (Task 2 Step 3) legge `voce.E_cm`, `voce.f_ck`; i nomi a `9716f6e` (`materiali.py:133-144`) sono `young`, `poisson`, `density`, `f_k`, `f_ctm` (`f_ctm` è `None` per l'acciaio). Il piano lo dichiara ipotesi: questi sono i nomi giusti.
+3. **Classe di materiale ignota esce come `KeyError`, non `fase modello`.** `materiali.trova` (`materiali.py:438-452`) solleva `KeyError`; `rispondi` traduce solo `_Rifiuto` e manda ogni altra eccezione in `fase: sidecar`. `catalogo.valori` è chiamato solo da `deck.scrivi` (Task 4): `C99/99` oggi darebbe `errore fase sidecar, motivo "KeyError: classe di materiale sconosciuta…"`, non `fase modello` come promette Task 2 Step 3. Va tradotto (in `catalogo`, o con un controllo C1 sui materiali).
+4. **`run.hash_modello` non coincide mai con l'impronta di `apri`/`salva`.** `_carica` del sidecar applica `assicura_peso_proprio` prima di tutto: Task 5 calcola `impronta(m)` su un modello con l'azione `Z<n>` in più e `contatori.azione` incrementato; Task 6 `salva`/`apri` restituiscono `impronta(carica(...))` senza peso proprio. Spec: «`hash_modello` diverso dall'impronta corrente = risultati stantii» — con queste due impronte ogni corsa nasce stantia. Un solo punto per l'impronta (calcolarla prima di `assicura_peso_proprio`, o escludere le azioni generate dal canonico).
+5. **Fase sbagliata sulle letture dei recorder.** `comando_corsa` (Task 5 Step 3) cattura `ValueError` → `fase: deck`; ma `opensees._ultima_riga` (`opensees.py:645-680`) solleva `ValueError` su recorder vuoto o troncato, e un `.out` mancante è `FileNotFoundError` → `fase: sidecar`. Entrambi sono `fase: solutore` con il nome del file.
+6. **Riferimenti che il Check Model non vede.** Carico nodale o cedimento su nodo inesistente, distribuito su asta inesistente, termine di combinazione su azione inesistente, sezione con `calcestruzzo`/`acciaio` inesistenti: nessun controllo C1 li copre (`sezione_nulla` guarda solo l'esistenza della sezione). In `deck.scrivi` diventano `KeyError`/`AttributeError` → `errore fase sidecar` illeggibile. Servono in C1 (un controllo `riferimenti` che nomina l'id), perché il rifiuto arrivi prima del deck come dice la spec.
+7. **Impronte del prototipo.** Task 1 Step 3 rimanda a `prototype/sidecar/README.md`, che su `main` non esiste: sta sul ramo `prototype/sidecar` (`git -C /Users/mario/GitHub/NOVA show prototype/sidecar:prototype/sidecar/README.md`). E l'ordine nella parentesi del piano assegna `330bcef8…` ad armatura e `14a5036b…` a config, mentre il README dice `config.py 330bcef8…`, `armatura.py 14a5036b…`. Il test confronta i valori misurati, quindi non rompe; confonde chi verifica a occhio.
+8. **`AGENTS.md` dice ancora «Nessun ADR».** Task 1 Step 6 modifica AGENTS.md ma non tocca «Nessun ADR. `docs/adr/` non esiste»; da questo commit `docs/adr/` esiste. Da aggiornare nello stesso passo.
+9. **`sp` su un dof già `fix`.** `test_il_cedimento_scrive_sp` impone `uz` al nodo 2, che è incastrato: il deck scrive `fix 2 1 1 1 1 1 1` e poi `sp 2 3 -5` sullo stesso dof. Con `constraints Transformation` è un dof con due SP_Constraint; il test legge solo il testo del deck e nessun test lo fa girare. Misurarlo nel Task 5 Step 4 con il binario, oppure scegliere che il cedimento sostituisca il `fix` su quel dof.
+10. **Coordinate non finite passano.** `json.loads` accetta `NaN` e `Infinity`, il `float` di pydantic li accetta: un nodo con `x: NaN` supera `carica`, il Check Model non lo vede (`math.dist` con `nan` è falso su ogni confronto) e finisce nel deck. È la classe dei fix di Tesi `282cb9f` («coordinate finite») e `2a9e377` («ingressi non finiti fallisce chiuso»). Rifiutare in `carica` (`allow_inf_nan=False` nella `ConfigDict`).
+11. **`schema_version` sconosciuta letta come 1.** `carica` accetta qualunque intero (`MIGRAZIONI` vuoto, nessun confronto con la versione corrente): un file `schema_version: 2` scritto da una NOVA futura viene letto in silenzio. Rifiutare con messaggio.
+
+Minori: `nova/__main__.py` usa `Path("corse")` relativa alla cwd; `salva` fa `corpo["percorso"]` → `KeyError` → 500 muto se il campo manca; Task 6 Step 3 e Task 4 Step 5 usano `cd … && …`, la forma che le regole di sessione vietano (percorsi assoluti, un comando per chiamata).
+
+### ADR
+
+`docs/adr/2026-09-05-deck-scritto-da-nova.md` — il deck lo scrive NOVA, non `opensees.scrivi_tcl`. Prima decisione registrata del progetto.
+
+---
+
 ## File structure
 
 ```
@@ -67,6 +115,12 @@ Rami: Task 1 su `feat/scaffold`; Task 2–6 su `feat/sidecar-statica` (aperto da
 **Interfaces:**
 - Consumes: niente.
 - Produces: pacchetti importabili `nova`, `meshrec.core.opensees`, `meshrec.core.solve`, `meshrec.core.armatura`, `meshrec.core.config`, `meshrec.core.materiali`; comando `uv run pytest`.
+
+## Ingressi degeneri
+- `git show 9716f6e:…/<file>.py` fallisce (Tesi assente, commit sconosciuto) → nessun file scritto in `meshrec/core/` (la redirezione `>` crea un file vuoto anche su errore: controllare `$?` o usare `set -e`), non una copia vuota con impronta
+- `meshrec/IMPRONTE.md` con `<incolla>` non sostituito → `test_le_impronte_coincidono_con_i_file` fallisce (la regex chiede 64 esadecimali), non passa con zero righe
+- una copia modificata dopo l'estrazione → il test la nomina (`opensees.py: la copia non è più quella dichiarata`), non un `assert` muto
+- `config.py` importa `yaml` senza `pyyaml` installato → `test_i_moduli_si_importano` fallisce all'import, si aggiunge la dipendenza, non si tocca la copia
 
 - [ ] **Step 1: Ramo e ambiente**
 
@@ -221,6 +275,26 @@ Apri la PR con `gh pr create --base main --head feat/scaffold --title "chore(sca
   - `nova.modello.casi_dichiarati(m: Modello) -> list[str]` (`"Z<id>"` per azione, `"C<id>"` per combinazione);
   - `nova.catalogo.valori(materiale: Materiale) -> dict[str, float]` con chiavi `E`, `densita`, `nu`, e per il calcestruzzo `fck`, `fcm`, `fctm`, per l'acciaio `fyk`;
   - `nova.sidecar.servi(ingresso, uscita)` e `nova.sidecar.rispondi(req: dict, emetti) -> dict`; comandi `verifica | check | deck | corsa | fine`, in questo task solo `fine`, sconosciuto, e `check` limitato alla validazione (`fase: modello`).
+
+## Ingressi degeneri
+- riga non JSON → `errore`, `fase: protocollo`, `id: null`, e il processo risponde alla riga dopo
+- riga vuota o di soli spazi → ignorata, nessuna risposta, nessuna eccezione
+- riga JSON che non è un oggetto (`[1, 2]`, `"ciao"`, `42`) → `errore fase protocollo` con `id: null`, non `AttributeError`
+- richiesta senza `id` → risposta con `id: null`, non `KeyError`
+- comando sconosciuto → `errore fase protocollo` che nomina il comando e i cinque validi; il sidecar continua
+- EOF senza `fine` → `servi` ritorna, non solleva
+- `modello` assente o `null` → `errore fase modello`, motivo «il modello deve essere un oggetto JSON»
+- modello vuoto `{"schema_version": 1, "unita": "mm-N-MPa-t-s"}` → `carica` lo accetta (liste vuote), è il Check Model di Task 3 a rifiutarlo
+- campo sconosciuto a qualunque profondità (`nodi[0].colore`) → `errore fase modello` con il percorso del campo nel motivo
+- `unita` diversa da `mm-N-MPa-t-s` → `errore fase modello`
+- `schema_version` assente → trattata come 1; `schema_version` maggiore della corrente → rifiuto esplicito con la versione, non lettura silenziosa (incoerenza 11)
+- coordinata o valore `NaN`/`Infinity` (JSON li ammette) → `errore fase modello`, non un modello che passa (incoerenza 10)
+- azione con `natura: "Q"` senza `categoria` → `errore fase modello` che nomina l'azione
+- `Materiale` con `classe` ignota → l'errore nomina la classe e il catalogo, mai un traceback `KeyError` (incoerenza 3)
+- `personalizzato: true` con `valori: {}` → valori di norma, nessun errore; `personalizzato: false` con `valori` pieni → i valori sono ignorati, vince la tabella
+- `assicura_peso_proprio` chiamata due volte → una sola azione generata
+- `contatori.azione` più basso del massimo `id` presente → il nuovo id è `max + 1`, mai un id riusato
+- stesso modello con chiavi in ordine diverso o con `null` espliciti → stessa `impronta`; una coordinata cambiata di 1 mm → impronta diversa
 
 - [ ] **Step 1: Test del protocollo (falliscono)**
 
@@ -826,6 +900,27 @@ EOF
 - Consumes: `nova.modello.Modello`.
 - Produces: `nova.check.check_model(m: Modello) -> list[dict]`, ogni verdetto `{"controllo": str, "esito": "passato"|"non_passato"|"non_applicabile", "ragione": str, "oggetto": list|dict|None, "azione": str|None}`; `nova.check.rifiutato(verdetti) -> bool`; costante `nova.check.TOLLERANZA_MM = 1.0`.
 
+## Ingressi degeneri
+- modello vuoto (zero nodi, zero aste) → `rifiutato` con `massa_nulla: non_passato` e `vincoli: non_passato`, nessuna eccezione
+- nodi senza nessuna asta → `nodi_liberi: non_passato` con gli id e azione «elimina il nodo»
+- asta con `nodo_i` o `nodo_j` inesistente → `aste_sconnesse: non_passato` con l'id, non `KeyError`
+- asta con `nodo_i == nodo_j` → `aste_sconnesse`, non `aste_lunghezza_zero` (che richiede due nodi veri)
+- due nodi a meno di 1 mm (`TOLLERANZA_MM`) → `nodi_coincidenti` con la coppia; tre nodi coincidenti → tutte e tre le coppie
+- nodo a esattamente 1,0 mm da un altro → non coincidente (la soglia è `<`, dichiararlo nel test)
+- asta più corta di 1 mm → `aste_lunghezza_zero` e, se gli estremi sono entro 1 mm, anche `nodi_coincidenti`
+- due aste sugli stessi due nodi, anche con verso invertito (`i→j` e `j→i`) → `aste_duplicate`
+- nodo che cade su un'asta a `t = 0` o `t = 1` (cioè coincide con un estremo) → `nodi_coincidenti`, non `nodo_su_asta`
+- nodo a 1 mm dall'asse di un'asta → `nodo_su_asta` con `[nodo, asta]` e azione «spezza asta»; a 2 mm → passato
+- asta con `sezione` inesistente → `sezione_nulla: non_passato` con l'id
+- sezione con `calcestruzzo` o `acciaio` inesistenti → `non_passato` che nomina sezione e materiale, non `AttributeError` nel deck (incoerenza 6)
+- carico nodale/cedimento su nodo inesistente, distribuito su asta inesistente, termine di combinazione su azione inesistente, `analisi.casi` con `Z`/`C` inesistente → `non_passato` con l'id, prima del deck (incoerenza 6)
+- nessun nodo vincolato → `vincoli: non_passato` con azione «vincola un nodo»; tutti i nodi incastrati su sei gradi → `vincoli: non_passato` «non resta nulla da calcolare»
+- un solo nodo vincolato con un solo grado bloccato → `vincoli: passato` (il moto rigido lo dice `autovalori` dopo la corsa), non un falso rifiuto
+- carico `termico` in qualunque azione → `carico_termico: non_passato` con azione «togli il carico termico»
+- coordinate in metri scritte per errore (telaio di 5 × 3,2 mm) → il Check Model passa (l'unità è dichiarata giusta): lo prende `spostamenti` in C3, non C1 — dichiararlo, non fingere un controllo
+- `moti_rigidi` → sempre `non_applicabile` prima della corsa, mai `passato`
+- l'insieme dei controlli è sempre lo stesso, dodici + `carico_termico`, anche su modello sano: nessun controllo omesso perché «non c'era niente da dire»
+
 - [ ] **Step 1: Fixture malate**
 
 Le tre fixture partono da `telaio_2x1.nova.json` e cambiano una cosa sola:
@@ -1067,6 +1162,28 @@ EOF
   - `nova.deck.NOME_TCL = "13_telaio.tcl"`, `nova.deck.STAZIONI = 5`, `nova.deck.XI_LOBATTO = (0.0, 0.1726731646, 0.5, 0.8273268354, 1.0)`, `nova.deck.GRAVITA = 9806.65`;
   - nomi delle uscite per caso: `f"{caso}_spostamenti.out"`, `f"{caso}_reazioni.out"`, `f"{caso}_localforce.out"`, `f"{caso}_sez{k}.out"` per `k` in 1..5;
   - comando sidecar `deck {modello, casi?, cartella}` → `{"esito": "ok", "tcl": str, "resoconto": {...}}`.
+
+## Ingressi degeneri
+- caso `Z9` o `C9` non dichiarato → `errore fase deck` che nomina il caso e i casi validi, nessun file scritto a metà
+- `casi` con un elemento che non è una stringa `[ZC]\d+` (`"pippo"`, `5`, `"Z"`) → `errore fase deck`, non `TypeError`/`ValueError` di `int()`
+- `casi: []` o assente → i casi delle analisi statiche più il peso proprio generato; nessuna analisi statica dichiarata → il solo peso proprio
+- `casi` con duplicati (`["Z1", "Z1"]`) → un solo pattern per caso, i recorder non si sovrascrivono
+- azione senza carichi in un caso → pattern vuoto, `carico_totale` `(0, 0, 0)`; è `reazioni` in C3 a dirlo `non_passato`, non il deck a sollevare
+- asta a lunghezza esattamente zero con `forza: true` → `errore fase deck` che nomina l'asta, nessun `nan` nel `.tcl`
+- `suddivisioni: 1` su un'asta di 1 mm → un elemento, `L = 1`, deck valido
+- `suddivisioni: 2` → un nodo interno con tag `N + 1`, `mappa_asta[id] == [t1, t2]`, i nodi del modello tengono i tag 1…N nell'ordine del file
+- asta esattamente verticale e asta a coseno 0,9995 con `z` → terna definita, `e2 = (0, 1, 0)`, nessun `nan`; asta a coseno 0,99 → `e2` dalla proiezione di `z`
+- `rotazione_deg: 90` e `rotazione_deg: -90` → `e1`/`e2` ruotati, `geomTransf` con `vecxz` diverso, deck valido
+- sezione con `file` ma senza `staffe` (o viceversa) → nessuna barra e il `resoconto` lo dichiara (`sezioni_senza_barre`), non silenzio
+- barre che non ci stanno (copriferro + staffa + mezza barra ≥ h/2) → `armatura.colloca` solleva `ValueError` → `errore fase deck` che nomina la sezione
+- `riduzione` che divora la sezione (`sup + inf ≥ h`) → `errore fase deck`, non una `patch rect` ad area negativa
+- classe di materiale ignota → errore leggibile con la classe, non `KeyError` (incoerenza 3)
+- carico distribuito con `q: 0` → nessuna riga `eleLoad`; `massa_nodale: 0` → nessuna riga `mass`
+- cedimento su un dof già `fix` → comportamento misurato con il binario in Task 5 e scritto nel docstring, non assunto (incoerenza 9)
+- cedimento con tutte le componenti `null` → nessuna riga `sp`, nessun errore
+- `cartella` inesistente → creata; `cartella` non scrivibile → `errore fase deck` con il motivo dell'OS, non traceback
+- combinazione con coefficiente `0` o negativo → carichi moltiplicati come dichiarato (0 azzera, negativo inverte), nessun rifiuto
+- `carico_totale` del caso = Σ nodali + Σ (w · L) per elemento, peso proprio compreso: sul telaio 2×1 la componente z di `C1` è `−1,5 · 12,5 · 9000`
 
 - [ ] **Step 1: Fixture `tests/fixture/trave_appoggiata.nova.json`**
 
@@ -1498,6 +1615,29 @@ EOF
   - `nova.corsa.SEGNO_MY = +1.0` e `SEGNO_MZ = +1.0` (costanti misurate: il momento positivo tende le fibre inferiori);
   - comando sidecar `verifica {solutore?}` → `{esito: ok | rotto | assente, percorso, motivo, dove_prenderlo}`; `corsa {modello, casi?, cartella, solutore?, forza?}` → `{esito: ok | rifiutato | errore | assente, risultati?, verdetti_check, secondi}` con gli eventi di fase `check model`, `scrivo il deck e lancio OpenSees`, `leggo i recorder`.
 
+## Ingressi degeneri
+- solutore non nel PATH e non dichiarato → `esito: assente` con `dove_prenderlo`, non `errore`
+- `solutore` dichiarato che non è un file → `assente` con il percorso nel motivo, **nessun ripiego sul PATH** (`solve._trova`, misurato a `9716f6e`)
+- binario che parte ma non scrive `fine.out` (esce 0, stampa `WARNING`) → `errore fase solutore`, motivo con «marcatore», `coda_log` con le ultime righe
+- `fine.out` presente ma senza `MESHREC_FINE` → `errore fase solutore` (il marcatore è il testo, non il file)
+- `analyze` ≠ 0 su un caso → `exit 1` prima del marcatore → `errore fase solutore` e il nome del caso in `coda_log`
+- recorder `.out` vuoto o con una riga troncata → `errore fase solutore` che nomina il file, non `fase: deck` (incoerenza 5)
+- recorder `.out` mancante dopo il marcatore → `errore fase solutore` che nomina il file, non `FileNotFoundError` in `fase: sidecar`
+- registro con byte non UTF-8 → decodifica con `replace`, nessun `UnicodeDecodeError`; `coda_log` resta leggibile
+- corsa oltre `_TIMEOUT_S` (600 s) → `errore fase solutore` con «timeout», non `TimeoutExpired` in `fase: sidecar`
+- `.out` di una corsa precedente nella stessa cartella → cancellati prima del lancio, nessuna lettura stantia
+- `Version` assente dal registro → `versione_opensees: null`, non eccezione
+- `forza: true` con Check Model `non_passato` → la corsa parte e `verdetti_check` riporta il rifiuto; senza `forza` → `rifiutato` e nessun `13_telaio.tcl` scritto
+- caso con `carico_totale` nullo → `reazioni: non_passato` con `scarto_relativo: null`, nessuna divisione per zero (`solve.controlla_reazioni`)
+- modello di un solo nodo forzato (`dimensione` 0) o spostamenti vuoti → `spostamenti: non_passato`, non `ZeroDivisionError` né `max()` su sequenza vuota
+- `u_max` `inf`/`nan` (solutore che diverge) → `spostamenti: non_passato`, mai `passato`
+- zero `WARNING` → `avvisi: passato`; uno o più → `non_passato` con il conteggio; `*WARNING` con asterisco non conta (è il marcatore di `ccx`)
+- `picco`, `vincolo_in_pianta`, `autovalori`, `massa_modale` → sempre `non_applicabile` in una corsa statica, con la ragione; mai `passato`
+- `_COLONNE_SEZIONE` diverso da 4 sul binario vero → `_ultima_riga` rifiuta il conteggio e l'errore nomina il file: si corregge la costante, non si legge a metà
+- il segno di `My` sulla trave appoggiata → misurato una volta (`SEGNO_MY`), scritto nel commento con la data
+- `risultati.nova.risultati.json` scritto anche quando un controllo C3 è `non_passato`: il verdetto sta nel file, non impedisce il file
+- due casi nella stessa corsa → il secondo parte da spostamenti nulli (`reset`); se non è così sul binario, la misura va nel docstring e `test_due_casi_sono_indipendenti` la dimostra
+
 - [ ] **Step 1: Test con il binario (saltano senza)**
 
 `tests/test_corsa_binario.py`:
@@ -1823,6 +1963,25 @@ EOF
   - `nova.server.SidecarInProcesso.chiedi(req: dict) -> list[dict]` (righe, eventi compresi) e `SidecarProcesso` (stesso metodo, su `python -m nova.sidecar` in sottoprocesso, una richiesta alla volta);
   - `nova.server.create_app(sidecar, cartella_corse: Path) -> FastAPI`;
   - rotte: `GET /api/salute` → `{"nova": versione, "solutore": <verifica>}`; `POST /api/check {modello}` → risposta finale del sidecar; `POST /api/corsa {modello, casi?}` → `{run_id, ...risposta finale}` con la corsa in `cartella_corse/<run_id>/`; `GET /api/risultati/{run_id}` → il JSON scritto; `POST /api/modello/apri {percorso}` → `{modello}`; `POST /api/modello/salva {percorso, modello}` → `{ok, impronta}`; `GET /` → `static/index.html`.
+
+## Ingressi degeneri
+- `POST /api/modello/apri` con percorso inesistente → 404 con `motivo`
+- `apri` con percorso di una cartella → 404, non `IsADirectoryError`
+- `apri` con file che non è JSON o con campo sconosciuto → 400 con `motivo` che nomina il campo
+- `apri` senza `percorso` nel corpo → 400 con `motivo`, non `KeyError` → 500
+- `POST /api/modello/salva` senza `percorso` → 400 con `motivo`, non `KeyError` → 500 muto
+- `salva` su cartella non scrivibile (o percorso che è una cartella) → 500 con `motivo` che riporta l'errore dell'OS, non traceback
+- `salva` con modello invalido → 400 con il campo, nessun file scritto
+- `salva` poi `apri` dello stesso file → stesso modello, stessa `impronta` (e la stessa di `run.hash_modello` di una corsa sullo stesso file — incoerenza 4)
+- `POST /api/check` senza `modello` → 400, `fase: modello`; corpo che non è un oggetto JSON → 4xx con motivo, non 500
+- `check` su modello che il Check Model rifiuta → 200 con `esito: rifiutato` (il rifiuto è una risposta, non un errore HTTP)
+- `POST /api/corsa` con solutore assente → 200 con `esito: assente` e `dove_prenderlo`
+- `corsa` con `errore fase solutore` → 200 con `esito: errore`, `fase`, `coda_log`; solo `fase: modello` è 400
+- `GET /api/risultati/{run_id}` inesistente → 404; `run_id` con `..` o `/` → 404, nessuna lettura fuori da `cartella_corse`
+- `SidecarProcesso`: il sidecar chiude lo stdout → la richiesta torna `errore fase sidecar`, il server non si blocca in `readline`
+- `SidecarProcesso`: righe con `id` diverso da quello atteso → ignorate, non consumate come risposta
+- `GET /` → 200 con `static/index.html`; `static/` assente all'avvio → l'errore è all'avvio (`create_app`), non alla prima richiesta
+- `python -m nova` con porta 8765 occupata → messaggio che nomina la porta, non traceback di `uvicorn`
 
 - [ ] **Step 1: Test (falliscono)**
 
