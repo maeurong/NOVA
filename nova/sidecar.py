@@ -1,0 +1,70 @@
+"""Il sidecar: una riga JSON per richiesta su stdin, righe JSON con lo stesso `id` su stdout.
+
+Eventi di fase prima (`{"evento": "fase", "nome": ...}`), risposta finale poi. Non muore mai:
+ogni eccezione diventa `esito: errore` con `fase` e `motivo` (spec: «Protocollo del sidecar»).
+"""
+from __future__ import annotations
+
+import json
+import sys
+
+from nova import modello as _modello
+
+COMANDI = ("verifica", "check", "deck", "corsa", "fine")
+
+
+class _Rifiuto(Exception):
+    def __init__(self, fase: str, motivo: str):
+        super().__init__(motivo)
+        self.fase, self.motivo = fase, motivo
+
+
+def _carica(req: dict):
+    try:
+        return _modello.assicura_peso_proprio(_modello.carica(req.get("modello")))
+    except ValueError as e:
+        raise _Rifiuto("modello", str(e)) from None
+
+
+def comando_check(req: dict) -> dict:
+    m = _carica(req)
+    return {"esito": "ok", "verdetti": [], "nodi": len(m.nodi), "aste": len(m.aste)}
+
+
+def rispondi(req: dict, emetti) -> dict:
+    comando = req.get("comando")
+    try:
+        if comando == "check":
+            return comando_check(req)
+        if comando == "fine":
+            return {"esito": "ciao"}
+        return {"esito": "errore", "fase": "protocollo",
+                "motivo": f"comando sconosciuto: {comando!r} (uno fra {', '.join(COMANDI)})"}
+    except _Rifiuto as r:
+        return {"esito": "errore", "fase": r.fase, "motivo": r.motivo}
+    except Exception as e:  # il sidecar sopravvive e riporta
+        return {"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}
+
+
+def servi(ingresso=sys.stdin, uscita=sys.stdout) -> None:
+    def scrivi(riga: dict) -> None:
+        uscita.write(json.dumps(riga, ensure_ascii=False, default=str) + "\n")
+        uscita.flush()
+
+    for riga in ingresso:
+        if not riga.strip():
+            continue
+        try:
+            req = json.loads(riga)
+        except json.JSONDecodeError as e:
+            scrivi({"id": None, "esito": "errore", "fase": "protocollo", "motivo": f"richiesta non JSON: {e}"})
+            continue
+        rid = req.get("id") if isinstance(req, dict) else None
+        risposta = rispondi(req if isinstance(req, dict) else {}, lambda ev: scrivi({"id": rid, **ev}))
+        scrivi({"id": rid, **risposta})
+        if risposta.get("esito") == "ciao":
+            return
+
+
+if __name__ == "__main__":
+    servi()
