@@ -145,6 +145,23 @@ docs/
 └── adr/                 decisioni architetturali, YYYY-MM-DD-<slug>.md
 ```
 
+## Grafo di conoscenza (graphify)
+
+Il repository ha un grafo in `graphify-out/` (non versionato, si rigenera),
+costruito il 04/09/2026 sulle otto ricerche e sui file di base: 558 nodi,
+1082 archi, 33 comunità etichettate. Serve a orientarsi senza rileggere 40 000
+parole.
+
+- Prima di grep sui documenti: `graphify query "<domanda>"`; per una relazione
+  fra due concetti `graphify path "<A>" "<B>"`; per un concetto
+  `graphify explain "<concetto>"`. Panoramica: `graphify-out/GRAPH_REPORT.md`.
+- **Freschezza, vincolante**: dopo aver modificato o aggiunto documenti,
+  `/graphify --update` prima di chiudere la sessione — non `graphify update .`
+  da riga di comando (le due vie tengono contabilità diverse, vedi
+  `~/CLAUDE.md`). Un grafo scaduto è falso in silenzio.
+- Il grafo non contiene codice perché non esiste codice. Quando arriverà, la
+  parte AST è gratuita; i documenti costano estrazione semantica.
+
 ## Roster e ciclo di sviluppo
 
 Il roster dei subagenti, il ciclo di sviluppo e le sue regole vincolanti sono in
