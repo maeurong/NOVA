@@ -2,7 +2,8 @@
 
 Prior geometrico pieno per i test dell'importatore di NOVA (ticket #16).
 Generato **una volta** da MeshRec su un telaio sintetico con membrature ben
-separate: la nuvola vera del laboratorio dà un prior vuoto, questa no.
+separate: la nuvola vera del laboratorio dà un prior vuoto (spec v1, «Fatti misurati»:
+run `lab_telaio_v2`, una regione con 4 215 879 punti) **[V]**, questa no.
 Ogni numero con **[M]** è misurato, non dichiarato.
 
 ## Provenienza
@@ -10,7 +11,7 @@ Ogni numero con **[M]** è misurato, non dichiarato.
 - Comando (dalla cartella di questo README):
   `/Users/mario/GitHub/Tesi/meshrec/.venv/bin/python genera.py`
 - Repo Tesi (MeshRec): commit `cb6ef7ea182390200a0b79123c12f01aac7d638b`
-  (`git -C /Users/mario/GitHub/Tesi rev-parse HEAD`, albero pulito) **[M]**
+  (`git -C /Users/mario/GitHub/Tesi rev-parse HEAD`, albero pulito) **[V]**
 - Data di generazione: 2026-09-05
 - Python: 3.12.13 del venv della tesi **[M]**
 - sha256 di `12_wall.json`:
@@ -27,25 +28,28 @@ Ogni numero con **[M]** è misurato, non dichiarato.
 
 È `TELAIO` di `meshrec/tests/test_wall.py:33`, campionato con
 `synth.sample_frame_surface(TELAIO, SPAZIATURA)` (`meshrec/core/synth.py:194`),
-`SPAZIATURA = 20,0` mm (`test_wall.py:39`). Quattro prismi, origine e
-dimensioni in mm (x, y, z):
+`SPAZIATURA = 20.0` (20,0 mm, `test_wall.py:39`) **[V]**. Quattro prismi, origine e
+dimensioni in mm (x, y, z); la sezione nominale è scritta (y, x), cioè spessore
+in y per primo, nello stesso ordine di `sezione` misurata più sotto:
 
 | membratura         | origine              | dimensioni            | sezione nominale |
 |--------------------|----------------------|-----------------------|------------------|
-| montante sinistro  | (0, −90, 0)          | (200, 180, 1600)      | 200 × 180        |
-| montante destro    | (1400, −130, 0)      | (200, 260, 1600)      | 200 × 260        |
+| montante sinistro  | (0, −90, 0)          | (200, 180, 1600)      | 180 × 200        |
+| montante destro    | (1400, −130, 0)      | (200, 260, 1600)      | 260 × 200        |
 | traverso superiore | (0, −70, 1600)       | (1600, 140, 300)      | 140 × 300        |
 | traverso inferiore | (0, −170, −300)      | (1600, 340, 300)      | 340 × 300        |
 
 **Attenzione al ticket #10.** Le «6 membrature» e le sezioni nominali
 `[700×250, 250×250, 172×172, 140×175]` citate lì vengono da
-`meshrec/casi/lab_telaio.yaml:116-121`: sono i **riscontri del provino
+`meshrec/casi/lab_telaio.yaml:116-121` **[V]**: sono i **riscontri del provino
 reale** (tavola MURO 1, obra 0021), non un telaio sintetico. Nella tesi non
 esiste un telaio sintetico a 6 membrature (`docs/ricerca/05-archeologia-linea-integrata.md:151`
 di NOVA lo dice già: «banco sintetico … 4 membrature»). Questa fixture dà
 quindi **4 membrature, non 6**; il test dell'importatore che parla di «sei
 membrature → 120 aste» va letto come «4 membrature → 80 aste» (20 fette
-ciascuna **[M]**), oppure il ticket #10 va corretto.
+ciascuna **[M]**). La spec v1 (`docs/superpowers/specs/2026-09-05-nova-v1-design.md`,
+«Testing Decisions») è già corretta a quattro membrature; il ticket #10 resta
+com'era, con questa nota.
 
 ## Contenuto misurato
 
@@ -87,8 +91,10 @@ Chiavi di ogni membratura: `asse`, `asse_ideale`, `base_sezione`, `contorno`,
 
 ## Test
 
-`test_fixture.py` (pytest, solo stdlib): file presente, JSON valido, chiavi
+`test_fixture.py` (pytest; nessuna dipendenza da MeshRec, serve solo `pytest`):
+file presente, JSON valido, chiavi
 `membrature` e `giunzioni`, `len(membrature) == 4`; più le tre guardie del
 generatore (zero membrature → non scrive e riporta le `scartate`; NaN o inf →
 `ValueError`, non scrive; MeshRec non importabile → `ModuleNotFoundError`
-prima di ogni scrittura). Nessuna dipendenza da MeshRec.
+prima di ogni scrittura). Comando, finché NOVA non ha il proprio venv:
+`/Users/mario/GitHub/Tesi/meshrec/.venv/bin/python -m pytest -q tests/fixture/prior_sintetico`.

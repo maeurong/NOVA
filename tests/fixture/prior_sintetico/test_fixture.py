@@ -25,6 +25,7 @@ def _genera():
 def test_la_fixture_esiste_ed_e_json_con_membrature_e_giunzioni():
     assert FIXTURE.is_file()
     esito = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    json.dumps(esito, allow_nan=False)  # NaN/Infinity passano json.loads: lo stesso oracolo del generatore
     assert "membrature" in esito
     assert "giunzioni" in esito
 
