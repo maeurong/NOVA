@@ -137,6 +137,7 @@ Attuale:
 ├── nova/            codice del prodotto
 ├── meshrec/         copie verbatim da MeshRec (Tesi@9716f6e), impronte in IMPRONTE.md
 ├── tests/           test pytest
+├── static/          segnaposto, vuota fino a T5
 └── docs/
     ├── README.md            indice di docs/
     ├── ricerca/             otto report + sintesi, chiusi il 04/09/2026
@@ -160,8 +161,9 @@ parole.
   `/graphify --update` prima di chiudere la sessione — non `graphify update .`
   da riga di comando (le due vie tengono contabilità diverse, vedi
   `~/CLAUDE.md`). Un grafo scaduto è falso in silenzio.
-- Il grafo non contiene codice perché non esiste codice. Quando arriverà, la
-  parte AST è gratuita; i documenti costano estrazione semantica.
+- Il grafo non contiene ancora il codice aggiunto con lo scaffold: si aggiorna
+  con `/graphify --update` a fine sessione. La parte AST è gratuita; i
+  documenti costano estrazione semantica.
 
 ## Agent skills
 

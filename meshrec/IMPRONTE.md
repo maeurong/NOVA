@@ -6,6 +6,10 @@ vuoti perché `solve.py` li importa.
 
 Impronte misurate con `shasum -a 256` sui file di questa cartella, non copiate dal piano.
 
+L'estrazione (`git show … > tmp && mv`) è un procedimento manuale one-shot, non
+uno script versionato: chi la rifà deve rimisurare le impronte, non fidarsi di
+questa tabella a occhio.
+
 | file | sha256 |
 |---|---|
 | opensees.py | 601049e790a55ee7cb0821acbd1c6b281767e757bf1a87d56a216080299db07b |

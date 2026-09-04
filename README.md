@@ -20,9 +20,10 @@ Tre fatti sono già stabiliti dalla ricerca, misurati e non opinabili:
   `COPYRIGHT` del repository e la documentazione ufficiale non coincidono; la
   ruota OpenSeesPy vieta la redistribuzione commerciale senza licenza
   (`docs/ricerca/01-opensees-integrazione.md`, §3).
-- **Circa 1.500 righe sono già scritte e testate**, nella cronologia di MeshRec
-  a `9716f6e`: scrittura del modello a fibre per OpenSees, telaio dal prior
-  geometrico, collocazione delle armature, combinazioni NTC
+- **Circa 2.300 righe sono già scritte e testate** (misurate il 04/09/2026:
+  1037+452+308+530), nella cronologia di MeshRec a `9716f6e`: scrittura del
+  modello a fibre per OpenSees, telaio dal prior geometrico, collocazione
+  delle armature, combinazioni NTC
   (`docs/ricerca/05-archeologia-linea-integrata.md`, §7).
 
 ## A chi serve
