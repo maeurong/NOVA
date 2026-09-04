@@ -252,6 +252,14 @@ con che perimetro: **[DA DECIDERE]**.
 _Avoid_: report (che in MeshRec è un'altra cosa), tabulato (che è l'allegato,
 non la relazione)
 
+**Confronto**:
+La stessa struttura risolta come telaio in NOVA e come solido in CalculiX o
+Abaqus, messa a fianco per caso e grandezza con lo scarto e il bias atteso.
+Senza una prova di carico è **verifica del codice**, non validazione, e si
+scrive così. La prima riga è la massa dei due modelli. NOVA lancia CalculiX
+da sé sul deck importato; da Abaqus legge una tabella esportata.
+_Avoid_: validazione (senza prova), benchmark (che è un caso pubblicato)
+
 ## Solutore
 
 **Solutore**:
