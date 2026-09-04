@@ -96,6 +96,7 @@ def test_riga_json_non_oggetto_risponde_errore_protocollo(corpo):
     sidecar.servi(io.StringIO(corpo + "\n"), uscita)
     riga = json.loads(uscita.getvalue().splitlines()[0])
     assert riga["esito"] == "errore" and riga["fase"] == "protocollo" and riga["id"] is None
+    assert riga["motivo"] == "la richiesta deve essere un oggetto JSON"
 
 
 def test_richiesta_senza_id_risponde_id_null():
@@ -200,6 +201,24 @@ def test_nuovo_id_azione_non_riusa_il_massimo_dei_contatori():
     m = assicura_peso_proprio(carica(d))
     generata = [a for a in m.azioni if a.generata][0]
     assert generata.id == 6
+
+
+def test_carica_restituisce_modello_e_impronta_senza_peso_proprio():
+    from nova import sidecar
+    from nova.modello import carica, impronta
+    d = leggi_fixture("telaio_2x1.nova.json")
+    attesa = impronta(carica(d))  # impronta calcolata sul modello com'è nel file, senza peso proprio
+    m, imp = sidecar._carica({"modello": d})
+    assert imp == attesa
+    assert any(a.generata for a in m.azioni)
+
+
+def test_impronta_di_carica_stabile_su_chiamate_ripetute():
+    from nova import sidecar
+    d = leggi_fixture("telaio_2x1.nova.json")
+    _, imp1 = sidecar._carica({"modello": d})
+    _, imp2 = sidecar._carica({"modello": d})
+    assert imp1 == imp2
 
 
 def test_impronta_invariante_a_ordine_chiavi_e_null_espliciti():

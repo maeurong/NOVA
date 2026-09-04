@@ -20,14 +20,17 @@ class _Rifiuto(Exception):
 
 
 def _carica(req: dict):
+    """Modello + impronta, calcolata sul modello com'è nel file **prima** del peso proprio."""
     try:
-        return _modello.assicura_peso_proprio(_modello.carica(req.get("modello")))
+        m = _modello.carica(req.get("modello"))
+        imp = _modello.impronta(m)
+        return _modello.assicura_peso_proprio(m), imp
     except ValueError as e:
         raise _Rifiuto("modello", str(e)) from None
 
 
 def comando_check(req: dict) -> dict:
-    m = _carica(req)
+    m, _ = _carica(req)
     return {"esito": "ok", "verdetti": [], "nodi": len(m.nodi), "aste": len(m.aste)}
 
 
@@ -59,8 +62,12 @@ def servi(ingresso=sys.stdin, uscita=sys.stdout) -> None:
         except json.JSONDecodeError as e:
             scrivi({"id": None, "esito": "errore", "fase": "protocollo", "motivo": f"richiesta non JSON: {e}"})
             continue
-        rid = req.get("id") if isinstance(req, dict) else None
-        risposta = rispondi(req if isinstance(req, dict) else {}, lambda ev: scrivi({"id": rid, **ev}))
+        if not isinstance(req, dict):
+            scrivi({"id": None, "esito": "errore", "fase": "protocollo",
+                    "motivo": "la richiesta deve essere un oggetto JSON"})
+            continue
+        rid = req.get("id")
+        risposta = rispondi(req, lambda ev: scrivi({"id": rid, **ev}))
         scrivi({"id": rid, **risposta})
         if risposta.get("esito") == "ciao":
             return
