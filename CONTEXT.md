@@ -284,15 +284,20 @@ risultati a parte, mai dentro il modello.
 _Avoid_: schema, modello (da solo)
 
 **Importatore**:
-Traduttore da un formato esterno al modello dati. Candidati dalla ricerca:
-prior geometrico di MeshRec, deck `.inp` (solo per verifica incrociata), SAF.
-Quali entrano in v1: **[DA DECIDERE]**.
+Traduttore da un formato esterno al modello dati. In v1 uno solo: dal prior
+geometrico di MeshRec, che prende quello che c'è (anche nulla), elenca le
+regioni scartate con il controllo che le ha bocciate, traduce una fetta in
+un'asta con la sua sezione dal rilievo, propone i vincoli dalla geometria e
+dice cosa manca (armature, classe). Il deck `.inp` e SAF non sono
+importatori di v1.
 _Avoid_: parser, reader, lettore
 
 **Prior geometrico**:
 Il risultato dello step 12 di MeshRec (`12_wall.json`): membrature, sezioni per
 fetta, quote, giunzioni, misurate dalla scansione. È misura del rilievo, non
-analisi. Contratto ancora prodotto da MeshRec al 04/09/2026.
+analisi. Può essere parziale o vuoto: sul telaio di laboratorio (run del
+02/09/2026) non separa le membrature perché hanno spessori simili, e NOVA
+deve reggere anche quel caso.
 _Avoid_: modello, telaio (non lo è finché non viene tradotto)
 
 **Deck**:
