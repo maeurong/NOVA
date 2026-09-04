@@ -21,10 +21,18 @@ un carico concentrato. Ha coordinate e gradi di libertà.
 _Avoid_: giunto, vertice
 
 **Asta**:
-Elemento monodimensionale del telaio fra due nodi, con una sezione e un
-materiale. È ciò che il solutore riceve come elemento beam. Nella linea rimossa
-di MeshRec una fetta di membratura diventava un'asta («una fetta = un'asta»).
+Elemento monodimensionale del telaio fra due nodi, con una sezione (che porta
+i materiali). È l'entità che l'utente disegna e nomina; il solutore riceve i
+suoi **elementi** (vedi Suddivisione). Nella linea rimossa di MeshRec una
+fetta di membratura diventava un'asta («una fetta = un'asta»), e così fa
+l'importatore dal prior.
 _Avoid_: elemento (da solo), trave/pilastro come sinonimo generico, membratura
+
+**Suddivisione**:
+Numero di elementi del solutore in cui un'asta viene divisa alla generazione
+del deck (default uno). Un nodo che cade su un'asta senza esserne estremo non
+la suddivide: è un errore del Check Model, con l'azione «spezza asta».
+_Avoid_: mesh, discretizzazione (che qui vuol dire le fibre)
 
 **Membratura**:
 Componente prismatica misurata dal prior geometrico di MeshRec (una viga, una
@@ -38,32 +46,73 @@ Nel telaio diventa un nodo condiviso.
 _Avoid_: nodo (finché non è tradotto), intersezione
 
 **Sezione**:
-Forma e dimensioni della sezione trasversale di un'asta (oggi: rettangolare
-`b × h` costante per asta). Senza armatura.
+Voce del catalogo del modello: forma e dimensioni della sezione trasversale
+(in v1 rettangolare `b × h`), i due materiali, il copriferro e l'armatura.
+Le aste la referenziano per nome; una forma con due armature diverse è due
+sezioni. Dal rilievo nasce una sezione per fetta.
 _Avoid_: profilo
+
+**Riduzione**:
+Millimetri di calcestruzzo mancanti su ciascun lato di una sezione misurata
+sulla struttura danneggiata (copriferro espulso). Restringe il contorno, non
+sposta le barre: una barra scoperta resta dove il copriferro nominale la
+mette.
+_Avoid_: degrado, sezione efficace
 
 **Sezione a fibre**:
 Discretizzazione della sezione in fibre di calcestruzzo e di acciaio, ciascuna
-con il proprio materiale, per il solutore. Una barra = una fibra.
+con il proprio materiale, per il solutore. Una barra = una fibra. È derivata
+dalla sezione e dall'armatura alla generazione del deck; la finezza è
+un'impostazione dell'analisi.
 _Avoid_: sezione (da sola), mesh di sezione
 
 **Armatura**:
-Le barre longitudinali e le staffe di una sezione: numero, diametro, posizione,
-copriferro, passo. Non sta né nella nuvola né nel deck: entra da fuori.
+Le barre longitudinali e le staffe di una sezione, descritte come le pensa
+chi le disegna: file per lato (quante, che diametro), staffe (diametro, passo,
+bracci), copriferro alla staffa. Le posizioni delle barre e le fibre sono
+derivate, mai salvate. Non sta né nella nuvola né nel deck: entra da fuori.
 _Avoid_: ferri, rinforzo
 
 **Materiale**:
-Classe del calcestruzzo o dell'acciaio con i valori caratteristici e di
-progetto (f_ck, f_cd, f_yk, f_yd, E). Il legame costitutivo usato dal solutore
-(elastico o non lineare) è **[DA DECIDERE]**: la linea rimossa usava solo
-elastico lineare e dichiarava non decisa la veste delle resistenze.
+Classe di norma del calcestruzzo o dell'acciaio (`C25/30`, `B450C`) con i
+valori che la tabella NTC le assegna, sovrascrivibili quando il materiale è
+«personalizzato» (esistente, prove in situ). È referenziato dalla sezione,
+non dall'asta. Il legame costitutivo del solutore si deriva da questi valori
+e dalla veste; non è il materiale.
 _Avoid_: legame (che è una proprietà del materiale, non il materiale)
 
+**Veste**:
+Con quali valori un materiale entra in un calcolo: caratteristica, media,
+di progetto, esistente (con fattore di confidenza). È un'impostazione
+dell'analisi o della verifica, non un dato del materiale: lo stesso C25/30 fa
+la modale con E_cm e la verifica con f_cd. Il modello a fibre usa valori medi.
+_Avoid_: coefficienti (sono il mezzo, non la scelta)
+
+**Danno**:
+Riduzione dichiarata dall'utente, dal rilievo, del modulo e delle resistenze
+del calcestruzzo di un'asta della struttura danneggiata, con una nota che ne
+dice l'origine. È un dato dell'asta, non un materiale a parte. Solo
+calcestruzzo, per ora.
+_Avoid_: degrado (generico), fattore di confidenza (che è un'altra cosa)
+
 **Vincolo**:
-Condizione imposta ai gradi di libertà di un nodo (incastro, cerniera,
-carrello).
+Condizione imposta ai sei gradi di libertà di un nodo; è un attributo del
+nodo, con incastro, cerniera e carrello come preimpostazioni. Molle, rilasci
+alle estremità delle aste e diaframmi non sono in v1.
 _Avoid_: appoggio (è un tipo di vincolo, non il termine generico), supporto,
 condizione al contorno
+
+**Identificatore**:
+Numero interno, per tipo, mai riusato, che dà identità a nodo, asta, sezione,
+materiale; il nome è libero e cambia. Il tag OpenSees è un'altra cosa: si
+deriva alla generazione del deck e si conserva accanto ai risultati.
+_Avoid_: tag (che è quello del solutore), indice
+
+**Origine**:
+Da dove viene un'entità: dal rilievo (con il riferimento alla membratura e
+alla fetta) o dall'utente. L'editing non la cancella: la marca come
+modificata. Serve al confronto con il solido e al «com'è davvero».
+_Avoid_: fonte, provenienza (nei report vuol dire la fonte bibliografica)
 
 ## Azioni e combinazioni
 
@@ -160,7 +209,9 @@ non la relazione)
 
 **Solutore**:
 OpenSees, l'esecutore dell'analisi. Vive in un processo separato dal programma.
-Via d'accesso (binario Tcl o `openseespy` in un worker): **[DA DECIDERE]**.
+Via d'accesso in v1: il binario `OpenSees` in un sottoprocesso con uno
+script `.tcl` generato; `openseespy` resta per il non lineare interattivo,
+dopo. NOVA lo localizza sul Mac, non lo incorpora.
 _Avoid_: motore, engine, backend
 
 **Sidecar**:
@@ -180,7 +231,8 @@ _Avoid_: output, dump
 **Modello dati**:
 La rappresentazione interna del telaio con sezioni, armature, materiali,
 vincoli, azioni, combinazioni e norma. È indipendente dal solutore e dagli
-importatori. Il formato su disco: **[DA DECIDERE]**.
+importatori. Su disco: un file JSON per modello, con versione dello schema e
+unità dichiarate (mm, N, MPa, t, s); i risultati stanno in un file a parte.
 _Avoid_: schema, modello (da solo)
 
 **Importatore**:
