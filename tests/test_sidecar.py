@@ -1084,3 +1084,16 @@ def test_il_validator_custom_non_porta_il_prefisso_di_pydantic(chiedi):
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     assert r[-1]["fase"] == "modello" and "Value error" not in r[-1]["motivo"]
     assert "natura Q senza categoria" in r[-1]["motivo"]
+
+
+@pytest.mark.parametrize("campo", ["calcestruzzo", "acciaio"])
+def test_forza_con_materiale_inesistente_nomina_sezione_e_materiale(chiedi, tmp_path, campo):
+    """Terzo riferimento rotto della stessa famiglia: `catalogo.valori(None)` faceva
+    `AttributeError` su `materiale.classe` invece di un rifiuto di fase deck."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0][campo] = 99
+    r = _deck(chiedi, tmp_path, m, forza=True)
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "sezione 1" in r["motivo"] and "99" in r["motivo"] and campo in r["motivo"]
+    assert "AttributeError" not in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()

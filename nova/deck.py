@@ -210,6 +210,12 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
         if r and (r.sup + r.inf >= s.h or r.sx + r.dx >= s.b):
             raise ValueError(f"sezione {s.id} «{s.nome}»: la riduzione ({r.sup:g}+{r.inf:g} su h={s.h:g}, "
                              f"{r.sx:g}+{r.dx:g} su b={s.b:g}) non lascia sezione")
+        # come per le aste senza sezione: con «forza» il riferimento rotto arriva fin qui, e
+        # `catalogo.valori(None)` farebbe `AttributeError` su `materiale.classe`. Qui, e non
+        # in `catalogo`, perché il rifiuto deve nominare la sezione che sta sbagliando.
+        for campo, id_materiale in (("calcestruzzo", s.calcestruzzo), ("acciaio", s.acciaio)):
+            if m.materiale(id_materiale) is None:
+                raise ValueError(f"sezione {s.id} «{s.nome}»: il materiale {campo} {id_materiale} non esiste")
 
     nodi_xyz: dict[int, tuple[float, float, float]] = {}
     mappa_nodo: dict[int, int] = {}
