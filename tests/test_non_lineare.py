@@ -114,6 +114,21 @@ def test_le_fibre_registrate_sono_gli_spigoli_del_nucleo_e_le_barre_estreme(tmp_
     assert {f["mat"] for f in acciaio} == {3}  # il terzo tag della terna nucleo, copriferro, acciaio
 
 
+def test_la_riduzione_tangente_lascia_le_sole_fibre_di_nucleo(tmp_path):
+    """Riduzione **tangente** (`copriferro` 30 + φ_st/2 = 34) su tutti e quattro i lati: il
+    contorno coincide col nucleo, le fasce di copriferro hanno spessore zero e il deck non le
+    disegna. Le quattro fibre di copriferro spariscono per collisione di coordinata nel `dict`
+    di `_fibre_estreme` — risultato giusto, meccanismo che va detto: di copriferro non ne resta
+    un millimetro da registrare."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 34, "inf": 34, "sx": 34, "dx": 34}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    (fibre,) = _deck.scrivi(m, ["Z1"], tmp_path).fibre_registrate.values()
+    ruoli = [f["ruolo"] for f in fibre]
+    assert (ruoli.count("nucleo"), ruoli.count("copriferro"), ruoli.count("acciaio")) == (4, 0, 3)
+
+
 def test_la_sezione_confinata_registra_anche_le_quattro_fibre_di_copriferro(tmp_path):
     """Il copriferro schiaccia **per primo**: `epsU` = 0,35 % contro la `ε_cu2,c` della [4.1.11],
     che sulla 30×50 del telaio vale il triplo. Registrare il solo nucleo dava «elastica» a una
@@ -490,6 +505,8 @@ def _con_pushover(nome="telaio_2x1.nova.json", statica=True, modale=False, **cam
 def test_la_pushover_scrive_displacement_control_la_scala_e_gli_otto_dimezzamenti(tmp_path):
     testo = _testo(_con_pushover(caso_gravita="Z3"), ["Z1", "Z3"], tmp_path)
     assert "integrator DisplacementControl 4 1 $_nova_d" in testo
+    # «arrivata» con la tolleranza relativa: 60 × 0,9999999
+    assert f"< {60.0 * _deck.TOLLERANZA_ARRIVO:.10g} " in testo
     assert f"foreach alg {{{' '.join(_deck.SCALA_ALGORITMI)}}}" in testo
     assert f"$_nova_giro <= {_deck.DIMEZZAMENTI_PUSHOVER}" in testo and _deck.DIMEZZAMENTI_PUSHOVER == 8
     assert "algorithm ModifiedNewton -initial" in testo
@@ -497,6 +514,15 @@ def test_la_pushover_scrive_displacement_control_la_scala_e_gli_otto_dimezzament
     dopo = testo.split(_deck.MARCA_CADUTA, 1)[1].split("# ===== pushover")[0]
     assert "exit 1" not in dopo
     assert _deck.MARCA_PASSO_PUSHOVER in testo
+
+
+def test_il_dof_di_controllo_finisce_nella_colonna_giusta_del_tcl(tmp_path):
+    """OpenSees conta i dof da 1: `ux` → 1, `uy` → 2, `uz` → 3. Senza queste due righe uno
+    scambio di `uy` e `uz` in `modello.DOF_COLONNA` passava la suite intera."""
+    for dof, indice in (("ux", 1), ("uy", 2), ("uz", 3)):
+        testo = _testo(_con_pushover(dof=dof), ["Z1", "Z3"], tmp_path / dof)
+        assert f"integrator DisplacementControl 4 {indice} $_nova_d" in testo
+        assert f"nodeDisp 4 {indice}" in testo
 
 
 def test_la_pushover_ripristina_il_passo_pieno_dopo_un_dimezzamento(tmp_path):

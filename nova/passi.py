@@ -24,6 +24,7 @@ import numpy as np
 
 from meshrec.core import opensees
 from nova import deck as _deck
+from nova import modello as _modello
 
 # Lo stato di una fibra, dal meno grave al più grave: due canali, e l'ordine serve perché la
 # stazione porta il **peggiore** delle sue fibre, non l'ultimo letto.
@@ -184,7 +185,10 @@ def stato_sezioni(cartella: Path, d: _deck.Deck, prefisso: str, *, con_tempo: bo
 
 
 def leggi(cartella: Path, d: _deck.Deck, registro: str | None = None) -> dict:
-    """`{"passi": [...], "caduta": None | {...}}` della pushover di questo deck.
+    """`{"passi": [...], "caduta": None | {...}, "u0": float | None}` della pushover di
+    questo deck. `u0` è lo zero della curva — lo spostamento che il nodo di controllo aveva
+    **prima** della spinta — e senza di lui `passi[].spostamento` non si sa da dove è misurato;
+    è `None` solo quando il modello non dichiara nessuna pushover.
 
     `registro` a `None` — il default — lo legge dal file che `corsa._lancia` ha già scritto
     nella cartella: la firma resta quella del piano e chi ha già il testo in mano non lo
@@ -220,7 +224,7 @@ def leggi(cartella: Path, d: _deck.Deck, registro: str | None = None) -> dict:
 
     n_nodi = len(d.nodi)
     tag_a_id = {v: k for k, v in d.mappa_nodo.items()}
-    dof = _deck.DOF_COLONNA[an.dof]
+    dof = _modello.DOF_COLONNA[an.dof]
     U = _righe_curva(cartella / f"{_deck.PREFISSO_PUSHOVER}_spostamenti.out", 1 + 6 * n_nodi, n)
     R = _righe_curva(cartella / f"{_deck.PREFISSO_PUSHOVER}_reazioni.out", 1 + 6 * n_nodi, n)
     stati = stato_sezioni(cartella, d, _deck.PREFISSO_PUSHOVER, con_tempo=True, n_passi=n)

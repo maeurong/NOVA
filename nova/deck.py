@@ -66,6 +66,11 @@ MARCA_U0 = "NOVA_PUSHOVER_U0"
 # Otto e non sei come nella statica: qui il passo è uno spostamento imposto, e vicino al picco
 # della curva un solo dimezzamento non basta — si scende da 1 mm a 4 µm prima di dichiarare.
 DIMEZZAMENTI_PUSHOVER = 8
+# La stessa tolleranza relativa del `while` della statica a passi (`$fatto < 0.9999999`): dieci
+# incrementi da 0,3 non fanno 3,0 esatti in virgola mobile, e senza tolleranza il ciclo faceva
+# un undicesimo passo (misurato: 11 passi fino a 3,3 invece di 10 fino a 3,0) — o, con
+# `passi_max` a 10, dichiarava una caduta su una spinta arrivata.
+TOLLERANZA_ARRIVO = 0.9999999
 PREFISSO_PUSHOVER = "push"
 # OpenSees conta i gradi di libertà da 1: il `+1` sull'offset di colonna, esplicito e
 # in un punto solo (`modello.DOF_COLONNA` è la base zero, che usano `Nodo.libero` e i recorder).
@@ -523,8 +528,8 @@ def _spigoli(rettangolo) -> tuple[tuple[float, float], ...]:
     return ((y0, z0), (y1, z0), (y1, z1), (y0, z1))
 
 
-def _fibre_estreme(nucleo, tag_nucleo: int, contorno, tag_copriferro: int, barre: list[Barra],
-                   tag_acciaio: int | None) -> list[dict]:
+def _fibre_estreme(nucleo, *, tag_nucleo: int, contorno, tag_copriferro: int,
+                   barre: list[Barra], tag_acciaio: int | None) -> list[dict]:
     """Le fibre che raccontano lo stato della sezione: i quattro spigoli del **contorno** (il
     copriferro), i quattro del nucleo dove un nucleo c'è, e le barre estreme, una per verso di
     ciascun asse locale. Task 3 ci costruisce sopra i recorder e lo stato a quattro valori; qui
@@ -542,6 +547,9 @@ def _fibre_estreme(nucleo, tag_nucleo: int, contorno, tag_copriferro: int, barre
     fibre = {(y, z): {"y": y, "z": z, "mat": tag_copriferro, "ruolo": "copriferro"}
              for y, z in _spigoli(contorno)}
     if nucleo is not None:
+        # sovrascrive per coordinata, e con una riduzione **tangente** al nucleo il contorno
+        # coincide col nucleo: le quattro fibre di copriferro spariscono, ed è giusto — di
+        # copriferro non ne resta un millimetro, e le fasce esterne il deck non le disegna
         for y, z in _spigoli(nucleo):
             fibre[(y, z)] = {"y": y, "z": z, "mat": tag_nucleo, "ruolo": "nucleo"}
     if barre and tag_acciaio is not None:
@@ -676,7 +684,8 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
         righe.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_acciaio}")
     righe.append("}")
     sez.fibre_registrate[tag_sezione] = _fibre_estreme(
-        nucleo, tag_nucleo, contorno, tag_copriferro, barre, tag_acciaio)
+        nucleo, tag_nucleo=tag_nucleo, contorno=contorno, tag_copriferro=tag_copriferro,
+        barre=barre, tag_acciaio=tag_acciaio)
     return tag_mat
 
 
@@ -924,6 +933,9 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
     # spinta, non la quota assoluta del nodo. `u0` finisce nel registro con un marcatore suo,
     # perché `passi.py` deve sottrarlo anche alle righe dei recorder, che sono assolute.
     u = f"[expr {{[nodeDisp {nodo} {dof}] - $_nova_u0}}]"
+    # «la spinta è arrivata»: con la tolleranza, altrimenti l'ultimo passo che chiude
+    # esattamente il conto non chiude il confronto
+    arrivata = f"{an.spostamento_max * TOLLERANZA_ARRIVO:.10g}"
     r += [
         "constraints Transformation", "numberer RCM", "system BandGeneral",
         f"test RelativeNormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
@@ -934,7 +946,7 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
         f'puts "{MARCA_U0}: [format %.10g $_nova_u0]"',
         "set _nova_passo 0",
         "set _nova_caduta 0",
-        f"while {{{u} < {an.spostamento_max:.10g} "
+        f"while {{{u} < {arrivata} "
         f"&& $_nova_passo < {an.passi_max}}} {{",
         "    incr _nova_passo",
         "    set _nova_esito -1",
@@ -969,7 +981,7 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
         # esattamente all'ultimo passo utile è una corsa riuscita, e chiamarla caduta faceva
         # rosso un `convergenza` verde (misurato: max 5, incremento 1, passi_max 5)
         f"if {{$_nova_caduta == 0 && $_nova_passo >= {an.passi_max} "
-        f"&& {u} < {an.spostamento_max:.10g}}} {{",
+        f"&& {u} < {arrivata}}} {{",
         f'    puts "{MARCA_CADUTA}: passo $_nova_passo spostamento '
         f'[format %.10g {u}] algoritmo $_nova_usato motivo passi_max"',
         "}",

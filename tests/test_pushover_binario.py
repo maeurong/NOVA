@@ -301,3 +301,33 @@ def test_il_marcatore_dello_zero_assente_dal_registro_e_un_errore_che_lo_dice(un
         "\n".join(r for r in registro.splitlines() if _deck.MARCA_U0 not in r) + "\n")
     with pytest.raises(ValueError, match=_deck.MARCA_U0):
         _passi.leggi(tmp_path, d)
+
+
+# --- fix round 2: la soglia d'arrivo con la tolleranza ---
+
+def test_dieci_passi_da_zero_virgola_tre_arrivano_a_tre(tmp_path, binario_opensees):
+    """`0,3 × 10` non fa `3,0` in virgola mobile, e senza tolleranza il ciclo faceva un
+    undicesimo passo fino a 3,3 — o, con `passi_max` a 10, dichiarava una caduta su una spinta
+    arrivata. Misurato il 05/09/2026 (OpenSees 3.8.0): con la tolleranza sono 10 passi e
+    l'ultimo è 3,0 tondo, con e senza `passi_max`."""
+    for campi in ({"passi_max": 10}, {}):
+        r = _corri(tmp_path / f"t{len(campi)}",
+                   _modello_pushover(incremento=0.3, spostamento_max=3.0, **campi))
+        assert r["esito"] == "ok", r
+        ris = r["risultati"]
+        assert len(ris["passi"]) == 10, [p["spostamento"] for p in ris["passi"]]
+        assert ris["passi"][-1]["spostamento"] == pytest.approx(3.0, abs=1e-9)
+        assert ris["caduta"] is None
+        v = next(x for x in ris["verdetti"]
+                 if x["controllo"] == "convergenza" and x["caso"] == "pushover")
+        assert v["esito"] == "passato"
+
+
+def test_uno_spostamento_max_non_multiplo_dell_incremento_lo_supera(tmp_path, binario_opensees):
+    """La tolleranza chiude il conto, non lo arrotonda: con `0,3` verso `1,0` il quarto passo
+    arriva a 1,2 e la corsa finisce lì. Misurato il 05/09/2026, OpenSees 3.8.0."""
+    r = _corri(tmp_path, _modello_pushover(incremento=0.3, spostamento_max=1.0))
+    assert r["esito"] == "ok", r
+    passi = r["risultati"]["passi"]
+    assert len(passi) == 4 and passi[-1]["spostamento"] == pytest.approx(1.2, abs=1e-9)
+    assert r["risultati"]["caduta"] is None
