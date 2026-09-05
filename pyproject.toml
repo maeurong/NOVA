@@ -25,3 +25,10 @@ packages = ["nova", "meshrec"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Un warning nuovo è un errore: i due sotto sono di monte (starlette/anyio, non nostro codice)
+# e si tacciono per messaggio, così il giorno che spariscono l'output non resta sporco.
+filterwarnings = [
+    "error",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]

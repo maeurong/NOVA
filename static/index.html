@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>NOVA</title>
+<style>
+  body { background: #dcdad5; color: #141414; font-family: system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<h1>NOVA</h1>
+<p>Interfaccia in costruzione (tappa T5). Il sidecar risponde su /api/salute.</p>
+<pre id="salute"></pre>
+<script>
+  fetch("/api/salute")
+    .then((r) => r.json())
+    .then((d) => { document.getElementById("salute").textContent = JSON.stringify(d, null, 1); });
+</script>
+</body>
+</html>
