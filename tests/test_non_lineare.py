@@ -398,3 +398,56 @@ def test_il_confinamento_nessuno_con_copriferro_grosso_e_un_rifiuto_e_non_una_pa
     m = _modello.assicura_peso_proprio(_modello.carica(dati))
     with pytest.raises(ValueError, match=r"sezione 2 «30×50 3\+3Ø16».*non lasciano nucleo"):
         _deck.scrivi(m, ["Z1"], tmp_path)
+
+
+# --- fix round 3: R1 (avviso solo se il confinamento c'era) e R2 (guardia in un punto solo) ---
+
+def _con_riduzione(rid=None, **legame):
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    if rid is not None:
+        dati["sezioni"][0]["riduzione"] = rid
+    if legame:
+        dati["materiali"][0]["legame"] = legame
+    return _modello.assicura_peso_proprio(_modello.carica(dati))
+
+
+def test_il_confinamento_gia_escluso_non_avvisa_di_averlo_perso(tmp_path):
+    """R1: l'avviso dice «hai perso il confinamento». Con `confinamento: nessuno` non c'era
+    niente da perdere — il `.tcl` è identico con e senza riduzione — e un avviso su una riga
+    che non cambia insegna a non leggere gli avvisi."""
+    d = _deck.scrivi(_con_riduzione({"sup": 40, "inf": 0, "sx": 0, "dx": 0},
+                                    confinamento="nessuno"), ["Z1"], tmp_path)
+    assert d.resoconto["avvisi"] == []
+    assert d.materiali["2"]["nucleo"]["confinamento"] == "nessuno"
+
+
+def test_il_confinamento_escluso_senza_riduzione_non_dice_niente(tmp_path):
+    d = _deck.scrivi(_con_riduzione(confinamento="nessuno"), ["Z1"], tmp_path)
+    assert d.resoconto["avvisi"] == [] and d.resoconto["note"] == []
+
+
+def test_il_confinamento_ntc_perso_per_riduzione_avvisa_ancora(tmp_path):
+    """Il rovescio della medaglia: dove il confinamento c'era, l'avviso resta."""
+    from nova import legami
+    d = _deck.scrivi(_con_riduzione({"sup": 40, "inf": 0, "sx": 0, "dx": 0}), ["Z1"], tmp_path)
+    assert d.resoconto["avvisi"] == [legami.AVVISO_RIDUZIONE]
+
+
+def test_anche_il_deck_elastico_rifiuta_le_barre_fuori_dal_calcestruzzo(tmp_path):
+    """R2: la `riduzione` non guarda il legame, e la guardia nemmeno. Prima stava nel solo ramo
+    a fibre: in elastico una 300×500 con `riduzione {sup: 249}` scriveva tre `fiber` a 203 mm
+    **sopra** la patch di calcestruzzo, e la corsa usciva `esito: ok`."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["sezioni"][0]["riduzione"] = {"sup": 249, "inf": 0, "sx": 0, "dx": 0}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    with pytest.raises(ValueError, match=r"sezione 2 «30×50 3\+3Ø16».*3 barre su 6 fuori dal calcestruzzo"):
+        _deck.scrivi(m, ["Z1"], tmp_path)
+
+
+def test_la_riduzione_a_zero_in_elastico_e_identica_a_nessuna_riduzione(tmp_path):
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    senza = _testo(_modello.assicura_peso_proprio(_modello.carica(dati)), ["Z1"], tmp_path / "a")
+    dati["sezioni"][0]["riduzione"] = {"sup": 0, "inf": 0, "sx": 0, "dx": 0}
+    con = _testo(_modello.assicura_peso_proprio(_modello.carica(dati)), ["Z1"], tmp_path / "b")
+    assert con == senza

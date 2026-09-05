@@ -79,7 +79,7 @@ def veste_valori(materiale: Materiale, veste: str) -> dict:
     return {**base, "fyk": fyk, "fy": fy, "ftk": v["ftk"], "epsuk": v["epsuk"], "articolo": articolo}
 
 
-def riduzione_oltre_il_copriferro(sezione: Sezione) -> bool:
+def riduzione_taglia_il_nucleo(sezione: Sezione) -> bool:
     """Il contorno ridotto **taglia** il rettangolo di nucleo, invece di contenerlo.
 
     La gabbia delle staffe non si sposta quando si toglie calcestruzzo da una faccia: il nucleo
@@ -252,12 +252,15 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     # dentro). Il deck ci scrive una patch sola, e il legame è quello del copriferro **esatto**:
     # un `epsU_nucleo` dichiarato non ha su cosa applicarsi, e onorarlo qui darebbe due
     # materiali diversi per una patch sola.
-    senza_nucleo = sezione.staffe is None or riduzione_oltre_il_copriferro(sezione)
+    senza_nucleo = sezione.staffe is None or riduzione_taglia_il_nucleo(sezione)
     if senza_nucleo:
         if sezione.staffe is None:
             note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: non c'è nucleo, "
                         "il legame è quello del copriferro su tutta la sezione")
-        else:
+        elif lg.confinamento != "nessuno":
+            # l'avviso dice «hai perso il confinamento». Con `confinamento: nessuno` non c'era
+            # niente da perdere: il `.tcl` è lo stesso con e senza riduzione, e un avviso su una
+            # riga che non cambia insegna a non leggere gli avvisi.
             avvisi.append(AVVISO_RIDUZIONE)
         if lg.epsU_nucleo is not None:
             note.append(f"sezione {sezione.id} «{sezione.nome}»: senza nucleo l'«epsU_nucleo» "

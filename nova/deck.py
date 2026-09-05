@@ -474,17 +474,15 @@ def _nucleo(s: Sezione, verticale: bool):
 
     **Nominale, sempre.** La gabbia delle staffe non si sposta quando si toglie calcestruzzo da
     una faccia: sta dove è stata legata, cioè dove `_barre` mette le barre e dove
-    `legami.confinamento_ntc` misura `b_x` e `b_y`. Centrarlo sul contorno ridotto — come faceva
-    il round 1 — spostava la patch lasciando barre e gabbia dove erano: sulla 300×500 con
-    `riduzione {sup: 30, sx: 30}` finivano fuori dal nucleo scritto 4 barre su 6, e l'`α` = 0,117
-    descriveva un rettangolo che il deck non disegnava.
+    `legami.confinamento_ntc` misura `b_x` e `b_y`. Un nucleo che seguisse il contorno ridotto
+    lascerebbe barre e `α` sul nominale, e descriverebbe un rettangolo che il deck non disegna.
 
     La riduzione che **taglia** il nucleo non arriva qui: `legami.calcestruzzo` l'ha già degradata
-    a sezione non confinata (`riduzione_oltre_il_copriferro`), e il deck ci scrive una patch sola.
+    a sezione non confinata (`riduzione_taglia_il_nucleo`), e il deck ci scrive una patch sola.
 
-    La guardia geometrica sta qui e non solo in `legami`: per di qui passano tutti i rami — anche
-    `confinamento: nessuno` con `epsU_nucleo`, che non chiama `confinamento_ntc` e senza guardia
-    scriveva una `patch rect` rovesciata (`y0 > y1`) che OpenSees accetta senza fiatare.
+    La guardia geometrica sta qui e non solo in `legami`: per di qui passano tutti i rami, anche
+    `confinamento: nessuno` con `epsU_nucleo`, che `confinamento_ntc` non lo chiama. Senza,
+    il `.tcl` porta una `patch rect` rovesciata (`y0 > y1`) che OpenSees accetta senza fiatare.
     """
     st = s.staffe
     bx, by = s.b - 2 * s.copriferro - st.diametro, s.h - 2 * s.copriferro - st.diametro
@@ -518,6 +516,27 @@ def _fibre_estreme(nucleo, tag_nucleo: int, ruolo: str, barre: list[Barra],
     return list(fibre.values())
 
 
+def _barre_nel_calcestruzzo(s: Sezione, barre: list[Barra], contorno) -> None:
+    """Nessuna barra fuori dal contorno di calcestruzzo, elastico o a fibre che sia.
+
+    Una barra nel vuoto è un modello sbagliato, non una `patch` da aggiustare: la fibra
+    d'acciaio porta sforzo a una quota dove non c'è niente che la trattenga, e OpenSees non se
+    ne accorge. Succede con una `riduzione` che scava oltre le barre — misurato il 05/09/2026
+    su una 300×500 con `riduzione {sup: 249}`, dove tre `fiber` finivano 203 mm sopra la patch
+    e la corsa usciva `esito: ok`.
+
+    Sta in `_sezioni` e non nel ramo a fibre perché la riduzione non guarda il legame: il deck
+    elastico scriveva le stesse tre fibre nel vuoto. Un punto solo per tutti e due i rami.
+    """
+    y0, z0, y1, z1 = contorno
+    fuori = [b for b in barre if not (y0 <= b.y <= y1 and z0 <= b.z <= z1)]
+    if fuori:
+        raise ValueError(
+            f"sezione {s.id} «{s.nome}»: la riduzione lascia {len(fuori)} barre su {len(barre)} "
+            f"fuori dal calcestruzzo (la prima a y = {fuori[0].y:g}, z = {fuori[0].z:g} mm, "
+            f"contorno {y0:g}…{y1:g} × {z0:g}…{z1:g})")
+
+
 def _sezioni(m: Modello, g: Geometria, legami_: str) -> Sezioni:
     """Le `uniaxialMaterial` e le `section Fiber`, elastiche (T1) o non lineari a due patch (T4).
 
@@ -542,6 +561,7 @@ def _sezioni(m: Modello, g: Geometria, legami_: str) -> Sezioni:
         G = cls["E"] / (2 * (1 + cls["nu"]))
         gj = G * opensees._costante_torsionale(*_dimensioni_lungo(s, verticale))
         barre = _barre(s, verticale)
+        _barre_nel_calcestruzzo(s, barre, contorno)
         if not barre and s.id not in sez.senza_barre:
             sez.senza_barre.append(s.id)
         if legami_ == "fibre":
@@ -603,15 +623,6 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
             sez.note.append(nota)
 
     y0, z0, y1, z1 = contorno
-    # una barra fuori dal calcestruzzo è un modello sbagliato, non una patch da aggiustare. Può
-    # succedere solo con una riduzione che entra oltre le barre: quando il contorno contiene il
-    # nucleo le contiene tutte, perché stanno a φ_st/2 + φ/2 **dentro** la linea delle staffe.
-    fuori = [b for b in barre if not (y0 <= b.y <= y1 and z0 <= b.z <= z1)]
-    if fuori:
-        raise ValueError(
-            f"sezione {s.id} «{s.nome}»: la riduzione lascia {len(fuori)} barre su {len(barre)} "
-            f"fuori dal calcestruzzo (la prima a y = {fuori[0].y:g}, z = {fuori[0].z:g} mm, "
-            f"contorno {y0:g}…{y1:g} × {z0:g}…{z1:g})")
     righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
     if una_patch:  # nucleo e copriferro sono lo stesso legame: due patch sarebbero la stessa cosa
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
