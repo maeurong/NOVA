@@ -15,56 +15,7 @@
   "spiegazione": "somma dei volumi delle membrature contro volume della loro unione: se differiscono, alle giunzioni il volume è contato due volte, ed è un errore che nessuna metrica di qualità della mesh vedrebbe",
   "unione": 250368000.0
  },
- "giunzioni": [
-  {
-   "cede": 2,
-   "distanza_proiezione": 153.6026707628659,
-   "nodo": [
-    1494.467554952998,
-    5.903612177338726e-15,
-    -134.24027363074617
-   ],
-   "nodo_limitato": false,
-   "resta": 1,
-   "tipo_incontro": "estremo"
-  },
-  {
-   "cede": 3,
-   "distanza_proiezione": 167.11423803502117,
-   "nodo": [
-    102.76369715865921,
-    -6.168018509763621e-15,
-    -147.20683610099897
-   ],
-   "nodo_limitato": false,
-   "resta": 1,
-   "tipo_incontro": "estremo"
-  },
-  {
-   "cede": 2,
-   "distanza_proiezione": 84.82949877958262,
-   "nodo": [
-    1504.0003443749083,
-    0.0,
-    1765.0733659730738
-   ],
-   "nodo_limitato": false,
-   "resta": 0,
-   "tipo_incontro": "estremo"
-  },
-  {
-   "cede": 3,
-   "distanza_proiezione": 136.068418973106,
-   "nodo": [
-    98.72699844159533,
-    0.0,
-    1756.1663415166033
-   ],
-   "nodo_limitato": false,
-   "resta": 0,
-   "tipo_incontro": "estremo"
-  }
- ],
+ "giunzioni": [],
  "membrature": [
   {
    "asse": [

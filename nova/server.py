@@ -157,7 +157,10 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
 
     @app.post("/api/importa")
     def importa(corpo: ImportaReq):
-        return _o_400(_finale(sidecar.chiedi({"comando": "importa", "percorso": corpo.percorso})))
+        # Il relativo si risolve **qui**: il sidecar può girare in un altro processo, con la
+        # cwd sulla radice del pacchetto, e là «12_wall.json» sarebbe un altro file.
+        percorso = str(Path(corpo.percorso).resolve())
+        return _o_400(_finale(sidecar.chiedi({"comando": "importa", "percorso": percorso})))
 
     @app.post("/api/corsa")
     def corsa(corpo: CorsaReq):

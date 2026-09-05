@@ -1290,3 +1290,28 @@ def test_importa_un_prior_senza_membrature_nomina_la_chiave(chiedi):
 def test_il_comando_sconosciuto_elenca_anche_importa(chiedi):
     (r,) = chiedi({"id": 1, "comando": "boh"})
     assert "importa" in r[-1]["motivo"]
+
+
+@pytest.mark.parametrize("chiave, rompi", [
+    ("riempimento", lambda p: p["membrature"][0].pop("riempimento")),
+    ("origine", lambda p: p["membrature"][0].pop("origine")),
+    ("cede", lambda p: p["giunzioni"][0].pop("cede")),
+])
+def test_importa_un_prior_mutilato_nomina_la_chiave_e_non_e_un_500(chiedi, chiave, rompi):
+    """Una chiave che manda in `KeyError` non è un difetto del sidecar: è un prior rotto, e
+    la risposta deve dire quale chiave manca invece di `fase: sidecar` (che il server passa
+    come 200)."""
+    prior = _prior_sintetico()
+    rompi(prior)
+    prima, dopo = chiedi({"id": 1, "comando": "importa", "prior": prior}, {"id": 2, "comando": "fine"})
+    assert prima[-1]["esito"] == "errore" and prima[-1]["fase"] == "importa"
+    assert chiave in prima[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+
+
+def test_importa_scrive_nel_riferimento_il_nome_del_file_non_il_percorso(chiedi):
+    from conftest import FIXTURE
+
+    p = FIXTURE / "prior_sintetico" / "12_wall.json"
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    assert r[-1]["modello"]["nodi"][0]["origine"]["riferimento"] == "12_wall.json"
+    assert r[-1]["resoconto"]["percorso"] == str(p.resolve())

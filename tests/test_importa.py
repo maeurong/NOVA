@@ -56,6 +56,8 @@ def test_il_sintetico_da_80_aste_con_sezione_dal_rilievo():
     assert all(a.origine.sorgente == "rilievo" and a.suddivisioni == 1 for a in m.aste)
     assert all(s.origine.sorgente == "rilievo" and s.file == [] and s.staffe is None for s in m.sezioni)
     assert all(a.origine.riferimento == "prior_sintetico" for a in m.aste)
+    dal_percorso = importa.importa(_prior(SINTETICO), riferimento=str(SINTETICO)).modello
+    assert dal_percorso.nodi[0].origine.riferimento == "12_wall.json"  # il nome, non il percorso
     assert imp.mancano == ["armature", "classe", "vincoli"]
     assert len(imp.giunzioni) == 4 and all(np.isfinite(g["scostamento_nodo"]) for g in imp.giunzioni)
     assert {g["nodo"] for g in imp.giunzioni} <= {n.id for n in m.nodi}
@@ -76,7 +78,9 @@ def test_le_coordinate_sono_nella_terna_del_telaio():
     assert x.min() == pytest.approx(0.0, abs=1e-9) and z.min() == pytest.approx(0.0, abs=1e-9)
     assert x.max() == pytest.approx(1626.85, abs=1.0)   # misurato, non atteso
     assert z.max() == pytest.approx(1934.45, abs=1.0)
-    assert np.abs(y).max() <= 170.0  # il fuori piano sta dentro gli spessori
+    # `|y| ≤ 170` (gli spessori) è **vacua** su questa fixture: il sintetico ha i quattro assi
+    # complanari e y esce a 1e-12. La prova vera che il fuori piano si conserva è il test dopo.
+    assert np.abs(y).max() <= 170.0
 
 
 def test_ruota_conserva_il_fuori_piano_e_non_lo_trasla():
@@ -85,9 +89,9 @@ def test_ruota_conserva_il_fuori_piano_e_non_lo_trasla():
     prior = _prior(SINTETICO)
     estremi = np.array([np.asarray(v["origine"], dtype=float) + t * v["lunghezza"] * np.asarray(v["asse"], dtype=float)
                         for v in prior["membrature"] for t in (0.0, 1.0)])
-    fuori = importa.matrice_terna(prior, estremi)[1]  # la direzione fuori piano, nella nuvola
-    campione = np.vstack([estremi, estremi[0] + 137.0 * fuori, estremi[0] - 40.0 * fuori])
-    ruotati = importa.ruota(prior, campione)
+    R = importa.matrice_terna(prior, estremi)
+    campione = np.vstack([estremi, estremi[0] + 137.0 * R[1], estremi[0] - 40.0 * R[1]])
+    ruotati = importa.ruota(campione, R)  # il riferimento si passa: non si rimisura sui punti dati
     assert ruotati[:, 1].max() == pytest.approx(137.0, abs=1e-6)
     assert ruotati[:, 1].min() == pytest.approx(-40.0, abs=1e-6)
     assert ruotati[:, 0].min() == pytest.approx(0.0, abs=1e-9)
@@ -131,8 +135,8 @@ def test_il_parziale_traduce_due_e_scarta_due():
     imp = importa.importa(_prior(PARZIALE))
     assert len(imp.modello.aste) == 40
     assert {s["regione"] for s in imp.scartate} == {2, 3}
-    assert imp.resoconto["giunzioni_scartate"] >= 1
-    assert imp.giunzioni == []  # tutte e quattro nominavano una membratura scartata
+    assert imp.resoconto["giunzioni_scartate"] == 0
+    assert imp.giunzioni == []  # tutte e quattro nascevano su una membratura scartata
 
 
 def test_il_parziale_e_riproducibile():
@@ -164,3 +168,79 @@ def test_una_sezione_di_estensione_nulla_esce_col_messaggio_di_telaio():
     p["membrature"][0]["sezioni_fette"][0] = [0.0, 300.0]
     with pytest.raises(ValueError, match=r"stazione 0 della membratura 0"):
         importa.importa(p)
+
+
+def _genera():
+    """`tests/fixture/prior_parziale/genera.py`, caricato dal suo percorso: è una fixture,
+    non un modulo del pacchetto."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("genera", PARZIALE.parent / "genera.py")
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    return modulo
+
+
+def test_il_parziale_senza_la_prima_membratura_tiene_le_giunzioni_giuste():
+    """Togliendo la **prima** membratura gli indici delle giunzioni superstiti scalano: se
+    nessuno li rinumera, `costruisci` incolpa la geometria («lunghezza di calcolo −1675»)."""
+    prior = json.loads(_genera().costruisci(scartate=(0,)).decode("utf-8"))
+    imp = importa.importa(prior)
+    assert len(imp.modello.aste) == 60 and {s["regione"] for s in imp.scartate} == {0}
+    assert len(imp.giunzioni) == 2
+    assert all(np.isfinite(g["scostamento_nodo"]) and g["scostamento_nodo"] < 100.0 for g in imp.giunzioni)
+
+
+def test_una_giunzione_che_nomina_una_membratura_assente_si_toglie_e_si_conta():
+    """La guardia esiste per un prior scritto a mano o da una corsa vecchia: MeshRec scrive
+    `cede`/`resta` come indici della lista `membrature` che sta scrivendo (wall.py:997-1000),
+    quindi da una corsa sua questa condizione non esce."""
+    prior = _prior(PARZIALE)
+    prior["giunzioni"] = [{"cede": 3, "resta": 0, "nodo": [0.0, 0.0, 0.0],
+                           "distanza_proiezione": 1.0, "tipo_incontro": "estremo"}]
+    imp = importa.importa(prior)
+    assert imp.giunzioni == [] and imp.resoconto["giunzioni_scartate"] == 1
+
+
+def test_le_sezioni_tornano_come_il_deck_le_riscrive():
+    """L'oracolo del ponte fra i due moduli: dalla `Sezione` NOVA e dalla `rotazione_deg` il
+    deck deve ricostruire la sezione **misurata**, orientata come l'ha misurata il rilievo."""
+    from meshrec.core import telaio as _telaio
+    from nova import deck
+
+    prior = _prior(SINTETICO)
+    imp = importa.importa(prior)
+    telaio = _telaio.costruisci(prior, importa._regioni(len(prior["membrature"])))
+    R = importa.matrice_terna(prior, telaio.nodi)
+    nodi = {n.id: n for n in imp.modello.nodi}
+    sezioni = {s.id: s for s in imp.modello.sezioni}
+    for asta, elemento in zip(imp.modello.aste, telaio.elementi):
+        i, j = nodi[asta.nodo_i], nodi[asta.nodo_j]
+        asse = np.array([j.x - i.x, j.y - i.y, j.z - i.z])
+        asse /= np.linalg.norm(asse)
+        verticale = abs(float(asse[2])) > deck._COSENO_VERTICALE
+        assert deck._dimensioni_lungo(sezioni[asta.sezione], verticale) == pytest.approx(elemento.sezione)
+        e1, e2 = deck._terna(asse, asta.rotazione_deg)
+        assert e1 == pytest.approx(R @ np.asarray(elemento.e1), abs=1e-9), asta.nome
+        assert e2 == pytest.approx(R @ np.asarray(elemento.e2), abs=1e-9), asta.nome
+
+
+def test_una_terna_che_non_e_ortonormale_e_rifiutata():
+    """Una terna scalata due volte non è una rotazione: passerebbe il controllo di forma e
+    renderebbe un modello largo il doppio senza che nulla lo dica."""
+    p = _prior(SINTETICO)
+    p["terna"] = (2.0 * np.asarray(p["terna"], dtype=float)).tolist()
+    with pytest.raises(ValueError, match="terna"):
+        importa.importa(p)
+
+
+def test_se_ogni_nodo_e_al_piede_non_si_propone_niente():
+    """Una trave sola poggia tutta a terra: proporre l'incastro su ogni nodo darebbe un
+    modello senza niente da calcolare (`check_model` lo rifiuta), quindi non si propone."""
+    prior = _prior(SINTETICO)
+    prior["membrature"] = [prior["membrature"][1]]  # la sola trave di fondazione
+    prior["giunzioni"] = []
+    imp = importa.importa(prior)
+    assert importa.piedi(imp.modello) == [n.id for n in imp.modello.nodi]
+    assert imp.proposte_vincoli == []
+    assert imp.resoconto["nota_vincoli"] == "tutti i nodi sarebbero al piede: nessuna proposta"

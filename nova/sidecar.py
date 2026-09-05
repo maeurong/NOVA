@@ -100,6 +100,11 @@ def comando_importa(req: dict) -> dict:
         imp = _importa.importa(prior, riferimento=percorso or "prior")
     except ValueError as e:
         raise _Rifiuto("importa", str(e)) from None
+    except (KeyError, TypeError, IndexError) as e:
+        # Un prior mutilato non è un difetto del sidecar: senza questo ramo la risposta
+        # uscirebbe con `fase: sidecar`, che il server passa come 200.
+        raise _Rifiuto("importa", f"il prior non è leggibile — chiave o campo mancante: "
+                                  f"{type(e).__name__}: {e}") from None
     resoconto = dict(imp.resoconto)
     if percorso:
         resoconto["percorso"] = str(Path(percorso).resolve())

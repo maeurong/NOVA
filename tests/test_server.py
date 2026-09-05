@@ -495,3 +495,28 @@ def test_importa_dalla_fixture(cliente):
 def test_importa_un_percorso_inesistente_e_400(cliente, tmp_path):
     r = cliente.post("/api/importa", json={"percorso": str(tmp_path / "no.json")})
     assert r.status_code == 400 and r.json()["fase"] == "importa"
+
+
+def test_importa_un_prior_mutilato_e_400_e_non_200(cliente, tmp_path):
+    from conftest import FIXTURE
+
+    prior = json.loads((FIXTURE / "prior_sintetico" / "12_wall.json").read_text(encoding="utf-8"))
+    prior["membrature"][0].pop("riempimento")
+    p = tmp_path / "12_wall.json"
+    p.write_text(json.dumps(prior), encoding="utf-8")
+    r = cliente.post("/api/importa", json={"percorso": str(p)})
+    assert r.status_code == 400 and r.json()["fase"] == "importa"
+    assert "riempimento" in r.json()["motivo"]
+
+
+def test_importa_un_percorso_relativo_e_risolto_dal_server(cliente, tmp_path, monkeypatch):
+    """Il percorso relativo lo risolve la rotta, nella cwd del server: il sidecar può girare
+    da un'altra cartella (in processo separato è la radice del pacchetto)."""
+    from conftest import FIXTURE
+
+    (tmp_path / "12_wall.json").write_bytes((FIXTURE / "prior_sintetico" / "12_wall.json").read_bytes())
+    monkeypatch.chdir(tmp_path)
+    r = cliente.post("/api/importa", json={"percorso": "12_wall.json"})
+    assert r.status_code == 200
+    percorso = Path(r.json()["resoconto"]["percorso"])
+    assert percorso.is_absolute() and percorso == (tmp_path / "12_wall.json").resolve()

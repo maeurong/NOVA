@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -58,6 +59,11 @@ def _terna_del_prior(prior: dict) -> np.ndarray:
     if terna.shape != (3, 3):
         raise ValueError(f"il prior porta una `terna` {terna.shape}, non 3×3: "
                          "senza le tre direzioni principali non si sa come sta in piedi il pezzo")
+    if not np.allclose(terna @ terna.T, np.eye(3), atol=1e-6):
+        # Una terna scalata non è una rotazione: il modello uscirebbe più largo del pezzo, e
+        # ogni verdetto a valle sarebbe coerente con se stesso e sbagliato di quel fattore.
+        raise ValueError("la `terna` del prior non è ortonormale: non è una rotazione, e le "
+                         "coordinate ruotate uscirebbero scalate senza che nulla lo dica")
     return terna
 
 
@@ -82,13 +88,17 @@ def matrice_terna(prior: dict, punti) -> np.ndarray:
     return np.array([np.cross(ey, ez), ey, ez])
 
 
-def ruota(prior: dict, punti) -> np.ndarray:
+def ruota(punti, riferimento: np.ndarray) -> np.ndarray:
     """I punti nella terna del telaio, con `x` e `z` al minimo e il fuori piano dov'era.
+
+    Il `riferimento` (le righe di `matrice_terna`) si **passa**: misurarlo di nuovo sui punti
+    ricevuti darebbe assi diversi a ogni sottoinsieme, e due chiamate sullo stesso telaio non
+    parlerebbero più delle stesse coordinate.
 
     `y` non si trasla: le quote fuori piano sono il fuori piombo che il rilievo ha misurato,
     e portarle a zero butterebbe via proprio ciò che distingue un rilievo da un disegno.
     """
-    girati = np.asarray(punti, dtype=np.float64) @ matrice_terna(prior, punti).T
+    girati = np.asarray(punti, dtype=np.float64) @ np.asarray(riferimento, dtype=np.float64).T
     girati[:, 0] -= girati[:, 0].min()
     girati[:, 2] -= girati[:, 2].min()
     return girati
@@ -138,11 +148,22 @@ def piedi(m: Modello) -> list[int]:
     return sorted(a_terra)
 
 
+NOTA_TUTTI_AL_PIEDE = "tutti i nodi sarebbero al piede: nessuna proposta"
+
+
 def proposte_vincoli(m: Modello) -> list[dict]:
     """Un incastro per ogni nodo al piede, da proporre e non da applicare: dove il pezzo
-    poggia è una lettura, non una misura del rilievo."""
+    poggia è una lettura, non una misura del rilievo.
+
+    Nessuna proposta quando **ogni** nodo cadrebbe al piede — un rilievo della sola trave di
+    fondazione: incastrare tutto è il modello che `check_model` rifiuta («non resta nulla da
+    calcolare»), e proporlo sarebbe proporre una risposta sbagliata invece di nessuna.
+    """
+    a_terra = piedi(m)
+    if not a_terra or len(a_terra) == len(m.nodi):
+        return []
     incastro = {"ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True}
-    return [{"nodo": k, "vincolo": dict(incastro)} for k in piedi(m)]
+    return [{"nodo": k, "vincolo": dict(incastro)} for k in a_terra]
 
 
 def _scartate(prior: dict) -> list[dict]:
@@ -177,12 +198,19 @@ def _regioni(quante: int) -> dict[str, RegioneConfig]:
 
 
 def _senza_giunzioni_orfane(prior: dict) -> tuple[dict, int]:
-    """Le giunzioni che nominano una membratura scartata si tolgono prima di `costruisci`.
+    """Le giunzioni che nominano una membratura che il prior non porta si tolgono e si contano.
 
-    Gli indici delle giunzioni contano le membrature *accettate*: in un prior a cui ne sono
-    state tolte due (o in una fixture costruita così) restano indici di una lista che non
-    c'è più, e `costruisci` rifiuta l'intero telaio per una giunzione che non lo riguarda.
-    Quante ne sono cadute lo dice il resoconto: la correzione si mostra, non si tace.
+    **Non si rinumerano**, ed è una decisione misurata. MeshRec scrive `cede`/`resta` come
+    indici della lista `membrature` che sta scrivendo, cioè delle sole accettate
+    (`wall.giunzioni`, Tesi@9716f6e `wall.py:997-1000`: «indici dentro la lista `membrature`
+    ricevuta … e non identificatori di regione»), mentre `scartate[i]["regione"]` è il numero
+    della regione nella segmentazione originale. I due conteggi non sono confrontabili:
+    rimappare gli uni sugli altri butterebbe via le giunzioni di un prior sano.
+
+    Resta il filtro, che è una rete per un prior scritto a mano o da una corsa vecchia: là un
+    indice fuori intervallo farebbe rifiutare da `costruisci` l'intero telaio per una
+    giunzione che non lo riguarda. Quante ne cadono lo dice il resoconto: la correzione si
+    mostra, non si tace.
     """
     if "giunzioni" not in prior:  # il rifiuto è di `costruisci`, che lo spiega meglio
         return prior, 0
@@ -245,7 +273,11 @@ def importa(prior: dict, riferimento: str | None = None) -> Importato:
     telaio = _telaio.costruisci(utile, _regioni(len(membrature)))
 
     rotazione = matrice_terna(prior, telaio.nodi)
-    posizioni = ruota(prior, telaio.nodi)
+    posizioni = ruota(telaio.nodi, rotazione)
+    # Il riferimento è il **nome** del rilievo, non il percorso da cui è stato letto: il
+    # percorso assoluto sta nel resoconto, e dentro il modello si porterebbe dietro l'albero
+    # di chi l'ha importato in ogni `origine` di ogni nodo.
+    riferimento = Path(riferimento).name if riferimento else riferimento
     origine_nodo = Origine(sorgente="rilievo", riferimento=riferimento)
     nodi = [Nodo(id=k + 1, x=float(p[0]), y=float(p[1]), z=float(p[2]), origine=origine_nodo)
             for k, p in enumerate(posizioni)]
@@ -280,6 +312,8 @@ def importa(prior: dict, riferimento: str | None = None) -> Importato:
                   "distanza_proiezione": float(g["distanza_proiezione"]),
                   "cede": int(g["cede"]), "resta": int(g["resta"])} for g in telaio.giunzioni]
     resoconto.update(aste=len(aste), nodi=len(nodi))
+    proposte = proposte_vincoli(m)
+    if not proposte:
+        resoconto["nota_vincoli"] = NOTA_TUTTI_AL_PIEDE
     return Importato(modello=m, scartate=scartate, giunzioni=giunzioni,
-                     proposte_vincoli=proposte_vincoli(m), mancano=list(MANCANO),
-                     resoconto=resoconto)
+                     proposte_vincoli=proposte, mancano=list(MANCANO), resoconto=resoconto)
