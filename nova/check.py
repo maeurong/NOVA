@@ -24,6 +24,20 @@ def _dist(a, b) -> float:
     return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
 
 
+def _porta_il_peso_proprio(a) -> bool:
+    """L'azione è il peso proprio: la gravità lungo z, generata dal programma o scritta a mano.
+
+    Guardare il solo `generata` non bastava. La densità delle sezioni è già massa nel deck
+    (`-mass` su ogni elemento), e un'azione `gravita fattore_z: -1` scritta a mano dentro
+    `masse_da_azioni` la somma una seconda volta: la massa raddoppia, la prima frequenza
+    scende di √2 (5,80 Hz → 4,10 sul telaio 2×1) e nessun verdetto la contraddice.
+
+    La gravità orizzontale non è peso: `fattore_x` è la spinta (0,1 g del caso studio), e
+    quella massa il deck non ce l'ha già.
+    """
+    return a.generata or any(c.tipo == "gravita" and c.fattore_z for c in a.carichi)
+
+
 def check_model(m: Modello) -> list[dict]:
     v: list[dict] = []
     nodi = {n.id: n for n in m.nodi}
@@ -124,7 +138,7 @@ def check_model(m: Modello) -> list[dict]:
             if t.azione not in azioni_ids:
                 riferimenti.append({"combinazione": comb.id, "azione": t.azione})
     dichiarati = set(_modello.casi_dichiarati(m))
-    generate = {a.id for a in m.azioni if a.generata}
+    pesano_gia = {a.id for a in m.azioni if _porta_il_peso_proprio(a)}
     # un riferimento rotto si spiega da sé nel suo `repr`; questo no, e la spiegazione va
     # in testa alla ragione invece che dentro un dizionario che nessuno legge a voce
     note: list[str] = []
@@ -137,7 +151,7 @@ def check_model(m: Modello) -> list[dict]:
             for massa in an.masse_da_azioni:
                 if massa.azione not in azioni_ids:
                     riferimenti.append({"analisi": "modale", "azione": massa.azione})
-                elif massa.azione in generate:
+                elif massa.azione in pesano_gia:
                     # contare il peso proprio due volte è l'errore che questo controllo evita:
                     # la densità del calcestruzzo è già la massa degli elementi (`-mass`)
                     riferimenti.append({"analisi": "modale", "azione": massa.azione})
@@ -151,11 +165,12 @@ def check_model(m: Modello) -> list[dict]:
     v.append(_v("massa_nulla", "passato" if m.aste else "non_passato",
                 f"{len(m.aste)} aste" if m.aste else "nessuna asta: massa totale zero"))
 
-    vincolati = sorted(k for k, n in nodi.items() if n.vincolo and any(n.vincolo.gradi()))
+    vincolati = sorted(k for k, n in nodi.items() if n.vincolato())
     if not vincolati:
         v.append(_v("vincoli", "non_passato", "nessun nodo vincolato: il telaio è un moto rigido", None,
                     "vincola un nodo"))
-    elif nodi and len(vincolati) == len(nodi) and all(all(nodi[k].vincolo.gradi()) for k in vincolati):
+    elif nodi and len(vincolati) == len(nodi) and all(
+            not any(nodi[k].libero(i) for i in range(6)) for k in vincolati):
         v.append(_v("vincoli", "non_passato", "ogni nodo è incastrato: non resta nulla da calcolare"))
     else:
         v.append(_v("vincoli", "passato", f"{len(vincolati)} nodi vincolati: {vincolati}"))
@@ -175,7 +190,8 @@ def check_model(m: Modello) -> list[dict]:
     v.append(_v("armatura_mancante", "non_applicabile",
                 "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
                 "con il non lineare (T4)", scoperte or None))
-    piede = _modello.piedi(m)
+    vicini = _modello.grafo(m)
+    piede = _modello.piedi(m, vicini)
     if not m.aste:
         v.append(_v("vincoli_dedotti", "non_applicabile", "nessuna asta: la regola del piede non si applica"))
     elif not piede:
@@ -185,7 +201,7 @@ def check_model(m: Modello) -> list[dict]:
     else:
         # il conteggio componenti si mostra sempre qui: un modello spezzato in sottostrutture
         # non collegate resta leggibile nel verdetto, non solo nel comportamento di `piedi`
-        componenti = f"{_modello.numero_componenti(m)} componenti"
+        componenti = f"{_modello.numero_componenti(m, vicini)} componenti"
         non_dichiarati = [k for k in piede if nodi[k].vincolo is None]
         if non_dichiarati:
             proposte = [p for p in _modello.proposte_vincoli(m, piede) if p["nodo"] in non_dichiarati]

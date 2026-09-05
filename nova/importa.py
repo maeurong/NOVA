@@ -39,7 +39,6 @@ from nova.modello import (
     Nodo,
     Origine,
     Sezione,
-    piedi,
     proposte_vincoli,
 )
 

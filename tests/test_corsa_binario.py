@@ -291,6 +291,46 @@ def test_il_gradino_che_non_regge_torna_allultimo_buono(chiedi, binario_opensees
     assert "eigen -fullGenLapack 3" in (tmp_path / "13_telaio.tcl").read_text()
 
 
+def _finto_che_fallisce(vero, cadute: set[int]):
+    """`_lancia` che boccia sempre i sei modi, e boccia i tre modi alle chiamate elencate in
+    `cadute` (numerate da 1). La prima chiamata a tre modi è il primo gradino della scala; le
+    successive sono il rilancio dell'ultimo gradino buono, dove cade l'intermittenza
+    misurata del solutore (stesso deck, uscita −5/−11 a giri alterni)."""
+    giri = {"tre": 0}
+
+    def finto(m, casi, cartella, n_modi, stato, t0):
+        if n_modi == 6:
+            return None, "", corsa._errore_solutore("finto: sei modi non si estraggono", "", cartella, t0)
+        if n_modi == 3:
+            giri["tre"] += 1
+            if giri["tre"] in cadute:
+                return None, "", corsa._errore_solutore("finto: intermittente", "", cartella, t0)
+        return vero(m, casi, cartella, n_modi, stato, t0)
+    return finto
+
+
+def test_il_rilancio_dellultimo_buono_ha_un_secondo_colpo(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Il gradino buono era appena passato: se il suo rilancio cade una volta è
+    l'intermittenza del solutore, non il modello. Si riprova una volta sola."""
+    monkeypatch.setattr(corsa, "_lancia", _finto_che_fallisce(corsa._lancia, {2}))
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3]
+    assert fin["risultati"]["run"]["modi_falliti"] == [6]
+    assert len(fin["risultati"]["modi"]) == 3
+
+
+def test_il_rilancio_che_cade_due_volte_e_un_errore(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Due cadute di fila sullo stesso gradino non sono intermittenza: è un errore, e la corsa
+    lo dice invece di rilanciare all'infinito."""
+    monkeypatch.setattr(corsa, "_lancia", _finto_che_fallisce(corsa._lancia, {2, 3}))
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "solutore"
+
+
 def test_se_il_primo_gradino_non_regge_la_corsa_e_un_errore(chiedi, binario_opensees, tmp_path, monkeypatch):
     """Nessun gradino buono alle spalle: non c'è niente a cui tornare, e l'errore è l'errore."""
     monkeypatch.setattr(corsa, "_lancia",

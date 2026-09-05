@@ -118,7 +118,7 @@ def test_vincoli_dedotti_non_passato_sul_sintetico_senza_vincoli():
     imp = importa.importa(_prior(SINTETICO))
     v = {x["controllo"]: x for x in check.check_model(imp.modello)}["vincoli_dedotti"]
     assert v["esito"] == "non_passato"
-    assert v["oggetto"] == importa.piedi(imp.modello)
+    assert v["oggetto"] == modello.piedi(imp.modello)
     assert v["valori"]["proposti"] == imp.proposte_vincoli
     assert v["rimedio"] == "conferma i vincoli proposti al piede"
 
@@ -251,7 +251,7 @@ def test_se_ogni_nodo_e_al_piede_non_si_propone_niente():
     prior["membrature"] = [prior["membrature"][1]]  # la sola trave di fondazione
     prior["giunzioni"] = []
     imp = importa.importa(prior)
-    assert importa.piedi(imp.modello) == [n.id for n in imp.modello.nodi]
+    assert modello.piedi(imp.modello) == [n.id for n in imp.modello.nodi]
     assert imp.proposte_vincoli == []
     assert imp.resoconto["nota_vincoli"] == "tutti i nodi sarebbero al piede: nessuna proposta"
 
@@ -281,7 +281,7 @@ def test_sbalzo_col_traverso_piu_basso_della_radice_non_e_un_piede():
         modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
         modello.Asta(id=2, nodo_i=2, nodo_j=3, sezione=1),
     ])
-    assert importa.piedi(m) == [1]
+    assert modello.piedi(m) == [1]
 
 
 def test_trave_di_fondazione_inclinata_ha_tutti_i_nodi_al_piede():
@@ -295,7 +295,7 @@ def test_trave_di_fondazione_inclinata_ha_tutti_i_nodi_al_piede():
         modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
         modello.Asta(id=2, nodo_i=2, nodo_j=3, sezione=1),
     ])
-    assert importa.piedi(m) == [1, 2, 3]
+    assert modello.piedi(m) == [1, 2, 3]
 
 
 def test_due_torri_sconnesse_hanno_ciascuna_i_propri_piedi():
@@ -311,7 +311,7 @@ def test_due_torri_sconnesse_hanno_ciascuna_i_propri_piedi():
         modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
         modello.Asta(id=2, nodo_i=3, nodo_j=4, sezione=1),  # fondazione di B, coricata
     ])
-    assert importa.piedi(m) == [1, 3, 4]
+    assert modello.piedi(m) == [1, 3, 4]
     v = {x["controllo"]: x for x in check.check_model(m)}["vincoli_dedotti"]
     assert v["esito"] == "non_passato" and v["oggetto"] == [1, 3, 4]
     assert "2 componenti" in v["ragione"]
@@ -324,7 +324,67 @@ def test_aste_tutte_degeneri_non_danno_nessun_piede():
         modello.Nodo(id=1, x=0, y=0, z=0),
         modello.Nodo(id=2, x=0, y=0, z=1000),
     ], aste=[modello.Asta(id=1, nodo_i=1, nodo_j=1, sezione=1)])
-    assert importa.piedi(m) == []
+    assert modello.piedi(m) == []
     v = {x["controllo"]: x for x in check.check_model(m)}["vincoli_dedotti"]
     assert v["esito"] == "non_applicabile"
     assert "nessun piede" in v["ragione"]
+
+
+def test_importa_non_riesporta_piedi():
+    """`piedi` era importato in `nova/importa.py` e mai usato: un import inutile che i test
+    prendevano da lì come se fosse casa sua. La regola del piede vive in `nova.modello`."""
+    assert not hasattr(importa, "piedi")
+
+
+def _rotazione_attorno_a_y(gradi: float) -> np.ndarray:
+    c, s = np.cos(np.radians(gradi)), np.sin(np.radians(gradi))
+    return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
+
+
+def _prior_ruotato(prior: dict, R: np.ndarray) -> dict:
+    """Lo stesso rilievo con la nuvola girata: ogni vettore in coordinate nuvola passa per `R`."""
+    def g(v):
+        return [float(x) for x in R @ np.asarray(v, dtype=float)]
+
+    p = json.loads(json.dumps(prior))
+    p["terna"] = [g(r) for r in p["terna"]]
+    for v in p["membrature"]:
+        for chiave in ("asse", "asse_ideale", "origine"):
+            v[chiave] = g(v[chiave])
+        v["base_sezione"] = [g(r) for r in v["base_sezione"]]
+    for giunzione in p["giunzioni"]:
+        giunzione["nodo"] = g(giunzione["nodo"])
+    return p
+
+
+def test_la_terna_ruotata_di_trenta_gradi_da_lo_stesso_telaio():
+    """La nuvola girata di 30° attorno alla propria y è lo stesso pezzo visto da un altro
+    scanner: i ruoli degli assi si leggono sui punti, non sull'ordine dell'SVD, e il modello
+    che ne esce deve avere le stesse estensioni."""
+    prior = _prior(SINTETICO)
+    R = _rotazione_attorno_a_y(30.0)
+    ruotato = _prior_ruotato(prior, R)
+
+    def estremi(p: dict) -> np.ndarray:
+        return np.array([np.asarray(v["origine"], dtype=float)
+                         + t * v["lunghezza"] * np.asarray(v["asse"], dtype=float)
+                         for v in p["membrature"] for t in (0.0, 1.0)])
+
+    base = importa.matrice_terna(prior, estremi(prior))
+    girata = importa.matrice_terna(ruotato, estremi(ruotato))
+
+    assert np.allclose(girata @ girata.T, np.eye(3), atol=1e-9)      # ortonormale
+    assert float(np.linalg.det(girata)) == pytest.approx(1.0, abs=1e-9)   # destrorsa
+    # ey resta il fuori piano (estensione minima), ez segue la verticale del pezzo
+    estensioni = np.ptp(estremi(ruotato) @ girata.T, axis=0)
+    assert int(np.argmin(estensioni)) == 1
+    assert float(girata[2] @ (R @ base[2])) == pytest.approx(1.0, abs=1e-9)
+    assert np.allclose(girata, base @ R.T, atol=1e-9)
+
+    m = importa.importa(ruotato).modello
+    atteso = importa.importa(prior).modello
+    for asse in ("x", "z"):
+        misurato = [getattr(n, asse) for n in m.nodi]
+        riferimento = [getattr(n, asse) for n in atteso.nodi]
+        assert max(misurato) - min(misurato) == pytest.approx(
+            max(riferimento) - min(riferimento), abs=1e-6), asse

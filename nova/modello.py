@@ -48,6 +48,10 @@ class Vincolo(_Base):
     def gradi(self) -> tuple[int, int, int, int, int, int]:
         return tuple(int(v) for v in (self.ux, self.uy, self.uz, self.rx, self.ry, self.rz))
 
+    def libero(self, i: int) -> bool:
+        """Il grado `i` (l'ordine di `gradi`) non è bloccato."""
+        return not self.gradi()[i]
+
 
 class Nodo(_Base):
     id: int
@@ -61,6 +65,16 @@ class Nodo(_Base):
     vincolo: Vincolo | None = None
     massa_nodale: float = Field(default=0.0, ge=0.0)
     origine: Origine | None = None
+
+    # `deck`, `check` e `modale` chiedevano «questo grado è libero?» in cinque modi diversi,
+    # ognuno con la propria gestione del vincolo assente. Le due domande stanno qui.
+    def libero(self, i: int) -> bool:
+        """Il grado `i` è libero. Vincolo non dichiarato = tutti e sei liberi."""
+        return self.vincolo is None or self.vincolo.libero(i)
+
+    def vincolato(self) -> bool:
+        """Almeno un grado bloccato: è il nodo per cui il deck scrive una riga `fix`."""
+        return not all(self.libero(i) for i in range(6))
 
 
 class Danno(_Base):
@@ -366,8 +380,12 @@ def casi_dichiarati(m: Modello) -> list[str]:
     return [f"Z{a.id}" for a in m.azioni] + [f"C{c.id}" for c in m.combinazioni]
 
 
-def _grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:
-    """Nodo → lista di `(vicino, coricata)`: il grafo su cui camminano `piedi` e `numero_componenti`."""
+def grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:
+    """Nodo → lista di `(vicino, coricata)`: il grafo su cui camminano `piedi` e `numero_componenti`.
+
+    È pubblico perché `check.py` chiede a entrambe la loro risposta per lo stesso verdetto, e
+    costruirlo due volte era camminare due volte le stesse aste.
+    """
     nodi = {n.id: n for n in m.nodi}
     vicini: dict[int, list[tuple[int, bool]]] = {}
     for a in m.aste:
@@ -398,7 +416,7 @@ def _componenti(vicini: dict[int, list[tuple[int, bool]]]) -> list[set[int]]:
     return gruppi
 
 
-def piedi(m: Modello) -> list[int]:
+def piedi(m: Modello, vicini: dict | None = None) -> list[int]:
     """Gli id dei nodi che poggiano a terra, dedotti dalla struttura e non da una soglia.
 
     È la regola di `meshrec.core.opensees._al_piede`, riscritta sui nodi e sulle aste di
@@ -421,7 +439,7 @@ def piedi(m: Modello) -> list[int]:
     sezione), e farla dipendere da `check` la tirerebbe dentro quella catena.
     """
     nodi = {n.id: n for n in m.nodi}
-    vicini = _grafo(m)
+    vicini = grafo(m) if vicini is None else vicini
     if not vicini:
         return []
 
@@ -444,9 +462,9 @@ def piedi(m: Modello) -> list[int]:
     return sorted(a_terra)
 
 
-def numero_componenti(m: Modello) -> int:
+def numero_componenti(m: Modello, vicini: dict | None = None) -> int:
     """Quante sottostrutture sconnesse vede `piedi`: un telaio sano ne ha una sola."""
-    return len(_componenti(_grafo(m)))
+    return len(_componenti(grafo(m) if vicini is None else vicini))
 
 
 NOTA_TUTTI_AL_PIEDE = "tutti i nodi sarebbero al piede: nessuna proposta"

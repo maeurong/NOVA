@@ -104,9 +104,15 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
             # deck che chiede modi che quel risultato non ha.
             falliti.append(n_modi)
             n_modi, ripiego = provati[-1], True
-            emetti({"evento": "fase", "nome": _fase(n_modi)})
-            d, registro, errore = _lancia(m, casi, cartella, n_modi, stato, t0)
-            if errore is not None:
+            # due colpi e non uno: quel gradino era appena passato, quindi la prima caduta è
+            # l'intermittenza misurata del solutore (stesso deck, uscita −5/−11 a giri
+            # alterni) e non il modello. La seconda di fila non è più intermittenza.
+            for _ in range(2):
+                emetti({"evento": "fase", "nome": _fase(n_modi)})
+                d, registro, errore = _lancia(m, casi, cartella, n_modi, stato, t0)
+                if errore is None:
+                    break
+            else:
                 return errore
         emetti({"evento": "fase", "nome": "leggo i recorder"})
         try:
@@ -148,9 +154,11 @@ def _tentativi(m: Modello, an: AnalisiModale | None) -> list[int | None]:
     a nove modi la cumulata è 100 % su tutte e tre le direzioni (misurato il 05/09/2026,
     OpenSees 3.8.0). Un verdetto rosso per un gradino mancante, non per il modello.
 
-    ponytail: con il tetto molto alto l'ultimo giro chiede tutti i modi a un solutore denso, e
-    il costo va col cubo. Sui telai di c.a. di v1 non si vede; se un modello diventa grande,
-    la scala vuole un tetto suo (per esempio `min(gradi_liberi, 48)`) e una rimisura.
+    ponytail: il tetto porta un cappello all'ultimo gradino della scala (48). `gradi_liberi`
+    conta anche i nodi delle suddivisioni, quindi un modello molto suddiviso ne ha centinaia,
+    e l'ultimo giro li chiederebbe tutti a un solutore denso — il costo va col cubo. Sopra i
+    48 modi il verdetto sulla massa resta quello che 48 modi dicono; se un modello vero non
+    ci arriva, il cappello vuole una rimisura, non un altro raddoppio.
     """
     if an is None or modale.gradi_liberi(m) == 0:
         # nessuna traslazione libera con massa: `eigen` non ha niente da estrarre, e chiederglielo
@@ -158,7 +166,7 @@ def _tentativi(m: Modello, an: AnalisiModale | None) -> list[int | None]:
         return [None]
     if isinstance(an.modi, int):
         return [an.modi]
-    tetto = modale.gradi_liberi(m)
+    tetto = min(modale.gradi_liberi(m), modale.SCALA_MODI[-1])
     return [n for n in modale.SCALA_MODI if n < tetto] + [tetto]
 
 
@@ -325,7 +333,7 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
         masse = {"catturata": [100.0 * cumulata[x] for x in "xyz"] + [0.0] * 3,
                  "disponibile": [100.0 if x in direzioni else 0.0 for x in "xyz"] + [0.0] * 3}
         ragione = ("cumulata " + ", ".join(f"{x} {cumulata[x]:.4g}" for x in direzioni)
-                   + f" sulle direzioni con massa {list(direzioni)}")
+                   + f" sulle direzioni con massa {', '.join(direzioni)}")
     else:
         masse, ragione = None, "nessun modo estratto: la massa partecipante non è verificata"
     v.append(_verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),

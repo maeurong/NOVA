@@ -1255,6 +1255,58 @@ def test_massa_dal_peso_proprio_generato_e_rifiutata(chiedi):
     assert v["oggetto"] == [{"analisi": "modale", "azione": 3}]
 
 
+def test_massa_dal_peso_proprio_scritto_a_mano_e_rifiutata(chiedi):
+    """La gravità lungo z è il peso proprio anche senza `generata`: la densità delle sezioni
+    l'ha già messa nel deck (`-mass`), e chiederla di nuovo in `masse_da_azioni` raddoppia la
+    massa — la prima frequenza scende di un fattore √2 (5,80 Hz → 4,10 sul telaio 2×1) e
+    nessun verdetto la contraddice."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 99, "nome": "gravita a mano", "natura": "G1",
+                        "carichi": [{"tipo": "gravita", "fattore_z": -1}]})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "rifiutato"
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    nota = "il peso proprio è già massa (densità): togli l'azione 99 da masse_da_azioni"
+    assert v["esito"] == "non_passato"
+    assert v["ragione"].startswith(nota) and v["rimedio"] == nota
+    assert v["oggetto"] == [{"analisi": "modale", "azione": 99}]
+
+
+def test_la_spinta_di_gravita_orizzontale_non_e_peso_proprio(chiedi):
+    """`gravita` con il solo `fattore_x` è una spinta (0,1 g del caso studio), non il peso:
+    quella massa il deck non ce l'ha già, e `masse_da_azioni` la deve poter chiedere."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 99, "nome": "spinta 0,1 g", "natura": "Q", "categoria": "sisma",
+                        "carichi": [{"tipo": "gravita", "fattore_x": 0.1}]})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "passato", v
+
+
+def test_il_check_cammina_il_grafo_una_volta_sola():
+    """`piedi` e `numero_componenti` costruivano due volte lo stesso grafo per riempire lo
+    stesso verdetto `vincoli_dedotti`."""
+    from nova import check as _check
+    from nova import modello as _m
+
+    conteggio = 0
+    vero = _m.grafo
+
+    def contato(m):
+        nonlocal conteggio
+        conteggio += 1
+        return vero(m)
+
+    _m.grafo = contato
+    try:
+        _check.check_model(_m.carica(leggi_fixture("telaio_2x1.nova.json")))
+    finally:
+        _m.grafo = vero
+    assert conteggio == 1
+
+
 def test_massa_da_unazione_inesistente_e_rifiutata(chiedi):
     m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
                     masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
@@ -1344,6 +1396,18 @@ def test_importa_un_prior_mutilato_nomina_la_chiave_e_non_e_un_500(chiedi, chiav
     prima, dopo = chiedi({"id": 1, "comando": "importa", "prior": prior}, {"id": 2, "comando": "fine"})
     assert prima[-1]["esito"] == "errore" and prima[-1]["fase"] == "importa"
     assert chiave in prima[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+    # in prosa: «KeyError: 'riempimento'» è il gergo con cui Python parla a se stesso
+    assert "KeyError" not in prima[-1]["motivo"]
+    assert prima[-1]["motivo"].startswith("il prior non è leggibile: manca il campo")
+
+
+def test_importa_una_scartata_che_non_e_un_oggetto_resta_fase_importa(chiedi):
+    """`scartate: ["boh"]` dà `AttributeError` su `voce.get`, che il ramo dei prior mutilati
+    non prendeva: la risposta usciva con `fase: sidecar`, e il server la passa come 200."""
+    prior = {"terna": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "membrature": [], "scartate": ["boh"]}
+    prima, dopo = chiedi({"id": 1, "comando": "importa", "prior": prior}, {"id": 2, "comando": "fine"})
+    assert prima[-1]["esito"] == "errore" and prima[-1]["fase"] == "importa", prima[-1]
+    assert "KeyError" not in prima[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
 
 
 def test_importa_scrive_nel_riferimento_il_nome_del_file_non_il_percorso(chiedi):

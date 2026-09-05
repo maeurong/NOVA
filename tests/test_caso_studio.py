@@ -45,6 +45,17 @@ def test_casi_dichiarati_sono_i_sei_attesi_senza_z4_generato():
     assert _modello.casi_dichiarati(m) == ["Z1", "Z2", "Z3", "C1", "C2", "C3"]
 
 
+# --- il tetto dei modi con le aste suddivise ---------------------------------------------
+
+def test_il_tetto_dei_modi_conta_i_nodi_delle_suddivisioni():
+    """Quattro aste con `suddivisioni: 4`: dodici nodi interni, liberi e con la massa
+    dell'elemento addosso, più i nodi 3 e 4 liberi. Il tetto di «auto» è 42, non 6, e con 6
+    la massa modale in z non arrivava mai all'85 %."""
+    m = _modello.carica(_leggi_muro_1())
+    assert all(a.suddivisioni == 4 for a in m.aste)
+    assert _modale.gradi_liberi(m) == 42
+
+
 def _massa_a_mano(m) -> float:
     """Massa del telaio dalle sezioni nominali, indipendente da `deck._massa_lineare`:
     stessa formula (area lorda meno barre in cls, più barre in acciaio) ma con le aree
@@ -128,6 +139,8 @@ def test_modale_auto_massa_modale_passato_e_direzioni_dominanti(chiedi, binario_
     ris = fin["risultati"]
     verdetti = {v["controllo"]: v for v in ris["verdetti"] if v.get("caso") is None}
     assert verdetti["massa_modale"]["esito"] == "passato", verdetti["massa_modale"]
+
+    assert ris["run"]["modi_provati"][-1] == 42, ris["run"]["modi_provati"]
 
     primi = ris["modi"][:3]
     dominanti = [_asse_dominante(modo) for modo in primi]

@@ -180,7 +180,7 @@
       "nodo_i": 1,
       "nodo_j": 2,
       "sezione": 3,
-      "suddivisioni": 1
+      "suddivisioni": 4
     },
     {
       "id": 2,
@@ -188,7 +188,7 @@
       "nodo_i": 1,
       "nodo_j": 3,
       "sezione": 1,
-      "suddivisioni": 1
+      "suddivisioni": 4
     },
     {
       "id": 3,
@@ -196,7 +196,7 @@
       "nodo_i": 2,
       "nodo_j": 4,
       "sezione": 1,
-      "suddivisioni": 1
+      "suddivisioni": 4
     },
     {
       "id": 4,
@@ -204,7 +204,7 @@
       "nodo_i": 3,
       "nodo_j": 4,
       "sezione": 2,
-      "suddivisioni": 1
+      "suddivisioni": 4
     }
   ],
   "azioni": [

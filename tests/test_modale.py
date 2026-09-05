@@ -112,3 +112,27 @@ def test_direzioni_con_massa_ignora_il_nodo_senza_massa():
         if n["id"] != 7:
             n.setdefault("vincolo", {})["uy"] = True
     assert modale.direzioni_con_massa(modello.carica(m)) == ("x", "z")
+
+
+def test_i_gradi_liberi_contano_i_nodi_delle_suddivisioni():
+    """`deck.scrivi` crea i nodi interni delle `suddivisioni`, dà `-mass` a ogni elemento e
+    scrive `fix` per i soli nodi dichiarati: quei nodi hanno massa e tutti e tre i gradi
+    liberi. Non contarli teneva il tetto di «auto» sotto i modi che il problema generalizzato
+    ha davvero, e la massa modale non arrivava mai all'85 % su un modello sano."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for a in m["aste"]:
+        a["suddivisioni"] = 4
+    # nove traslazioni dichiarate libere + cinque aste × tre nodi interni × tre gradi
+    assert modale.gradi_liberi(modello.carica(m)) == 9 + 45
+
+
+def test_direzioni_con_massa_vede_la_direzione_libera_sui_soli_nodi_interni():
+    """`uy` bloccato su ogni nodo **dichiarato**, ma i nodi interni delle suddivisioni restano
+    liberi e portano la massa dell'elemento: in y c'è massa da catturare, e chiuderla fuori
+    voleva dire non chiedere l'85 % a una direzione in cui il telaio si muove."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        n.setdefault("vincolo", {})["uy"] = True
+    for a in m["aste"]:
+        a["suddivisioni"] = 4
+    assert modale.direzioni_con_massa(modello.carica(m)) == ("x", "y", "z")

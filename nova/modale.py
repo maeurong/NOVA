@@ -102,6 +102,23 @@ def _nodi_con_massa(m: Modello) -> set[int]:
             | {n.id for n in m.nodi if n.massa_nodale})
 
 
+def _traslazioni_libere(m: Modello) -> list[tuple[bool, bool, bool]]:
+    """Le tre traslazioni di ogni nodo **del deck** che porta massa, `True` dove sono libere.
+
+    I nodi del deck non sono i nodi del modello: `deck.scrivi` ne aggiunge `suddivisioni - 1`
+    dentro ogni asta, dà `-mass` a ogni elemento (che la porta ai propri due estremi, interni
+    compresi) e scrive `fix` per i soli nodi dichiarati. Quei nodi interni hanno dunque massa
+    e tutte e tre le traslazioni libere, e sono la maggior parte dei gradi di un modello
+    suddiviso: su `muro_1` con `suddivisioni: 4` sono 36 dei 42.
+
+    Il deck non si costruisce per contarli — `suddivisioni` sta nel modello, e scrivere un
+    `.tcl` per rispondere a una domanda sul modello sarebbe il giro più lungo possibile.
+    """
+    con_massa = _nodi_con_massa(m)
+    libere = [(n.libero(0), n.libero(1), n.libero(2)) for n in m.nodi if n.id in con_massa]
+    return libere + [(True, True, True)] * sum(a.suddivisioni - 1 for a in m.aste)
+
+
 def direzioni_con_massa(m: Modello) -> tuple[str, ...]:
     """Le direzioni in cui almeno un nodo **con massa** ha il grado traslazionale libero.
 
@@ -109,14 +126,13 @@ def direzioni_con_massa(m: Modello) -> tuple[str, ...]:
     dire bocciare ogni telaio piano modellato in tre dimensioni. Vale lo stesso per una
     direzione libera sul solo nodo scollegato: `eigen` non ne cava niente, e il verdetto
     guarderebbe una direzione vuota.
+
+    I nodi interni delle `suddivisioni` contano: un telaio piano con `uy` bloccato su ogni
+    nodo dichiarato e le aste suddivise si muove in y lo stesso, perché quei nodi il `fix`
+    non ce l'hanno.
     """
-    con_massa = _nodi_con_massa(m)
-    libere = []
-    for i, nome in enumerate("xyz"):
-        if any(n.vincolo is None or not n.vincolo.gradi()[i]
-               for n in m.nodi if n.id in con_massa):
-            libere.append(nome)
-    return tuple(libere)
+    libere = _traslazioni_libere(m)
+    return tuple(nome for i, nome in enumerate("xyz") if any(t[i] for t in libere))
 
 
 def abbastanza(modi: list[dict], direzioni) -> bool:
@@ -134,19 +150,19 @@ def gradi_liberi(m: Modello) -> int:
     massa lumped di `forceBeamColumn -mass` sta sulle sole traslazioni, quindi il numero di
     modi che il problema generalizzato porta è quello, non i sei gradi per nodo.
 
-    Conta i soli nodi del modello: i nodi che le suddivisioni aggiungono portano massa
-    anche loro, quindi il tetto vero è più alto e questo resta dalla parte prudente.
+    Conta i nodi del **deck**, non quelli del modello: i nodi che le suddivisioni aggiungono
+    sono liberi e portano massa, e non contarli non era «dalla parte prudente» — era un
+    verdetto falso. Su `muro_1` con `suddivisioni: 4` il tetto rendeva 6 su 42 gradi veri,
+    la scala si fermava a `[3, 6]` e `massa_modale` usciva `non_passato` su un modello sano.
 
-    Conta anche i soli nodi che la massa ce l'hanno: un nodo che nessuna asta tocca e senza
+    Conta i soli nodi che la massa ce l'hanno: un nodo che nessuna asta tocca e senza
     `massa_nodale` ha tre gradi liberi e zero massa, quindi non porta nessun modo. Contarli
     alzava il tetto sopra i modi che il problema generalizzato ha, e l'ultimo tentativo di
     «auto» faceva uscire OpenSees (`nodo_libero` forzato, `eigen -fullGenLapack 12` su nove
     gradi con massa: codice d'uscita −5, misurato il 05/09/2026 — e in modo intermittente,
     che è il modo peggiore).
     """
-    con_massa = _nodi_con_massa(m)
-    return sum(3 if n.vincolo is None else sum(1 for g in n.vincolo.gradi()[:3] if not g)
-               for n in m.nodi if n.id in con_massa)
+    return sum(sum(t) for t in _traslazioni_libere(m))
 
 
 def analisi(m: Modello) -> AnalisiModale | None:

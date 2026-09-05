@@ -6,6 +6,7 @@ import pytest
 from conftest import leggi_fixture
 from nova import corsa
 from nova import deck as _deck
+from nova import modale as _modale
 from nova import modello as _modello
 
 
@@ -147,3 +148,30 @@ def test_i_verdetti_modali_hanno_le_stesse_chiavi(tmp_path):
         assert c3
         for v in c3:
             assert set(v) == CHIAVI_VERDETTO, v["controllo"]
+
+
+def test_la_scala_dei_modi_si_ferma_al_cappello():
+    """Un modello molto suddiviso ha centinaia di gradi liberi, e l'ultimo giro li chiederebbe
+    tutti a un solutore denso (il costo va col cubo). Il cappello è l'ultimo gradino della
+    scala: sotto di esso il tetto chiude la scala come prima."""
+    dati = leggi_fixture("telaio_2x1.nova.json")
+    for a in dati["aste"]:
+        a["suddivisioni"] = 20
+    m = _modello.carica(dati)
+    an = _modello.AnalisiModale(tipo="modale", modi="auto")
+    assert _modale.gradi_liberi(m) > _modale.SCALA_MODI[-1]
+    assert corsa._tentativi(m, an) == [3, 6, 12, 24, 48]
+
+
+def test_sotto_il_cappello_la_scala_finisce_sul_tetto():
+    m = _modello.carica(leggi_fixture("telaio_2x1.nova.json"))
+    an = _modello.AnalisiModale(tipo="modale", modi="auto")
+    assert corsa._tentativi(m, an) == [3, 6, 9]
+
+
+def test_la_ragione_della_massa_modale_elenca_le_direzioni_in_prosa(tmp_path):
+    """`['x', 'z']` è il `repr` di una lista Python dentro una frase che legge un ingegnere."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
+    assert v["massa_modale"]["ragione"].endswith("sulle direzioni con massa x, z")

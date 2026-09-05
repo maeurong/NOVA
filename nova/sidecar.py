@@ -82,6 +82,14 @@ def comando_deck(req: dict) -> dict:
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
 
 
+def _motivo_prior(e: Exception) -> str:
+    """Il prior rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
+    parla a se stesso, e chi ha in mano un rilievo non sa che farsene."""
+    if isinstance(e, KeyError):
+        return f"il prior non è leggibile: manca il campo «{e.args[0]}»"
+    return f"il prior non è leggibile: un campo porta un valore inatteso ({e})"
+
+
 def comando_importa(req: dict) -> dict:
     """Il prior di MeshRec, dal corpo della richiesta o da un file, come modello NOVA.
 
@@ -100,11 +108,11 @@ def comando_importa(req: dict) -> dict:
         imp = _importa.importa(prior, riferimento=percorso or "prior")
     except ValueError as e:
         raise _Rifiuto("importa", str(e)) from None
-    except (KeyError, TypeError, IndexError) as e:
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
         # Un prior mutilato non è un difetto del sidecar: senza questo ramo la risposta
-        # uscirebbe con `fase: sidecar`, che il server passa come 200.
-        raise _Rifiuto("importa", f"il prior non è leggibile — chiave o campo mancante: "
-                                  f"{type(e).__name__}: {e}") from None
+        # uscirebbe con `fase: sidecar`, che il server passa come 200. `AttributeError` ci
+        # sta perché una voce che non è un oggetto (`scartate: ["boh"]`) muore su `.get`.
+        raise _Rifiuto("importa", _motivo_prior(e)) from None
     resoconto = dict(imp.resoconto)
     if percorso:
         resoconto["percorso"] = str(Path(percorso).resolve())

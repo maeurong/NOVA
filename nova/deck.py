@@ -383,7 +383,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
         carico_totale[caso] = tuple(float(x) for x in tot)
 
     # ---- il file
-    vincolati = [mappa_nodo[n.id] for n in m.nodi if n.vincolo and any(n.vincolo.gradi())]
+    vincolati = [mappa_nodo[n.id] for n in m.nodi if n.vincolato()]
     r = ["# Deck generato da NOVA (nova/deck.py). Unità: mm, N, MPa, t, s.",
          "# Si esegue con la cartella di lavoro sulla cartella di uscita.",
          "wipe", "model BasicBuilder -ndm 3 -ndf 6", "", "# --- nodi ---"]
@@ -399,7 +399,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
         r.append(f"mass {tag} {massa:.10g} {massa:.10g} {massa:.10g} 0 0 0")
     r += ["", "# --- vincoli dichiarati ---"]
     for n in m.nodi:
-        if n.vincolo and any(n.vincolo.gradi()):
+        if n.vincolato():
             r.append(f"fix {mappa_nodo[n.id]} " + " ".join(str(g) for g in n.vincolo.gradi()))
     r += ["", "# --- materiali elastici (T1) e sezioni a fibre ---"]
     sezioni_senza_barre: list[int] = []

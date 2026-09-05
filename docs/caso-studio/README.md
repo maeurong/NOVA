@@ -79,12 +79,18 @@ File: [`muro_1.nova.json`](muro_1.nova.json). Corsa vera su OpenSees 3.8.0 (`chi
   confronto; `B450C` di catalogo.
 - Carico in sommità: 1 200 N spalmati sulla trave superiore come carico distribuito
   (`q = −1200 / 2262` N/mm, direzione `z`), come la faccia `TOP` del solido ccx.
-- `suddivisioni: 1` su ogni asta (non 4): `modale.gradi_liberi` conta solo i nodi del modello
-  dichiarato, non i nodi che le suddivisioni aggiungono — con più di un'asta suddivisa il tetto
-  di modi della scala «auto» resta sotto i gradi liberi veri, e la massa modale in z non arriva
-  mai all'85 % (misurato: con `suddivisioni: 4` `massa_modale` è `non_passato`, con `1` è
-  `passato` al sesto modo). Finding minimo sul modello, non sul core: `nova/modale.py` documenta
-  già il limite («il tetto vero è più alto», righe 137-149).
+- `suddivisioni: 4` su ogni asta. Il modello aveva `1` come aggiramento di quello che sembrava
+  un limite documentato del core: `modale.gradi_liberi` contava i soli nodi **dichiarati**, il
+  tetto della scala «auto» restava sotto i gradi liberi veri e `massa_modale` usciva
+  `non_passato` con le aste suddivise. Era un difetto del core, non un finding sul modello —
+  `deck.scrivi` crea i nodi interni delle suddivisioni, dà `-mass` a ogni elemento e scrive
+  `fix` per i soli nodi dichiarati, quindi quei nodi hanno massa e tre gradi liberi ciascuno.
+  Corretto in questa ondata (`nova/modale.py`, `_traslazioni_libere`): il tetto di `muro_1` è
+  **42** (2 nodi liberi × 3 + 12 nodi interni × 3), non 6.
+- `masse_da_azioni` **vuoto**: nella modale pesa il solo peso proprio delle sezioni (la densità,
+  che il deck mette in `-mass`). I 1 200 N del carico in sommità non entrano nella massa — scelta
+  dichiarata, non una dimenticanza: il confronto con ccx guarda il telaio scarico. Chiederli
+  significherebbe aggiungere una riga a `masse_da_azioni` con l'azione 3 e il suo coefficiente ψ.
 
 ### Massa: NOVA (sezioni nominali) contro il solido ccx
 
@@ -112,17 +118,25 @@ Equilibrio: Σ Rz(C1) = massa NOVA · g (entro 1e-6 relativo); Σ Rx(C2) = −0,
 spinta è 0,1 g della massa del telaio, entro 1e-6); Σ Rz(C3) = Σ Rz(C1) + 1 200 N (entro 1e-6) —
 gli stessi tre passi del deck ccx (`GRAVITA`, `SPINTA_ORIZZONTALE`, `CARICO_TOP`).
 
-### Modale (auto, `massa_modale: passato` al sesto modo)
+### Modale (auto, `massa_modale: passato` al tetto di 42 modi)
+
+Scala «auto» percorsa: `modi_provati` **[3, 6, 12, 24, 42]**, 42 modi estratti all'ultimo giro
+(il tetto sono i gradi traslazionali liberi del deck). Cumulata al 42° modo: 100 % su x, y e z.
 
 | modo NOVA | f [Hz] | direzione dominante (nodi 3-4) | ccx |
 |---|---|---|---|
-| 1 | 18,64 | uy (fuori piano) | f1 = 21,0 Hz, fuori piano |
-| 2 | 24,46 | uy (fuori piano) | — |
-| 3 | 28,90 | ux (nel piano) | f2 = 34,0 Hz, nel piano |
-| — | — | — | f3 = 42,8 Hz, torsionale |
+| 1 | 20,45 | uy (fuori piano) | f1 = 21,0 Hz, fuori piano |
+| 2 | 31,85 | ux (nel piano) | f2 = 34,0 Hz, nel piano |
+| 3 | 35,85 | uy (fuori piano) | f3 = 42,8 Hz, torsionale |
 
-Il modo 3 (28,90 Hz, `ux` dominante ai nodi 3-4) è quello nel piano, da affiancare ai 34,0 Hz di
+Il modo 2 (31,85 Hz, `ux` dominante ai nodi 3-4) è quello nel piano, da affiancare ai 34,0 Hz di
 ccx: **verifica del codice, non validazione**, nessuna vicinanza attesa fra i due numeri — il
 telaio NOVA è una trave di fondazione più due pilastri e una trave, senza zapatas, tamponatura né
 la massa reale della fondazione ccx. Il codice trova comunque, fra i primi tre modi, un modo con
 `ux` dominante e uno con `uy` dominante, che è quel che il confronto (#11) chiede di verificare.
+
+Le frequenze sono quelle delle aste suddivise in quattro, e non sono le stesse della corsa con
+`suddivisioni: 1` (18,64 / 24,46 / 28,90 Hz): con un solo elemento per membratura la massa
+lumped di `forceBeamColumn -mass` si concentra ai quattro nodi del modello, che è un modello di
+inerzia più grossolano. Massa totale e reazioni non cambiano — quelle le porta il carico, non la
+discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio.
