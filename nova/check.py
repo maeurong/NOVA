@@ -124,11 +124,21 @@ def check_model(m: Modello) -> list[dict]:
             if t.azione not in azioni_ids:
                 riferimenti.append({"combinazione": comb.id, "azione": t.azione})
     dichiarati = set(_modello.casi_dichiarati(m))
+    generate = {a.id for a in m.azioni if a.generata}
     for an in m.analisi:
         if an.tipo == "statica":
             for caso in an.casi:
                 if caso not in dichiarati:
                     riferimenti.append({"analisi": "statica", "caso": caso})
+        elif an.tipo == "modale":
+            for massa in an.masse_da_azioni:
+                if massa.azione not in azioni_ids:
+                    riferimenti.append({"analisi": "modale", "azione": massa.azione})
+                elif massa.azione in generate:
+                    # contare il peso proprio due volte è l'errore che questo controllo evita:
+                    # la densità del calcestruzzo è già la massa degli elementi (`-mass`)
+                    riferimenti.append({"analisi": "modale", "azione": massa.azione,
+                                        "perché": "il peso proprio è già massa (densità)"})
     v.append(_v("riferimenti", "non_passato" if riferimenti else "passato",
                 f"riferimenti a oggetti inesistenti: {riferimenti or 'nessuno'}", riferimenti or None,
                 "correggi il riferimento" if riferimenti else None))

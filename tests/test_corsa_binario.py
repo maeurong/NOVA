@@ -139,3 +139,100 @@ def test_la_sezione_senza_barre_corre_e_resta_un_non_applicabile(chiedi, tmp_pat
     v = {x["controllo"]: x for x in fin["verdetti_check"]}
     assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] == [1]
     assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
+
+
+# --- T2: la corsa modale sul binario vero ---
+
+def _modale(m, **campi):
+    m["analisi"].append({"tipo": "modale", **campi})
+    return m
+
+
+def test_la_modale_porta_i_modi_e_i_verdetti(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=3)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    modi = fin["risultati"]["modi"]
+    assert len(modi) == 3 and modi[0]["f"] < modi[1]["f"] < modi[2]["f"]
+    assert set(modi[0]["forma"]) == {"1", "2", "3", "4", "5", "6"}
+    assert fin["risultati"]["run"]["modi_richiesti"] == 3
+    assert fin["risultati"]["run"]["modi_estratti"] == 3
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["autovalori"] == "passato"
+    assert esiti["massa_modale"] in ("passato", "non_passato")  # 3 modi: il verdetto dice se bastano
+
+
+def test_modi_auto_cresce_fino_all_85_per_cento(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi="auto")
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    provati = fin["risultati"]["run"]["modi_provati"]
+    assert provati == sorted(provati) and provati[0] == 3
+    ultimo = fin["risultati"]["modi"][-1]["cumulata"]
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    if esiti["massa_modale"] == "passato":
+        assert ultimo["x"] >= 0.85 and ultimo["z"] >= 0.85
+    fasi = [x["nome"] for x in r if x.get("evento") == "fase"]
+    assert sum("modale" in f for f in fasi) == len(provati)
+
+
+def test_il_telaio_piano_non_arriva_all_85_per_cento_in_verticale(chiedi, binario_opensees, tmp_path):
+    """Misura del 05/09/2026: a sei modi il telaio 2×1 cattura 99,999 % in x, 100 % in y e
+    75,15 % in z. La scala di «auto» si ferma a sei (nove traslazioni libere), quindi il
+    verdetto è rosso e lo dice con le frazioni: non è un'eccezione, è una corsa riuscita."""
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi="auto")
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3, 6]
+    massa = next(v for v in fin["risultati"]["verdetti"] if v["controllo"] == "massa_modale")
+    assert massa["esito"] == "non_passato"
+    assert massa["valori"]["per_direzione"]["z"] < 0.85
+
+
+def test_modi_auto_si_ferma_al_primo_tentativo_che_basta(chiedi, binario_opensees, tmp_path):
+    """Con `uz` bloccato in testa restano x e y, e tre modi le coprono già: un solo giro."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        if n["id"] in (4, 5, 6):
+            n["vincolo"] = {"uz": True}
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(m, modi="auto"),
+                   "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3]
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["massa_modale"] == "passato"
+
+
+def test_i_modi_chiesti_di_troppo_dicono_quanti_ne_ha_estratti(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=200)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_richiesti"] == 200
+    assert fin["risultati"]["run"]["modi_estratti"] == 9  # le traslazioni libere del telaio
+
+
+def test_il_nodo_libero_forzato_non_e_verde_sulla_massa_modale(chiedi, binario_opensees, tmp_path):
+    """Il meccanismo non lo vede `autovalori` (il rapporto f1/f2 resta sopra 0,2: misurato
+    il 05/09/2026, 14,695 e 20,2161 Hz), lo vede la massa che i modi non catturano."""
+    m = _modale(leggi_fixture("nodo_libero.nova.json"), modi=3)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path), "forza": True})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["massa_modale"] == "non_passato"
+
+
+def test_la_modale_scrive_le_masse_da_azioni_e_abbassa_le_frequenze(chiedi, binario_opensees, tmp_path):
+    """La massa aggiunta è massa vera: la prima frequenza cala rispetto alla stessa corsa senza."""
+    def prima(masse, cartella):
+        m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=3, masse_da_azioni=masse)
+        (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(cartella)})
+        assert r[-1]["esito"] == "ok", r[-1]
+        return r[-1]["risultati"]["modi"][0]["f"]
+
+    assert prima([{"azione": 1, "coefficiente": 1.0}], tmp_path / "con") < prima([], tmp_path / "senza")

@@ -1132,3 +1132,100 @@ def test_la_fila_sx_si_scavalca_anche_su_h_e_colloca_non_la_vede(chiedi, tmp_pat
                             "file": [{"lato": "sx", "n": 2, "diametro": 16}]})
     r = _deck(chiedi, tmp_path, m)
     assert r["esito"] == "errore" and "sovrappongono su h" in r["motivo"]
+
+
+# --- T2: il blocco modale del deck e le masse da azioni ---
+
+def _con_modale(m, **campi):
+    m["analisi"].append({"tipo": "modale", **campi})
+    return m
+
+
+def test_il_deck_modale_scrive_eigen_e_le_masse_da_azioni(chiedi, tmp_path):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=4,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": 0.3}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    tcl = _tcl(tmp_path)
+    assert "eigen -fullGenLapack 4" in tcl and "modalProperties -print -file massa_modale.out -unorm" in tcl
+    assert tcl.count('"eigen ') == 4  # un registratore di forma per modo
+    # 0,3 · 12,5 N/mm · 9000 mm / g, metà per nodo sui due estremi di ogni trave
+    massa_tot = 0.3 * 12.5 * 9000 / 9806.65
+    righe_mass = [x for x in tcl.splitlines() if x.startswith("mass ")]
+    assert sum(float(x.split()[3]) for x in righe_mass) == pytest.approx(massa_tot, rel=1e-9)
+
+
+def test_senza_modale_il_deck_non_ha_eigen(chiedi, tmp_path):
+    assert _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"))["esito"] == "ok"
+    assert "eigen" not in _tcl(tmp_path)
+
+
+def test_i_modi_non_superano_i_gradi_liberi(chiedi, tmp_path):
+    """`eigen` oltre le traslazioni libere fa saltare OpenSees (segnale 11, misurato il
+    05/09/2026 con `-fullGenLapack 12` sul telaio 2×1, che ne ha nove)."""
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=200)
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "ok" and r["resoconto"]["modi"] == 9
+    assert "eigen -fullGenLapack 9" in _tcl(tmp_path)
+
+
+def test_zero_modi_e_un_rifiuto_del_modello(chiedi):
+    for modi in (0, -3):
+        (r,) = chiedi({"id": 1, "comando": "check",
+                       "modello": _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=modi)})
+        assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello", modi
+
+
+def test_due_analisi_modali_sono_un_rifiuto(chiedi, tmp_path):
+    m = _con_modale(_con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3), modi=4)
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and "una sola analisi modale" in r["motivo"]
+
+
+def test_il_coefficiente_zero_non_aggiunge_massa(chiedi, tmp_path):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": 0.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    assert not [x for x in _tcl(tmp_path).splitlines() if x.startswith("mass ")]
+
+
+def test_lazione_senza_carichi_non_aggiunge_massa(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 9, "nome": "vuota", "natura": "G2", "carichi": []})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 9, "coefficiente": 1.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    assert not [x for x in _tcl(tmp_path).splitlines() if x.startswith("mass ")]
+
+
+def test_la_massa_nodale_e_quella_da_azione_si_sommano(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    next(n for n in m["nodi"] if n["id"] == 4)["massa_nodale"] = 2.0
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 1, "coefficiente": 1.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    riga = next(x for x in _tcl(tmp_path).splitlines() if x.startswith("mass 4 "))
+    # nodo 4: metà della trave 4 (5000 mm) più i due quintali dichiarati
+    assert float(riga.split()[2]) == pytest.approx(2.0 + 12.5 * 5000 / 2 / 9806.65, rel=1e-9)
+
+
+def test_massa_dal_peso_proprio_generato_e_rifiutata(chiedi):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 3, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "non_passato" and "peso proprio" in v["ragione"]
+
+
+def test_massa_da_unazione_inesistente_e_rifiutata(chiedi):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "non_passato" and v["oggetto"] == [{"analisi": "modale", "azione": 99}]
+
+
+def test_il_coefficiente_di_massa_negativo_e_un_rifiuto(chiedi):
+    """Una massa negativa non esiste: `ψ` di NTC [2.5.7] è una frazione, e OpenSees si berrebbe
+    la riga `mass` senza fiatare rendendo frequenze che nessun verdetto contraddice."""
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": -0.3}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello"

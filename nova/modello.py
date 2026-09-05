@@ -226,12 +226,12 @@ class AnalisiStatica(_Base):
 
 class MassaDaAzione(_Base):
     azione: int
-    coefficiente: float
+    coefficiente: float = Field(ge=0)  # è la ψ di NTC [2.5.7]: una frazione, mai una massa che si toglie
 
 
 class AnalisiModale(_Base):
     tipo: Literal["modale"]
-    modi: int | Literal["auto"] = "auto"
+    modi: Annotated[int, Field(ge=1)] | Literal["auto"] = "auto"
     masse_da_azioni: list[MassaDaAzione] = []
 
 

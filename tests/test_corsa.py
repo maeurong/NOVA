@@ -103,3 +103,25 @@ def test_risultati_da_uscite_pretende_lhash_del_modello(tmp_path):
     m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
     with pytest.raises(TypeError):
         corsa.risultati_da_uscite(m, d, tmp_path, "")
+
+
+# --- T2: i due verdetti modali ---
+
+def test_nessun_modo_estratto_non_e_non_applicabile(tmp_path):
+    """Il passo modale c'è stato e non ha reso niente: è un rosso, non una terza cosa."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ("x", "z"))}
+    assert v["autovalori"]["esito"] == "non_passato"
+    assert v["massa_modale"]["esito"] == "non_passato"
+    assert "nessun modo estratto" in v["massa_modale"]["ragione"]
+
+
+def test_la_massa_modale_conta_solo_le_direzioni_con_massa(tmp_path):
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
+    assert v["massa_modale"]["esito"] == "passato"
+    assert v["massa_modale"]["valori"]["per_direzione"]["y"] is None
+    assert "x" in v["massa_modale"]["ragione"] and "z" in v["massa_modale"]["ragione"]
+    stretto = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "y", "z"))}
+    assert stretto["massa_modale"]["esito"] == "non_passato"
