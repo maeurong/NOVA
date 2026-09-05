@@ -13,7 +13,7 @@ def _modello_e_deck(nome: str, tmp_path, casi=("Z1",)):
 
 
 def _verdetti(m, d, per_caso, registro=""):
-    return {v["controllo"]: v for v in corsa.controlli(m, d, per_caso, registro)}
+    return {v["controllo"]: v for v in corsa.controlli(d, per_caso, registro)}
 
 
 def _caso(spostamenti, reazioni=None):
@@ -68,4 +68,10 @@ def test_i_quattro_controlli_fuori_dalla_statica_sono_non_applicabili(tmp_path):
 
 def test_il_registro_senza_version_non_da_versione():
     assert corsa._versione("OpenSees -- Open System\nfinito\n") is None
-    assert "3.8.0" in corsa._versione("OpenSees\nVersion 3.8.0\n")
+    assert "3.8.0" in corsa._versione("OpenSees\nVersion 3.8.0 64-Bit\n")
+
+
+def test_la_versione_e_il_banner_non_una_riga_qualunque():
+    """Un avviso che nomina «Version» non è il banner: la riga della versione comincia per «Version»."""
+    registro = "WARNING: Version mismatch in element 3\nVersion 3.8.0 64-Bit\n"
+    assert corsa._versione(registro) == "Version 3.8.0 64-Bit"

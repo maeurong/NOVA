@@ -7,6 +7,7 @@ import os
 import pytest
 
 from conftest import leggi_fixture
+from nova.corsa import NOME_RISULTATI
 
 
 def test_fine_risponde_ciao(chiedi):
@@ -863,8 +864,9 @@ def test_il_registro_con_byte_non_utf8_resta_leggibile(chiedi, tmp_path):
 def test_la_corsa_oltre_il_timeout_e_un_errore_di_fase_solutore(chiedi, tmp_path, monkeypatch):
     from nova import corsa as _c
     monkeypatch.setattr(_c, "_TIMEOUT_S", 0.5)
-    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "sleep 5\n"))
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo comincio\nsleep 5\n"))
     assert fin["esito"] == "errore" and fin["fase"] == "solutore" and "timeout" in fin["motivo"]
+    assert "comincio" in (tmp_path / "c" / "13_solver.log").read_text()  # il registro c'è comunque
 
 
 def test_forza_fa_partire_la_corsa_e_tiene_il_rifiuto_del_check(chiedi, tmp_path):
@@ -880,3 +882,59 @@ def test_il_solutore_fuori_dal_path_e_assente_non_un_errore(chiedi, tmp_path, mo
     fin = _corsa(chiedi, tmp_path)
     assert fin["esito"] == "assente" and fin["dove_prenderlo"]
     assert "non è nel PATH" in fin["motivo"]
+
+
+_RECORDER_INF = """riga() { i=0; s=""; while [ $i -lt $1 ]; do s="$s inf"; i=$((i+1)); done; echo "$s" > "$2"; }
+riga 18 Z1_spostamenti.out
+riga 18 Z1_reazioni.out
+riga 24 Z1_localforce.out
+for k in 1 2 3 4 5; do riga 8 Z1_sez$k.out; done
+echo MESHREC_FINE > fine.out
+"""
+
+
+def _rifiuta_costante(c):
+    raise AssertionError(f"costante JSON non standard nella risposta: {c}")
+
+
+def test_il_solutore_divergente_non_scrive_infinity_nel_json(tmp_path):
+    """`Infinity` e `NaN` non stanno nel JSON standard: `JSON.parse` del browser li rifiuta."""
+    from nova import sidecar
+    req = {"id": 1, "comando": "corsa", "modello": leggi_fixture("trave_appoggiata.nova.json"),
+           "cartella": str(tmp_path / "c"), "casi": ["Z1"], "solutore": _finto(tmp_path, _RECORDER_INF)}
+    uscita = io.StringIO()
+    sidecar.servi(io.StringIO(json.dumps(req) + "\n"), uscita)
+    fin = json.loads(uscita.getvalue().splitlines()[-1], parse_constant=_rifiuta_costante)
+    assert fin["esito"] == "ok", fin
+    esiti = {(v["controllo"], v["caso"]): v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti[("spostamenti", "Z1")] == "non_passato" and esiti[("reazioni", "Z1")] == "non_passato"
+    assert fin["risultati"]["per_caso"]["Z1"]["spostamenti"]["1"] == [None] * 6
+    json.loads((tmp_path / "c" / NOME_RISULTATI).read_text(), parse_constant=_rifiuta_costante)
+
+
+def test_solutore_che_non_e_eseguibile_e_di_fase_solutore(chiedi, tmp_path):
+    non_eseguibile = tmp_path / "OpenSees.txt"
+    non_eseguibile.write_text("non sono un binario\n")
+    non_eseguibile.chmod(0o644)
+    fin = _corsa(chiedi, tmp_path, solutore=str(non_eseguibile))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert "OpenSees.txt" in fin["motivo"] and "non è eseguibile" in fin["motivo"]
+
+
+def test_la_corsa_fallita_non_lascia_i_risultati_di_ieri(chiedi, tmp_path):
+    vecchia = tmp_path / "c"
+    vecchia.mkdir()
+    (vecchia / NOME_RISULTATI).write_text('{"run": {"hash_modello": "di ieri"}}')
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "exit 0\n"))
+    assert fin["esito"] == "errore"
+    assert not (vecchia / NOME_RISULTATI).exists()
+
+
+def test_il_deck_rifiutato_non_tocca_le_uscite_precedenti(chiedi, tmp_path):
+    vecchia = tmp_path / "c"
+    vecchia.mkdir()
+    (vecchia / "Z1_spostamenti.out").write_text("1.0\n")
+    (vecchia / NOME_RISULTATI).write_text("{}")
+    fin = _corsa(chiedi, tmp_path, casi=["Z9"], solutore=_finto(tmp_path, "exit 0\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "deck"
+    assert (vecchia / "Z1_spostamenti.out").is_file() and (vecchia / NOME_RISULTATI).is_file()

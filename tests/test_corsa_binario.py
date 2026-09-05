@@ -48,7 +48,10 @@ def test_trave_appoggiata_momento_in_mezzeria(chiedi, tmp_path, binario_opensees
     mezzo = _mezzeria(st)
     assert abs(mezzo["x_rel"] - 0.5) < 1e-9  # con 2 suddivisioni la stazione 5 del primo elemento è a metà
     assert mezzo["My"] == pytest.approx(10.0 * 6000 ** 2 / 8, rel=1e-3)  # positivo: fibre inferiori tese
-    assert abs(st[0]["Vz"]) == pytest.approx(10.0 * 6000 / 2, rel=1e-3)
+    # taglio dei manuali: +qL/2 all'estremo i, −qL/2 all'estremo j, zero in mezzeria
+    assert st[0]["Vz"] == pytest.approx(10.0 * 6000 / 2, rel=1e-3)
+    assert st[-1]["Vz"] == pytest.approx(-10.0 * 6000 / 2, rel=1e-3)
+    assert abs(mezzo["Vz"]) < 1.0
     assert abs(st[0]["N"]) < 1.0
 
 
@@ -69,10 +72,11 @@ def test_due_casi_sono_indipendenti(chiedi, tmp_path, binario_opensees):
 
 
 def test_asta_a_lunghezza_zero_forzata_mostra_lo_squilibrio(chiedi, tmp_path, binario_opensees):
+    """OpenSees la risolve senza un `WARNING`: l'unico segnale è il verdetto sulle reazioni."""
     fin = _corsa(chiedi, "asta_lunghezza_zero.nova.json", tmp_path, forza=True)[-1]
-    assert fin["esito"] in ("ok", "errore")
-    if fin["esito"] == "ok":
-        assert any(v["controllo"] == "reazioni" and v["esito"] == "non_passato" for v in fin["risultati"]["verdetti"])
+    assert fin["esito"] == "ok", fin
+    reazioni = [v for v in fin["risultati"]["verdetti"] if v["controllo"] == "reazioni"]
+    assert len(reazioni) == 4 and all(v["esito"] == "non_passato" for v in reazioni), reazioni
 
 
 def test_senza_forza_il_check_rifiuta_prima_del_deck(chiedi, tmp_path):
@@ -112,3 +116,14 @@ def test_mz_segue_la_stessa_convenzione_di_my(chiedi, tmp_path, binario_opensees
     assert r[-1]["esito"] == "ok", r[-1]
     mezzo = _mezzeria(r[-1]["risultati"]["per_caso"]["Z1"]["sollecitazioni"]["1"])
     assert mezzo["Mz"] == pytest.approx(10.0 * 6000 ** 2 / 8, rel=1e-3)
+
+
+def test_il_taglio_lungo_laltro_asse_ha_lo_stesso_segno(chiedi, tmp_path, binario_opensees):
+    """Stessa convenzione di `Vz`: +qL/2 all'estremo i, −qL/2 a j, sull'asse y locale."""
+    m = leggi_fixture("trave_appoggiata.nova.json")
+    m["azioni"][0]["carichi"][0]["direzione"] = "locale_y"
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path), "casi": ["Z1"]})
+    assert r[-1]["esito"] == "ok", r[-1]
+    st = r[-1]["risultati"]["per_caso"]["Z1"]["sollecitazioni"]["1"]
+    assert st[0]["Vy"] == pytest.approx(10.0 * 6000 / 2, rel=1e-3)
+    assert st[-1]["Vy"] == pytest.approx(-10.0 * 6000 / 2, rel=1e-3)

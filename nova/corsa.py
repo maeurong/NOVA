@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import math
 import subprocess
 import time
 import uuid
@@ -41,13 +42,35 @@ def _solutore(percorso: str | None) -> SolutoreConfig:
 
 
 def verifica(percorso: str | None) -> dict:
-    stato = solve.disponibilita(_solutore(percorso))["opensees"]
-    if not stato["disponibile"]:
-        return {"esito": "assente", "percorso": None, "motivo": stato["motivo"],
-                "dove_prenderlo": stato["dove_prenderlo"]}
+    """Una sola ricerca del binario: `solve.verifica` dice già se c'è e se risponde."""
     prova = solve.verifica(_solutore(percorso))
-    return {"esito": "ok" if prova["funziona"] else "rotto", "percorso": str(stato["percorso"]),
-            "motivo": prova["motivo"], "dove_prenderlo": stato["dove_prenderlo"]}
+    dove = solve.DOVE_PRENDERLO["opensees"]
+    if not prova["disponibile"]:
+        return {"esito": "assente", "percorso": None, "motivo": prova["motivo"], "dove_prenderlo": dove}
+    return {"esito": "ok" if prova["funziona"] else "rotto", "percorso": str(prova["percorso"]),
+            "motivo": prova["motivo"], "dove_prenderlo": dove}
+
+
+def _numero(x) -> float | None:
+    """`null` al posto di `inf`/`nan`: il JSON standard non li ha e `JSON.parse` rifiuta la riga.
+
+    Il verdetto non si ammorbidisce — `controlli` rilegge i `None` come `nan` e il controllo
+    resta `non_passato`: qui si cambia solo come il numero guasto **si scrive**.
+    """
+    x = float(x)
+    return x if math.isfinite(x) else None
+
+
+def _reale(x) -> float:
+    return math.nan if x is None else float(x)
+
+
+def _pulito(v):
+    if isinstance(v, float):
+        return _numero(v)
+    if isinstance(v, (list, tuple)):
+        return [_pulito(x) for x in v]
+    return v
 
 
 def esegui(m: Modello, casi: list[str], cartella: Path, percorso_solutore: str | None = None,
@@ -62,16 +85,19 @@ def esegui(m: Modello, casi: list[str], cartella: Path, percorso_solutore: str |
                 "secondi": time.perf_counter() - t0}
     cartella = Path(cartella)
     cartella.mkdir(parents=True, exist_ok=True)
-    for vecchia in cartella.glob("*.out"):
-        vecchia.unlink()  # un `.out` di ieri si legge come il risultato di oggi
     emetti({"evento": "fase", "nome": "scrivo il deck e lancio OpenSees"})
-    d = _deck.scrivi(m, casi, cartella)
+    d = _deck.scrivi(m, casi, cartella)  # prima il deck: se lo rifiuta, la corsa di ieri resta intera
+    for vecchia in [*cartella.glob("*.out"), cartella / NOME_RISULTATI]:
+        vecchia.unlink(missing_ok=True)  # un'uscita di ieri si legge come il risultato di oggi
     try:
         processo = subprocess.run([str(stato["percorso"]), _deck.NOME_TCL], cwd=cartella,
                                   capture_output=True, timeout=_TIMEOUT_S)
     except subprocess.TimeoutExpired as e:
         return _errore_solutore(f"OpenSees non è finito entro il timeout di {_TIMEOUT_S:g} s",
                                 _testo(e.stdout) + _testo(e.stderr), cartella, t0)
+    except (OSError, subprocess.SubprocessError) as e:
+        # esiste ma non parte: permessi, architettura sbagliata, script senza shebang
+        return _errore_solutore(f"«{stato['percorso']}» non è eseguibile: {e}", "", cartella, t0)
     registro = _testo(processo.stdout) + _testo(processo.stderr)
     (cartella / opensees.NOME_REGISTRO).write_text(registro, encoding="utf-8")
     fine = cartella / opensees.NOME_FINE
@@ -96,6 +122,8 @@ def _testo(grezzo: bytes | None) -> str:
 
 
 def _errore_solutore(motivo: str, registro: str, cartella: Path, t0: float) -> dict:
+    """Il registro finisce su disco anche qui: la corsa andata male è quella che si va a leggere."""
+    (cartella / opensees.NOME_REGISTRO).write_text(registro, encoding="utf-8")
     return {"esito": "errore", "fase": "solutore", "motivo": motivo, "coda_log": registro[-2000:],
             "secondi": time.perf_counter() - t0}
 
@@ -121,9 +149,12 @@ def _stazioni(d: _deck.Deck, caso: str, cartella: Path) -> dict[str, list[dict]]
                     continue  # la stazione 0 di un elemento interno coincide con la 1 del precedente
                 x = xi * e.L
                 P, Mz, My, T = (float(v) for v in sez[k][t - 1, :4])
-                stazioni.append({"x_rel": (offset + x) / L_asta, "N": P,
-                                 "Vy": -(float(Fi[1]) + wy * x), "Vz": -(float(Fi[2]) + wz * x),
-                                 "T": T, "My": SEGNO_MY * My, "Mz": SEGNO_MZ * Mz})
+                # taglio dei manuali: +qL/2 all'estremo i, −qL/2 a j. Misurato il 05/09/2026 sulla
+                # trave appoggiata (q = 10 N/mm, L = 6000): `localForce` rende Vz_i = +30 000, che è
+                # già il segno giusto — il taglio si somma al carico, non si cambia di segno.
+                stazioni.append({"x_rel": _numero((offset + x) / L_asta), "N": _numero(P),
+                                 "Vy": _numero(float(Fi[1]) + wy * x), "Vz": _numero(float(Fi[2]) + wz * x),
+                                 "T": _numero(T), "My": _numero(SEGNO_MY * My), "Mz": _numero(SEGNO_MZ * Mz)})
             offset += e.L
         per_asta[str(id_asta)] = stazioni
     return per_asta
@@ -139,11 +170,11 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
         R = opensees._ultima_riga(cartella / f"{caso}_reazioni.out", 6 * n_nodi).reshape(n_nodi, 6)
         per_caso[caso] = {
             "con_segno": True,
-            "spostamenti": {str(tag_a_id[t]): [float(x) for x in U[t - 1]] for t in tag_a_id},
-            "reazioni": {str(tag_a_id[t]): [float(x) for x in R[t - 1]] for t in d.vincolati},
+            "spostamenti": {str(tag_a_id[t]): [_numero(x) for x in U[t - 1]] for t in tag_a_id},
+            "reazioni": {str(tag_a_id[t]): [_numero(x) for x in R[t - 1]] for t in d.vincolati},
             "sollecitazioni": _stazioni(d, caso, cartella),
         }
-    verdetti = controlli(m, d, per_caso, registro)
+    verdetti = controlli(d, per_caso, registro)
     return {
         "run": {"id": uuid.uuid4().hex[:12], "data": _dt.datetime.now().isoformat(timespec="seconds"),
                 "hash_modello": hash_modello or impronta(m), "versione_opensees": _versione(registro),
@@ -157,8 +188,10 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
 
 
 def _versione(registro: str) -> str | None:
+    """La riga del banner, che **comincia** per «Version»: un `WARNING` che nomina una versione
+    di elemento non è la versione del solutore."""
     for riga in registro.splitlines():
-        if "Version" in riga:
+        if riga.strip().startswith("Version"):
             return riga.strip()
     return None
 
@@ -170,32 +203,40 @@ def _esito(c: dict) -> str:
 
 
 def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | None = None) -> dict:
-    valori = {k: v for k, v in c.items() if k not in ("passato", "applicabile", "motivo", "controllo", "modello")}
+    valori = {k: _pulito(v) for k, v in c.items()
+              if k not in ("passato", "applicabile", "motivo", "controllo", "modello")}
     return {"controllo": controllo, "esito": _esito(c), "caso": caso,
             "ragione": ragione or c.get("motivo") or "", "valori": valori}
 
 
-def controlli(m: Modello, d: _deck.Deck, per_caso: dict, registro: str) -> list[dict]:
+def controlli(d: _deck.Deck, per_caso: dict, registro: str) -> list[dict]:
     """I sette controlli di solve.py riletti nel verdetto a tre valori: uno per caso dove il caso conta."""
     v: list[dict] = []
     dimensione = float(np.linalg.norm(np.ptp(np.array(list(d.nodi.values())), axis=0)))
     for caso, dati in per_caso.items():
-        reazioni = {int(k): tuple(x[:3]) for k, x in dati["reazioni"].items()}
+        # i `None` della composizione tornano `nan`: un numero guasto deve **fallire** il controllo
+        reazioni = {int(k): tuple(_reale(y) for y in x[:3]) for k, x in dati["reazioni"].items()}
         atteso = tuple(-x for x in d.carico_totale[caso])
         c = solve.controlla_reazioni(reazioni, atteso, solve._TOLLERANZA_REAZIONI)
         v.append(_verdetto("reazioni", c, caso,
                            f"Σ reazioni {c['somma']} contro Σ carichi {atteso}, scarto {c['scarto_relativo']}"))
         # nessuno spostamento non è uno spostamento nullo: `None` dichiara «non verificato»
-        u_max = max((float(np.linalg.norm(x[:3])) for x in dati["spostamenti"].values()), default=None)
+        u_max = max((float(np.linalg.norm([_reale(y) for y in x[:3]]))
+                     for x in dati["spostamenti"].values()), default=None)
         c = solve.controlla_spostamenti(u_max, dimensione)
         v.append(_verdetto("spostamenti", c, caso,
                            f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
                            f"su {dimensione:.6g} mm"))
     n = opensees.conta_avvisi(registro)
     v.append(_verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
-    for controllo in ("autovalori", "massa_modale"):
-        v.append({"controllo": controllo, "esito": "non_applicabile", "caso": None,
-                  "ragione": "nessuna analisi modale in questa corsa", "valori": {}})
-    for controllo in ("picco", "vincolo_in_pianta"):
-        v.append(_verdetto(controllo, solve.esito_non_applicabile(controllo, "telaio")))
+    # `esito_non_applicabile` rende `None` dove il controllo **varrebbe** sul telaio (autovalori e
+    # massa modale): non c'è analisi modale in questa corsa, e il verdetto lo dice qui.
+    for controllo, ragione in (("autovalori", "nessuna analisi modale in questa corsa"),
+                               ("massa_modale", "nessuna analisi modale in questa corsa"),
+                               ("picco", "non calcolato in una corsa statica"),
+                               ("vincolo_in_pianta", "non calcolato in una corsa statica")):
+        c = solve.esito_non_applicabile(controllo, "telaio")
+        v.append(_verdetto(controllo, c) if c else
+                 {"controllo": controllo, "esito": "non_applicabile", "caso": None,
+                  "ragione": ragione, "valori": {}})
     return v
