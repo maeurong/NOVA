@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unita": "mm-N-MPa-t-s",
+  "contatori": {"nodo": 2, "asta": 1, "sezione": 1, "materiale": 2, "azione": 1, "combinazione": 0},
+  "materiali": [
+    {"id": 1, "nome": "C25/30", "tipo": "calcestruzzo", "classe": "C25/30"},
+    {"id": 2, "nome": "B450C", "tipo": "acciaio", "classe": "B450C"}
+  ],
+  "sezioni": [
+    {"id": 1, "nome": "30×50 8Ø20 staffe Ø8/100", "b": 300, "h": 500,
+     "calcestruzzo": 1, "acciaio": 2, "copriferro": 30,
+     "file": [{"lato": "inf", "n": 3, "diametro": 20}, {"lato": "sup", "n": 3, "diametro": 20},
+              {"lato": "sx", "n": 1, "diametro": 20}, {"lato": "dx", "n": 1, "diametro": 20}],
+     "staffe": {"diametro": 8, "passo": 100, "bracci": 3}}
+  ],
+  "nodi": [
+    {"id": 1, "nome": "piede", "x": 0, "y": 0, "z": 0,
+     "vincolo": {"ux": true, "uy": true, "uz": true, "rx": true, "ry": true, "rz": true}},
+    {"id": 2, "nome": "testa", "x": 0, "y": 0, "z": 3000}
+  ],
+  "aste": [
+    {"id": 1, "nome": "pilastro", "nodo_i": 1, "nodo_j": 2, "sezione": 1, "suddivisioni": 2}
+  ],
+  "azioni": [
+    {"id": 1, "nome": "carico in testa", "natura": "G2",
+     "carichi": [{"tipo": "nodale", "nodo": 2, "Fz": -300000}]}
+  ],
+  "combinazioni": [],
+  "analisi": [{"tipo": "statica", "casi": ["Z1"]}]
+}

@@ -138,6 +138,35 @@ def senza_barre(s: Sezione) -> bool:
     return not s.file or s.staffe is None
 
 
+class Legame(_Base):
+    """Il legame costitutivo non lineare di un materiale: tutti campi, tutti sovrascrivibili.
+
+    I default sono quelli che `nova/legami.py` deriva dalla classe NTC e dalla veste; qui
+    stanno solo le scelte che la norma non fissa (`lambda`, `fpcu/fpc`, `R0 cR1 cR2`) e le
+    deroghe a quelle che fissa (`epsU_nucleo` contro la [4.1.11], `fym` contro `f_yk`).
+    `None` non vuol dire zero: vuol dire «lo decide la norma».
+
+    `lambda` è una parola riservata di Python. Il campo si chiama `lambda_` e l'alias tiene
+    il nome che il JSON e la riga `uniaxialMaterial` portano davvero; `populate_by_name` e
+    `serialize_by_alias` fanno sì che entrambe le grafie entrino e che il `model_dump` che
+    `server.py` risalva si rilegga da solo, che con `extra="forbid"` non è scontato.
+    """
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    tipo: Literal["elastico", "concrete02", "concrete04", "steel02"] = "elastico"
+    confinamento: Literal["nessuno", "ntc", "mander"] = "ntc"
+    epsU_copriferro: float = 0.0035
+    epsU_nucleo: float | None = None  # None → ε_cu2,c dalla [4.1.11]
+    lambda_: float = Field(0.1, alias="lambda")
+    fpcu_su_fpc: float = 0.2
+    Es: float = 200000.0
+    fym: float | None = None  # None → f_yk della classe (450 per B450C): f_ym non ha fonte
+    b: float | None = None  # None → da k e ε_ud della classe (0,0045 per B450C)
+    R0: float = 18
+    cR1: float = 0.925
+    cR2: float = 0.15
+
+
 class Materiale(_Base):
     id: int
     nome: str
@@ -149,6 +178,7 @@ class Materiale(_Base):
     origine: Origine | None = None
     valori: dict[str, float] = {}
     personalizzato: bool = False
+    legame: Legame = Legame()
 
     @model_validator(mode="after")
     def _la_classe_esiste_nel_catalogo(self):
