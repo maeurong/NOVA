@@ -135,6 +135,13 @@ class CcxReq(_CorpoBase):
     inp: str
 
 
+class ConfrontoReq(_CorpoBase):
+    telaio: str
+    solido: str | None = None
+    abaqus: str | None = None
+    mappa_casi: dict = Field(default_factory=dict)
+
+
 def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
@@ -157,7 +164,7 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         return await call_next(request)
 
     def _o_400(fin: dict) -> dict:
-        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa"):
+        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa", "confronto"):
             raise HTTPException(400, detail=fin)
         return fin
 
@@ -194,6 +201,17 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         fin = _o_400(_finale(righe))
         return {"run_id": run_id, "cartella": str(cartella_corse / run_id),
                 "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+
+    @app.post("/api/confronto")
+    def confronto(corpo: ConfrontoReq):
+        """`telaio`/`solido`/`abaqus` sono percorsi dell'utente locale, letti e basta; la
+        cartella d'export è sempre quella che il server genera, come `corsa` e `ccx`."""
+        run_id = secrets.token_hex(6)
+        righe = sidecar.chiedi({"comando": "confronto", "telaio": corpo.telaio, "solido": corpo.solido,
+                                "abaqus": corpo.abaqus, "mappa_casi": corpo.mappa_casi,
+                                "cartella": str(cartella_corse / run_id)})
+        fin = _o_400(_finale(righe))
+        return {"run_id": run_id, "cartella": str(cartella_corse / run_id), **fin}
 
     @app.get("/api/risultati/{run_id}")
     def risultati(run_id: str):

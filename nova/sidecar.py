@@ -5,6 +5,7 @@ ogni eccezione diventa `esito: errore` con `fase` e `motivo` (spec: «Protocollo
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import time
@@ -12,12 +13,13 @@ from pathlib import Path
 
 from nova import ccx as _ccx
 from nova import check as _check
+from nova import confronto as _confronto
 from nova import corsa as _corsa
 from nova import deck as _deck
 from nova import importa as _importa
 from nova import modello as _modello
 
-COMANDI = ("verifica", "check", "deck", "corsa", "ccx", "importa", "fine")
+COMANDI = ("verifica", "check", "deck", "corsa", "ccx", "confronto", "importa", "fine")
 
 
 class _Rifiuto(Exception):
@@ -157,6 +159,41 @@ def comando_ccx(req: dict, emetti) -> dict:
     return _ccx.esegui(Path(percorso), Path(req.get("cartella") or "corsa"), req.get("solutore"), emetti)
 
 
+def _leggi_json(percorso: str, che_cosa: str) -> dict:
+    try:
+        return json.loads(Path(percorso).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise _Rifiuto("confronto", f"{che_cosa} illeggibile ({percorso}): {e}") from None
+
+
+def comando_confronto(req: dict) -> dict:
+    """Il telaio e i due opzionali si leggono e basta: nessuna scrittura prima dell'export."""
+    percorso_telaio = req.get("telaio")
+    if not percorso_telaio:
+        raise _Rifiuto("confronto", "serve il telaio: «telaio» con il percorso di un "
+                       "risultati.nova.risultati.json")
+    telaio = _leggi_json(percorso_telaio, "il telaio")
+    solido = _leggi_json(req["solido"], "il solido") if req.get("solido") else None
+    abaqus = None
+    if req.get("abaqus"):
+        try:
+            abaqus = _confronto.leggi_csv(Path(req["abaqus"]))
+        except (OSError, ValueError) as e:
+            raise _Rifiuto("confronto", str(e)) from None
+    try:
+        tabella = _confronto.confronta(telaio, solido, abaqus, req.get("mappa_casi") or {})
+    except ValueError as e:
+        raise _Rifiuto("confronto", str(e)) from None
+    file: dict = {}
+    if req.get("cartella"):
+        try:
+            file = _confronto.esporta(tabella, Path(req["cartella"]))
+        except OSError as e:
+            raise _Rifiuto("confronto", str(e)) from None
+    return {"esito": "ok", "tabella": dataclasses.asdict(tabella),
+            "file": {k: str(v) for k, v in file.items()}}
+
+
 def rispondi(req: dict, emetti) -> dict:
     comando = req.get("comando")
     try:
@@ -166,6 +203,8 @@ def rispondi(req: dict, emetti) -> dict:
             return comando_corsa(req, emetti)
         if comando == "ccx":
             return comando_ccx(req, emetti)
+        if comando == "confronto":
+            return comando_confronto(req)
         if comando == "check":
             return comando_check(req)
         if comando == "deck":

@@ -1,0 +1,4 @@
+caso;grandezza;valore;unita;fonte
+GRAVITA;reazione_z;4250,1;N;Abaqus 2024 su Windows, 02/09/2026
+SPINTA_ORIZZONTALE;reazione_x;-2450,7;N;Abaqus 2024 su Windows, 02/09/2026
+GRAVITA;u_sommita_z;-0,42;mm;
