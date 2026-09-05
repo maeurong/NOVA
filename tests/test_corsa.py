@@ -125,3 +125,25 @@ def test_la_massa_modale_conta_solo_le_direzioni_con_massa(tmp_path):
     assert "x" in v["massa_modale"]["ragione"] and "z" in v["massa_modale"]["ragione"]
     stretto = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "y", "z"))}
     assert stretto["massa_modale"]["esito"] == "non_passato"
+
+
+def test_senza_direzioni_con_massa_i_verdetti_modali_non_si_applicano(tmp_path):
+    """Niente traslazioni libere con massa: la domanda «i modi bastano?» non ha senso qui,
+    e non ha senso nemmeno «le frequenze sono sane?». Terza cosa, non un rosso."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ())}
+    for controllo in ("autovalori", "massa_modale"):
+        assert v[controllo]["esito"] == "non_applicabile", controllo
+        assert v[controllo]["ragione"] == "nessuna traslazione libera con massa: niente da estrarre"
+
+
+def test_i_verdetti_modali_hanno_le_stesse_chiavi(tmp_path):
+    """Parità delle chiavi anche sul ramo vero di `_verdetti_modali`, non solo sul `non_applicabile`."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    for c3 in (corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z")),
+               corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ("x",)),
+               corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ())):
+        assert c3
+        for v in c3:
+            assert set(v) == CHIAVI_VERDETTO, v["controllo"]

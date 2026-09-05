@@ -125,6 +125,9 @@ def check_model(m: Modello) -> list[dict]:
                 riferimenti.append({"combinazione": comb.id, "azione": t.azione})
     dichiarati = set(_modello.casi_dichiarati(m))
     generate = {a.id for a in m.azioni if a.generata}
+    # un riferimento rotto si spiega da sé nel suo `repr`; questo no, e la spiegazione va
+    # in testa alla ragione invece che dentro un dizionario che nessuno legge a voce
+    note: list[str] = []
     for an in m.analisi:
         if an.tipo == "statica":
             for caso in an.casi:
@@ -137,11 +140,13 @@ def check_model(m: Modello) -> list[dict]:
                 elif massa.azione in generate:
                     # contare il peso proprio due volte è l'errore che questo controllo evita:
                     # la densità del calcestruzzo è già la massa degli elementi (`-mass`)
-                    riferimenti.append({"analisi": "modale", "azione": massa.azione,
-                                        "perché": "il peso proprio è già massa (densità)"})
+                    riferimenti.append({"analisi": "modale", "azione": massa.azione})
+                    note.append(f"il peso proprio è già massa (densità): togli l'azione "
+                                f"{massa.azione} da masse_da_azioni")
     v.append(_v("riferimenti", "non_passato" if riferimenti else "passato",
-                f"riferimenti a oggetti inesistenti: {riferimenti or 'nessuno'}", riferimenti or None,
-                "correggi il riferimento" if riferimenti else None))
+                "; ".join([*note, f"riferimenti a oggetti inesistenti: {riferimenti or 'nessuno'}"]),
+                riferimenti or None,
+                note[0] if note else ("correggi il riferimento" if riferimenti else None)))
 
     v.append(_v("massa_nulla", "passato" if m.aste else "non_passato",
                 f"{len(m.aste)} aste" if m.aste else "nessuna asta: massa totale zero"))

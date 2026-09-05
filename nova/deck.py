@@ -59,7 +59,6 @@ class Deck:
     carico_totale: dict[str, tuple[float, float, float]]
     resoconto: dict
     modi: int | None = None
-    massa_da_azioni: dict[int, tuple[float, float, float]] = field(default_factory=dict)
 
 
 class _ArmaturaDuck(NamedTuple):
@@ -178,6 +177,13 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     return [Barra(x.z, x.y, x.diametro) for x in piano] if verticale else piano
 
 
+def _versore(e: Elemento, direzione: str) -> tuple[float, float, float]:
+    """Il versore globale della direzione che un carico distribuito dichiara sull'elemento `e`.
+    `locale_y` e `locale_z` sono gli assi della terna dell'asta, che il carico segue quando ruota."""
+    return {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0),
+            "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[direzione]
+
+
 def _massa_lineare(s: Sezione, barre: list[Barra], m: Modello) -> float:
     """t/mm: calcestruzzo (al netto delle riduzioni e delle barre) + acciaio."""
     r = s.riduzione
@@ -215,12 +221,18 @@ def _masse_da_azioni(m: Modello, elementi: list[Elemento], per_asta: dict[int, l
     carichi gravitazionali, e una spinta orizzontale di vento non è un peso. Quindi
     `massa = coefficiente · |componente z| / g`, con `g = 9806,65 mm/s²`:
 
-    - carico nodale: `|Fz|` sul nodo che lo porta;
-    - carico distribuito: `|wz| · L / 2` sui due estremi di ogni elemento dell'asta, dove
-      `wz` è la proiezione su z globale della direzione dichiarata (anche `locale_y` e
-      `locale_z` passano di qui: la direzione la decide l'asta, la componente utile è z);
-    - gravità: `|fattore_z| · massa_lineare · L / 2` sui due estremi di ogni elemento — la
-      massa c'è già, e infatti il Check Model rifiuta di prendere il peso proprio generato.
+    Le componenti verticali si sommano **con segno dentro l'azione**, e il modulo si prende
+    sul netto: due carichi opposti sullo stesso nodo o sullo stesso elemento si elidono,
+    invece di sommarsi in una massa doppia che nessuno ha appeso.
+
+    - carico nodale: `Fz` sul nodo che lo porta;
+    - carico distribuito: `q · versore_z` su ogni elemento dell'asta, dove il versore è
+      quello della direzione dichiarata (anche `locale_y` e `locale_z` passano di qui: la
+      direzione la decide l'asta, la componente utile è z);
+    - gravità: `fattore_z · massa_lineare · g` su ogni elemento — la massa c'è già, e infatti
+      il Check Model rifiuta di prendere il peso proprio generato.
+
+    Il netto per elemento diventa `|wz| · L / 2` su ciascuno dei due estremi.
 
     Coefficiente zero, azione senza carichi, nessuna analisi modale: nessuna riga, e non uno
     zero scritto. Una `mass` a zero e una massa mai chiesta si leggono uguali nel `.tcl`, ma
@@ -241,19 +253,28 @@ def _masse_da_azioni(m: Modello, elementi: list[Elemento], per_asta: dict[int, l
         azione = m.azione(voce.azione)
         if azione is None:  # riferimento rotto: il Check Model lo rifiuta, «forza» lo scavalca
             continue
+        # prima si somma **con segno** dentro l'azione, il modulo viene alla fine: due carichi
+        # opposti sullo stesso posto si elidono, come fanno nella realtà, e non si sommano in
+        # una massa doppia che nessuno ha appeso
+        fz_nodo: dict[int, float] = {}       # forza verticale netta per nodo [N]
+        wz_elemento: dict[int, float] = {}   # carico verticale netto per elemento [N/mm]
         for c in azione.carichi:
             if c.tipo == "nodale":
-                aggiungi(mappa_nodo[c.nodo], voce.coefficiente * abs(c.Fz) / GRAVITA)
+                tag = mappa_nodo[c.nodo]
+                fz_nodo[tag] = fz_nodo.get(tag, 0.0) + c.Fz
             elif c.tipo == "distribuito":
                 for e in per_asta[c.asta]:
-                    d = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1),
-                         "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[c.direzione]
-                    meta = voce.coefficiente * abs(c.q * d[2]) * e.L / 2 / GRAVITA
-                    aggiungi(e.i, meta); aggiungi(e.j, meta)
+                    wz_elemento[e.tag] = wz_elemento.get(e.tag, 0.0) + c.q * _versore(e, c.direzione)[2]
             elif c.tipo == "gravita":
                 for e in elementi:
-                    meta = voce.coefficiente * abs(c.fattore_z) * e.massa_lineare * e.L / 2
-                    aggiungi(e.i, meta); aggiungi(e.j, meta)
+                    wz_elemento[e.tag] = (wz_elemento.get(e.tag, 0.0)
+                                          + c.fattore_z * e.massa_lineare * GRAVITA)
+        for tag, fz in fz_nodo.items():
+            aggiungi(tag, voce.coefficiente * abs(fz) / GRAVITA)
+        for e in elementi:
+            wz = wz_elemento.get(e.tag, 0.0)
+            meta = voce.coefficiente * abs(wz) * e.L / 2 / GRAVITA
+            aggiungi(e.i, meta); aggiungi(e.j, meta)
     return masse
 
 
@@ -342,8 +363,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
                         v[k] += coeff * comp
                 elif c.tipo == "distribuito":
                     for e in per_asta[c.asta]:
-                        d = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1),
-                             "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[c.direzione]
+                        d = _versore(e, c.direzione)
                         e.w[caso] = tuple(float(w + coeff * c.q * dk) for w, dk in zip(e.w[caso], d))
                 elif c.tipo == "gravita":
                     for e in elementi:
@@ -468,5 +488,4 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
                  "mappa_nodo": {str(k): v for k, v in mappa_nodo.items()},
                  "mappa_asta": {str(k): v for k, v in mappa_asta.items()}}
     return Deck(percorso, list(casi), nodi_xyz, mappa_nodo, mappa_asta, elementi, vincolati,
-                carico_totale, resoconto, n_modi,
-                {tag: (q, q, q) for tag, q in da_azioni.items()})
+                carico_totale, resoconto, n_modi)

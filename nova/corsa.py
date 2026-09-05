@@ -15,7 +15,7 @@ from meshrec.core import opensees, solve
 from meshrec.core.config import SolutoreConfig
 from nova import deck as _deck
 from nova import modale
-from nova.modello import Modello
+from nova.modello import AnalisiModale, Modello
 
 NOME_RISULTATI = "risultati.nova.risultati.json"
 
@@ -88,13 +88,26 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
     cartella = Path(cartella)
     cartella.mkdir(parents=True, exist_ok=True)
     an = modale.analisi(m)
-    provati: list[int] = []
+    provati: list[int] = []   # i gradini che il solutore ha estratto davvero
+    falliti: list[int] = []   # quelli che ha rifiutato: restano scritti, non si nascondono
+    risultati = None
     for n_modi in _tentativi(m, an):
-        emetti({"evento": "fase", "nome": "scrivo il deck e lancio OpenSees"
-                if n_modi is None else f"scrivo il deck e lancio OpenSees (modale, {n_modi} modi)"})
+        emetti({"evento": "fase", "nome": _fase(n_modi)})
         d, registro, errore = _lancia(m, casi, cartella, n_modi, stato, t0)
+        ripiego = False
         if errore is not None:
-            return errore
+            if not provati:  # nessun giro buono alle spalle: non c'è niente a cui tornare
+                return errore
+            # il gradino non sta in piedi: si torna all'ultimo che ci stava e si **rilancia**,
+            # così deck, `.out` e `risultati.nova.risultati.json` sulla cartella sono dello
+            # stesso giro. Tenere in memoria il risultato di prima lascerebbe sul disco un
+            # deck che chiede modi che quel risultato non ha.
+            falliti.append(n_modi)
+            n_modi, ripiego = provati[-1], True
+            emetti({"evento": "fase", "nome": _fase(n_modi)})
+            d, registro, errore = _lancia(m, casi, cartella, n_modi, stato, t0)
+            if errore is not None:
+                return errore
         emetti({"evento": "fase", "nome": "leggo i recorder"})
         try:
             risultati = risultati_da_uscite(m, d, cartella, registro, hash_modello)
@@ -102,21 +115,30 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
             return _errore_solutore(f"uscita del solutore illeggibile: {e}", registro, cartella, t0)
         if an is None:
             break
-        provati.append(d.modi)
+        if d.modi and not ripiego:
+            provati.append(d.modi)
         risultati["run"].update({"modi_richiesti": an.modi, "modi_estratti": len(risultati["modi"]),
                                  "modi_provati": list(provati)})
-        # `not d.modi`: un modello senza traslazioni libere non estrae niente, e rilanciare
-        # il binario altre quattro volte per riottenere lo stesso nulla è solo tempo perso
-        if not d.modi or isinstance(an.modi, int) \
+        if falliti:
+            risultati["run"]["modi_falliti"] = list(falliti)
+        # `not d.modi`: niente da estrarre, e rilanciare il binario altre quattro volte per
+        # riottenere lo stesso nulla è solo tempo perso
+        if ripiego or not d.modi or isinstance(an.modi, int) \
                 or modale.abbastanza(risultati["modi"], modale.direzioni_con_massa(m)):
             break
         # l'ultimo tentativo resta com'è: sotto soglia il verdetto è rosso, non un'eccezione
+    assert risultati is not None  # `_tentativi` non rende mai la lista vuota
     risultati["run"]["secondi"] = time.perf_counter() - t0
     (cartella / NOME_RISULTATI).write_text(json.dumps(risultati, ensure_ascii=False, indent=1), encoding="utf-8")
     return {"esito": "ok", "risultati": risultati, "secondi": risultati["run"]["secondi"]}
 
 
-def _tentativi(m: Modello, an) -> list[int | None]:
+def _fase(n_modi: int | None) -> str:
+    return ("scrivo il deck e lancio OpenSees" if n_modi is None
+            else f"scrivo il deck e lancio OpenSees (modale, {n_modi} modi)")
+
+
+def _tentativi(m: Modello, an: AnalisiModale | None) -> list[int | None]:
     """I numeri di modi che la corsa proverà, in ordine. `[None]` senza analisi modale (una
     corsa statica sola), `[n]` con i modi imposti, con «auto» la scala di `modale.SCALA_MODI`
     **sotto** il tetto più il tetto stesso.
@@ -130,7 +152,9 @@ def _tentativi(m: Modello, an) -> list[int | None]:
     il costo va col cubo. Sui telai di c.a. di v1 non si vede; se un modello diventa grande,
     la scala vuole un tetto suo (per esempio `min(gradi_liberi, 48)`) e una rimisura.
     """
-    if an is None:
+    if an is None or modale.gradi_liberi(m) == 0:
+        # nessuna traslazione libera con massa: `eigen` non ha niente da estrarre, e chiederglielo
+        # scriverebbe un passo modale che rende una cartella senza forme. Un giro statico e basta.
         return [None]
     if isinstance(an.modi, int):
         return [an.modi]
@@ -223,9 +247,14 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
             "reazioni": {str(tag_a_id[t]): [_numero(x) for x in R[t - 1]] for t in d.vincolati},
             "sollecitazioni": _stazioni(d, caso, cartella),
         }
-    # `None` = nessun passo modale in questa corsa; `[]` = il passo c'è stato e non ha reso niente
-    modi = modale.leggi(cartella, d.modi, tag_a_id, n_nodi) if d.modi else None
-    direzioni = modale.direzioni_con_massa(m) if d.modi else ()
+    # `None` = nessuna analisi modale nel modello; `[]` = dichiarata, ma o non c'era niente da
+    # estrarre (nessuna direzione con massa) o il passo non ha reso niente
+    if d.modi:
+        modi, direzioni = modale.leggi(cartella, d.modi, tag_a_id, n_nodi), modale.direzioni_con_massa(m)
+    elif modale.analisi(m) is not None:
+        modi, direzioni = [], modale.direzioni_con_massa(m)
+    else:
+        modi, direzioni = None, ()
     verdetti = controlli(d, per_caso, registro, modi, direzioni)
     return {
         "run": {"id": uuid.uuid4().hex[:12], "data": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -263,14 +292,29 @@ def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | N
             "articolo": None, "valori": valori, "rimedio": None}
 
 
+def _non_applicabile(controllo: str, ragione: str) -> dict:
+    """Il verdetto a tre valori dove `solve.esito_non_applicabile` non ha una riga in tabella:
+    stessa forma, `non_applicabile`, e la ragione la dà chi sa perché."""
+    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": None,
+            "esito": "non_applicabile", "ragione": ragione, "articolo": None,
+            "valori": {}, "rimedio": None}
+
+
 def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]:
-    """`autovalori` e `massa_modale` quando il passo modale c'è stato.
+    """`autovalori` e `massa_modale` quando il modello dichiara un'analisi modale.
+
+    Senza direzioni con massa i due verdetti non si applicano: «le frequenze sono sane?» e
+    «i modi bastano?» non hanno risposta su una struttura che non ha una traslazione libera
+    da muovere, e un rosso direbbe che qualcosa è andato storto quando non c'era niente da fare.
 
     `disponibile` vale 100 sulle sole direzioni con massa e 0 sulle altre: `controlla_massa_modale`
     mette a `None` la direzione con totale nullo e non la conta (`solve.py`, «massa disponibile
     nulla in una direzione»). È così che un telaio piano non viene bocciato per una direzione
     in cui è incastrato ovunque.
     """
+    if not direzioni:
+        return [_non_applicabile(x, "nessuna traslazione libera con massa: niente da estrarre")
+                for x in ("autovalori", "massa_modale")]
     autovalori = solve.controlla_autovalori([x["f"] for x in modi])
     prima = autovalori.get("prima_frequenza_hz")
     v = [_verdetto("autovalori", autovalori, ragione=(
@@ -281,8 +325,7 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
         masse = {"catturata": [100.0 * cumulata[x] for x in "xyz"] + [0.0] * 3,
                  "disponibile": [100.0 if x in direzioni else 0.0 for x in "xyz"] + [0.0] * 3}
         ragione = ("cumulata " + ", ".join(f"{x} {cumulata[x]:.4g}" for x in direzioni)
-                   + f" sulle direzioni con massa {list(direzioni)}"
-                   ) if direzioni else "nessuna direzione con massa: niente da catturare"
+                   + f" sulle direzioni con massa {list(direzioni)}")
     else:
         masse, ragione = None, "nessun modo estratto: la massa partecipante non è verificata"
     v.append(_verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),
@@ -328,8 +371,5 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
                                ("picco", "non calcolato in una corsa statica"),
                                ("vincolo_in_pianta", "non calcolato in una corsa statica")):
         c = solve.esito_non_applicabile(controllo, "telaio")
-        v.append(_verdetto(controllo, c) if c else
-                 {"controllo": controllo, "oggetto": None, "stazione": None, "caso": None,
-                  "esito": "non_applicabile", "ragione": ragione, "articolo": None,
-                  "valori": {}, "rimedio": None})
+        v.append(_verdetto(controllo, c) if c else _non_applicabile(controllo, ragione))
     return v

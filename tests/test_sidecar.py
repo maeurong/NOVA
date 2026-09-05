@@ -1211,7 +1211,10 @@ def test_massa_dal_peso_proprio_generato_e_rifiutata(chiedi):
                     masse_da_azioni=[{"azione": 3, "coefficiente": 1.0}])
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
-    assert v["esito"] == "non_passato" and "peso proprio" in v["ragione"]
+    assert v["esito"] == "non_passato"
+    nota = "il peso proprio è già massa (densità): togli l'azione 3 da masse_da_azioni"
+    assert v["ragione"].startswith(nota) and v["rimedio"] == nota
+    assert v["oggetto"] == [{"analisi": "modale", "azione": 3}]
 
 
 def test_massa_da_unazione_inesistente_e_rifiutata(chiedi):

@@ -10,16 +10,23 @@ def _con_massa_modale(tmp_path):
 
 
 def test_leggi_frequenze_e_masse_dal_file_vero(tmp_path):
+    """Forme vere, non scritte dal test: `modo_1.out` è quello della stessa corsa del
+    05/09/2026. `-unorm` normalizza sul massimo di **tutti e sei** i gradi di libertà,
+    rotazioni comprese, mentre il registratore scrive i soli `-dof 1 2 3`: il massimo
+    traslazionale del primo modo vale 0,499046, non 1. Asserirlo sul file vero è l'unico
+    modo di accorgersi se un giorno `leggi` riscalasse le forme."""
     _con_massa_modale(tmp_path)
     n = 6
-    for k in range(1, 4):  # forme finte: 3 valori per nodo, modo 1 con massimo unitario
-        (tmp_path / f"modo_{k}.out").write_text(" ".join("1.0" if i == 0 else "0.5" for i in range(3 * n)) + "\n")
+    (tmp_path / "modo_1.out").write_bytes((FIXTURE / "modo_1_telaio_2x1.out").read_bytes())
+    for k in (2, 3):
+        (tmp_path / f"modo_{k}.out").write_text(" ".join(["0.5"] * (3 * n)) + "\n")
     modi = modale.leggi(tmp_path, 3, {t: t for t in range(1, n + 1)})
     assert [m["n"] for m in modi] == [1, 2, 3]
     assert modi[0]["f"] > 0 and modi[0]["T"] == pytest.approx(1 / modi[0]["f"])
     assert 0 <= modi[0]["massa_partecipante"]["x"] <= 1
     assert modi[2]["cumulata"]["x"] >= modi[0]["cumulata"]["x"]
-    assert max(abs(v) for xyz in modi[0]["forma"].values() for v in xyz) == pytest.approx(1.0)
+    massimo = max(abs(v) for xyz in modi[0]["forma"].values() for v in xyz)
+    assert massimo == pytest.approx(0.499046, abs=1e-6)
 
 
 def test_le_frequenze_sono_quelle_misurate_sul_telaio_2x1(tmp_path):
@@ -95,3 +102,13 @@ def test_i_gradi_liberi_non_contano_il_nodo_che_nessuna_asta_tocca():
     misurato il 05/09/2026)."""
     m = modello.carica(leggi_fixture("nodo_libero.nova.json"))
     assert modale.gradi_liberi(m) == 9
+
+
+def test_direzioni_con_massa_ignora_il_nodo_senza_massa():
+    """`nodo_libero` col solo nodo 7 scollegato libero in y: la y non ha massa da catturare,
+    e contarla mandava «auto» su tutta la scala per poi bocciare una direzione vuota."""
+    m = leggi_fixture("nodo_libero.nova.json")
+    for n in m["nodi"]:
+        if n["id"] != 7:
+            n.setdefault("vincolo", {})["uy"] = True
+    assert modale.direzioni_con_massa(modello.carica(m)) == ("x", "z")

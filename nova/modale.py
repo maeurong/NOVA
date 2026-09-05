@@ -27,7 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from meshrec.core import opensees
-from nova.modello import Modello
+from nova.modello import AnalisiModale, Modello
 
 SOGLIA_MASSA = 0.85          # NTC 2018 §7.3.3.1 (la copia di MeshRec usa 0,90: EC8)
 SCALA_MODI = (3, 6, 12, 24, 48)
@@ -93,15 +93,28 @@ def leggi(cartella: Path, modi: int, tag_a_id: dict[int, int], n_nodi: int | Non
     return modi_letti
 
 
+def _nodi_con_massa(m: Modello) -> set[int]:
+    """Gli id dei nodi che una massa ce l'hanno: estremo di un'asta (la densità della sezione
+    la porta lì) oppure `massa_nodale` dichiarata. Un nodo che nessuna asta tocca e senza
+    massa ha gradi liberi e zero massa: non porta nessun modo, e contarlo è quel che alzava
+    il tetto di «auto» sopra i modi che il problema generalizzato ha davvero."""
+    return ({x for a in m.aste for x in (a.nodo_i, a.nodo_j)}
+            | {n.id for n in m.nodi if n.massa_nodale})
+
+
 def direzioni_con_massa(m: Modello) -> tuple[str, ...]:
-    """Le direzioni in cui almeno un nodo ha il grado traslazionale libero.
+    """Le direzioni in cui almeno un nodo **con massa** ha il grado traslazionale libero.
 
     Una direzione bloccata ovunque non ha massa da catturare, e chiederle l'85 % vorrebbe
-    dire bocciare ogni telaio piano modellato in tre dimensioni.
+    dire bocciare ogni telaio piano modellato in tre dimensioni. Vale lo stesso per una
+    direzione libera sul solo nodo scollegato: `eigen` non ne cava niente, e il verdetto
+    guarderebbe una direzione vuota.
     """
+    con_massa = _nodi_con_massa(m)
     libere = []
     for i, nome in enumerate("xyz"):
-        if any(n.vincolo is None or not n.vincolo.gradi()[i] for n in m.nodi):
+        if any(n.vincolo is None or not n.vincolo.gradi()[i]
+               for n in m.nodi if n.id in con_massa):
             libere.append(nome)
     return tuple(libere)
 
@@ -131,13 +144,12 @@ def gradi_liberi(m: Modello) -> int:
     gradi con massa: codice d'uscita −5, misurato il 05/09/2026 — e in modo intermittente,
     che è il modo peggiore).
     """
-    con_massa = {x for a in m.aste for x in (a.nodo_i, a.nodo_j)}
-    con_massa |= {n.id for n in m.nodi if n.massa_nodale}
+    con_massa = _nodi_con_massa(m)
     return sum(3 if n.vincolo is None else sum(1 for g in n.vincolo.gradi()[:3] if not g)
                for n in m.nodi if n.id in con_massa)
 
 
-def analisi(m: Modello):
+def analisi(m: Modello) -> AnalisiModale | None:
     """L'analisi modale del modello, se c'è. Al più una: `deck.scrivi` rifiuta le altre."""
     return next((a for a in m.analisi if a.tipo == "modale"), None)
 
