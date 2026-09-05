@@ -8,6 +8,7 @@ senso fisico insieme: è un test del codice, non una validazione fisica.
 """
 from __future__ import annotations
 
+import csv
 import json
 import stat
 from pathlib import Path
@@ -337,6 +338,53 @@ def test_solido_con_massa_null_riga_massa_non_confrontabile():
     assert riga.solido is None and riga.classe_solido == "non_confrontabile"
 
 
+# --- Fix round 1 (review su 0865075) --------------------------------------------
+
+def test_mappa_casi_spinta_assente_dal_telaio_nessuna_riga_taglio_base_nessuna_eccezione():
+    """Riga: «mappa_casi["spinta"] che nomina un caso assente dal telaio → nessuna riga
+    taglio_base, nessuna eccezione»."""
+    tabella = _confronto.confronta(_telaio(), _solido(), None,
+                                   {"Z2": "SPINTA_ORIZZONTALE", "spinta": "Z9",
+                                    "nodi_sommita": [4]})
+    assert not [r for r in tabella.righe if r.grandezza == "taglio_base"]
+
+
+def test_taglio_base_usa_mappa_casi_spinta_dichiarata_con_passo_diverso_da_spinta_orizzontale():
+    """Critical 3: `mappa_casi["spinta"]` dichiarato vince sul letterale SPINTA_ORIZZONTALE —
+    passo solido con un nome diverso, la riga taglio_base compare comunque."""
+    telaio = _telaio(carico_totale={"Z1": [0.0, 0.0, 0.0], "C2": [20000.0, 0.0, 0.0]},
+                     per_caso={"C2": {"spostamenti": {"4": [5.0, 0.0, 0.1, 0, 0, 0]},
+                                       "reazioni": {"1": [-20000.0, 0.0, 0.0, 0, 0, 0]},
+                                       "sollecitazioni": {}}},
+                     casi=("Z1", "C2"))
+    solido = _solido(passi={"PUSH": {"reazioni_somma": [-19500.0, 0.0, 0.0], "n_reazioni": 4,
+                                     "u_set": {"TOP": {"max": [5.2, 0.0, 0.0], "medio": [5.1, 0.0, 0.0]}}}})
+    tabella = _confronto.confronta(telaio, solido, None,
+                                   {"C2": "PUSH", "spinta": "C2", "nodi_sommita": [4]})
+    taglio = _riga(tabella, "taglio_base", "C2")
+    assert taglio.telaio == pytest.approx(-20000.0) and taglio.solido == pytest.approx(-19500.0)
+
+
+def test_gravita_su_combinazione_massa_non_confrontabile_con_ragione():
+    """Critical 4: `mappa_casi["gravita"] = C<id>` → riga massa non_confrontabile con ragione,
+    tabella intera comunque prodotta (non solleva)."""
+    telaio = _telaio(casi=("Z1", "Z2", "Z3", "C1"))
+    tabella = _confronto.confronta(telaio, _solido(), None, {"gravita": "C1", "nodi_sommita": [4]})
+    riga = _riga(tabella, "massa")
+    assert riga.telaio is None and riga.classe_solido == "non_confrontabile"
+    assert riga.ragione == ("il caso di gravità C1 è una combinazione, serve un'azione "
+                            "Z<id> a coefficiente unitario")
+    assert len(tabella.righe) > 1  # tabella intera comunque prodotta
+
+
+def test_commit_nova_git_assente_ritorna_none(monkeypatch):
+    """Riga: «subprocess.run che solleva FileNotFoundError in _commit_nova → None»."""
+    def niente_git(*a, **k):
+        raise FileNotFoundError("git non trovato")
+    monkeypatch.setattr(_confronto.subprocess, "run", niente_git)
+    assert _confronto._commit_nova() is None
+
+
 # --- esporta: CSV e LaTeX --------------------------------------------------------
 
 def test_esporta_scrive_i_tre_file(tmp_path):
@@ -358,6 +406,22 @@ def test_csv_esportato_ha_punto_decimale_e_punto_e_virgola(tmp_path):
     assert "-20000" in riga_reazione and "," not in riga_reazione.split(";")[3]
 
 
+def test_csv_riletto_ha_lo_stesso_numero_di_campi_su_ogni_riga(tmp_path):
+    """Critical 1 + riga degenere «testo di bias con ; → CSV con tanti campi quanti
+    l'intestazione su ogni riga (csv.writer quota)»: `_BIAS_RIGIDEZZA` contiene un `;`
+    letterale, il vecchio `";".join(...)` lo confondeva col separatore su ogni riga con
+    bias_atteso (f1..f3, u_sommita_*)."""
+    tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
+    file = _confronto.esporta(tabella, tmp_path)
+    righe_testo = [r for r in file["csv"].read_text(encoding="utf-8").splitlines()
+                  if not r.startswith("#")]
+    lettore = list(csv.reader(righe_testo, delimiter=";"))
+    intestazione, dati = lettore[0], lettore[1:]
+    assert all(len(riga) == len(intestazione) for riga in dati)
+    grandezze = {riga[0] for riga in dati}
+    assert "f1" in grandezze and "u_sommita_x" in grandezze
+
+
 def test_tex_esportato_e_notazione_italiana_booktabs_avvertenza_provenienza(tmp_path):
     tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
     file = _confronto.esporta(tabella, tmp_path)
@@ -366,8 +430,22 @@ def test_tex_esportato_e_notazione_italiana_booktabs_avvertenza_provenienza(tmp_
     assert _confronto.AVVERTENZA in tex
     assert "telaio-abc123" in tex and "solido-xyz789" in tex
     assert r"\%" in tex          # «%» scappato
-    assert "-20000,0" in tex or "-2" in tex  # virgola decimale su un numero vero
+    assert "-20000" in tex       # notazione posizionale, non "-2e+04"
+    assert "e+" not in tex and "e-" not in tex
     assert "20000.0" not in tex  # niente punto come decimale nel corpo della tabella
+    assert tex.isascii()         # nessun carattere non ASCII (Minor 6: "unità" → "unit\`a")
+
+
+def test_it_tex_zero_e_negativo_piccolo_notazione_posizionale_mai_esponente(tmp_path):
+    """Critical 2 + righe degeneri: 0 → "0" (mai log10(0)); −0,01234 → "-0,01234" (mai
+    esponente)."""
+    riga = _confronto.Riga("prova", None, "N", 0.0, -0.01234, None, None, None,
+                           "non_confrontabile", "non_confrontabile", "")
+    tabella = _confronto.Tabella(righe=[riga], provenienza={})
+    file = _confronto.esporta(tabella, tmp_path)
+    tex = file["tex"].read_text(encoding="utf-8")
+    assert "N & 0 & -0,01234" in tex
+    assert "e+" not in tex and "e-" not in tex
 
 
 # --- end-to-end: corsa vera del telaio 2×1 e del solido trave.inp ---------------

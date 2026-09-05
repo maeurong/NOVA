@@ -12,7 +12,9 @@ from __future__ import annotations
 import csv
 import dataclasses
 import datetime as _dt
+import io
 import json
+import math
 import subprocess
 from pathlib import Path
 
@@ -154,7 +156,8 @@ def _valore_abaqus(lookup: dict, caso: str, grandezza: str) -> tuple[float | Non
 # --- validazione di mappa_casi --------------------------------------------------
 
 def _casi_mappati(mappa_casi: dict) -> dict:
-    return {k: v for k, v in mappa_casi.items() if k not in ("nodi_sommita", "gravita")}
+    return {k: v for k, v in mappa_casi.items()
+           if k not in ("nodi_sommita", "gravita", "spinta")}
 
 
 def _valida(telaio: dict, solido: dict | None, mappa_casi: dict) -> None:
@@ -180,6 +183,10 @@ def _valida(telaio: dict, solido: dict | None, mappa_casi: dict) -> None:
 
 # --- la massa (prima riga, sempre) ----------------------------------------------
 
+def _e_azione(caso: str) -> bool:
+    return caso[:1] == "Z" and caso[1:].isdigit()
+
+
 def _caso_gravita(telaio: dict, mappa_casi: dict) -> str | None:
     dichiarato = mappa_casi.get("gravita")
     if dichiarato is not None:
@@ -187,19 +194,28 @@ def _caso_gravita(telaio: dict, mappa_casi: dict) -> str | None:
     casi = telaio.get("run", {}).get("casi", [])
     # il peso proprio generato prende sempre lo `Z<id>` più alto: `assicura_peso_proprio`
     # (nova/modello.py:372) lo aggiunge per ultimo, oltre ogni azione dichiarata
-    candidati = [c for c in casi if c[:1] == "Z" and c[1:].isdigit()]
+    candidati = [c for c in casi if _e_azione(c)]
     return max(candidati, key=lambda c: int(c[1:])) if candidati else None
 
 
 def _riga_massa(telaio: dict, solido: dict | None, lookup: dict, mappa_casi: dict) -> Riga:
     caso_g = _caso_gravita(telaio, mappa_casi)
-    massa_telaio = (None if caso_g is None
-                    else -telaio["run"]["carico_totale"][caso_g][2] / GRAVITA)
+    ragione_g = None
+    massa_telaio = None
+    if caso_g is not None:
+        if _e_azione(caso_g):
+            massa_telaio = -telaio["run"]["carico_totale"][caso_g][2] / GRAVITA
+        else:
+            # una combinazione (C<id>) può avere un coefficiente di gravità diverso da 1:
+            # `carico_totale` non basta a ricavare la massa, serve un'azione a sé
+            ragione_g = (f"il caso di gravità {caso_g} è una combinazione, serve "
+                        f"un'azione Z<id> a coefficiente unitario")
     massa_solido = solido.get("massa") if solido is not None else None
     ab_val, ab_ragione = _valore_abaqus(lookup, "", "massa")
     s_pct, s_classe = _scarto_classe(massa_telaio, massa_solido)
     a_pct, a_classe = _scarto_classe(massa_telaio, ab_val)
-    ragione = ab_ragione if a_classe == "non_confrontabile" and ab_ragione else None
+    ragione = (ragione_g if s_classe == "non_confrontabile" and ragione_g
+              else (ab_ragione if a_classe == "non_confrontabile" and ab_ragione else None))
     return Riga("massa", None, UNITA_ATTESA["massa"], massa_telaio, massa_solido, ab_val,
                s_pct, a_pct, s_classe, a_classe, BIAS_ATTESO["massa"], ragione)
 
@@ -367,6 +383,12 @@ def _provenienza(telaio: dict, solido: dict | None) -> dict:
 
 def confronta(telaio: dict, solido: dict | None, abaqus: list[dict] | None,
              mappa_casi: dict) -> Tabella:
+    """Chiavi speciali di `mappa_casi`, oltre a `telaio_caso: passo_solido`:
+    `"nodi_sommita"` (lista di id nodo), `"gravita"` (il caso telaio di solo peso proprio,
+    se diverso dall'euristica automatica: lo `Z<id>` più alto), `"spinta"` (il caso telaio
+    — già chiave di `mappa_casi` — da usare per `taglio_base`, se diverso dalla ricerca
+    automatica del passo solido `SPINTA_ORIZZONTALE`; se nomina un caso non mappato, niente
+    riga `taglio_base` e nessuna eccezione)."""
     mappa_casi = mappa_casi or {}
     _valida(telaio, solido, mappa_casi)
     lookup = _indicizza_abaqus(abaqus or [])
@@ -374,12 +396,19 @@ def confronta(telaio: dict, solido: dict | None, abaqus: list[dict] | None,
 
     righe = [_riga_massa(telaio, solido, lookup, mappa_casi)]
 
+    spinta_dichiarata = mappa_casi.get("spinta")
+    per_caso_txsx = {}
     candidato_spinta = None
     for telaio_caso, solido_caso in _casi_mappati(mappa_casi).items():
         rc, (tx, sx) = _righe_caso(telaio, solido, lookup, nodi_sommita, telaio_caso, solido_caso)
         righe += rc
-        if solido_caso == _PASSO_SPINTA and candidato_spinta is None:
+        per_caso_txsx[telaio_caso] = (solido_caso, tx, sx)
+        if (spinta_dichiarata is None and candidato_spinta is None
+               and solido_caso == _PASSO_SPINTA):
             candidato_spinta = (telaio_caso, solido_caso, tx, sx)
+    if spinta_dichiarata is not None and spinta_dichiarata in per_caso_txsx:
+        solido_caso, tx, sx = per_caso_txsx[spinta_dichiarata]
+        candidato_spinta = (spinta_dichiarata, solido_caso, tx, sx)
     if candidato_spinta is not None:
         telaio_caso, solido_caso, tx, sx = candidato_spinta
         righe.append(_riga_confronto("taglio_base", telaio_caso, tx, sx, lookup, solido_caso))
@@ -400,14 +429,19 @@ def _csv(tabella: Tabella) -> str:
     intestazione = ["grandezza", "caso", "unita", "telaio", "solido", "abaqus",
                     "scarto_solido_pct", "scarto_abaqus_pct", "classe_solido", "classe_abaqus",
                     "bias_atteso", "ragione"]
-    righe = ["# unita: mm N t Hz; separatore ;", ";".join(intestazione)]
+    buf = io.StringIO()
+    buf.write("# unita: mm N t Hz; separatore ;\n")
+    # csv.writer, non ";".join: bias_atteso contiene un ";" letterale, il join lo confonde
+    # col separatore e sfalsa il numero di campi della riga.
+    scrittore = csv.writer(buf, delimiter=";", lineterminator="\n")
+    scrittore.writerow(intestazione)
     for r in tabella.righe:
-        righe.append(";".join([
+        scrittore.writerow([
             r.grandezza, r.caso or "", r.unita, _num_csv(r.telaio), _num_csv(r.solido),
             _num_csv(r.abaqus), _num_csv(r.scarto_solido_pct), _num_csv(r.scarto_abaqus_pct),
             r.classe_solido, r.classe_abaqus, r.bias_atteso, r.ragione or "",
-        ]))
-    return "\n".join(righe) + "\n"
+        ])
+    return buf.getvalue()
 
 
 def _escape_tex(s: str) -> str:
@@ -416,7 +450,14 @@ def _escape_tex(s: str) -> str:
 
 
 def _it(x: float | None) -> str:
-    return "--" if x is None else f"{x:.4g}".replace(".", ",")
+    """Notazione posizionale sempre, 4 cifre significative, mai esponente: `.4g` sceglie da
+    solo la notazione scientifica sopra 1e4 o sotto 1e-4 (LaTeX non la digerisce)."""
+    if x is None:
+        return "--"
+    if x == 0:
+        return "0"
+    cifre_decimali = max(0, 3 - math.floor(math.log10(abs(x))))
+    return f"{x:.{cifre_decimali}f}".replace(".", ",")
 
 
 def _it_pct(x: float | None) -> str:
@@ -424,6 +465,8 @@ def _it_pct(x: float | None) -> str:
 
 
 def _tex(tabella: Tabella) -> str:
+    # bias_atteso e ragione restano fuori dalla tabella LaTeX (troppo lunghi per una cella):
+    # CSV e JSON portano le colonne complete.
     corpo = []
     for r in tabella.righe:
         corpo.append(" & ".join([
@@ -438,12 +481,11 @@ def _tex(tabella: Tabella) -> str:
             f"{p.get('sha256_deck_solido') or 'n/d'}; OpenSees {p.get('versione_opensees') or 'n/d'}; "
             f"CalculiX {p.get('versione_calculix') or 'n/d'}; {p.get('data')}. {tabella.avvertenza}.")
     return "\n".join([
-        r"% \usepackage[utf8]{inputenc} presunto nel documento ospite",
         r"\begin{table}",
         r"\centering",
         r"\begin{tabular}{lllrrrrrll}",
         r"\toprule",
-        r"grandezza & caso & unità & telaio & solido & abaqus & scarto sol. & scarto abq. & "
+        r"grandezza & caso & unit\`a & telaio & solido & abaqus & scarto sol. & scarto abq. & "
         r"classe sol. & classe abq. \\",
         r"\midrule",
         *corpo,
