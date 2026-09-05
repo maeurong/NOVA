@@ -678,6 +678,23 @@ def test_la_forza_nodale_su_un_nodo_assente_e_un_rosso_della_pushover():
     assert {"analisi": "pushover", "forza_nodale": 99} in v["oggetto"]
 
 
+def test_piu_errori_della_pushover_si_accumulano_in_ordine_stabile():
+    """Ogni riga di `_pushover` appende il proprio rosso indipendentemente dalle altre: con
+    quattro condizioni cattive insieme escono quattro voci in `oggetto`, nello stesso ordine
+    delle righe del codice — non un solo rosso che nasconde gli altri tre, e non un ordine che
+    dipende da come Python itera qualcosa. Non nel ledger, ma stesso perimetro dei suoi
+    deferred (`check` C1, controllo `pushover`)."""
+    m = _con_pushover(statica=False, nodo_controllo=99, caso_gravita="Z9", distribuzione="modo1")
+    v = _c1(m)
+    assert v["esito"] == "non_passato"
+    assert v["oggetto"] == [
+        {"analisi": "pushover", "nodo_controllo": 99},
+        {"analisi": "pushover", "caso_gravita": "Z9"},
+        {"analisi": "pushover", "distribuzione": "modo1"},
+        {"analisi": "pushover", "legami": "fibre"},
+    ]
+
+
 def test_la_pushover_senza_una_statica_a_fibre_e_un_rosso_che_non_sporca_i_riferimenti():
     """La pushover **è** un'analisi a fibre: senza una statica dichiarata «legami: fibre» il
     deck scriverebbe sezioni elastiche, e la curva sarebbe una retta con un nome non lineare.

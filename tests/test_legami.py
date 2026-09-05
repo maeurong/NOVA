@@ -203,6 +203,35 @@ def test_senza_confinamento_lepsU_del_nucleo_dichiarato_vale_lo_stesso():
     assert d["copriferro"]["epsU"] == pytest.approx(-0.0035)
 
 
+def test_calcestruzzo_senza_barre_dangolo_degrada_a_confinamento_nessuno():
+    """Il ramo `α_n` = 0 di `confinamento_ntc` non resta dentro il dizionario intermedio:
+    `calcestruzzo()` lo vede (`conf["alpha"] == 0.0`) e scrive lo stesso legame del copriferro,
+    con `confinamento: nessuno` — non un `Concrete02` confinato con resistenza nulla in più.
+    Deferred della review round 1 (ledger T4), mai chiuso a livello di `calcestruzzo()`."""
+    m = _pilastro()
+    dati = m.model_dump(mode="json", exclude_none=True)
+    dati["sezioni"][0]["file"] = [{"lato": l, "n": 1, "diametro": 20} for l in ("inf", "sup", "sx", "dx")]
+    s = modello.carica(dati).sezione(1)
+    d = legami.calcestruzzo(m.materiale(1), "media", s)
+    assert d["confinamento"] == "nessuno"
+    assert d["nucleo"]["fcc"] == pytest.approx(d["copriferro"]["fpc"] * -1)
+    assert [d["nucleo"][k] for k in ("fpc", "epsc0", "epsU")] == \
+           [d["copriferro"][k] for k in ("fpc", "epsc0", "epsU")]
+
+
+def test_calcestruzzo_con_staffe_rade_degrada_a_confinamento_nessuno():
+    """Stesso degrado, dall'altro fattore: `α_s` = 0 per passo ≥ 2·b_x, non `α_n`. Le due
+    strade diverse devono arrivare allo stesso `nessuno` in `calcestruzzo()`, non solo in
+    `confinamento_ntc()` (deferred della review round 1, ledger T4)."""
+    m = _pilastro()
+    dati = m.model_dump(mode="json", exclude_none=True)
+    dati["sezioni"][0]["staffe"]["passo"] = 600
+    s = modello.carica(dati).sezione(1)
+    d = legami.calcestruzzo(m.materiale(1), "media", s)
+    assert d["confinamento"] == "nessuno"
+    assert d["nucleo"]["fcc"] == pytest.approx(33.0)  # f_cm senza incremento di confinamento
+
+
 # --- il nucleo confinato dentro il legame ---
 
 def test_nucleo_ntc_in_veste_media_ha_i_numeri_del_par_3_3():
@@ -334,6 +363,20 @@ def test_righe_tcl_rifiuta_una_rottura_prima_del_picco():
     c = legami.calcestruzzo(m.materiale(1), "media", m.sezione(1))["copriferro"]
     with pytest.raises(ValueError, match="precede il picco"):
         legami.righe_tcl(3, c)
+
+
+def test_righe_tcl_scrive_i_sei_parametri_del_concrete04_nell_ordine_giusto():
+    """`_ORDINE["concrete04"]` ha un ordine diverso dal `Concrete02` (niente `fpcu`/`lambda`,
+    `Ec` esplicito al quarto posto): nessun test esistente lo verificava per intero, solo il
+    prefisso `uniaxialMaterial Concrete04` (deferred della review round 1, ledger T4)."""
+    m = _con_legame(_pilastro(), 1, confinamento="mander")
+    n = legami.calcestruzzo(m.materiale(1), "media", m.sezione(1))["nucleo"]
+    riga = legami.righe_tcl(9, n)[0]
+    campi = riga.split(";#")[0].split()
+    assert campi[:3] == ["uniaxialMaterial", "Concrete04", "9"]
+    assert [float(x) for x in campi[3:9]] == pytest.approx(
+        [n["fpc"], n["epsc0"], n["epsU"], n["Ec"], n["ft"], n["et"]])
+    assert "Mander" in riga.split(";#")[1]
 
 
 def test_righe_tcl_e_la_sola_formattazione_e_stampa_la_provenienza():
