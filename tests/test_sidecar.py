@@ -305,11 +305,12 @@ def test_telaio_sano_passa_il_check(chiedi):
     esiti = _esiti(r[-1]["verdetti"])
     assert esiti["nodi_coincidenti"] == "passato" and esiti["vincoli"] == "passato"
     assert esiti["moti_rigidi"] == "non_applicabile"
-    # l'insieme dei controlli C1 è sempre lo stesso, e sono quindici: chi ne aggiunge uno
+    # l'insieme dei controlli C1 è sempre lo stesso, e sono sedici: chi ne aggiunge uno
     # aggiorna qui, così una voce nuova non entra in silenzio senza il suo oracolo
     assert set(esiti) == {"unita", "nodi_coincidenti", "aste_sconnesse", "aste_lunghezza_zero", "aste_duplicate",
-                          "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "massa_nulla", "vincoli",
-                          "carico_termico", "moti_rigidi", "armatura_mancante", "vincoli_dedotti"}
+                          "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "pushover", "massa_nulla",
+                          "vincoli", "carico_termico", "moti_rigidi", "armatura_mancante", "vincoli_dedotti"}
+    assert esiti["pushover"] == "non_applicabile"  # il telaio 2×1 non dichiara una spinta
 
 
 def test_asta_a_lunghezza_zero_e_rifiutata(chiedi):

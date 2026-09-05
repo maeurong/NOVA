@@ -39,6 +39,15 @@ SEGNO_MZ = 1.0
 
 _TIMEOUT_S = 600
 
+# Lo spostamento contro la **luce**, non contro la diagonale del modello (#26).
+# `solve.controlla_spostamenti` rifiuta a `u_max > dimensione`, e su un telaio intero non morde:
+# la trave appoggiata di 6 000 mm a q × 3 scende di 3 769 mm — una freccia che nessuna struttura
+# fa — e 0,63 di diagonale passa il controllo. La scala che conta è quella dell'asta più corta
+# che tocca il nodo: oltre 1/10 la geometria non deformata su cui l'analisi scrive equilibrio
+# non è più quella della struttura, e i numeri non parlano più di lei.
+SOGLIA_FUORI_SCALA = 1 / 10
+SOGLIA_AVVISO_SCALA = 1 / 50
+
 # La riga che il ciclo Tcl della statica a fibre scrive a ogni passo convergente
 # (`deck._blocco_statico`). È il solo racconto di **come** l'analisi è arrivata in fondo:
 # i recorder rendono l'ultimo stato e non dicono quanti algoritmi ci sono voluti.
@@ -345,6 +354,53 @@ def non_applicabile(controllo: str, ragione: str, caso: str | None = None) -> di
             "valori": {}, "rimedio": None}
 
 
+def _luce_minima(d: _deck.Deck, tag_nodo: int) -> float | None:
+    """La più corta delle aste che toccano il nodo, sommando gli elementi di ciascuna.
+
+    L'asta e non l'elemento: `suddivisioni: 4` non accorcia la campata, e prendere la
+    lunghezza dell'elemento renderebbe la soglia quattro volte più severa su un modello
+    suddiviso e quattro volte più lasca su uno che non lo è, per la stessa struttura.
+    `None` quando al nodo non arriva nessuna asta: non c'è una luce con cui confrontarsi.
+    """
+    per_asta: dict[int, float] = {}
+    for e in d.elementi:
+        per_asta[e.asta] = per_asta.get(e.asta, 0.0) + e.L
+    aste = {e.asta for e in d.elementi if tag_nodo in (e.i, e.j)}
+    return min((per_asta[a] for a in aste), default=None)
+
+
+def _verdetto_spostamenti(d: _deck.Deck, spostamenti: dict, dimensione: float,
+                          caso: str) -> dict:
+    """Lo spostamento massimo contro la diagonale (T1) **e** contro la luce del nodo (#26).
+
+    Funzione pura sul dizionario degli spostamenti: la stessa che serve un caso statico
+    serve l'ultimo passo della pushover, dove `passi[-1].spostamenti` ha la stessa forma.
+    """
+    nodo, u_max = None, None
+    for id_nodo, x in spostamenti.items():
+        u = float(np.linalg.norm([_reale(y) for y in x[:3]]))
+        if u_max is None or u > u_max:
+            nodo, u_max = id_nodo, u
+    c = solve.controlla_spostamenti(u_max, dimensione)
+    # il `rapporto` di `solve` è u/diagonale e resta, col suo nome per esteso: `rapporto`
+    # nudo è quello con la luce, che è quello che decide l'esito da qui in avanti
+    c["rapporto_diagonale"] = c.pop("rapporto")
+    luce = _luce_minima(d, d.mappa_nodo[int(nodo)]) if nodo is not None else None
+    fuori = u_max is None or not math.isfinite(u_max) or luce is None or luce <= 0.0
+    rapporto = None if fuori else abs(u_max) / luce
+    c |= {"nodo": None if nodo is None else int(nodo), "luce_minima": luce, "rapporto": rapporto}
+    ragione = (f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
+               f"su {dimensione:.6g} mm")
+    if rapporto is not None and rapporto > SOGLIA_FUORI_SCALA:
+        c["passato"] = False
+        ragione += (f"; spostamento fuori scala: u/L = {rapporto:.4g} al nodo {nodo} "
+                    f"(luce minima {luce:.6g} mm), il modello non descrive più la struttura")
+    elif rapporto is not None and rapporto > SOGLIA_AVVISO_SCALA:
+        ragione += (f"; avviso: u/L = {rapporto:.4g} al nodo {nodo} (luce minima "
+                    f"{luce:.6g} mm), oltre 1/50 — guarda la deformata prima dei numeri")
+    return verdetto("spostamenti", c, caso, ragione)
+
+
 def _verdetto_convergenza(d: _deck.Deck, caso: str, registro: str) -> dict:
     """«La statica non lineare è arrivata in fondo, e come?» — story 50.
 
@@ -448,15 +504,17 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
         v.append(verdetto("reazioni", c, caso,
                            f"Σ reazioni {c['somma']} contro Σ carichi {atteso}, scarto {c['scarto_relativo']}"))
         # nessuno spostamento non è uno spostamento nullo: `None` dichiara «non verificato»
-        u_max = max((float(np.linalg.norm([_reale(y) for y in x[:3]]))
-                     for x in dati["spostamenti"].values()), default=None)
-        c = solve.controlla_spostamenti(u_max, dimensione)
-        v.append(verdetto("spostamenti", c, caso,
-                           f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
-                           f"su {dimensione:.6g} mm"))
+        v.append(_verdetto_spostamenti(d, dati["spostamenti"], dimensione, caso))
         v.append(_verdetto_convergenza(d, caso, registro))
     if d.pushover is not None:
-        v.append(_convergenza_pushover(d, curva or {"passi": [], "caduta": None}))
+        curva = curva or {"passi": [], "caduta": None}
+        v.append(_convergenza_pushover(d, curva))
+        # la scala si guarda all'**ultimo** passo, che è il più spostato di tutti: i passi
+        # prima stanno sotto per costruzione, e uno per passo sarebbero duemila verdetti
+        v.append(_verdetto_spostamenti(d, curva["passi"][-1]["spostamenti"], dimensione, "pushover")
+                 if curva["passi"] else
+                 non_applicabile("spostamenti", "nessun passo convergente: niente da misurare",
+                                 "pushover"))
     n = opensees.conta_avvisi(registro)
     v.append(verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
     # `esito_non_applicabile` rende `None` dove il controllo **varrebbe** sul telaio (autovalori e

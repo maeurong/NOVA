@@ -626,46 +626,67 @@ def test_l_incremento_non_positivo_e_un_rifiuto_del_modello():
 
 # --- C1: quel che la pushover chiede al modello ---
 
-def _riferimenti(m) -> dict:
+def _c1(m, controllo: str = "pushover") -> dict:
     from nova import check
-    return next(v for v in check.check_model(m) if v["controllo"] == "riferimenti")
+    return next(v for v in check.check_model(m) if v["controllo"] == controllo)
 
 
-def test_la_pushover_ben_posta_passa_i_riferimenti():
-    assert _riferimenti(_con_pushover(caso_gravita="Z3"))["esito"] == "passato"
+def test_senza_pushover_il_controllo_dedicato_e_non_applicabile():
+    """Sedicesimo controllo C1, e come gli altri esce **sempre**: un modello senza spinta non
+    lo salta, lo dichiara non applicabile — saltarlo cambierebbe la lunghezza della lista."""
+    v = _c1(_carica("telaio_2x1.nova.json"))
+    assert v["esito"] == "non_applicabile" and "nessuna analisi pushover" in v["ragione"]
 
 
-def test_il_nodo_di_controllo_inesistente_e_un_riferimento_rotto():
-    v = _riferimenti(_con_pushover(nodo_controllo=99))
+def test_la_pushover_ben_posta_passa_il_suo_controllo_e_i_riferimenti():
+    m = _con_pushover(caso_gravita="Z3")
+    assert _c1(m)["esito"] == "passato"
+    assert _c1(m, "riferimenti")["esito"] == "passato"
+
+
+def test_il_nodo_di_controllo_inesistente_e_un_rosso_della_pushover():
+    v = _c1(_con_pushover(nodo_controllo=99))
     assert v["esito"] == "non_passato" and {"analisi": "pushover", "nodo_controllo": 99} in v["oggetto"]
 
 
 def test_il_nodo_di_controllo_vincolato_nella_direzione_di_spinta_e_un_rosso():
-    v = _riferimenti(_con_pushover(nodo_controllo=1))  # il nodo 1 è incastrato
+    v = _c1(_con_pushover(nodo_controllo=1))  # il nodo 1 è incastrato
     assert v["esito"] == "non_passato"
     assert "il nodo di controllo è vincolato in ux" in v["ragione"]
 
 
 def test_la_distribuzione_modo1_senza_modale_e_un_rosso():
-    v = _riferimenti(_con_pushover(distribuzione="modo1", modale=False))
+    v = _c1(_con_pushover(distribuzione="modo1", modale=False))
     assert v["esito"] == "non_passato"
     assert "la distribuzione modo1 richiede l'analisi modale" in v["ragione"]
 
 
 def test_la_distribuzione_nodale_senza_forze_e_un_rosso():
-    v = _riferimenti(_con_pushover(distribuzione="nodale"))
+    v = _c1(_con_pushover(distribuzione="nodale"))
     assert v["esito"] == "non_passato" and "forze_nodali" in v["ragione"]
 
 
-def test_il_caso_di_gravita_inesistente_e_un_riferimento_rotto():
-    v = _riferimenti(_con_pushover(caso_gravita="Z9"))
+def test_il_caso_di_gravita_inesistente_e_un_rosso_della_pushover():
+    v = _c1(_con_pushover(caso_gravita="Z9"))
     assert v["esito"] == "non_passato"
     assert {"analisi": "pushover", "caso_gravita": "Z9"} in v["oggetto"]
 
 
-def test_la_pushover_senza_una_statica_a_fibre_e_un_rosso():
+def test_la_forza_nodale_su_un_nodo_assente_e_un_rosso_della_pushover():
+    v = _c1(_con_pushover(distribuzione="nodale", forze_nodali=[{"nodo": 99, "fx": 1.0}]))
+    assert v["esito"] == "non_passato"
+    assert {"analisi": "pushover", "forza_nodale": 99} in v["oggetto"]
+
+
+def test_la_pushover_senza_una_statica_a_fibre_e_un_rosso_che_non_sporca_i_riferimenti():
     """La pushover **è** un'analisi a fibre: senza una statica dichiarata «legami: fibre» il
-    deck scriverebbe sezioni elastiche, e la curva sarebbe una retta con un nome non lineare."""
-    v = _riferimenti(_con_pushover(statica=False))
+    deck scriverebbe sezioni elastiche, e la curva sarebbe una retta con un nome non lineare.
+
+    Ingresso degenere del brief Task 4: il rosso sta nel controllo `pushover`, e `riferimenti`
+    resta verde — il modello non nomina niente di inesistente, gli manca un'analisi.
+    """
+    m = _con_pushover(statica=False)
+    v = _c1(m)
     assert v["esito"] == "non_passato"
     assert "la pushover richiede sezioni a fibre" in v["ragione"]
+    assert _c1(m, "riferimenti")["esito"] == "passato"

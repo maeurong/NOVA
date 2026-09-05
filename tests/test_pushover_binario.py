@@ -331,3 +331,22 @@ def test_uno_spostamento_max_non_multiplo_dell_incremento_lo_supera(tmp_path, bi
     passi = r["risultati"]["passi"]
     assert len(passi) == 4 and passi[-1]["spostamento"] == pytest.approx(1.2, abs=1e-9)
     assert r["risultati"]["caduta"] is None
+
+
+# --- T4 (#26): la scala anche sull'ultimo passo della spinta -------------------------------
+
+def test_l_ultimo_passo_della_spinta_ha_il_suo_verdetto_di_scala(uniforme):
+    """I verdetti si leggono per `(controllo, caso)`: `spostamenti` esce una volta per caso
+    statico e una con `caso: "pushover"`, sull'**ultimo** passo — il più spostato.
+
+    Misurato il 05/09/2026, OpenSees 3.8.0: 60 mm sul nodo 4, luce minima 3 200 mm (il
+    pilastro, non la trave da 5 000), u/L = 0,0188 — sotto 1/50, verde e senza avviso.
+    """
+    ris = uniforme[0]["risultati"]
+    v = next(x for x in ris["verdetti"] if x["controllo"] == "spostamenti" and x["caso"] == "pushover")
+    assert v["esito"] == "passato" and "avviso" not in v["ragione"]
+    assert v["valori"]["luce_minima"] == pytest.approx(3200.0)
+    assert v["valori"]["rapporto"] == pytest.approx(0.018792, rel=1e-3)  # u_max 60,13 mm / 3 200
+    # e i casi statici hanno il loro, distinto: `caso` è quel che li tiene separati
+    casi = {x["caso"] for x in ris["verdetti"] if x["controllo"] == "spostamenti"}
+    assert casi == {"Z3", "pushover"}

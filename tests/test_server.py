@@ -624,3 +624,27 @@ def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
     assert r.json()["fase"] == "sidecar" and "occupato" in r.json()["motivo"]
     assert sp._lock.locked()   # il lock resta di chi lo ha preso
     sp._lock.release()
+
+
+# --- T4: la corsa con pushover passa intera dalla `/api/risultati` --------------------------
+# Ingresso degenere del brief Task 4: nessun campionamento, nessuna paginazione — il file
+# cresce e l'endpoint lo rende tutto. La dimensione è misurata qui e riportata nel report.
+
+def test_risultati_di_una_pushover_e_il_json_intero(cliente, binario_opensees):
+    modello = leggi_fixture("telaio_2x1.nova.json")
+    modello["analisi"] = [
+        {"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4},
+        {"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 4, "dof": "ux",
+         "incremento": 2.0, "spostamento_max": 20.0, "caso_gravita": "Z1"},
+    ]
+    r = cliente.post("/api/corsa", json={"modello": modello})
+    assert r.status_code == 200 and r.json()["esito"] == "ok", r.json()
+    r2 = cliente.get(f"/api/risultati/{r.json()['run_id']}")
+    assert r2.status_code == 200
+    ris = r2.json()
+    assert len(ris["passi"]) == 10 and ris["caduta"] is None
+    assert ris["run"]["pushover"]["distribuzione"] == "uniforme"
+    # tetto largo del brief: `< 5e6` byte. Misurato sul telaio 2×1 a 60 passi: 192 kB.
+    assert len(r2.content) < 5e6
+    # i passi ci sono tutti, uno per uno: nessun campionamento fra il file e la risposta
+    assert [p["n"] for p in ris["passi"]] == list(range(1, 11))

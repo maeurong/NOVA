@@ -507,10 +507,12 @@ def test_la_scala_di_algoritmi_entra_davvero_e_finisce_nel_verdetto(chiedi, tmp_
     """Newton da solo non chiude sempre. A q × 3 in due passi, misurato il 05/09/2026, il
     secondo passo lo prende `KrylovNewton` dopo che `Newton` e `ModifiedNewton -initial`
     hanno fallito — ed è il verdetto a raccontarlo, perché i recorder rendono il solo stato
-    finale. Qui l'oracolo è la **scala**, non la freccia: quella che ne esce è fuori da ogni
-    senso fisico (3,77 m su una trave di sei) e nessun verdetto la contraddice, perché
-    `solve.controlla_spostamenti` rifiuta a `u_max > dimensione` e 0,63 sta sotto. È un buco
-    della soglia di T1, non di questo passo: segnalato, non allargato qui.
+    finale. Qui gli oracoli sono due: la **scala**, e la freccia che ne esce, fuori da ogni
+    senso fisico (3,77 m su una trave di sei).
+
+    Quella freccia era **verde** fino a T4: `solve.controlla_spostamenti` rifiuta a
+    `u_max > dimensione` e 0,63 di diagonale sta sotto. Il buco è chiuso (#26): il rapporto
+    che decide è con la **luce** dell'asta più corta al nodo (3 000 mm), non con la diagonale.
     """
     fin = _gira(chiedi, _a_fibre(_trave_con_mezzeria(3.0), passi=2), tmp_path)
     assert fin["esito"] == "ok", fin
@@ -518,6 +520,12 @@ def test_la_scala_di_algoritmi_entra_davvero_e_finisce_nel_verdetto(chiedi, tmp_
     assert v["valori"]["algoritmi"] == ["Newton", "KrylovNewton"]
     assert "scala di algoritmi ai passi 2" in v["ragione"]
     assert abs(fin["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2]) > 1000.0
+
+    scala = _verdetto(fin, "spostamenti", "Z1")
+    assert scala["esito"] == "non_passato", scala
+    assert "spostamento fuori scala" in scala["ragione"]
+    assert scala["valori"]["luce_minima"] == pytest.approx(3000.0)
+    assert scala["valori"]["rapporto"] > 1.0 and scala["valori"]["rapporto_diagonale"] < 1.0
 
 
 def test_la_trave_rotta_dichiara_il_passo_e_il_fattore_invece_di_fingere_un_risultato(

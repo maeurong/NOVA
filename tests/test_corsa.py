@@ -175,3 +175,73 @@ def test_la_ragione_della_massa_modale_elenca_le_direzioni_in_prosa(tmp_path):
     modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
     v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
     assert v["massa_modale"]["ragione"].endswith("sulle direzioni con massa x, z")
+
+
+# --- T4 (#26): lo spostamento contro la luce, non contro la diagonale --------------------
+#
+# `solve.controlla_spostamenti` (T1) rifiuta a `u_max > dimensione` e su un telaio intero non
+# morde: la trave di 6 000 mm che scende di 3 769 passa con 0,63 di diagonale. Gli oracoli qui
+# sono i tre gradini della soglia nuova, e la luce è quella dell'**asta**, non dell'elemento.
+
+def _trave_lunga(passo: float) -> dict:
+    """Due aste in fila della lunghezza data, con il nodo 3 in mezzo: la luce del nodo 3 è
+    `passo` e non la distanza fra gli appoggi."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["nodi"][1]["x"] = 2 * passo
+    dati["nodi"].insert(1, {"id": 3, "nome": "mezzeria", "x": passo, "y": 0, "z": 0})
+    dati["aste"] = [{"id": 1, "nodo_i": 1, "nodo_j": 3, "sezione": 2},
+                    {"id": 2, "nodo_i": 3, "nodo_j": 2, "sezione": 2}]
+    return dati
+
+
+def _spostamenti(m, tmp_path, u_z: float, passo: float = 3000.0):
+    d = _deck.scrivi(_modello.assicura_peso_proprio(_modello.carica(m)), ["Z1"], tmp_path)
+    per_caso = _caso({"1": [0.0] * 6, "2": [0.0] * 6, "3": [0.0, 0.0, u_z, 0.0, 0.0, 0.0]})
+    return {v["controllo"]: v for v in corsa.controlli(d, per_caso, "")}["spostamenti"]
+
+
+def test_lo_spostamento_oltre_un_decimo_della_luce_e_fuori_scala(tmp_path):
+    """Il numero misurato da Task 2: 3 769 mm su una trave di 6 000, cioè 1,26 volte la
+    semiluce di 3 000. Con la sola soglia di T1 era verde."""
+    v = _spostamenti(_trave_lunga(3000.0), tmp_path, -3769.0)
+    assert v["esito"] == "non_passato"
+    assert "spostamento fuori scala" in v["ragione"] and "non descrive più la struttura" in v["ragione"]
+    assert v["valori"]["rapporto"] == pytest.approx(3769.0 / 3000.0)
+    assert v["valori"]["luce_minima"] == pytest.approx(3000.0) and v["valori"]["nodo"] == 3
+    # il rapporto con la diagonale resta scritto, ed è quello che passava: 0,628 su 6 000
+    assert v["valori"]["rapporto_diagonale"] == pytest.approx(3769.0 / 6000.0)
+
+
+def test_fra_un_cinquantesimo_e_un_decimo_della_luce_e_verde_con_avviso(tmp_path):
+    v = _spostamenti(_trave_lunga(3000.0), tmp_path, -150.0)  # 1/20 della luce
+    assert v["esito"] == "passato" and "avviso: u/L" in v["ragione"]
+    assert v["valori"]["rapporto"] == pytest.approx(0.05)
+
+
+def test_due_millimetri_su_aste_da_cinquemila_passano_senza_avviso(tmp_path):
+    """Ingresso degenere del brief Task 4: `u_max` su un nodo di sole aste lunghe (L = 5 000)
+    con `u` = 2 mm — rapporto 1/2500, verde e senza una parola in più."""
+    v = _spostamenti(_trave_lunga(5000.0), tmp_path, -2.0)
+    assert v["esito"] == "passato" and "avviso" not in v["ragione"]
+    assert v["valori"]["rapporto"] == pytest.approx(1 / 2500)
+    assert v["valori"]["luce_minima"] == pytest.approx(5000.0)
+
+
+def test_la_luce_e_dell_asta_e_non_dell_elemento_suddiviso(tmp_path):
+    """`suddivisioni: 4` non accorcia la campata: la stessa freccia sulla stessa trave deve
+    dare lo stesso rapporto, suddivisa o no. Senza questo la soglia sarebbe quattro volte
+    più severa su un modello suddiviso."""
+    intero = _trave_lunga(3000.0)
+    suddiviso = _trave_lunga(3000.0)
+    for a in suddiviso["aste"]:
+        a["suddivisioni"] = 4
+    a = _spostamenti(intero, tmp_path / "a", -150.0)
+    b = _spostamenti(suddiviso, tmp_path / "b", -150.0)
+    assert a["valori"]["rapporto"] == b["valori"]["rapporto"] == pytest.approx(0.05)
+
+
+def test_un_nodo_senza_aste_non_ha_una_luce_con_cui_confrontarsi(tmp_path):
+    """Il Check Model boccia i nodi liberi, ma «forza» lo scavalca e il nodo arriva fin qui:
+    `min` su un insieme vuoto solleverebbe, e il verdetto resta quello di T1."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    assert corsa._luce_minima(d, 99) is None
