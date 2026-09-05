@@ -217,3 +217,91 @@ def test_il_blocco_a_fibre_porta_la_scala_di_algoritmi_e_i_dimezzamenti(tmp_path
     assert f"{_deck.MARCA_PASSO}: caso Z1 passo $passo algoritmo $usato" in testo
     assert "è caduto al passo $passo, fattore" in testo
     assert "algorithm Linear" not in testo  # il blocco lineare non resta di fianco a quello a passi
+
+
+# --- fix round 1: C2, C3, C5, C6, C7 ---
+
+def test_il_test_di_convergenza_delle_fibre_e_relativo(tmp_path):
+    """C2: 1e-6 **mm** è un incremento che un modello rigido non raggiunge, e la norma assoluta
+    chiuderebbe alla prima iterazione senza che Newton abbia corretto niente."""
+    m = _carica("trave_appoggiata.nova.json",
+                analisi=[{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}])
+    testo = _testo(m, ["Z1"], tmp_path)
+    assert "test RelativeNormDispIncr 1e-06 50" in testo
+    assert "NormDispIncr 1e-06" not in testo.replace("RelativeNormDispIncr", "")
+
+
+def test_il_ciclo_a_passi_ha_un_tetto_ai_giri(tmp_path):
+    """C3: il passo riparte pieno dopo ogni dimezzamento riuscito, quindi il `while` da solo
+    può girare 64 volte per passo dichiarato. Senza tetto l'unico freno è il timeout della
+    corsa, che non dice **perché** si è fermata."""
+    m = _carica("trave_appoggiata.nova.json",
+                analisi=[{"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4}])
+    testo = _testo(m, ["Z1"], tmp_path)
+    assert f"if {{$passo > {_deck.GIRI_PER_PASSO * 4}}}" in testo
+    assert "non converge, $passo passi contro 4 dichiarati" in testo
+
+
+def test_una_patch_sola_guarda_i_parametri_e_non_il_commento(tmp_path):
+    """C5: `righe_tcl` appende classe, veste e articolo. Due legami con gli stessi numeri e
+    articoli diversi sono un materiale solo, e il confronto sulla riga formattata li
+    scriverebbe due volte — due `patch rect` dello stesso calcestruzzo."""
+    from nova import legami
+    a = {"tipo": "concrete02", "fpc": -33.0, "epsc0": -0.002, "fpcu": -6.6, "epsU": -0.0035,
+         "lambda": 0.1, "ft": 2.5, "Ets": 1250.0, "classe": "C25/30", "veste": "media",
+         "articolo": "[11.2.2]"}
+    assert legami.stesso_legame(a, a | {"articolo": "[4.1.8]", "veste": "caratteristica"})
+    assert not legami.stesso_legame(a, a | {"fpc": -34.0})
+    assert not legami.stesso_legame(a, {**a, "tipo": "concrete04"})
+
+
+def test_la_patch_unica_registra_fibre_di_copriferro_e_non_di_nucleo(tmp_path):
+    """C6: la patch unica **è** il copriferro. Chiamare «nucleo» le sue fibre estreme direbbe
+    a Task 3 di leggerle con le soglie del confinato, che lì non c'è."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    del dati["sezioni"][0]["staffe"]
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    (fibre,) = _deck.scrivi(m, ["Z1"], tmp_path).fibre_registrate.values()
+    assert {f["ruolo"] for f in fibre} == {"copriferro"}
+    assert {(f["y"], f["z"]) for f in fibre} == {(-150.0, -250.0), (150.0, -250.0),
+                                                 (150.0, 250.0), (-150.0, 250.0)}
+
+
+def test_la_riduzione_oltre_il_copriferro_toglie_il_confinamento(tmp_path):
+    """C7: il contorno ridotto tagliava dentro la linea media delle staffe e la sezione usciva
+    con una patch confinata **senza copriferro attorno**, con l'`α` calcolato su un `b×h` che
+    il calcestruzzo non ha più. Ora è una patch di copriferro, non confinata, con l'avviso."""
+    from nova import legami
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 60, "inf": 60, "sx": 40, "dx": 40}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    testo = d.percorso.read_text(encoding="utf-8")
+    assert len([r for r in testo.splitlines() if r.strip().startswith("patch rect")]) == 1
+    assert d.materiali["2"]["nucleo"]["confinamento"] == "nessuno"
+    assert legami.AVVISO_RIDUZIONE in d.resoconto["avvisi"]
+
+
+def test_la_riduzione_dentro_il_copriferro_lascia_le_due_patch(tmp_path):
+    """La soglia è per lato e sta a `copriferro + φ_st/2` = 34 mm: 30 sta dentro, e la sezione
+    resta confinata. Il nucleo si misura sul contorno **ridotto** e ci sta dentro per
+    costruzione — niente troncamenti, nessuna fascia di copriferro a spessore negativo."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 30, "inf": 0, "sx": 30, "dx": 0}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    patch = [[float(x) for x in r.split()[5:]]
+             for r in d.percorso.read_text(encoding="utf-8").splitlines()
+             if r.strip().startswith("patch rect")]
+    assert len(patch) == 5 and d.materiali["2"]["nucleo"]["confinamento"] == "ntc"
+    contorno = (-150.0 + 30, -250.0, 150.0, 250.0 - 30)  # sx mangia b, sup mangia h
+    y0, z0, y1, z1 = contorno
+    yc0, zc0, yc1, zc1 = patch[0]
+    assert y0 <= yc0 and yc1 <= y1 and z0 <= zc0 and zc1 <= z1  # il nucleo sta dentro
+    # centrato sul contorno, non sul baricentro nominale: il calcestruzzo che resta è spostato
+    assert (yc0 + yc1) / 2 == pytest.approx((y0 + y1) / 2)
+    assert (zc0 + zc1) / 2 == pytest.approx((z0 + z1) / 2)
+    assert yc1 - yc0 == pytest.approx(300 - 30 - 2 * 30 - 8)  # b ridotta, meno due volte c + φ/2

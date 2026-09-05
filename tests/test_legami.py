@@ -216,7 +216,9 @@ def test_nucleo_ntc_in_veste_media_ha_i_numeri_del_par_3_3():
     assert n["epscu"] == pytest.approx(0.0094420, rel=5e-3)
     assert n["fpc"] == pytest.approx(-n["fcc"]) and n["epsc0"] == pytest.approx(-n["epscc"])
     assert n["alpha"] == pytest.approx(0.45740, rel=5e-3)
-    assert n["articolo"] == "[4.1.8]"
+    # l'articolo del nucleo porta anche la veste da cui esce `f_c`: la [4.1.8] è un fattore
+    # moltiplicativo, e da sola non direbbe su quale resistenza ha moltiplicato (fix round 1, C8)
+    assert n["articolo"] == "[11.2.2], [11.2.3a], [4.1.8]"
 
 
 def test_epsU_dichiarati_vincono_sulla_norma_e_sulla_prassi():

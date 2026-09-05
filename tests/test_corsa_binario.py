@@ -585,3 +585,24 @@ def test_la_trave_determinata_non_si_accorge_del_cambio_di_algoritmo(chiedi, tmp
     assert con_nodo["esito"] == "ok", con_nodo
     assert con_nodo["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2] == pytest.approx(
         -1.570949, abs=1e-5)
+
+
+def test_la_tolleranza_delle_fibre_non_cambia_il_risultato(chiedi, tmp_path, binario_opensees,
+                                                           monkeypatch):
+    """C2 del fix round 1: la norma relativa a 1e-6 è **davvero** convergenza, non un test che
+    chiude alla prima iterazione. L'oracolo è una corsa a 1e-12 sullo stesso modello: se 1e-6
+    si fermasse presto, i due spostamenti divergerebbero.
+
+    Misurato il 05/09/2026, trave a q × 2 con il nodo in mezzeria: −7,14074561471 mm a
+    tutt'e due le tolleranze, scarto relativo 0,0.
+    """
+    from nova import deck as _deck
+
+    def freccia(tol, dove):
+        monkeypatch.setattr(_deck, "TOLLERANZA_FIBRE", tol)
+        fin = _gira(chiedi, _a_fibre(_trave_con_mezzeria(2.0)), dove)
+        assert fin["esito"] == "ok", fin
+        return fin["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2]
+
+    larga, stretta = freccia(1.0e-6, tmp_path / "a"), freccia(1.0e-12, tmp_path / "b")
+    assert abs(larga - stretta) <= 1e-4 * abs(stretta), (larga, stretta)

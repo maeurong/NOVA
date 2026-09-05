@@ -38,8 +38,17 @@ _COSENO_VERTICALE = 0.999
 # rifarla con la stessa matrice sarebbe lo stesso giro due volte (spec, story 50).
 SCALA_ALGORITMI = ("Newton", "ModifiedNewton", "KrylovNewton")
 DIMEZZAMENTI = 6           # quante volte il passo si dimezza prima di dichiarare la caduta
-TOLLERANZA_FIBRE = 1.0e-6  # `test NormDispIncr`: il lineare sta a 1e-8, le fibre non ci arrivano
+# `RelativeNormDispIncr` e non la norma assoluta: 1e-6 **mm** è un incremento che un modello
+# rigido non raggiunge mai, e il test chiuderebbe alla prima iterazione senza che Newton abbia
+# corretto niente — con `NormDispIncr 1.0` si misurava un `convergenza: passato` e un −10,5 %
+# di spostamento, in silenzio. Relativa al primo incremento del passo, il numero è un rapporto.
+TOLLERANZA_FIBRE = 1.0e-6
 ITERAZIONI_FIBRE = 50
+# Tetto ai giri del `while`: il passo riparte pieno dopo ogni dimezzamento riuscito, quindi
+# senza tetto una statica da 10 passi può arrivare a 640 giri e ~13 400 `analyze`, con il solo
+# `corsa._TIMEOUT_S` a fermarla. Venti volte i passi dichiarati è largo per il dimezzamento
+# legittimo e stretto per l'analisi che non va da nessuna parte.
+GIRI_PER_PASSO = 20
 # Il registro del passo convergente, che `corsa` rilegge per il verdetto `convergenza`.
 MARCA_PASSO = "NOVA_PASSO"
 
@@ -460,28 +469,33 @@ def _contorno(s: Sezione, verticale: bool) -> tuple[float, float, float, float]:
 
 
 def _nucleo(s: Sezione, verticale: bool, contorno: tuple[float, float, float, float]):
-    """Il rettangolo del nucleo confinato, alla **linea media delle staffe**: `b − 2(c + φ_st/2)`
-    lungo `b` e `h − 2(c + φ_st/2)` lungo `h`, poi portato sugli assi locali come la `patch rect`.
+    """Il rettangolo del nucleo confinato, alla **linea media delle staffe**, sugli assi locali.
 
-    Le stesse `b_x`, `b_y` che la [4.1.12] usa per il confinamento (`legami.confinamento_ntc`):
-    due formule diverse per lo stesso rettangolo darebbero un nucleo confinato con l'area di
-    un altro. Il contorno lo taglia: con una riduzione più profonda del copriferro il nucleo
-    finirebbe fuori dalla sezione, e una `patch rect` fuori contorno OpenSees la accetta.
+    Le stesse `b_x`, `b_y` che la [4.1.12] usa per il confinamento — cioè quelle che
+    `legami.confinamento_ntc` riceve, misurate sul contorno **ridotto**
+    (`legami.dimensioni_ridotte`): due formule diverse per lo stesso rettangolo darebbero un
+    nucleo confinato con l'area di un altro.
+
+    Centrato sul contorno e non sul baricentro nominale. Con una riduzione asimmetrica il
+    calcestruzzo che resta non è centrato, e le staffe stanno dentro **quello**: così il nucleo
+    è dentro il contorno per costruzione, invece di finirci a forza di troncamenti.
+
+    Si chiama solo dopo che `legami.calcestruzzo` ha reso un nucleo davvero confinato, quindi
+    `b_x` e `b_y` sono già positive: la guardia sta là, dove il rifiuto può nominare la sezione,
+    e ripeterla qui sarebbe una riga che non può scattare. I due casi che la eviterebbero —
+    riduzione oltre il copriferro, copriferro che si mangia il nucleo — non arrivano fin qui.
     """
     st = s.staffe
-    bx, by = s.b - 2 * s.copriferro - st.diametro, s.h - 2 * s.copriferro - st.diametro
+    b_rid, h_rid = _legami.dimensioni_ridotte(s)
+    bx, by = b_rid - 2 * s.copriferro - st.diametro, h_rid - 2 * s.copriferro - st.diametro
     lungo_e1, lungo_e2 = (by, bx) if verticale else (bx, by)
     y0, z0, y1, z1 = contorno
-    yc0, yc1 = max(-lungo_e1 / 2, y0), min(lungo_e1 / 2, y1)
-    zc0, zc1 = max(-lungo_e2 / 2, z0), min(lungo_e2 / 2, z1)
-    if yc1 - yc0 <= 0 or zc1 - zc0 <= 0:
-        raise ValueError(
-            f"sezione {s.id} «{s.nome}»: copriferro {s.copriferro:g} e staffa Ø{st.diametro:g} "
-            f"non lasciano nucleo dentro {s.b:g}×{s.h:g} (b_x = {bx:g}, b_y = {by:g} mm)")
-    return yc0, zc0, yc1, zc1
+    cy, cz = (y0 + y1) / 2, (z0 + z1) / 2
+    return cy - lungo_e1 / 2, cz - lungo_e2 / 2, cy + lungo_e1 / 2, cz + lungo_e2 / 2
 
 
-def _fibre_estreme(nucleo, tag_nucleo: int, barre: list[Barra], tag_acciaio: int | None) -> list[dict]:
+def _fibre_estreme(nucleo, tag_nucleo: int, ruolo: str, barre: list[Barra],
+                   tag_acciaio: int | None) -> list[dict]:
     """Le fibre che raccontano lo stato della sezione: i quattro spigoli del nucleo e le barre
     estreme, una per verso di ciascun asse locale. Task 3 ci costruisce sopra i recorder e lo
     stato a quattro valori; qui si decidono le **posizioni**, che sono un fatto della sezione.
@@ -490,7 +504,7 @@ def _fibre_estreme(nucleo, tag_nucleo: int, barre: list[Barra], tag_acciaio: int
     perché è un `dict` sulle coordinate e non una somma di quattro voci.
     """
     yc0, zc0, yc1, zc1 = nucleo
-    fibre = {(y, z): {"y": y, "z": z, "mat": tag_nucleo, "ruolo": "nucleo"}
+    fibre = {(y, z): {"y": y, "z": z, "mat": tag_nucleo, "ruolo": ruolo}
              for y, z in ((yc0, zc0), (yc1, zc0), (yc1, zc1), (yc0, zc1))}
     if barre and tag_acciaio is not None:
         # una barra per verso di ciascun asse, con lo spigolo a rompere la parità: su una fila
@@ -557,15 +571,16 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     resta a una patch di copriferro: `_barre` non colloca niente senza staffe, e un nucleo
     confinato da un'armatura trasversale che non c'è sarebbe una resistenza inventata.
     """
-    # prima la geometria del nucleo, poi i legami: la guardia di `_nucleo` nomina la sezione,
-    # quella di `legami.confinamento_ntc` parla di millimetri e non sa quale sezione sta misurando
-    nucleo = _nucleo(s, verticale, contorno) if s.staffe is not None else None
     d = _legami.calcestruzzo(m.materiale(s.calcestruzzo), veste, s)
+    # una patch sola quando nucleo e copriferro sono lo **stesso** materiale: il confronto è sui
+    # parametri, non sulla riga, che porta in coda classe, veste e articolo — provenienza, non
+    # materiale. Con due patch identiche si scriverebbe lo stesso calcestruzzo due volte.
+    una_patch = _legami.stesso_legame(d["nucleo"], d["copriferro"])
+    # la geometria del nucleo si chiede solo se serve, e dopo `calcestruzzo`: è lui a sapere se
+    # le staffe confinano davvero (riduzione oltre il copriferro, α = 0, `confinamento: nessuno`)
+    nucleo = None if una_patch else _nucleo(s, verticale, contorno)
     righe = sez.righe
-    riga_nucleo = _legami.righe_tcl(tag_mat, d["nucleo"])
-    riga_copriferro = _legami.righe_tcl(tag_mat, d["copriferro"])
-    una_patch = riga_nucleo == riga_copriferro  # stesso tag: se le righe coincidono è lo stesso legame
-    righe += [r + f" — nucleo, sezione {s.id}" for r in riga_nucleo]
+    righe += [r + f" — nucleo, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, d["nucleo"])]
     tag_nucleo, tag_mat = tag_mat, tag_mat + 1
     tag_copriferro = tag_nucleo
     if not una_patch:
@@ -589,8 +604,11 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
     if una_patch:  # nucleo e copriferro sono lo stesso legame: due patch sarebbero la stessa cosa
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
-        nucleo = (y0, z0, y1, z1)
+        # la patch unica **è** il copriferro, e le fibre estreme stanno sul contorno: chiamarle
+        # «nucleo» direbbe a Task 3 di leggerle con le soglie del confinato, che qui non c'è
+        nucleo, ruolo = (y0, z0, y1, z1), "copriferro"
     else:
+        ruolo = "nucleo"
         yc0, zc0, yc1, zc1 = nucleo
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {yc0:.10g} {zc0:.10g} {yc1:.10g} {zc1:.10g}")
         # le quattro fasce esterne: sotto e sopra per tutta la larghezza, i due fianchi fra le due
@@ -601,7 +619,7 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     for b in barre:
         righe.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_acciaio}")
     righe.append("}")
-    sez.fibre_registrate[tag_sezione] = _fibre_estreme(nucleo, tag_nucleo, barre, tag_acciaio)
+    sez.fibre_registrate[tag_sezione] = _fibre_estreme(nucleo, tag_nucleo, ruolo, barre, tag_acciaio)
     return tag_mat
 
 
@@ -643,12 +661,17 @@ def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
     scala = " ".join(SCALA_ALGORITMI)
     return [
         "constraints Transformation", "numberer RCM", "system BandGeneral",
-        f"test NormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
+        f"test RelativeNormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
         f"set dt [expr {{1.0/{passi}}}]",
         "integrator LoadControl $dt", "algorithm Newton", "analysis Static",
         "set fatto 0.0", "set passo 0",
         "while {$fatto < 0.9999999} {",
         "    incr passo",
+        f"    if {{$passo > {GIRI_PER_PASSO * passi}}} {{",
+        f'        puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non converge, '
+        f'$passo passi contro {passi} dichiarati"',
+        "        exit 1",
+        "    }",
         "    set d $dt",
         "    set esito -1",
         '    set usato "-"',

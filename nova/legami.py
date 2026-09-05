@@ -31,6 +31,8 @@ EPS_CU2 = 0.0035
 # Resta un parametro perché la sezione conosce l'id del proprio acciaio ma non il modello.
 F_YK_ST = 450.0
 AVVISO_PROGETTO = "veste di progetto nel legame: rigidezza dimezzata, non è la prassi"
+AVVISO_RIDUZIONE = ("riduzione oltre il copriferro: sezione non confinata, il contorno ridotto "
+                    "taglia dentro la linea media delle staffe")
 # Quanto una barra può stare dentro lo spigolo del nucleo e valere ancora come barra d'angolo
 # trattenuta: il gancio della staffa più il raggio della barra, con 5 mm di gioco di posa.
 GIOCO_ANGOLO = 5.0
@@ -76,6 +78,33 @@ def veste_valori(materiale: Materiale, veste: str) -> dict:
         "progetto": (fyk / _materiali.GAMMA_S, "§4.1.2.1.1.3"),
     }[veste]
     return {**base, "fyk": fyk, "fy": fy, "ftk": v["ftk"], "epsuk": v["epsuk"], "articolo": articolo}
+
+
+def dimensioni_ridotte(sezione: Sezione) -> tuple[float, float]:
+    """`(b, h)` del contorno di calcestruzzo che resta dopo la `riduzione`.
+
+    `sx`/`dx` mangiano `b`, `sup`/`inf` mangiano `h` — la stessa convenzione della guardia in
+    `deck._geometria` e della `patch rect` di `deck._contorno`. Sta qui e non in `deck` perché
+    è `confinamento_ntc` a doverle ricevere: il calcestruzzo tolto non confina niente, e le
+    [4.1.12] misurate su `b×h` nominali darebbero un `α` che il contorno vero non regge.
+    """
+    r = sezione.riduzione
+    if r is None:
+        return sezione.b, sezione.h
+    return sezione.b - r.sx - r.dx, sezione.h - r.sup - r.inf
+
+
+def riduzione_oltre_il_copriferro(sezione: Sezione) -> bool:
+    """La riduzione arriva dentro la linea media delle staffe su almeno un lato.
+
+    La linea media sta a `copriferro + φ_st/2` da ciascuna faccia: una riduzione più profonda
+    di così taglia la staffa, e senza il reticolo chiuso le [4.1.12.f-g] non descrivono più
+    niente. Il confronto è per lato e non sulla somma: basta una faccia scoperta.
+    """
+    r = sezione.riduzione
+    if r is None or sezione.staffe is None:
+        return False
+    return max(r.sup, r.inf, r.sx, r.dx) > sezione.copriferro + sezione.staffe.diametro / 2
 
 
 def _somma_bi2(barre) -> float:
@@ -225,14 +254,26 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
                              f"{v['articolo']}, [11.2.5], §7.4.1")
     note = list(v["note"])
     conf = None
+    avvisi = list(v["avvisi"])
     if lg.confinamento != "nessuno":
         if sezione.staffe is None:
             note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: confinamento "
                         "«nessuno», il nucleo prende il legame del copriferro")
+        elif riduzione_oltre_il_copriferro(sezione):
+            # la riduzione taglia dentro la linea media delle staffe: il reticolo che confina
+            # non c'è più, e un nucleo confinato dentro un contorno che gli passa attraverso
+            # sarebbe resistenza inventata. Avviso e non nota: cambia il materiale scritto.
+            avvisi.append(AVVISO_RIDUZIONE)
         else:
             from nova.deck import _barre  # pigro: in T2 è `deck` a importare `legami`
-            conf = confinamento_ntc(sezione.b, sezione.h, sezione.copriferro, sezione.staffe,
-                                    _barre(sezione, False), fc)
+            b_rid, h_rid = dimensioni_ridotte(sezione)
+            try:
+                conf = confinamento_ntc(b_rid, h_rid, sezione.copriferro, sezione.staffe,
+                                        _barre(sezione, False), fc)
+            except ValueError as e:
+                # `confinamento_ntc` prende numeri e non sa quale sezione stia misurando: il
+                # rifiuto lo nomina qui, che è il primo punto della catena che ha la sezione
+                raise ValueError(f"sezione {sezione.id} «{sezione.nome}»: {e}") from None
             note += conf["note"]
             if conf["alpha"] == 0.0:  # la nota che dice perché l'ha già scritta `confinamento_ntc`
                 conf = None
@@ -246,11 +287,12 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
         if lg.confinamento == "mander":
             nucleo = _mander(fc, conf, v, epsU)
         else:
-            nucleo = _concrete02(conf["fck_c"], conf["epsc2_c"], epsU, v, lg, conf["articolo"]) | {
+            nucleo = _concrete02(conf["fck_c"], conf["epsc2_c"], epsU, v, lg,
+                                 f"{v['articolo']}, {conf['articolo']}") | {
                 "confinamento": "ntc", "fcc": conf["fck_c"], "epscc": conf["epsc2_c"],
                 "epscu": epsU, "alpha": conf["alpha"], "sigma2": conf["sigma2"]}
     return {"copriferro": copriferro, "nucleo": nucleo, "classe": v["classe"], "veste": veste,
-            "confinamento": nucleo["confinamento"], "avvisi": list(v["avvisi"]), "note": note}
+            "confinamento": nucleo["confinamento"], "avvisi": avvisi, "note": note}
 
 
 def acciaio(materiale: Materiale, veste: str) -> dict:
@@ -287,6 +329,17 @@ _ORDINE = {
     "concrete04": ("fpc", "epsc0", "epsU", "Ec", "ft", "et"),
     "steel02": ("Fy", "E", "b", "R0", "cR1", "cR2"),
 }
+
+
+def stesso_legame(a: dict, b: dict) -> bool:
+    """I due dizionari descrivono lo stesso `uniaxialMaterial`: stesso tipo e stessi parametri.
+
+    Il confronto è sui soli valori che entrano nella riga. Classe, veste e articolo raccontano
+    la **provenienza**, non il materiale: due nuclei con gli stessi numeri e articoli diversi
+    restano un materiale solo, e confrontare la riga formattata — commento compreso — li
+    scriverebbe due volte.
+    """
+    return a["tipo"] == b["tipo"] and all(a[k] == b[k] for k in _ORDINE[a["tipo"]])
 
 
 def righe_tcl(tag: int, parametri: dict) -> list[str]:
