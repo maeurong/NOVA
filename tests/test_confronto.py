@@ -213,10 +213,13 @@ def test_modi_appaiati_per_direzione_anche_se_invertiti_nellordine_destratto():
     assert f1.telaio == pytest.approx(4.0)  # il modo n=2, x-dominante, non il primo estratto
 
 
-def test_massa_partecipante_dellultimo_modo():
+def test_massa_partecipante_e_la_cumulata_dellultimo_modo():
+    """C1: la massa partecipante totale e' la `cumulata` dell'ultimo modo, non la quota di
+    quel solo modo — stessa convenzione di `corsa.py:334` e `modale.py:141`. La fixture
+    distingue le due apposta: quota x dell'ultimo modo 0,0, cumulata 0,7."""
     tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
     mx = _riga(tabella, "massa_partecipante_x")
-    assert mx.telaio == pytest.approx(0.0) and mx.solido == pytest.approx(0.0)
+    assert mx.telaio == pytest.approx(70.0) and mx.solido == pytest.approx(65.0)
     mz = _riga(tabella, "massa_partecipante_z")
     assert mz.telaio == pytest.approx(60.0) and mz.solido == pytest.approx(55.0)
 
@@ -244,10 +247,6 @@ def test_csv_unita_diversa_e_non_confrontabile_con_ragione(tmp_path):
     assert rz.abaqus is None and rz.classe_abaqus == "non_confrontabile" and rz.ragione
 
 
-@pytest.mark.xfail(strict=True, reason="nova/confronto.py:110 legge il CSV con encoding=\"utf-8\", non "
-                    "\"utf-8-sig\": un BOM in testa resta cucito al primo campo dell'intestazione "
-                    "(\\ufeffcaso), l'intestazione non combacia più con _COLONNE_CSV e leggi_csv rifiuta "
-                    "un CSV altrimenti valido")
 def test_leggi_csv_con_bom_intestazione_riconosciuta_comunque(tmp_path):
     """Riga: «CSV Abaqus con BOM UTF-8 in testa → intestazione riconosciuta lo stesso»."""
     p = tmp_path / "bom.csv"
@@ -435,7 +434,7 @@ def test_csv_esportato_ha_punto_decimale_e_punto_e_virgola(tmp_path):
     tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
     file = _confronto.esporta(tabella, tmp_path)
     testo = file["csv"].read_text(encoding="utf-8")
-    assert testo.startswith("# unita: mm N t Hz; separatore ;")
+    assert testo.startswith("# unita: mm N t Hz %; separatore ;")
     riga_reazione = next(r for r in testo.splitlines() if r.startswith("reazione_x;Z2"))
     assert "-20000" in riga_reazione and "," not in riga_reazione.split(";")[3]
 
@@ -567,3 +566,177 @@ def test_comando_confronto_csv_rotto_e_errore_fase_confronto(tmp_path):
     r = sidecar.rispondi({"comando": "confronto", "telaio": str(telaio_p), "abaqus": str(csv_p),
                           "mappa_casi": MAPPA}, lambda ev: None)
     assert r["esito"] == "errore" and r["fase"] == "confronto"
+
+
+# --- ondata finale: denominatore, pavimento, assi, provenienza, cintura CSV -------
+
+def test_lo_scarto_divide_per_il_riferimento_non_per_il_telaio():
+    """§5: il riferimento è l'altro (solido o Abaqus), non il telaio. Massa telaio
+    1000/g = 0,10194 t contro 0,5 t del solido: 79,6 % sul solido, non 390 % sul telaio."""
+    tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
+    riga = _riga(tabella, "massa")
+    atteso = abs(0.5 - 1000.0 / _confronto.GRAVITA) / 0.5 * 100.0
+    assert riga.scarto_solido_pct == pytest.approx(atteso)
+    assert riga.scarto_solido_pct < 100.0
+
+
+def test_valore_sotto_il_pavimento_di_rumore_non_e_confrontabile():
+    """C8: −5e−16 mm contro −0,00116 mm sono due modi di dire «zero» in mm, e lo scarto fra
+    i due non è un'informazione. Sopra il pavimento il confronto si fa come sempre."""
+    telaio = _telaio(per_caso={
+        "Z3": {"spostamenti": {"4": [0.2, 0.0, -5e-16, 0, 0, 0]},
+               "reazioni": {"1": [0.0, 0.0, 1000.0, 0, 0, 0]}, "sollecitazioni": {}},
+    })
+    solido = _solido(passi={"GRAVITA": {"reazioni_somma": [0.0, 0.0, 4900.0], "n_reazioni": 4,
+                                        "u_set": {"TOP": {"medio": [0.21, 0.0, -0.00116]}}}})
+    tabella = _confronto.confronta(telaio, solido, None, {"Z3": "GRAVITA", "nodi_sommita": [4]})
+    uz = _riga(tabella, "u_sommita_z", "Z3")
+    assert uz.scarto_solido_pct is None and uz.classe_solido == "non_confrontabile"
+    assert "pavimento" in uz.ragione
+    ux = _riga(tabella, "u_sommita_x", "Z3")   # 0,2 mm: sopra il pavimento, si confronta
+    assert ux.classe_solido != "non_confrontabile"
+
+
+def test_unita_senza_pavimento_dichiarato_si_confronta_come_prima():
+    """Riga: «`_PAVIMENTO` senza la chiave dell'unità di una riga → nessun pavimento»."""
+    assert "kN" not in _confronto._PAVIMENTO
+    pct, classe, ragione = _confronto._scarto_classe(1e-16, 2e-16, "kN")
+    assert pct is not None and classe == "lontano" and ragione is None
+
+
+def _modi_telaio_x_e_y():
+    return [
+        {"n": 1, "f": 5.0, "T": 0.2, "forma": {"4": [1.0, 0.0, 0.0]},
+         "massa_partecipante": {"x": 0.7, "y": 0.0, "z": 0.0},
+         "cumulata": {"x": 0.7, "y": 0.0, "z": 0.0}},
+        {"n": 2, "f": 8.0, "T": 0.125, "forma": {"4": [0.0, 1.0, 0.0]},
+         "massa_partecipante": {"x": 0.0, "y": 0.6, "z": 0.0},
+         "cumulata": {"x": 0.7, "y": 0.6, "z": 0.0}},
+    ]
+
+
+def _modi_solido_y_e_x():
+    return [
+        {"f": 20.0, "massa_partecipante": {"x": 0.0, "y": 0.65, "z": 0.0},
+         "cumulata": {"x": 0.0, "y": 0.65, "z": 0.0}},
+        {"f": 33.0, "massa_partecipante": {"x": 0.55, "y": 0.0, "z": 0.0},
+         "cumulata": {"x": 0.55, "y": 0.65, "z": 0.0}},
+    ]
+
+
+def test_assi_dichiarati_appaiano_i_modi_fra_terne_ruotate():
+    """§6: la x del telaio è la y del solido (terne diverse fra i due modelli). Senza `assi`
+    f1 leggerebbe il modo sbagliato pur essendo entrambi «x-dominanti» nel proprio sistema."""
+    telaio = _telaio(modi=_modi_telaio_x_e_y())
+    solido = _solido(modi=_modi_solido_y_e_x())
+    mappa = {**MAPPA, "assi": {"x": "y", "y": "x", "z": "z"}}
+    tabella = _confronto.confronta(telaio, solido, None, mappa)
+    f1 = _riga(tabella, "f1")
+    assert f1.telaio == pytest.approx(5.0) and f1.solido == pytest.approx(20.0)
+    f2 = _riga(tabella, "f2")
+    assert f2.telaio == pytest.approx(8.0) and f2.solido == pytest.approx(33.0)
+
+
+def test_senza_assi_lappaiamento_resta_lettera_per_lettera():
+    """Riga: «`mappa_casi["assi"]` assente → identità»: la stessa fixture senza `assi` appaia
+    la x del telaio con la x del solido, e la tabella è quella di prima."""
+    telaio = _telaio(modi=_modi_telaio_x_e_y())
+    solido = _solido(modi=_modi_solido_y_e_x())
+    tabella = _confronto.confronta(telaio, solido, None, MAPPA)
+    f1 = _riga(tabella, "f1")
+    assert f1.telaio == pytest.approx(5.0) and f1.solido == pytest.approx(33.0)
+
+
+def test_assi_parziale_lascia_le_lettere_mancanti_allidentita():
+    """Riga: «`assi` parziale (`{"x": "y"}`) → le lettere mancanti restano identità»."""
+    telaio = _telaio(modi=_modi_telaio_x_e_y())
+    solido = _solido(modi=_modi_solido_y_e_x())
+    tabella = _confronto.confronta(telaio, solido, None, {**MAPPA, "assi": {"x": "y"}})
+    assert _riga(tabella, "f1").solido == pytest.approx(20.0)   # x → y
+    assert _riga(tabella, "f2").solido == pytest.approx(20.0)   # y → y, identità
+
+
+@pytest.mark.parametrize("assi", [{"x": "w"}, {"w": "x"}, {"x": "yy"}])
+def test_assi_con_una_lettera_fuori_da_xyz_e_errore_di_validazione(assi):
+    """Riga: «`assi` con una lettera fuori da x/y/z → `ValueError` da `_valida`, non
+    `KeyError` in loop»."""
+    with pytest.raises(ValueError) as e:
+        _confronto.confronta(_telaio(), _solido(), None, {**MAPPA, "assi": assi})
+    assert "assi" in str(e.value)
+
+
+def test_provenienza_porta_lhash_del_modello_del_telaio():
+    """C12: senza `hash_modello` la tabella non dice su quale modello è stata fatta."""
+    tabella = _confronto.confronta(_telaio(), _solido(), None, MAPPA)
+    assert tabella.provenienza["hash_modello"] == "hash"
+
+
+def test_provenienza_senza_hash_modello_e_none_non_keyerror():
+    """Riga: «`telaio["run"]` senza `hash_modello` → `None`, non `KeyError`»."""
+    telaio = _telaio()
+    del telaio["run"]["hash_modello"]
+    tabella = _confronto.confronta(telaio, _solido(), None, MAPPA)
+    assert tabella.provenienza["hash_modello"] is None
+
+
+# --- 8a: i casi hanno la forma del modello, le celle testuali non aprono formule ---
+
+def test_un_caso_del_telaio_fuori_forma_e_un_rifiuto():
+    """8a: `telaio.json` arriva da un percorso e `json.loads` non vincola niente; un caso
+    `=1+1` finirebbe as-is nella colonna `caso` del CSV."""
+    telaio = _telaio(casi=("Z1", "=1+1"),
+                     carico_totale={"Z1": [0.0, 0.0, -1000.0], "=1+1": [0.0, 0.0, 0.0]})
+    with pytest.raises(ValueError) as e:
+        _confronto.confronta(telaio, _solido(), None, {"nodi_sommita": [4]})
+    assert "=1+1" in str(e.value) and "Z<n>" in str(e.value)
+
+
+def test_una_chiave_speciale_sconosciuta_di_mappa_casi_e_un_rifiuto():
+    """Riga: «`mappa_casi` con chiave speciale sconosciuta (`"pippo"`) → `ValueError` con il
+    nome della chiave, non ignorata in silenzio»."""
+    with pytest.raises(ValueError) as e:
+        _confronto.confronta(_telaio(), _solido(), None, {**MAPPA, "pippo": "GRAVITA"})
+    assert "pippo" in str(e.value)
+
+
+def _tabella_di_una_riga(**extra):
+    riga = _confronto.Riga("reazione_x", None, "N", -20000.0, None, None, None, None,
+                           "non_confrontabile", "non_confrontabile", "", **extra)
+    return _confronto.Tabella(righe=[riga], provenienza={})
+
+
+def test_una_cella_testuale_che_apre_una_formula_viene_disinnescata(tmp_path):
+    """8a, cintura: le celle testuali che iniziano per `=`, `+`, `-`, `@`, tab o CR prendono
+    un apostrofo davanti (OWASP CSV injection); le colonne numeriche no, o `-20000`
+    diventerebbe testo."""
+    file = _confronto.esporta(_tabella_di_una_riga(ragione="=cmd()"), tmp_path)
+    testo = file["csv"].read_text(encoding="utf-8")
+    riga = next(r for r in testo.splitlines() if r.startswith("reazione_x"))
+    assert "'=cmd()" in riga
+    assert ";-20000;" in riga   # il numero negativo resta un numero
+
+
+def test_una_cella_testuale_vuota_resta_vuota(tmp_path):
+    """Riga: «cella testuale vuota (`""`) → resta vuota, nessun prefisso»."""
+    file = _confronto.esporta(_tabella_di_una_riga(), tmp_path)
+    riga = next(r for r in file["csv"].read_text(encoding="utf-8").splitlines()
+                if r.startswith("reazione_x"))
+    assert riga.endswith(";;")   # bias_atteso e ragione vuoti, senza apostrofo
+
+
+# --- 8b: LaTeX ---------------------------------------------------------------------
+
+def test_escape_tex_copre_tutti_e_dieci_i_caratteri_speciali():
+    """8b: `#`, `$`, `{`, `}`, `~`, `^` uscivano nudi e rompevano la compilazione (o, con
+    `\\`, la cambiavano). Il backslash diventa `\\textbackslash{}` e le sue graffe non
+    vengono riscappate: la sostituzione è una passata sola, carattere per carattere."""
+    fuori = _confronto._escape_tex(r"\ % _ & # $ { } ~ ^")
+    assert fuori == (r"\textbackslash{} \% \_ \& \# \$ \{ \} "
+                     r"\textasciitilde{} \textasciicircum{}")
+
+
+def test_it_a_cavallo_della_potenza_di_dieci_resta_posizionale():
+    """§3, comportamento dichiarato e non un difetto: quattro cifre significative più lo zero
+    dell'arrotondamento sono ciò che `.4g` farebbe in posizionale. Mai un esponente."""
+    assert _confronto._it(9999.5) == "10000"
+    assert _confronto._it(0.00099995) == "0,0010000"

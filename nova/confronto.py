@@ -20,6 +20,7 @@ from pathlib import Path
 
 from nova.ccx import SET_SOMMITA
 from nova.deck import GRAVITA
+from nova.modello import caso_valido
 
 AVVERTENZA = "verifica del codice, non validazione"
 SOGLIE = (0.05, 0.20)
@@ -54,6 +55,17 @@ _ASSI_F = (("f1", "x"), ("f2", "y"), ("f3", "z"))
 # Sotto questa quota di massa partecipante, un asse del solido non «ha» un modo: niente
 # accoppiamento su un asse che il modo muove appena (Decisioni del controller, punto 1).
 _SOGLIA_MASSA_ASSE = 0.05
+
+# Sotto queste soglie un valore è rumore numerico della corsa, non una misura: −5e−16 mm e
+# −0,00116 mm sono due modi di scrivere «zero», e lo scarto fra i due (2,3e14 %) è un numero
+# senza contenuto. Un'unità che non sta qui non ha pavimento e si confronta come prima.
+_PAVIMENTO = {"mm": 1e-3, "N": 1e-2, "t": 1e-6, "Hz": 1e-3, "%": 1e-2}
+
+# Le chiavi di `mappa_casi` che non sono un caso del telaio. Tutte le altre devono avere la
+# forma di un caso (`Z<n>`/`C<n>`): il `telaio.json` arriva da un percorso, non da pydantic.
+_CHIAVI_SPECIALI = ("nodi_sommita", "gravita", "spinta", "assi")
+
+_LETTERE_ASSE = ("x", "y", "z")
 
 
 @dataclasses.dataclass
@@ -91,15 +103,21 @@ def classe(scarto: float | None) -> str:
     return "lontano"
 
 
-def _scarto_classe(telaio_val: float | None, altro_val: float | None) -> tuple[float | None, str]:
-    """`None` (e quindi `non_confrontabile`) se uno dei due manca **o** uno dei due è zero:
-    zero come riferimento divide per zero, zero come confronto renderebbe uno scarto senza
-    un riferimento a cui appoggiarsi (Decisioni del controller — le due righe degeneri
-    «massa del telaio 0» e «valore del solido 0» chiedono la stessa guardia simmetrica)."""
+def _scarto_classe(telaio_val: float | None, altro_val: float | None,
+                   unita: str) -> tuple[float | None, str, str | None]:
+    """Lo scarto sul **riferimento**, che è l'altro (solido o Abaqus): il telaio è la cosa
+    da verificare, non il metro. `None` (e quindi `non_confrontabile`) se uno dei due manca,
+    se uno dei due è zero (guardia simmetrica: zero come riferimento divide per zero, zero
+    come confronto lascia uno scarto senza appoggio) o se uno dei due sta sotto il pavimento
+    di rumore della sua unità; in quest'ultimo caso rende anche la ragione."""
     if telaio_val is None or altro_val is None or telaio_val == 0 or altro_val == 0:
-        return None, classe(None)
-    scarto = abs(altro_val - telaio_val) / abs(telaio_val)
-    return scarto * 100.0, classe(scarto)
+        return None, classe(None), None
+    pavimento = _PAVIMENTO.get(unita)
+    if pavimento is not None and min(abs(telaio_val), abs(altro_val)) < pavimento:
+        return None, classe(None), (f"valori sotto il pavimento di rumore per «{unita}» "
+                                    f"(< {pavimento:g})")
+    scarto = abs(altro_val - telaio_val) / abs(altro_val)
+    return scarto * 100.0, classe(scarto), None
 
 
 # --- CSV Abaqus ----------------------------------------------------------------
@@ -107,7 +125,9 @@ def _scarto_classe(telaio_val: float | None, altro_val: float | None) -> tuple[f
 def leggi_csv(percorso) -> list[dict]:
     p = Path(percorso)
     try:
-        testo = p.read_text(encoding="utf-8")
+        # utf-8-sig: un CSV salvato da Excel porta il BOM, e con «utf-8» resterebbe cucito
+        # al primo campo dell'intestazione («﻿caso») rendendola irriconoscibile
+        testo = p.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as e:
         raise ValueError(f"{p}: CSV Abaqus illeggibile ({e})") from None
     righe_testo = testo.splitlines()
@@ -156,12 +176,27 @@ def _valore_abaqus(lookup: dict, caso: str, grandezza: str) -> tuple[float | Non
 # --- validazione di mappa_casi --------------------------------------------------
 
 def _casi_mappati(mappa_casi: dict) -> dict:
-    return {k: v for k, v in mappa_casi.items()
-           if k not in ("nodi_sommita", "gravita", "spinta")}
+    return {k: v for k, v in mappa_casi.items() if k not in _CHIAVI_SPECIALI}
+
+
+def _valida_assi(assi) -> None:
+    if not isinstance(assi, dict):
+        raise ValueError(f"mappa_casi[«assi»] deve essere un dizionario telaio→solido, non {assi!r}")
+    for telaio_asse, solido_asse in assi.items():
+        if telaio_asse not in _LETTERE_ASSE or solido_asse not in _LETTERE_ASSE:
+            raise ValueError(f"mappa_casi[«assi»] nomina «{telaio_asse}»: «{solido_asse}», e gli "
+                             f"assi sono {', '.join(_LETTERE_ASSE)}")
 
 
 def _valida(telaio: dict, solido: dict | None, mappa_casi: dict) -> None:
     casi_telaio = telaio.get("run", {}).get("casi", [])
+    # i casi arrivano da un `telaio.json` letto per percorso e finiscono nella colonna `caso`
+    # del CSV: senza questo un caso `=1+1` aprirebbe una formula nel foglio di chi lo legge
+    for caso in [*casi_telaio, *_casi_mappati(mappa_casi)]:
+        if not caso_valido(caso):
+            raise ValueError(f"caso «{caso}» non ammesso: atteso Z<n> o C<n>")
+    if "assi" in mappa_casi:
+        _valida_assi(mappa_casi["assi"])
     nodi_validi = telaio.get("run", {}).get("mappa_tag", {}).get("nodo", {})
     for nodo in mappa_casi.get("nodi_sommita", []):
         if str(nodo) not in nodi_validi:
@@ -212,10 +247,13 @@ def _riga_massa(telaio: dict, solido: dict | None, lookup: dict, mappa_casi: dic
                         f"un'azione Z<id> a coefficiente unitario")
     massa_solido = solido.get("massa") if solido is not None else None
     ab_val, ab_ragione = _valore_abaqus(lookup, "", "massa")
-    s_pct, s_classe = _scarto_classe(massa_telaio, massa_solido)
-    a_pct, a_classe = _scarto_classe(massa_telaio, ab_val)
-    ragione = (ragione_g if s_classe == "non_confrontabile" and ragione_g
-              else (ab_ragione if a_classe == "non_confrontabile" and ab_ragione else None))
+    s_pct, s_classe, s_pav = _scarto_classe(massa_telaio, massa_solido, UNITA_ATTESA["massa"])
+    a_pct, a_classe, a_pav = _scarto_classe(massa_telaio, ab_val, UNITA_ATTESA["massa"])
+    ragione = None
+    if s_classe == "non_confrontabile":
+        ragione = ragione_g or s_pav
+    if ragione is None and a_classe == "non_confrontabile":
+        ragione = ab_ragione or a_pav
     return Riga("massa", None, UNITA_ATTESA["massa"], massa_telaio, massa_solido, ab_val,
                s_pct, a_pct, s_classe, a_classe, BIAS_ATTESO["massa"], ragione)
 
@@ -262,10 +300,13 @@ def _u_sommita_solido(passo: dict | None) -> tuple[float | None, float | None, s
 def _riga_confronto(grandezza: str, caso: str | None, telaio_val, solido_val, lookup,
                     solido_caso: str, ragione_solido: str | None = None) -> Riga:
     ab_val, ab_ragione = _valore_abaqus(lookup, solido_caso, grandezza)
-    s_pct, s_classe = _scarto_classe(telaio_val, solido_val)
-    a_pct, a_classe = _scarto_classe(telaio_val, ab_val)
-    ragione = (ragione_solido if s_classe == "non_confrontabile" and ragione_solido
-              else (ab_ragione if a_classe == "non_confrontabile" and ab_ragione else None))
+    s_pct, s_classe, s_pav = _scarto_classe(telaio_val, solido_val, UNITA_ATTESA[grandezza])
+    a_pct, a_classe, a_pav = _scarto_classe(telaio_val, ab_val, UNITA_ATTESA[grandezza])
+    ragione = None
+    if s_classe == "non_confrontabile":
+        ragione = ragione_solido or s_pav
+    if ragione is None and a_classe == "non_confrontabile":
+        ragione = ab_ragione or a_pav
     return Riga(grandezza, caso, UNITA_ATTESA[grandezza], telaio_val, solido_val, ab_val,
                s_pct, a_pct, s_classe, a_classe, BIAS_ATTESO.get(grandezza, ""), ragione)
 
@@ -322,20 +363,22 @@ def _primo_modo_solido(modi: list[dict], asse: str) -> dict | None:
     return next((m for m in modi if _asse_dominante_solido(m) == asse), None)
 
 
-def _righe_modi(telaio: dict, solido: dict | None, lookup: dict, nodi_sommita: list) -> list[Riga]:
+def _righe_modi(telaio: dict, solido: dict | None, lookup: dict, nodi_sommita: list,
+                assi: dict) -> list[Riga]:
     modi_t = telaio.get("modi") or []
     modi_s = (solido or {}).get("modi") if solido is not None else None
     righe = []
     for etichetta, asse in _ASSI_F:
+        asse_s = assi.get(asse, asse)
         modo_t = _primo_modo_telaio(modi_t, nodi_sommita, asse) if nodi_sommita else None
-        modo_s = _primo_modo_solido(modi_s, asse) if modi_s else None
+        modo_s = _primo_modo_solido(modi_s, asse_s) if modi_s else None
         f_t = modo_t["f"] if modo_t else None
         f_s = modo_s["f"] if modo_s else None
         ragione = None
         if f_t is None:
             ragione = f"nessun modo del telaio con asse {asse} dominante sui nodi di sommità"
         elif solido is not None and f_s is None:
-            ragione = f"nessun modo del solido con asse {asse} dominante (massa partecipante ≥ 5 %)"
+            ragione = f"nessun modo del solido con asse {asse_s} dominante (massa partecipante ≥ 5 %)"
         righe.append(_riga_confronto(etichetta, None, f_t, f_s, lookup, "", ragione))
     return righe
 
@@ -348,8 +391,11 @@ def _righe_massa_partecipante(telaio: dict, solido: dict | None, lookup: dict) -
     righe = []
     for asse in "xyz":
         grandezza = f"massa_partecipante_{asse}"
-        vt = ultimo_t["massa_partecipante"][asse] * 100.0 if ultimo_t else None
-        vs = ultimo_s["massa_partecipante"][asse] * 100.0 if ultimo_s else None
+        # la `cumulata` dell'ultimo modo, non la quota di quel solo modo: è la convenzione
+        # con cui il verdetto del telaio legge la massa modale (`corsa.py:334`,
+        # `modale.py:141`), e due convenzioni sulla stessa parola sono un errore in agguato
+        vt = ultimo_t["cumulata"][asse] * 100.0 if ultimo_t else None
+        vs = ultimo_s["cumulata"][asse] * 100.0 if ultimo_s else None
         righe.append(_riga_confronto(grandezza, None, vt, vs, lookup, ""))
     return righe
 
@@ -371,6 +417,7 @@ def _provenienza(telaio: dict, solido: dict | None) -> dict:
     return {
         "commit_nova": _commit_nova(),
         "run_id_telaio": run_t.get("id"),
+        "hash_modello": run_t.get("hash_modello"),
         "run_id_solido": run_s.get("id") if solido is not None else None,
         "sha256_deck_solido": run_s.get("sha256_deck") if solido is not None else None,
         "versione_opensees": run_t.get("versione_opensees"),
@@ -388,7 +435,10 @@ def confronta(telaio: dict, solido: dict | None, abaqus: list[dict] | None,
     se diverso dall'euristica automatica: lo `Z<id>` più alto), `"spinta"` (il caso telaio
     — già chiave di `mappa_casi` — da usare per `taglio_base`, se diverso dalla ricerca
     automatica del passo solido `SPINTA_ORIZZONTALE`; se nomina un caso non mappato, niente
-    riga `taglio_base` e nessuna eccezione)."""
+    riga `taglio_base` e nessuna eccezione), `"assi"` (dizionario telaio→solido fra `x`, `y`
+    e `z`, per l'appaiamento dei modi quando i due modelli non hanno la stessa terna:
+    `{"x": "y"}` cerca il modo solido dominante in y per la `f1` del telaio; le lettere non
+    nominate restano se stesse)."""
     mappa_casi = mappa_casi or {}
     _valida(telaio, solido, mappa_casi)
     lookup = _indicizza_abaqus(abaqus or [])
@@ -413,7 +463,7 @@ def confronta(telaio: dict, solido: dict | None, abaqus: list[dict] | None,
         telaio_caso, solido_caso, tx, sx = candidato_spinta
         righe.append(_riga_confronto("taglio_base", telaio_caso, tx, sx, lookup, solido_caso))
 
-    righe += _righe_modi(telaio, solido, lookup, nodi_sommita)
+    righe += _righe_modi(telaio, solido, lookup, nodi_sommita, mappa_casi.get("assi") or {})
     righe += _righe_massa_partecipante(telaio, solido, lookup)
 
     return Tabella(righe=righe, provenienza=_provenienza(telaio, solido), avvertenza=AVVERTENZA)
@@ -425,12 +475,23 @@ def _num_csv(x: float | None) -> str:
     return "" if x is None else f"{x:.6g}"
 
 
+# I fogli di calcolo eseguono la cella che inizia così. I nomi dei passi del solido vengono
+# dai `**NOME` del deck, cioè da testo dell'utente, e finiscono nelle colonne testuali del
+# CSV: un apostrofo davanti la lascia leggibile e la disinnesca (OWASP, CWE-1236). Vale
+# **solo** sulle colonne testuali: `-20000` è un numero, e prefissarlo lo renderebbe testo.
+_INIZI_DI_FORMULA = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _testo_csv(s: str) -> str:
+    return "'" + s if s.startswith(_INIZI_DI_FORMULA) else s
+
+
 def _csv(tabella: Tabella) -> str:
     intestazione = ["grandezza", "caso", "unita", "telaio", "solido", "abaqus",
                     "scarto_solido_pct", "scarto_abaqus_pct", "classe_solido", "classe_abaqus",
                     "bias_atteso", "ragione"]
     buf = io.StringIO()
-    buf.write("# unita: mm N t Hz; separatore ;\n")
+    buf.write("# unita: mm N t Hz %; separatore ;\n")
     # AVVERTENZA anche qui: il docstring del modulo promette «ogni export porta AVVERTENZA»,
     # e prima d'ora il CSV era l'unico a non mantenerla (il .tex ce l'ha nel piede).
     buf.write(f"# avvertenza: {tabella.avvertenza}\n")
@@ -440,16 +501,24 @@ def _csv(tabella: Tabella) -> str:
     scrittore.writerow(intestazione)
     for r in tabella.righe:
         scrittore.writerow([
-            r.grandezza, r.caso or "", r.unita, _num_csv(r.telaio), _num_csv(r.solido),
+            *(_testo_csv(c) for c in (r.grandezza, r.caso or "", r.unita)),
+            _num_csv(r.telaio), _num_csv(r.solido),
             _num_csv(r.abaqus), _num_csv(r.scarto_solido_pct), _num_csv(r.scarto_abaqus_pct),
-            r.classe_solido, r.classe_abaqus, r.bias_atteso, r.ragione or "",
+            *(_testo_csv(c) for c in (r.classe_solido, r.classe_abaqus, r.bias_atteso,
+                                      r.ragione or "")),
         ])
     return buf.getvalue()
 
 
+_TEX = {"\\": r"\textbackslash{}", "%": r"\%", "_": r"\_", "&": r"\&", "#": r"\#",
+        "$": r"\$", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
+        "^": r"\textasciicircum{}"}
+
+
 def _escape_tex(s: str) -> str:
-    return s.replace("\\", r"\textbackslash{}").replace("%", r"\%").replace("_", r"\_") \
-            .replace("&", r"\&")
+    """Una passata sola, carattere per carattere: con `replace` in catena le graffe di
+    `\\textbackslash{}` verrebbero riscappate dal `{` che arriva dopo."""
+    return "".join(_TEX.get(c, c) for c in s)
 
 
 def _it(x: float | None) -> str:
@@ -468,6 +537,8 @@ def _it_pct(x: float | None) -> str:
 
 
 def _tex(tabella: Tabella) -> str:
+    """La tabella in LaTeX. `\\toprule`/`\\midrule`/`\\bottomrule` vengono da **booktabs**: il
+    documento che include `confronto.tex` deve portare `\\usepackage{booktabs}`."""
     # bias_atteso e ragione restano fuori dalla tabella LaTeX (troppo lunghi per una cella):
     # CSV e JSON portano le colonne complete.
     corpo = []

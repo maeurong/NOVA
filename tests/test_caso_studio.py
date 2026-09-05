@@ -213,8 +213,10 @@ def test_server_apri_muro_1_stessa_impronta_di_carica(tmp_path):
 # Ogni test è ancorato a una riga di «Ingressi degeneri» del brief Task 3; la mappa
 # riga -> test sta nel report.
 
+# `assi`: la x del telaio (nel piano del muro) è la y del deck solido, che ha il muro sul
+# piano y-z. Senza la dichiarazione f1 leggerebbe il modo fuori piano del solido.
 MAPPA_CASI_MURO_1 = {"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP",
-                     "nodi_sommita": [3, 4]}
+                     "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}
 
 
 def _assicura_ok(fin: dict) -> dict:
@@ -238,11 +240,14 @@ def test_righe_dei_modi_non_confrontabili_quando_il_solido_non_ha_modi(tmp_path)
         "per_caso": {},
         "modi": [
             {"f": 10.0, "forma": {"3": [1.0, 0.0, 0.0], "4": [1.0, 0.0, 0.0]},
-             "massa_partecipante": {"x": 0.7, "y": 0.0, "z": 0.0}},
+             "massa_partecipante": {"x": 0.7, "y": 0.0, "z": 0.0},
+             "cumulata": {"x": 0.7, "y": 0.0, "z": 0.0}},
             {"f": 15.0, "forma": {"3": [0.0, 1.0, 0.0], "4": [0.0, 1.0, 0.0]},
-             "massa_partecipante": {"x": 0.0, "y": 0.7, "z": 0.0}},
+             "massa_partecipante": {"x": 0.0, "y": 0.7, "z": 0.0},
+             "cumulata": {"x": 0.7, "y": 0.7, "z": 0.0}},
             {"f": 22.0, "forma": {"3": [0.0, 0.0, 1.0], "4": [0.0, 0.0, 1.0]},
-             "massa_partecipante": {"x": 0.0, "y": 0.0, "z": 0.7}},
+             "massa_partecipante": {"x": 0.0, "y": 0.0, "z": 0.7},
+             "cumulata": {"x": 0.7, "y": 0.7, "z": 0.7}},
         ],
     }
     solido = {"massa": None, "passi": {}, "modi": []}  # deck senza *FREQUENCY
@@ -278,10 +283,10 @@ def test_confronto_sul_deck_vero(chiedi, tmp_path, binario_opensees, binario_ccx
     assert tabella.righe[0].grandezza == "massa"
     scarto_massa = tabella.righe[0].scarto_solido_pct
     assert scarto_massa is not None
-    # Misurato il 05/09/2026: ~27,9 % (denominatore = massa del telaio, come `_scarto_classe`
-    # in tutto il modulo). Atteso, non un difetto: la trave di fondazione e la trave
-    # superiore stanno sull'interasse nel telaio, zapatas e tamponatura fuori dal solido.
-    assert 20.0 < scarto_massa < 35.0, scarto_massa
+    # Misurato il 05/09/2026: 38,6 % (denominatore = massa del solido, il riferimento).
+    # Atteso, non un difetto: la trave di fondazione e la trave superiore stanno
+    # sull'interasse nel telaio, zapatas e tamponatura fuori dal solido.
+    assert 37.6 < scarto_massa < 39.6, scarto_massa
 
     per_grandezza = {r.grandezza: r for r in tabella.righe if r.grandezza in ("f1", "f2", "f3")}
     for etichetta in ("f1", "f2", "f3"):
