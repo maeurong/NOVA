@@ -17,3 +17,4 @@ questa tabella a occhio.
 | armatura.py | 14a5036bfd90154af2457b76d5ca61c55509a9935c6bc63e69660c12b7185b3c |
 | config.py | 330bcef865530c1dd17cdda1af41782db71f967fa14068bde7be526925844929 |
 | materiali.py | d3d8402954ad7e125dafce88559b8c0fdfa23ad3c73f8627613316a66e15f0dd |
+| telaio.py | cef1dd7dc4f93ac27f3020c05e5961e79129dc365ad805f7020ae8458e4db6f0 |

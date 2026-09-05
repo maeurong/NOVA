@@ -107,6 +107,10 @@ class SalvaReq(_CorpoBase):
     modello: dict
 
 
+class ImportaReq(_CorpoBase):
+    percorso: str
+
+
 class CheckReq(_CorpoBase):
     modello: dict | None = None
 
@@ -139,7 +143,7 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         return await call_next(request)
 
     def _o_400(fin: dict) -> dict:
-        if fin.get("esito") == "errore" and fin.get("fase") == "modello":
+        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa"):
             raise HTTPException(400, detail=fin)
         return fin
 
@@ -150,6 +154,10 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
     @app.post("/api/check")
     def check(corpo: CheckReq):
         return _o_400(_finale(sidecar.chiedi({"comando": "check", "modello": corpo.modello})))
+
+    @app.post("/api/importa")
+    def importa(corpo: ImportaReq):
+        return _o_400(_finale(sidecar.chiedi({"comando": "importa", "percorso": corpo.percorso})))
 
     @app.post("/api/corsa")
     def corsa(corpo: CorsaReq):

@@ -298,3 +298,19 @@ def test_se_il_primo_gradino_non_regge_la_corsa_e_un_errore(chiedi, binario_open
     (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
                                                                    modi="auto"), "cartella": str(tmp_path)})
     assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "solutore"
+
+
+def test_il_rilievo_importato_gira_in_elastico(chiedi, binario_opensees, tmp_path):
+    """Story 53: il rilievo, con i soli vincoli proposti, è subito calcolabile in elastico."""
+    from conftest import FIXTURE
+    from nova import importa
+
+    imp = importa.importa(json.loads((FIXTURE / "prior_sintetico" / "12_wall.json").read_text(encoding="utf-8")))
+    dati = json.loads(imp.modello.model_dump_json(exclude_none=True))
+    for p in imp.proposte_vincoli:
+        next(n for n in dati["nodi"] if n["id"] == p["nodo"])["vincolo"] = p["vincolo"]
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": dati, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"] if v["caso"]}
+    assert esiti["reazioni"] == "passato"

@@ -477,3 +477,21 @@ def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
     m.main([])
     assert visti[0].is_absolute() and visti[0].name == "corse"
+
+
+# --- POST /api/importa (Task 2) ---------------------------------------------
+
+def test_importa_dalla_fixture(cliente):
+    from conftest import FIXTURE
+
+    p = FIXTURE / "prior_sintetico" / "12_wall.json"
+    r = cliente.post("/api/importa", json={"percorso": str(p)})
+    assert r.status_code == 200
+    corpo = r.json()
+    assert corpo["mancano"] == ["armature", "classe", "vincoli"]
+    assert len(corpo["modello"]["aste"]) == 80
+
+
+def test_importa_un_percorso_inesistente_e_400(cliente, tmp_path):
+    r = cliente.post("/api/importa", json={"percorso": str(tmp_path / "no.json")})
+    assert r.status_code == 400 and r.json()["fase"] == "importa"

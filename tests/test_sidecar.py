@@ -1232,3 +1232,61 @@ def test_il_coefficiente_di_massa_negativo_e_un_rifiuto(chiedi):
                     masse_da_azioni=[{"azione": 1, "coefficiente": -0.3}])
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello"
+
+
+# --- comando `importa` (Task 2) ---------------------------------------------
+
+def _prior_sintetico() -> dict:
+    from conftest import FIXTURE
+    return json.loads((FIXTURE / "prior_sintetico" / "12_wall.json").read_text(encoding="utf-8"))
+
+
+def test_importa_con_il_prior_inline(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "importa", "prior": _prior_sintetico()})
+    fin = r[-1]
+    assert fin["esito"] == "ok"
+    assert len(fin["modello"]["aste"]) == 80 and fin["mancano"] == ["armature", "classe", "vincoli"]
+    assert fin["resoconto"]["nodi"] == 80 and fin["scartate"] == []
+    assert len(fin["proposte_vincoli"]) >= 2 and len(fin["giunzioni"]) == 4
+
+
+def test_importa_da_un_percorso(chiedi):
+    from conftest import FIXTURE
+
+    p = FIXTURE / "prior_vuoto" / "12_wall.json"
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    fin = r[-1]
+    assert fin["esito"] == "ok" and fin["modello"]["nodi"] == [] and len(fin["scartate"]) == 14
+    assert fin["resoconto"]["percorso"] == str(p.resolve())
+
+
+def test_importa_un_percorso_che_non_esiste_e_un_errore_di_fase_importa(chiedi, tmp_path):
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(tmp_path / "no.json")})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+
+
+def test_importa_una_cartella_non_e_un_traceback(chiedi, tmp_path):
+    (r, dopo) = chiedi({"id": 1, "comando": "importa", "percorso": str(tmp_path)},
+                       {"id": 2, "comando": "fine"})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+    assert "IsADirectoryError" not in r[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+
+
+def test_importa_un_file_che_non_e_json_e_un_errore_di_fase_importa(chiedi, tmp_path):
+    p = tmp_path / "roba.json"
+    p.write_text("non sono json", encoding="utf-8")
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+
+
+def test_importa_un_prior_senza_membrature_nomina_la_chiave(chiedi):
+    prior = _prior_sintetico()
+    del prior["membrature"]
+    (r,) = chiedi({"id": 1, "comando": "importa", "prior": prior})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+    assert "membrature" in r[-1]["motivo"]
+
+
+def test_il_comando_sconosciuto_elenca_anche_importa(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "boh"})
+    assert "importa" in r[-1]["motivo"]

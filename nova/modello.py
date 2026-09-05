@@ -128,6 +128,7 @@ class Materiale(_Base):
     # caratteri chiude la Tcl injection (`\n`/`{`/`}` = un comando) SEMPRE, anche
     # con `personalizzato: true` — non solo quando la classe deve esistere a catalogo.
     classe: str = Field(pattern=r"^[A-Za-z0-9 /_.-]+$")
+    origine: Origine | None = None
     valori: dict[str, float] = {}
     personalizzato: bool = False
 
