@@ -556,7 +556,11 @@ def test_i_carichi_nodali_non_si_accorgono_del_cambio_di_algoritmo(chiedi, tmp_p
     """Non-regressione sul fix C1. Senza `eleLoad` non c'è niente da ridistribuire nella
     determinazione di stato dell'elemento a forze, e `Linear` e `Newton` danno lo stesso
     campo: misurato il 05/09/2026 sul telaio 2×1 caso Z2 (sola spinta in testa), max |Δ| sugli
-    spostamenti 3,3e-17 mm. `ux` del nodo 5 vale 0,917409 mm prima come dopo.
+    spostamenti 3,3e-17 mm.
+
+    Il numero pinzato è il `u_max` di tutto il modello, cioè la **norma** dello spostamento del
+    nodo 4 (0,917409 mm; il suo `ux` da solo è 0,917403). Non è l'`ux` del nodo 5, che vale
+    0,903595 — il nodo 4 è quello dove la spinta è applicata.
     """
     fin = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path, ["Z2"])
     assert fin["esito"] == "ok", fin

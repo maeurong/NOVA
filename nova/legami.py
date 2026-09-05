@@ -31,8 +31,7 @@ EPS_CU2 = 0.0035
 # Resta un parametro perché la sezione conosce l'id del proprio acciaio ma non il modello.
 F_YK_ST = 450.0
 AVVISO_PROGETTO = "veste di progetto nel legame: rigidezza dimezzata, non è la prassi"
-AVVISO_RIDUZIONE = ("riduzione oltre il copriferro: sezione non confinata, il contorno ridotto "
-                    "taglia dentro la linea media delle staffe")
+AVVISO_RIDUZIONE = "la riduzione entra nel nucleo confinato: sezione non confinata"
 # Quanto una barra può stare dentro lo spigolo del nucleo e valere ancora come barra d'angolo
 # trattenuta: il gancio della staffa più il raggio della barra, con 5 mm di gioco di posa.
 GIOCO_ANGOLO = 5.0
@@ -80,26 +79,19 @@ def veste_valori(materiale: Materiale, veste: str) -> dict:
     return {**base, "fyk": fyk, "fy": fy, "ftk": v["ftk"], "epsuk": v["epsuk"], "articolo": articolo}
 
 
-def dimensioni_ridotte(sezione: Sezione) -> tuple[float, float]:
-    """`(b, h)` del contorno di calcestruzzo che resta dopo la `riduzione`.
-
-    `sx`/`dx` mangiano `b`, `sup`/`inf` mangiano `h` — la stessa convenzione della guardia in
-    `deck._geometria` e della `patch rect` di `deck._contorno`. Sta qui e non in `deck` perché
-    è `confinamento_ntc` a doverle ricevere: il calcestruzzo tolto non confina niente, e le
-    [4.1.12] misurate su `b×h` nominali darebbero un `α` che il contorno vero non regge.
-    """
-    r = sezione.riduzione
-    if r is None:
-        return sezione.b, sezione.h
-    return sezione.b - r.sx - r.dx, sezione.h - r.sup - r.inf
-
-
 def riduzione_oltre_il_copriferro(sezione: Sezione) -> bool:
-    """La riduzione arriva dentro la linea media delle staffe su almeno un lato.
+    """Il contorno ridotto **taglia** il rettangolo di nucleo, invece di contenerlo.
 
-    La linea media sta a `copriferro + φ_st/2` da ciascuna faccia: una riduzione più profonda
-    di così taglia la staffa, e senza il reticolo chiuso le [4.1.12.f-g] non descrivono più
-    niente. Il confronto è per lato e non sulla somma: basta una faccia scoperta.
+    La gabbia delle staffe non si sposta quando si toglie calcestruzzo da una faccia: il nucleo
+    resta il rettangolo nominale `b − 2c − φ_st` centrato dove stanno barre e staffe. Finché la
+    riduzione si mangia solo copriferro il nucleo è intatto e il confinamento è quello nominale;
+    quando entra oltre `copriferro + φ_st/2` su un lato taglia la staffa, e senza reticolo chiuso
+    le [4.1.12.f-g] non descrivono più niente.
+
+    È la stessa cosa del contenimento geometrico, scritta una volta sola: il nucleo dista
+    `c + φ_st/2` da ciascuna faccia nominale, quindi «contorno dentro il nucleo» e «riduzione
+    maggiore di `c + φ_st/2`» sono la stessa disuguaglianza. Il confronto è per lato e non sulla
+    somma: basta una faccia. Tangente (riduzione **uguale** a `c + φ_st/2`) è ancora contenimento.
     """
     r = sezione.riduzione
     if r is None or sezione.staffe is None:
@@ -255,30 +247,37 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     note = list(v["note"])
     conf = None
     avvisi = list(v["avvisi"])
-    if lg.confinamento != "nessuno":
+    # «senza nucleo» non è «senza confinamento»: qui il rettangolo di nucleo **non esiste**
+    # (niente staffe, niente gabbia) o non è più tutto calcestruzzo (la riduzione ci entra
+    # dentro). Il deck ci scrive una patch sola, e il legame è quello del copriferro **esatto**:
+    # un `epsU_nucleo` dichiarato non ha su cosa applicarsi, e onorarlo qui darebbe due
+    # materiali diversi per una patch sola.
+    senza_nucleo = sezione.staffe is None or riduzione_oltre_il_copriferro(sezione)
+    if senza_nucleo:
         if sezione.staffe is None:
-            note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: confinamento "
-                        "«nessuno», il nucleo prende il legame del copriferro")
-        elif riduzione_oltre_il_copriferro(sezione):
-            # la riduzione taglia dentro la linea media delle staffe: il reticolo che confina
-            # non c'è più, e un nucleo confinato dentro un contorno che gli passa attraverso
-            # sarebbe resistenza inventata. Avviso e non nota: cambia il materiale scritto.
-            avvisi.append(AVVISO_RIDUZIONE)
+            note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: non c'è nucleo, "
+                        "il legame è quello del copriferro su tutta la sezione")
         else:
-            from nova.deck import _barre  # pigro: in T2 è `deck` a importare `legami`
-            b_rid, h_rid = dimensioni_ridotte(sezione)
-            try:
-                conf = confinamento_ntc(b_rid, h_rid, sezione.copriferro, sezione.staffe,
-                                        _barre(sezione, False), fc)
-            except ValueError as e:
-                # `confinamento_ntc` prende numeri e non sa quale sezione stia misurando: il
-                # rifiuto lo nomina qui, che è il primo punto della catena che ha la sezione
-                raise ValueError(f"sezione {sezione.id} «{sezione.nome}»: {e}") from None
-            note += conf["note"]
-            if conf["alpha"] == 0.0:  # la nota che dice perché l'ha già scritta `confinamento_ntc`
-                conf = None
-    if conf is None:  # nucleo = copriferro, con `epsU_nucleo` onorato se dichiarato
-        epsU = lg.epsU_nucleo if lg.epsU_nucleo is not None else lg.epsU_copriferro
+            avvisi.append(AVVISO_RIDUZIONE)
+        if lg.epsU_nucleo is not None:
+            note.append(f"sezione {sezione.id} «{sezione.nome}»: senza nucleo l'«epsU_nucleo» "
+                        f"dichiarato ({lg.epsU_nucleo:g}) è ignorato")
+    elif lg.confinamento != "nessuno":
+        from nova.deck import _barre  # pigro: in T2 è `deck` a importare `legami`
+        barre = _barre(sezione, False)  # fuori dal `try`: si nomina già da sé, e il prefisso
+        try:                            # qui sotto lo scriverebbe due volte
+            conf = confinamento_ntc(sezione.b, sezione.h, sezione.copriferro, sezione.staffe,
+                                    barre, fc)
+        except ValueError as e:
+            # `confinamento_ntc` prende numeri e non sa quale sezione stia misurando: il
+            # rifiuto lo nomina qui, che è il primo punto della catena che ha la sezione
+            raise ValueError(f"sezione {sezione.id} «{sezione.nome}»: {e}") from None
+        note += conf["note"]
+        if conf["alpha"] == 0.0:  # la nota che dice perché l'ha già scritta `confinamento_ntc`
+            conf = None
+    if conf is None:  # nucleo = copriferro; `epsU_nucleo` vale solo se un nucleo c'è
+        epsU = (lg.epsU_copriferro if senza_nucleo or lg.epsU_nucleo is None
+                else lg.epsU_nucleo)
         nucleo = _concrete02(fc, epsc0, epsU, v, lg, copriferro["articolo"]) | {
             "confinamento": "nessuno", "fcc": fc, "epscc": epsc0, "epscu": epsU,
             "alpha": 0.0, "sigma2": 0.0}

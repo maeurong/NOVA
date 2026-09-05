@@ -239,7 +239,7 @@ def test_il_ciclo_a_passi_ha_un_tetto_ai_giri(tmp_path):
                 analisi=[{"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4}])
     testo = _testo(m, ["Z1"], tmp_path)
     assert f"if {{$passo > {_deck.GIRI_PER_PASSO * 4}}}" in testo
-    assert "non converge, $passo passi contro 4 dichiarati" in testo
+    assert "non converge, $passo giri contro 4 passi dichiarati" in testo
 
 
 def test_una_patch_sola_guarda_i_parametri_e_non_il_commento(tmp_path):
@@ -268,26 +268,15 @@ def test_la_patch_unica_registra_fibre_di_copriferro_e_non_di_nucleo(tmp_path):
                                                  (150.0, 250.0), (-150.0, 250.0)}
 
 
-def test_la_riduzione_oltre_il_copriferro_toglie_il_confinamento(tmp_path):
-    """C7: il contorno ridotto tagliava dentro la linea media delle staffe e la sezione usciva
-    con una patch confinata **senza copriferro attorno**, con l'`α` calcolato su un `b×h` che
-    il calcestruzzo non ha più. Ora è una patch di copriferro, non confinata, con l'avviso."""
-    from nova import legami
-    dati = leggi_fixture("trave_appoggiata.nova.json")
-    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
-    dati["sezioni"][0]["riduzione"] = {"sup": 60, "inf": 60, "sx": 40, "dx": 40}
-    m = _modello.assicura_peso_proprio(_modello.carica(dati))
-    d = _deck.scrivi(m, ["Z1"], tmp_path)
-    testo = d.percorso.read_text(encoding="utf-8")
-    assert len([r for r in testo.splitlines() if r.strip().startswith("patch rect")]) == 1
-    assert d.materiali["2"]["nucleo"]["confinamento"] == "nessuno"
-    assert legami.AVVISO_RIDUZIONE in d.resoconto["avvisi"]
+def test_la_riduzione_dentro_il_copriferro_lascia_il_nucleo_nominale(tmp_path):
+    """F1(a): la gabbia delle staffe non si sposta quando si toglie calcestruzzo da una faccia.
 
-
-def test_la_riduzione_dentro_il_copriferro_lascia_le_due_patch(tmp_path):
-    """La soglia è per lato e sta a `copriferro + φ_st/2` = 34 mm: 30 sta dentro, e la sezione
-    resta confinata. Il nucleo si misura sul contorno **ridotto** e ci sta dentro per
-    costruzione — niente troncamenti, nessuna fascia di copriferro a spessore negativo."""
+    Il nucleo resta il rettangolo **nominale** dove stanno barre e staffe, l'`α` resta quello
+    nominale, e le fasce di copriferro sono quel che avanza fra nucleo e contorno ridotto.
+    Il round 1 ricentrava il nucleo sul contorno e lasciava barre e gabbia dov'erano: su questa
+    stessa sezione finivano fuori dalla patch di nucleo 4 barre su 6, con `α` 0,117 su un
+    rettangolo che il `.tcl` non disegnava.
+    """
     dati = leggi_fixture("trave_appoggiata.nova.json")
     dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
     dati["sezioni"][0]["riduzione"] = {"sup": 30, "inf": 0, "sx": 30, "dx": 0}
@@ -296,12 +285,116 @@ def test_la_riduzione_dentro_il_copriferro_lascia_le_due_patch(tmp_path):
     patch = [[float(x) for x in r.split()[5:]]
              for r in d.percorso.read_text(encoding="utf-8").splitlines()
              if r.strip().startswith("patch rect")]
-    assert len(patch) == 5 and d.materiali["2"]["nucleo"]["confinamento"] == "ntc"
-    contorno = (-150.0 + 30, -250.0, 150.0, 250.0 - 30)  # sx mangia b, sup mangia h
-    y0, z0, y1, z1 = contorno
+    assert len(patch) == 5
+    assert patch[0] == pytest.approx([-116.0, -216.0, 116.0, 216.0])  # nominale, centrato su 0
+    assert d.materiali["2"]["nucleo"]["alpha"] == pytest.approx(0.209387, abs=1e-5)  # nominale
+    # ogni barra sta dentro il rettangolo di nucleo **scritto nel .tcl**, non in uno teorico
     yc0, zc0, yc1, zc1 = patch[0]
-    assert y0 <= yc0 and yc1 <= y1 and z0 <= zc0 and zc1 <= z1  # il nucleo sta dentro
-    # centrato sul contorno, non sul baricentro nominale: il calcestruzzo che resta è spostato
-    assert (yc0 + yc1) / 2 == pytest.approx((y0 + y1) / 2)
-    assert (zc0 + zc1) / 2 == pytest.approx((z0 + z1) / 2)
-    assert yc1 - yc0 == pytest.approx(300 - 30 - 2 * 30 - 8)  # b ridotta, meno due volte c + φ/2
+    for b in _deck._barre(m.sezione(2), False):
+        assert yc0 <= b.y <= yc1 and zc0 <= b.z <= zc1, b
+    # le quattro fasce coprono esattamente quel che resta: Σ aree = area del contorno
+    area = lambda r: (r[2] - r[0]) * (r[3] - r[1])
+    contorno = (-150.0 + 30, -250.0, 150.0, 250.0 - 30)
+    assert sum(area(r) for r in patch) == pytest.approx(area(contorno))
+
+
+def test_la_riduzione_tangente_al_nucleo_omette_la_fascia_a_spessore_zero(tmp_path):
+    """Riduzione su un lato **esattamente** pari a `copriferro + φ_st/2` = 34 mm: il contorno
+    tocca il nucleo senza tagliarlo. Due patch, e la fascia di quel lato non si scrive — una
+    `patch rect` di area nulla è una riga che non aggiunge una fibra."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 34, "inf": 0, "sx": 0, "dx": 0}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    patch = [[float(x) for x in r.split()[5:]]
+             for r in d.percorso.read_text(encoding="utf-8").splitlines()
+             if r.strip().startswith("patch rect")]
+    assert len(patch) == 4  # nucleo + tre fasce: quella sopra ha spessore zero
+    assert patch[0] == pytest.approx([-116.0, -216.0, 116.0, 216.0])
+    area = lambda r: (r[2] - r[0]) * (r[3] - r[1])
+    assert sum(area(r) for r in patch) == pytest.approx(300.0 * (500.0 - 34))
+
+
+def test_la_riduzione_a_zero_e_identica_a_nessuna_riduzione(tmp_path):
+    """Byte per byte: una riduzione dichiarata tutta a zero non è una sezione diversa."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    senza = _testo(_modello.assicura_peso_proprio(_modello.carica(dati)), ["Z1"], tmp_path / "a")
+    dati["sezioni"][0]["riduzione"] = {"sup": 0, "inf": 0, "sx": 0, "dx": 0}
+    con = _testo(_modello.assicura_peso_proprio(_modello.carica(dati)), ["Z1"], tmp_path / "b")
+    assert con == senza
+
+
+def test_la_riduzione_che_entra_nel_nucleo_toglie_il_confinamento(tmp_path):
+    """F1(b): il contorno ridotto taglia il nucleo nominale. Una patch sola di copriferro sul
+    contorno, nessun `Concrete02` confinato, e l'avviso che lo dice."""
+    from nova import legami
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 40, "inf": 40, "sx": 40, "dx": 40}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    righe = d.percorso.read_text(encoding="utf-8").splitlines()
+    patch = [r for r in righe if r.strip().startswith("patch rect")]
+    assert len(patch) == 1
+    assert [float(x) for x in patch[0].split()[5:]] == pytest.approx([-110.0, -210.0, 110.0, 210.0])
+    assert len([r for r in righe if r.startswith("uniaxialMaterial Concrete02")]) == 1
+    assert d.materiali["2"]["nucleo"]["confinamento"] == "nessuno"
+    assert d.materiali["2"]["nucleo"]["alpha"] == 0.0
+    assert legami.AVVISO_RIDUZIONE in d.resoconto["avvisi"]
+
+
+def test_la_riduzione_che_lascia_una_barra_fuori_e_un_rifiuto_che_nomina_la_sezione(tmp_path):
+    """F1(c): una barra nel vuoto è un modello sbagliato, non una patch da aggiustare."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["sezioni"][0]["riduzione"] = {"sup": 60, "inf": 60, "sx": 40, "dx": 40}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    with pytest.raises(ValueError, match=r"sezione 2 «30×50 3\+3Ø16».*barre.*fuori dal calcestruzzo"):
+        _deck.scrivi(m, ["Z1"], tmp_path)
+
+
+def test_senza_staffe_e_una_patch_anche_con_epsU_nucleo_dichiarato(tmp_path):
+    """F3: senza staffe il nucleo non esiste per definizione, e `_nucleo` ci si schiantava
+    (`AttributeError` su `staffe.diametro`) perché `epsU_nucleo` rendeva i due legami diversi
+    e `una_patch` diceva di no. `epsU_nucleo` si ignora, e la nota lo dichiara."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["materiali"][0]["legame"] = {"epsU_nucleo": 0.01}
+    del dati["sezioni"][0]["staffe"]
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    righe = d.percorso.read_text(encoding="utf-8").splitlines()
+    assert len([r for r in righe if r.strip().startswith("patch rect")]) == 1
+    assert len([r for r in righe if r.startswith("uniaxialMaterial")]) == 1
+    assert d.materiali["2"]["nucleo"]["epsU"] == pytest.approx(-0.0035)  # quello del copriferro
+    assert any("epsU_nucleo" in n and "ignorato" in n for n in d.resoconto["note"]), d.resoconto["note"]
+
+
+def test_senza_staffe_e_senza_barre_non_dice_niente_su_epsU_nucleo(tmp_path):
+    """La nota parla solo se c'è qualcosa da dichiarare: `epsU_nucleo` non dichiarato,
+    nessuna riga in più nel resoconto."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    del dati["sezioni"][0]["staffe"]
+    dati["sezioni"][0]["file"] = []
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    assert len([r for r in d.percorso.read_text(encoding="utf-8").splitlines()
+                if r.strip().startswith("patch rect")]) == 1
+    assert not any("epsU_nucleo" in n for n in d.resoconto["note"]), d.resoconto["note"]
+
+
+def test_il_confinamento_nessuno_con_copriferro_grosso_e_un_rifiuto_e_non_una_patch_rovesciata(tmp_path):
+    """F2: `confinamento: nessuno` più `epsU_nucleo` non passa da `confinamento_ntc`, quindi la
+    guardia che stava solo là non scattava e il `.tcl` portava una `patch rect` con `y0 > y1`
+    — che OpenSees accetta senza fiatare. La guardia è tornata in `_nucleo`, per cui si passa
+    sempre."""
+    dati = leggi_fixture("trave_appoggiata.nova.json")
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
+    dati["materiali"][0]["legame"] = {"confinamento": "nessuno", "epsU_nucleo": 0.01}
+    dati["sezioni"][0] |= {"copriferro": 150, "file": []}
+    m = _modello.assicura_peso_proprio(_modello.carica(dati))
+    with pytest.raises(ValueError, match=r"sezione 2 «30×50 3\+3Ø16».*non lasciano nucleo"):
+        _deck.scrivi(m, ["Z1"], tmp_path)

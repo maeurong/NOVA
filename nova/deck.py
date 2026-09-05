@@ -468,30 +468,32 @@ def _contorno(s: Sezione, verticale: bool) -> tuple[float, float, float, float]:
     return y0, z0, y1, z1
 
 
-def _nucleo(s: Sezione, verticale: bool, contorno: tuple[float, float, float, float]):
-    """Il rettangolo del nucleo confinato, alla **linea media delle staffe**, sugli assi locali.
+def _nucleo(s: Sezione, verticale: bool):
+    """Il rettangolo del nucleo confinato, alla **linea media delle staffe**, sugli assi locali:
+    `b − 2(c + φ_st/2)` lungo `b` e `h − 2(c + φ_st/2)` lungo `h`, centrato sull'origine.
 
-    Le stesse `b_x`, `b_y` che la [4.1.12] usa per il confinamento — cioè quelle che
-    `legami.confinamento_ntc` riceve, misurate sul contorno **ridotto**
-    (`legami.dimensioni_ridotte`): due formule diverse per lo stesso rettangolo darebbero un
-    nucleo confinato con l'area di un altro.
+    **Nominale, sempre.** La gabbia delle staffe non si sposta quando si toglie calcestruzzo da
+    una faccia: sta dove è stata legata, cioè dove `_barre` mette le barre e dove
+    `legami.confinamento_ntc` misura `b_x` e `b_y`. Centrarlo sul contorno ridotto — come faceva
+    il round 1 — spostava la patch lasciando barre e gabbia dove erano: sulla 300×500 con
+    `riduzione {sup: 30, sx: 30}` finivano fuori dal nucleo scritto 4 barre su 6, e l'`α` = 0,117
+    descriveva un rettangolo che il deck non disegnava.
 
-    Centrato sul contorno e non sul baricentro nominale. Con una riduzione asimmetrica il
-    calcestruzzo che resta non è centrato, e le staffe stanno dentro **quello**: così il nucleo
-    è dentro il contorno per costruzione, invece di finirci a forza di troncamenti.
+    La riduzione che **taglia** il nucleo non arriva qui: `legami.calcestruzzo` l'ha già degradata
+    a sezione non confinata (`riduzione_oltre_il_copriferro`), e il deck ci scrive una patch sola.
 
-    Si chiama solo dopo che `legami.calcestruzzo` ha reso un nucleo davvero confinato, quindi
-    `b_x` e `b_y` sono già positive: la guardia sta là, dove il rifiuto può nominare la sezione,
-    e ripeterla qui sarebbe una riga che non può scattare. I due casi che la eviterebbero —
-    riduzione oltre il copriferro, copriferro che si mangia il nucleo — non arrivano fin qui.
+    La guardia geometrica sta qui e non solo in `legami`: per di qui passano tutti i rami — anche
+    `confinamento: nessuno` con `epsU_nucleo`, che non chiama `confinamento_ntc` e senza guardia
+    scriveva una `patch rect` rovesciata (`y0 > y1`) che OpenSees accetta senza fiatare.
     """
     st = s.staffe
-    b_rid, h_rid = _legami.dimensioni_ridotte(s)
-    bx, by = b_rid - 2 * s.copriferro - st.diametro, h_rid - 2 * s.copriferro - st.diametro
+    bx, by = s.b - 2 * s.copriferro - st.diametro, s.h - 2 * s.copriferro - st.diametro
+    if bx <= 0 or by <= 0:
+        raise ValueError(
+            f"sezione {s.id} «{s.nome}»: copriferro {s.copriferro:g} e staffa Ø{st.diametro:g} "
+            f"non lasciano nucleo dentro {s.b:g}×{s.h:g} (b_x = {bx:g}, b_y = {by:g} mm)")
     lungo_e1, lungo_e2 = (by, bx) if verticale else (bx, by)
-    y0, z0, y1, z1 = contorno
-    cy, cz = (y0 + y1) / 2, (z0 + z1) / 2
-    return cy - lungo_e1 / 2, cz - lungo_e2 / 2, cy + lungo_e1 / 2, cz + lungo_e2 / 2
+    return -lungo_e1 / 2, -lungo_e2 / 2, lungo_e1 / 2, lungo_e2 / 2
 
 
 def _fibre_estreme(nucleo, tag_nucleo: int, ruolo: str, barre: list[Barra],
@@ -577,8 +579,8 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     # materiale. Con due patch identiche si scriverebbe lo stesso calcestruzzo due volte.
     una_patch = _legami.stesso_legame(d["nucleo"], d["copriferro"])
     # la geometria del nucleo si chiede solo se serve, e dopo `calcestruzzo`: è lui a sapere se
-    # le staffe confinano davvero (riduzione oltre il copriferro, α = 0, `confinamento: nessuno`)
-    nucleo = None if una_patch else _nucleo(s, verticale, contorno)
+    # un nucleo c'è (staffe, riduzione che non ci entra dentro) e se confina (α > 0)
+    nucleo = None if una_patch else _nucleo(s, verticale)
     righe = sez.righe
     righe += [r + f" — nucleo, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, d["nucleo"])]
     tag_nucleo, tag_mat = tag_mat, tag_mat + 1
@@ -601,6 +603,15 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
             sez.note.append(nota)
 
     y0, z0, y1, z1 = contorno
+    # una barra fuori dal calcestruzzo è un modello sbagliato, non una patch da aggiustare. Può
+    # succedere solo con una riduzione che entra oltre le barre: quando il contorno contiene il
+    # nucleo le contiene tutte, perché stanno a φ_st/2 + φ/2 **dentro** la linea delle staffe.
+    fuori = [b for b in barre if not (y0 <= b.y <= y1 and z0 <= b.z <= z1)]
+    if fuori:
+        raise ValueError(
+            f"sezione {s.id} «{s.nome}»: la riduzione lascia {len(fuori)} barre su {len(barre)} "
+            f"fuori dal calcestruzzo (la prima a y = {fuori[0].y:g}, z = {fuori[0].z:g} mm, "
+            f"contorno {y0:g}…{y1:g} × {z0:g}…{z1:g})")
     righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
     if una_patch:  # nucleo e copriferro sono lo stesso legame: due patch sarebbero la stessa cosa
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
@@ -669,7 +680,7 @@ def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
         "    incr passo",
         f"    if {{$passo > {GIRI_PER_PASSO * passi}}} {{",
         f'        puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non converge, '
-        f'$passo passi contro {passi} dichiarati"',
+        f'$passo giri contro {passi} passi dichiarati"',
         "        exit 1",
         "    }",
         "    set d $dt",
