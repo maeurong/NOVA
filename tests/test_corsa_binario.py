@@ -355,3 +355,180 @@ def test_il_rilievo_importato_gira_in_elastico(chiedi, binario_opensees, tmp_pat
     assert fin["esito"] == "ok", fin
     esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"] if v["caso"]}
     assert esiti["reazioni"] == "passato"
+
+
+# --- T4 Task 2: la statica non lineare a fibre sul binario vero -------------------------
+#
+# Misure del 05/09/2026, OpenSees 3.8.0, `~/.local/bin/OpenSees`. Dove il piano dava un
+# oracolo che la misura contraddice, vince la misura e il numero sta scritto qui col perché.
+
+
+def _a_fibre(m: dict, **campi) -> dict:
+    for an in m["analisi"]:
+        if an["tipo"] == "statica":
+            an.update({"legami": "fibre", **campi})
+    return m
+
+
+def _trave_con_mezzeria(fattore_q: float = 1.0) -> dict:
+    """La trave appoggiata con un **nodo** in mezzeria e non una suddivisione: `spostamenti`
+    porta i soli nodi del modello, e la freccia di una suddivisione generata non ci arriva."""
+    m = leggi_fixture("trave_appoggiata.nova.json")
+    m["nodi"].insert(1, {"id": 3, "nome": "mezzeria", "x": 3000, "y": 0, "z": 0})
+    m["aste"] = [{"id": 1, "nodo_i": 1, "nodo_j": 3, "sezione": 2},
+                 {"id": 2, "nodo_i": 3, "nodo_j": 2, "sezione": 2}]
+    m["azioni"][0]["carichi"] = [{"tipo": "distribuito", "asta": a, "q": -10.0 * fattore_q,
+                                  "direzione": "z"} for a in (1, 2)]
+    return m
+
+
+def _gira(chiedi, m, tmp_path, casi=("Z1",)):
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path),
+                   "casi": list(casi)})
+    return r[-1]
+
+
+def _verdetto(fin, controllo, caso=None):
+    return next(v for v in fin["risultati"]["verdetti"]
+                if v["controllo"] == controllo and (caso is None or v["caso"] == caso))
+
+
+def test_il_telaio_a_fibre_tiene_l_equilibrio_del_caso_elastico(chiedi, tmp_path, binario_opensees):
+    """L'equilibrio non dipende dal legame: Σ reazioni = Σ carichi comunque. Misurato il
+    05/09/2026 lo scarto sta a 8,9e-13, 4,0e-13 e 1,7e-16 sui tre casi — la soglia è 1e-4."""
+    casi = ["Z1", "Z2", "C1"]
+    el = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path / "el", casi)
+    fi = _gira(chiedi, _a_fibre(leggi_fixture("telaio_2x1.nova.json")), tmp_path / "fi", casi)
+    assert el["esito"] == "ok" and fi["esito"] == "ok", fi
+    for caso in casi:
+        somma = {k: np.sum([v[:3] for v in d["risultati"]["per_caso"][caso]["reazioni"].values()], axis=0)
+                 for k, d in (("el", el), ("fi", fi))}
+        atteso = np.linalg.norm(somma["el"])
+        assert np.linalg.norm(somma["fi"] - somma["el"]) <= 1e-4 * max(atteso, 1.0), caso
+
+
+def test_lo_scarto_fra_elastico_e_fibre_e_quello_del_modulo_del_nucleo(chiedi, tmp_path, binario_opensees):
+    """Il piano si aspettava il 3 %: la misura dice altro, e dice anche perché.
+
+    Il nucleo confinato non ha `E_cm`. `Concrete02` non prende `Ec`: la rigidezza iniziale è
+    `2 f_cc/ε_c2,c`, e con la [4.1.10] (`ε_c2,c = ε_c2 (f_cc/f_c)²`) vale `2 f_c²/(f_cc ε_c2)`,
+    cioè **meno** di `E_cm` proprio perché il nucleo è confinato (doc 09 §1.3, §3.3: 92 % di
+    `E_cm` nell'esempio). Il telaio 2×1 non è oltre la fessurazione — max |My| in C1 è
+    4,67e7 N·mm contro un `M_cr` di 3,21e7 sulla 30×50 e 1,15e7 sulla 30×30 — quindi lo
+    scarto che resta è quello del modulo, non il quadro fessurativo.
+
+    Misurato il 05/09/2026: Z1 45,8 %, Z2 0,24 %, C1 8,27 %. Z1 è la freccia più piccola di
+    tutte (0,0598 mm elastici), e il 45,8 % sono 0,027 mm: si pinza largo perché è rumore su
+    un numero piccolo, non un fatto sul legame.
+    """
+    casi = ["Z1", "Z2", "C1"]
+    el = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path / "el", casi)
+    fi = _gira(chiedi, _a_fibre(leggi_fixture("telaio_2x1.nova.json")), tmp_path / "fi", casi)
+    assert el["esito"] == "ok" and fi["esito"] == "ok", fi
+
+    def u_max(d, caso):
+        return max(np.linalg.norm(v[:3])
+                   for v in d["risultati"]["per_caso"][caso]["spostamenti"].values())
+
+    scarto = {c: abs(u_max(fi, c) - u_max(el, c)) / u_max(el, c) for c in casi}
+    assert scarto["C1"] == pytest.approx(0.083, abs=0.02), scarto
+    assert scarto["Z2"] < 0.01, scarto
+    assert scarto["Z1"] < 0.6, scarto
+    assert abs(u_max(fi, "Z1") - u_max(el, "Z1")) < 0.05, scarto  # 0,027 mm in valore assoluto
+
+
+def test_la_statica_a_fibre_dichiara_la_convergenza_e_stampa_i_materiali(chiedi, tmp_path, binario_opensees):
+    fin = _gira(chiedi, _a_fibre(leggi_fixture("telaio_2x1.nova.json")), tmp_path, ["C1"])
+    assert fin["esito"] == "ok", fin
+    v = _verdetto(fin, "convergenza", "C1")
+    assert v["esito"] == "passato"
+    assert v["valori"]["passi"] == 10 and v["valori"]["fattore"] == pytest.approx(1.0)
+    assert v["valori"]["algoritmi"] == ["Newton"] * 10  # misurato il 05/09/2026
+    run = fin["risultati"]["run"]
+    assert run["legami"] == "fibre" and run["passi"] == 10
+    # vincolo globale T4: i parametri del `.tcl` si stampano con la loro provenienza
+    assert sorted(run["materiali"]) == ["1", "2"]
+    nucleo = run["materiali"]["1"]["nucleo"]
+    assert nucleo["confinamento"] == "ntc" and nucleo["fpc"] < 0 and "[4.1." in nucleo["articolo"]
+    assert run["materiali"]["1"]["acciaio"]["Fy"] == pytest.approx(450.0)
+
+
+def test_la_corsa_elastica_lascia_la_convergenza_non_applicabile(chiedi, tmp_path, binario_opensees):
+    """Regressione T1: senza fibre non c'è né scala né passi, e il verdetto non è verde."""
+    fin = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path, ["Z1"])
+    assert fin["esito"] == "ok", fin
+    v = _verdetto(fin, "convergenza", "Z1")
+    assert v["esito"] == "non_applicabile" and "elastica" in v["ragione"]
+    assert fin["risultati"]["run"]["materiali"] == {}
+
+
+def test_un_passo_solo_e_un_analyze_solo(chiedi, tmp_path, binario_opensees):
+    fin = _gira(chiedi, _a_fibre(_trave_con_mezzeria(), passi=1), tmp_path)
+    assert fin["esito"] == "ok", fin
+    v = _verdetto(fin, "convergenza", "Z1")
+    assert v["valori"]["passi"] == 1 and v["valori"]["algoritmi"] == ["Newton"]
+    assert v["valori"]["fattore"] == pytest.approx(1.0) and v["esito"] == "passato"
+
+
+def test_oltre_la_fessurazione_la_trave_converge_e_scende_piu_dell_elastica(chiedi, tmp_path, binario_opensees):
+    """Il piano diceva «q × 20»: la misura del 05/09/2026 dice che a q × 20 la trave è **rotta**
+    (caduta al passo 3, λ = 0,2), e già a q × 4 non arriva in fondo. La 30×50 con 3Ø16 porta
+    un `M_u` attorno a 1,1e8 N·mm, cioè circa q × 2,4 sui 6 m: q × 20 sta otto volte oltre.
+
+    q × 2 è il carico che fessura senza rompere: freccia in mezzeria 7,141 mm contro i 3,142
+    elastici, rapporto 2,273 (l'oracolo del piano chiedeva > 1,05).
+    """
+    el = _gira(chiedi, _trave_con_mezzeria(2.0), tmp_path / "el")
+    fi = _gira(chiedi, _a_fibre(_trave_con_mezzeria(2.0)), tmp_path / "fi")
+    assert el["esito"] == "ok" and fi["esito"] == "ok", fi
+    ue = el["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2]
+    uf = fi["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2]
+    assert uf / ue > 1.05 and uf / ue == pytest.approx(2.273, abs=0.05)
+    assert _verdetto(fi, "convergenza", "Z1")["esito"] == "passato"
+
+
+def test_la_scala_di_algoritmi_entra_davvero_e_finisce_nel_verdetto(chiedi, tmp_path, binario_opensees):
+    """Newton da solo non chiude sempre. A q × 3 in due passi, misurato il 05/09/2026, il
+    secondo passo lo prende `KrylovNewton` dopo che `Newton` e `ModifiedNewton -initial`
+    hanno fallito — ed è il verdetto a raccontarlo, perché i recorder rendono il solo stato
+    finale. Qui l'oracolo è la **scala**, non la freccia: quella che ne esce è fuori da ogni
+    senso fisico (3,77 m su una trave di sei) e nessun verdetto la contraddice, perché
+    `solve.controlla_spostamenti` rifiuta a `u_max > dimensione` e 0,63 sta sotto. È un buco
+    della soglia di T1, non di questo passo: segnalato, non allargato qui.
+    """
+    fin = _gira(chiedi, _a_fibre(_trave_con_mezzeria(3.0), passi=2), tmp_path)
+    assert fin["esito"] == "ok", fin
+    v = _verdetto(fin, "convergenza", "Z1")
+    assert v["valori"]["algoritmi"] == ["Newton", "KrylovNewton"]
+    assert "scala di algoritmi ai passi 2" in v["ragione"]
+    assert abs(fin["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2]) > 1000.0
+
+
+def test_la_trave_rotta_dichiara_il_passo_e_il_fattore_invece_di_fingere_un_risultato(
+        chiedi, tmp_path, binario_opensees):
+    """q × 200 su una trave che si rompe a q × 2,4. Il piano ammetteva due esiti — errore del
+    solutore, oppure `ok` con `convergenza: non_passato` — ma mai un `ok` verde. Misurato il
+    05/09/2026: caduta al passo 2, λ = 0,05, dopo i sei dimezzamenti; `errore fase solutore`
+    con il motivo che nomina il passo e il fattore, e il registro di OpenSees in `coda_log`.
+    """
+    fin = _gira(chiedi, _a_fibre(_trave_con_mezzeria(200.0)), tmp_path)
+    if fin["esito"] == "ok":  # l'altro ramo che il piano ammette: mai un verde
+        assert _verdetto(fin, "convergenza", "Z1")["esito"] == "non_passato", fin
+        return
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore", fin
+    assert "caduto al passo 2" in fin["motivo"] and "fattore 0.05" in fin["motivo"], fin["motivo"]
+    assert "the Algorithm failed" in fin["coda_log"]
+
+
+def test_la_sezione_senza_barre_rifiuta_una_statica_a_fibre_e_con_forza_corre(
+        chiedi, tmp_path, binario_opensees):
+    m = _a_fibre(_trave_con_mezzeria())
+    m["sezioni"][0]["file"] = []
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path / "no")})
+    assert r[-1]["esito"] == "rifiutato"
+    v = next(x for x in r[-1]["verdetti_check"] if x["controllo"] == "armatura_mancante")
+    assert v["esito"] == "non_passato" and v["oggetto"] == [2]
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path / "si"),
+                   "forza": True})
+    assert r[-1]["esito"] == "ok", r[-1]
+    assert r[-1]["risultati"]["run"]["materiali"]["2"]["acciaio"] is None

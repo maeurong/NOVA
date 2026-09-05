@@ -5,6 +5,13 @@ dalla geometria e scrive il solo peso proprio come carico nodale. Qui: `fix` dai
 dichiarati, un caso di carico per azione o combinazione con i carichi già sommati, carichi
 distribuiti come `eleLoad -beamUniform` proiettati nel riferimento locale, cedimenti come
 `sp`, recorder per stazione (`section k force`), marcatore di fine come in MeshRec.
+
+Con una statica dichiarata `legami: "fibre"` (T4) le sezioni diventano non lineari — nucleo
+confinato e copriferro su due `patch rect`, barre `Steel02`, parametri da `nova/legami.py` —
+e il caso si risolve a passi (`LoadControl 1/passi`) con la scala di algoritmi: `Newton`,
+`ModifiedNewton -initial`, `KrylovNewton`, poi il passo dimezzato. La caduta si **dichiara**
+nel registro col passo e il fattore λ, e ferma la corsa: i recorder resterebbero pieni
+dell'ultimo stato convergente, che non è il risultato del carico intero.
 """
 from __future__ import annotations
 
@@ -486,7 +493,10 @@ def _fibre_estreme(nucleo, tag_nucleo: int, barre: list[Barra], tag_acciaio: int
     fibre = {(y, z): {"y": y, "z": z, "mat": tag_nucleo, "ruolo": "nucleo"}
              for y, z in ((yc0, zc0), (yc1, zc0), (yc1, zc1), (yc0, zc1))}
     if barre and tag_acciaio is not None:
-        for chiave in (lambda b: b.y, lambda b: -b.y, lambda b: b.z, lambda b: -b.z):
+        # una barra per verso di ciascun asse, con lo spigolo a rompere la parità: su una fila
+        # `inf`/`sup` le barre d'angolo servono due versi, e il `dict` sulle coordinate le unisce
+        for chiave in (lambda b: (b.z, b.y), lambda b: (-b.z, b.y),
+                       lambda b: (b.y, b.z), lambda b: (-b.y, b.z)):
             b = max(barre, key=chiave)
             fibre[(b.y, b.z)] = {"y": b.y, "z": b.z, "mat": tag_acciaio, "ruolo": "acciaio"}
     return list(fibre.values())
@@ -547,21 +557,25 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     resta a una patch di copriferro: `_barre` non colloca niente senza staffe, e un nucleo
     confinato da un'armatura trasversale che non c'è sarebbe una resistenza inventata.
     """
+    # prima la geometria del nucleo, poi i legami: la guardia di `_nucleo` nomina la sezione,
+    # quella di `legami.confinamento_ntc` parla di millimetri e non sa quale sezione sta misurando
+    nucleo = _nucleo(s, verticale, contorno) if s.staffe is not None else None
     d = _legami.calcestruzzo(m.materiale(s.calcestruzzo), veste, s)
     righe = sez.righe
     riga_nucleo = _legami.righe_tcl(tag_mat, d["nucleo"])
     riga_copriferro = _legami.righe_tcl(tag_mat, d["copriferro"])
     una_patch = riga_nucleo == riga_copriferro  # stesso tag: se le righe coincidono è lo stesso legame
-    righe += [r + f"    ;# nucleo, sezione {s.id}" for r in riga_nucleo]
+    righe += [r + f" — nucleo, sezione {s.id}" for r in riga_nucleo]
     tag_nucleo, tag_mat = tag_mat, tag_mat + 1
     tag_copriferro = tag_nucleo
     if not una_patch:
-        righe += [r + f"    ;# copriferro, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, d["copriferro"])]
+        righe += [r + f" — copriferro, sezione {s.id}"
+                  for r in _legami.righe_tcl(tag_mat, d["copriferro"])]
         tag_copriferro, tag_mat = tag_mat, tag_mat + 1
     acciaio = _legami.acciaio(m.materiale(s.acciaio), veste) if barre else None
     tag_acciaio = None
     if acciaio is not None:
-        righe += [r + f"    ;# acciaio, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, acciaio)]
+        righe += [r + f" — acciaio, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, acciaio)]
         tag_acciaio, tag_mat = tag_mat, tag_mat + 1
     sez.materiali[str(s.id)] = {"nucleo": d["nucleo"], "copriferro": d["copriferro"], "acciaio": acciaio}
     for avviso in d["avvisi"] + (acciaio["avvisi"] if acciaio else []):
@@ -573,11 +587,11 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
 
     y0, z0, y1, z1 = contorno
     righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
-    if una_patch:
+    if una_patch:  # nucleo e copriferro sono lo stesso legame: due patch sarebbero la stessa cosa
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
         nucleo = (y0, z0, y1, z1)
     else:
-        nucleo = yc0, zc0, yc1, zc1 = _nucleo(s, verticale, contorno)
+        yc0, zc0, yc1, zc1 = nucleo
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {yc0:.10g} {zc0:.10g} {yc1:.10g} {zc1:.10g}")
         # le quattro fasce esterne: sotto e sopra per tutta la larghezza, i due fianchi fra le due
         for a, b_, c_, d_ in ((y0, z0, y1, zc0), (y0, zc1, y1, z1), (y0, zc0, yc0, zc1), (yc1, zc0, y1, zc1)):

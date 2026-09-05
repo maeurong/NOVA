@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import math
+import re
 import subprocess
 import time
 import uuid
@@ -36,6 +37,12 @@ SEGNO_MY = -1.0
 SEGNO_MZ = 1.0
 
 _TIMEOUT_S = 600
+
+# La riga che il ciclo Tcl della statica a fibre scrive a ogni passo convergente
+# (`deck._blocco_statico`). È il solo racconto di **come** l'analisi è arrivata in fondo:
+# i recorder rendono l'ultimo stato e non dicono quanti algoritmi ci sono voluti.
+_RIGA_PASSO = re.compile(
+    re.escape(_deck.MARCA_PASSO) + r": caso (\S+) passo (\d+) algoritmo (\S+) fattore (\S+)")
 
 
 def _solutore(percorso: str | None) -> SolutoreConfig:
@@ -190,11 +197,24 @@ def _lancia(m: Modello, casi: list[str], cartella: Path, n_modi: int | None, sta
     (cartella / opensees.NOME_REGISTRO).write_text(registro, encoding="utf-8")
     fine = cartella / opensees.NOME_FINE
     if not (fine.is_file() and opensees.MARCA_FINE in fine.read_text(encoding="ascii", errors="ignore")):
+        # il deck sa **perché** si è fermato (il caso, il passo, il fattore λ) e lo scrive nel
+        # registro prima di `exit 1`: senza ripescarla, il motivo direbbe solo che il marcatore
+        # manca, e chi legge dovrebbe aprire il log per sapere quale caso è caduto e dove
         return None, registro, _errore_solutore(
+            _dichiarato(registro) or
             f"OpenSees non ha scritto il marcatore di fine ({opensees.NOME_FINE}): la corsa non è "
             f"arrivata in fondo (codice d'uscita {processo.returncode}, che non è il segnale)",
             registro, cartella, t0)
     return d, registro, None
+
+
+def _dichiarato(registro: str) -> str | None:
+    """Il motivo che il deck ha dichiarato prima di uscire, se c'è: la riga `MARCA_FINE_MANCA`."""
+    marca = f"{opensees.MARCA_FINE}_MANCA:"
+    for riga in registro.splitlines():
+        if marca in riga:
+            return f"OpenSees si è fermato: {riga.split(marca, 1)[1].strip()}"
+    return None
 
 
 def testo(grezzo: bytes | None) -> str:
@@ -272,6 +292,9 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
                 "solutore": "OpenSees", "deck": str(d.percorso),
                 "registro": str(cartella / opensees.NOME_REGISTRO),
                 "carico_totale": d.carico_totale, "casi": d.casi,
+                # vincolo globale T4: ogni parametro entrato nel `.tcl` dei materiali si stampa
+                # con la sua provenienza (`classe`, `veste`, `articolo`). Vuoto se elastico.
+                "legami": d.legami, "passi": d.passi, "materiali": d.materiali,
                 "mappa_tag": {"nodo": {str(k): v for k, v in d.mappa_nodo.items()},
                               "asta": {str(k): v for k, v in d.mappa_asta.items()}}},
         "per_caso": per_caso, "modi": modi or [], "verdetti": verdetti,
@@ -308,6 +331,30 @@ def non_applicabile(controllo: str, ragione: str, caso: str | None = None) -> di
     return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": caso,
             "esito": "non_applicabile", "ragione": ragione, "articolo": None,
             "valori": {}, "rimedio": None}
+
+
+def _verdetto_convergenza(d: _deck.Deck, caso: str, registro: str) -> dict:
+    """«La statica non lineare è arrivata in fondo, e come?» — story 50.
+
+    Verde solo se il registro racconta un passo dopo l'altro fino a `λ = 1`. Una corsa che
+    arriva qui con meno di così è arrivata con `esito: ok` e i recorder pieni: senza questo
+    verdetto l'ultimo stato convergente si leggerebbe come il risultato del carico intero.
+    La corsa elastica non ha scala né passi: `non_applicabile`, che non è né verde né rosso.
+    """
+    if d.legami != "fibre":
+        return non_applicabile("convergenza", "corsa elastica: il carico si applica in un passo "
+                               "solo, senza passi né scala di algoritmi", caso)
+    passi = [(int(k), alg, float(lam)) for c, k, alg, lam in _RIGA_PASSO.findall(registro) if c == caso]
+    fattore = passi[-1][2] if passi else 0.0
+    c = {"passato": bool(passi) and fattore >= 1.0 - 1e-6,
+         "passi": len(passi), "passi_dichiarati": d.passi, "fattore": fattore,
+         # per passo, non l'insieme: «quali algoritmi» non dice **dove** la scala è servita
+         "algoritmi": [alg for _, alg, _ in passi]}
+    scesi = [str(k) for k, alg, _ in passi if alg != _deck.SCALA_ALGORITMI[0]]
+    return verdetto("convergenza", c, caso,
+                    f"{len(passi)} passi su {d.passi} dichiarati, fattore λ = {fattore:.6g}"
+                    + (f"; scala di algoritmi ai passi {', '.join(scesi)}" if scesi
+                       else "; Newton a ogni passo"))
 
 
 def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]:
@@ -367,6 +414,7 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
         v.append(verdetto("spostamenti", c, caso,
                            f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
                            f"su {dimensione:.6g} mm"))
+        v.append(_verdetto_convergenza(d, caso, registro))
     n = opensees.conta_avvisi(registro)
     v.append(verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
     # `esito_non_applicabile` rende `None` dove il controllo **varrebbe** sul telaio (autovalori e

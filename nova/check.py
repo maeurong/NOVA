@@ -183,13 +183,22 @@ def check_model(m: Modello) -> list[dict]:
 
     v.append(_v("moti_rigidi", "non_applicabile", "si legge dopo la corsa dalla prima frequenza (controllo autovalori)"))
 
-    # Due controlli che in T1 non hanno un oracolo: dichiararli qui come «non applicabile» è
-    # l'unico modo di non farli sembrare verdi. Il primo sostituisce `sezioni_senza_barre` del
-    # resoconto del deck, che nessuno leggeva fuori dal comando `deck`.
+    # In una corsa elastica le barre pesano nella sola massa, e il controllo non ha un oracolo:
+    # dichiararlo «non applicabile» è l'unico modo di non farlo sembrare verde. Con una statica
+    # a fibre l'oracolo c'è — una sezione senza acciaio non ha momento resistente — e il rosso
+    # guarda le sole sezioni **usate** da un'asta: una sezione in catalogo e non montata non
+    # entra nel deck e non ha niente da rompere.
     scoperte = [s.id for s in m.sezioni if _modello.senza_barre(s)]
-    v.append(_v("armatura_mancante", "non_applicabile",
-                "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
-                "con il non lineare (T4)", scoperte or None))
+    if any(a.tipo == "statica" and a.legami == "fibre" for a in m.analisi):
+        montate = [i for i in scoperte if i in {a.sezione for a in m.aste}]
+        v.append(_v("armatura_mancante", "non_passato" if montate else "passato",
+                    f"statica a fibre: sezioni montate senza barre: {montate or 'nessuna'}",
+                    montate or None, "dichiara le file di barre e le staffe" if montate else None))
+    else:
+        v.append(_v("armatura_mancante", "non_applicabile",
+                    "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
+                    "con il non lineare (T4) e una statica dichiarata «legami: fibre»",
+                    scoperte or None))
     vicini = _modello.grafo(m)
     piede = _modello.piedi(m, vicini)
     if not m.aste:
