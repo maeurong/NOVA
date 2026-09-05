@@ -282,14 +282,14 @@
   }
  ],
  "provenienza": {
-  "commit_nova": "56ebb68",
-  "run_id_telaio": "e40a178315a5",
-  "hash_modello": "2bf56c67e3aeeb4f7552689bcdc8ef9053e3775562783732c9124992bf67e0a6",
-  "run_id_solido": "ca485ce78924",
+  "commit_nova": "516cefd",
+  "run_id_telaio": "f9ea10a953ef",
+  "hash_modello": "9fa9b29a2eb61384ceec4041ed49a7c5675471ba2a0bacca135dd512f4608db3",
+  "run_id_solido": "150e375a6ab0",
   "sha256_deck_solido": "c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126",
   "versione_opensees": "Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4)",
   "versione_calculix": "CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt",
-  "data": "2026-09-05T16:40:34"
+  "data": "2026-09-05T17:26:24"
  },
  "avvertenza": "verifica del codice, non validazione"
 }

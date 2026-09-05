@@ -1,9 +1,12 @@
 # Confronto telaio NOVA (OpenSees) — solido CalculiX, MURO 1
 
-Generato il 05/09/2026, **rigenerato il 05/09/2026 dopo il fix #25** (branch `feat/non-lineare`,
-`.superpowers/sdd/2026-09-06-t4-non-lineare/`): il ramo elastico del deck itera con `Newton` invece
-di `Linear`, e gli **spostamenti** del telaio cambiano. Reazioni, massa e frequenze **no**: quelle
-le porta il carico, non l'algoritmo. Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json)
+Generato il 05/09/2026, **rigenerato il 05/09/2026 dopo il fix #25** e di nuovo a fine T4
+(branch `feat/non-lineare`, `.superpowers/sdd/2026-09-06-t4-non-lineare/`): il ramo elastico del
+deck itera con `Newton` invece di `Linear`, e gli **spostamenti** del telaio cambiano. Reazioni,
+massa e frequenze **no**: quelle le porta il carico, non l'algoritmo. L'ultima passata
+(`516cefd`) non muove nessun numero della tabella — muove `hash_modello`, che ora esclude i
+default (§«Che cosa è cambiato»), e rifà **tutte** le celle del documento dal JSON: quelle di
+`u_sommita_x` C2 erano rimaste alla corsa di prima del fix #25. Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json)
 (T2, Task 4), corsa `ccx` sul deck vero `lab_telaio_v2/wall_model.inp` (non versionato, 2,5 MB).
 Tabella prodotta da `nova.confronto.confronta` e `nova.confronto.esporta`: [`confronto.json`](confronto.json),
 [`confronto.csv`](confronto.csv), [`confronto.tex`](confronto.tex) stanno nella stessa cartella —
@@ -13,14 +16,14 @@ rigenerati da questi file, mai scritti a mano.
 
 | voce | valore |
 |---|---|
-| commit NOVA (codice che ha prodotto questi export) | `56ebb68` |
-| run telaio | `e40a178315a5` |
-| run solido | `ca485ce78924` |
-| hash modello telaio | `2bf56c67e3aeeb4f7552689bcdc8ef9053e3775562783732c9124992bf67e0a6` |
+| commit NOVA (codice che ha prodotto questi export) | `516cefd` |
+| run telaio | `f9ea10a953ef` |
+| run solido | `150e375a6ab0` |
+| hash modello telaio | `9fa9b29a2eb61384ceec4041ed49a7c5675471ba2a0bacca135dd512f4608db3` |
 | sha256 deck | `c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126` |
 | OpenSees | Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4) |
 | CalculiX | CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt |
-| data corsa | 2026-09-05T16:40:34 |
+| data corsa | 2026-09-05T17:26:24 |
 | `mappa_casi` | `{"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP", "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}` |
 
 **AVVERTENZA: verifica del codice, non validazione — non è una prova di carico.**
@@ -50,7 +53,7 @@ le zapatas (700×700, 2 pezzi) né la tamponatura — è più leggero del volume
 | u_sommita_z [mm] | C1 | −0,002077 | −0,02101 | 90,11 % | lontano | — |
 | reazione_x [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile |
 | reazione_z [N] | C2 | 7545 | 4249 | 77,60 % | lontano | — |
-| u_sommita_x [mm] | C2 | 0,02790 | −0,0009278 | 3107 % | lontano | — |
+| u_sommita_x [mm] | C2 | 0,02791 | −0,0009278 | 3108 % | lontano | — |
 | u_sommita_z [mm] | C2 | −0,002077 | −0,02122 | 90,21 % | lontano | — |
 | reazione_x [N] | C3 | 0 | −0,00001648 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0.01) |
 | reazione_z [N] | C3 | 8745 | 5449 | 60,51 % | lontano | — |
@@ -75,8 +78,8 @@ comunque molto più deformabile in assoluto — coerente con l'assenza di zapata
 deformabili sul lato telaio e con la massa maggiore del telaio.
 
 `u_sommita_x` C2 non è più `non_confrontabile`: col pavimento a 0,0001 mm (fix round C, `nova/confronto.py:64`; prima era
-0,001) né il telaio (0,02790 mm) né il solido (−0,0009278 mm) restano sotto soglia, ed esce
-`lontano` con uno scarto vero (3107 %, denominatore il solido) — un segnale, non rumore: col vecchio
+0,001) né il telaio (0,02791 mm) né il solido (−0,0009278 mm) restano sotto soglia, ed esce
+`lontano` con uno scarto vero (3108 %, denominatore il solido) — un segnale, non rumore: col vecchio
 pavimento il lato solido sarebbe finito sotto soglia e la riga sarebbe stata scartata come
 `non_confrontabile` per un valore che non era rumore.
 
@@ -122,9 +125,10 @@ mano: lo fa `nova.confronto._righe_modi` con la dichiarazione degli assi.
 
 ## Che cosa è cambiato con #25
 
-Le sole righe che si muovono sono gli spostamenti verticali di sommità (e gli `u_sommita_x` a
-C1/C3, che diventano zero esatto). Le altre — massa, reazioni, frequenze, masse partecipanti —
-sono **byte per byte** quelle di prima.
+Le righe che si muovono sono **tutti e sei** gli spostamenti di sommità: i tre verticali, i due
+`u_sommita_x` a C1/C3 che diventano zero esatto, e `u_sommita_x` a C2, che cambia sull'ultima
+cifra significativa. Le altre — massa, reazioni, frequenze, masse partecipanti — sono **byte per
+byte** quelle di prima.
 
 | riga | prima di #25 | dopo #25 | scarto contro il solido |
 |---|---|---|---|
@@ -132,15 +136,23 @@ sono **byte per byte** quelle di prima.
 | `u_sommita_z` C2 | −0,001897 mm | **−0,002077 mm** | 91,06 % → **90,21 %** |
 | `u_sommita_z` C3 | −0,002840 mm | **−0,003021 mm** | 91,37 % → **90,82 %** |
 | `u_sommita_x` C1, C3 | ≈ 5·10⁻¹⁶ mm | **0 esatto** | invariato (non confrontabile) |
+| `u_sommita_x` C2 | 0,02790 mm | **0,02791 mm** | 3107 % → **3108 %** |
+
+L'ultima riga è quella che il documento aveva sbagliato: le celle di `u_sommita_x` C2 erano
+rimaste al JSON di prima di #25 mentre tutte le altre erano state rifatte. Da questa passata le
+celle si generano dal JSON in blocco, così una riga non può restare indietro da sola.
 
 `+9,5 %` sulla freccia verticale: `algorithm Linear` non chiudeva l'equilibrio sul telaio con
 `eleLoad -beamUniform` su `forceBeamColumn`, e la sottostimava. Il telaio resta molto più
 deformabile del solido, e la lettura della tabella non cambia.
 
-L'**impronta del modello** cambia (`a0768dcb…` → `2bf56c67…`) senza che
-[`muro_1.nova.json`](muro_1.nova.json) sia stato toccato: `modello.impronta` serializza il
-modello con i suoi default, e T4 ha aggiunto campi al modello dati (`legami`, `passi`,
-`impostazioni_analisi`). Ogni `hash_modello` scritto prima di T4 si legge come stantio.
+L'**impronta del modello** è cambiata due volte senza che [`muro_1.nova.json`](muro_1.nova.json)
+sia stato toccato: `a0768dcb…` → `2bf56c67…` quando T4 ha aggiunto campi al modello dati
+(`legami`, `passi`, `impostazioni_analisi`), perché `modello.impronta` serializzava il modello
+**con** i suoi default, e poi `2bf56c67…` → `9fa9b29a…` con il fix che toglie i default dal
+canonico (`model_dump(exclude_defaults=True)`). Questa è l'**ultima migrazione dell'impronta**:
+da qui in avanti un campo aggiunto allo schema non muove più `hash_modello` di nessun modello.
+Ogni `hash_modello` scritto prima si legge come stantio, ed è la volta buona.
 
 ## Cosa non è coperto
 

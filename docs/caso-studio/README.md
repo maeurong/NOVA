@@ -55,8 +55,11 @@ casi del deck e la modale sono l'oggetto del confronto (#11).
 
 ## Modello NOVA (T2, task 4)
 
-File: [`muro_1.nova.json`](muro_1.nova.json). Corsa vera su OpenSees 3.8.0 (`chiedi` +
-`binario_opensees`, `tests/test_caso_studio.py`), esito **[M]** misurato il 05/09/2026.
+File: [`muro_1.nova.json`](muro_1.nova.json), impronta
+`9fa9b29a2eb61384ceec4041ed49a7c5675471ba2a0bacca135dd512f4608db3` (codice `516cefd`; l'impronta
+esclude i default da questo commit — vedi `confronto-2026-09-05.md` §«Che cosa è cambiato»).
+Corsa vera su OpenSees 3.8.0 (`chiedi` + `binario_opensees`, `tests/test_caso_studio.py`), esito
+**[M]** misurato il 05/09/2026.
 
 ### Geometria e assunzioni
 
@@ -121,9 +124,9 @@ telaio con `eleLoad -beamUniform` su `forceBeamColumn` non chiudeva l'equilibrio
 verticale di sommità cresce del 9,5 %. Il prima/dopo riga per riga sta in
 [`confronto-2026-09-05.md`](confronto-2026-09-05.md) §«Che cosa è cambiato con #25».
 
-Spostamenti dopo #25 (corsa del 05/09/2026, OpenSees 3.8.0, codice `56ebb68`), `u_max` sul
-nodo 3 e verdetto `spostamenti` con la soglia nuova sulla luce (#26, luce minima 1 607,5 mm —
-il pilastro):
+Spostamenti dopo #25 (corsa del 05/09/2026, OpenSees 3.8.0, codice `516cefd`), `u_max` sul
+nodo 3 e verdetto `spostamenti` con la soglia nuova sulla luce (#26, `soglia_luce` 1/10, luce
+minima 1 607,5 mm — il pilastro; il nodo peggiore per u/L è qui lo stesso di `u_max`):
 
 | caso | u_max [mm] | u/L | verdetto |
 |---|---|---|---|
@@ -163,7 +166,8 @@ discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio
 **AVVERTENZA: verifica del codice, non validazione.** La tavola non documenta nessuna prova
 ai pistoni: nessun numero qui è confrontato con una misura di laboratorio.
 
-File: [`muro_1_pushover.nova.json`](muro_1_pushover.nova.json) — **lo stesso telaio** di
+File: [`muro_1_pushover.nova.json`](muro_1_pushover.nova.json), impronta
+`86a95ff5edb0d18adf161f0cd78182ad32abf6dc50ed088e64818091bf74c1b3` — **lo stesso telaio** di
 `muro_1.nova.json`, con altre analisi. Sono due file e non uno per un motivo di codice, non di
 comodità: `deck._legami_dichiarati` sceglie i legami per **tutto** il deck, quindi una statica
 `legami: fibre` dentro `muro_1.nova.json` avrebbe reso a fibre anche i casi C1/C2/C3 del
@@ -183,7 +187,7 @@ ancora un ramo calante; a 60 mm il massimo è al passo 109 e il ramo calante c'�
 curva **continua a non cadere** (240 passi, 72 115,2 N al passo 109, 69 763,7 N alla fine).
 Si ferma a 60 mm: è dove la curva dice quel che ha da dire.
 
-### La curva — misure del 05/09/2026, OpenSees 3.8.0, codice `56ebb68`
+### La curva — misure del 05/09/2026, OpenSees 3.8.0, codice `516cefd`
 
 Curva completa in [`pushover.csv`](pushover.csv) (`passo;spostamento_mm;taglio_base_N;algoritmo`),
 scritta dai `passi[]` della corsa e mai a mano; il test la rimette a confronto passo per passo
@@ -200,8 +204,12 @@ scritta dai `passi[]` della corsa e mai a mano; il test la rimette a confronto p
 | **caduta** | **`null`** — la spinta arriva a `spostamento_max` senza cadere |
 | verdetto `convergenza` (`caso: "pushover"`) | `passato` |
 | verdetto `spostamenti` (`caso: "pushover"`) | `passato` con avviso: u/L = 0,0400 al nodo 4, luce minima 1 607,5 mm |
-| tempo della corsa | 1,8 s |
-| `risultati.nova.risultati.json` | 774 340 byte (494 863 sul filo di `/api/risultati`, senza indentazione); 514 file `.out` |
+| tempo della corsa | ≈ 2 s |
+| `risultati.nova.risultati.json` | ≈ 774 kB (≈ 495 kB sul filo di `/api/risultati`, senza indentazione); 514 file `.out` |
+
+I byte sono arrotondati apposta: il JSON porta i percorsi del deck e del registro, che stanno in
+una cartella temporanea diversa a ogni corsa, e le ultime centinaia di byte cambiano senza che
+cambi un numero della curva.
 
 La caduta è `null` e va detto per esteso: **non** significa che il telaio regge 60 mm. Significa
 che il modello continua a convergere — `Steel02` non ha rottura e `Concrete02` tiene la
@@ -227,7 +235,7 @@ fissi, esattamente dove ci si aspetta le cerniere. Il taglio alla base smette di
 
 Tabella completa telaio NOVA ↔ solido CalculiX sul deck vero: [`confronto-2026-09-05.md`](confronto-2026-09-05.md)
 (`confronto.json`/`.csv`/`.tex` nella stessa cartella, rigenerati da `nova.confronto.confronta`/`esporta`
-dopo il fix #25 (commit `56ebb68`), mai a mano;
+a fine T4 (commit `516cefd`), mai a mano;
 `tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
 `confronto.tex` richiede `\usepackage{booktabs}` nel documento che lo include (i comandi
 `\toprule`/`\midrule`/`\bottomrule` vengono da lì).
