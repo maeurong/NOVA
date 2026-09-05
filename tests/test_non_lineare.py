@@ -1,9 +1,27 @@
 """Il deck a fibre non lineare e la statica a passi, senza binario.
 
-La prima prova non è sul non lineare: è la **regressione elastica**. Il refactor di `scrivi`
-(ticket #19) sposta codice, e l'unico modo di dimostrare che non lo riscrive è confrontare il
-`.tcl` del `telaio_2x1` con quello generato a `main` @ `2c120fa`, prima del refactor, byte per
-byte. La riga d'intestazione non porta data né versione, quindi il confronto è sull'intero file.
+La prima prova non è sul non lineare: è la **regressione elastica** sul `.tcl` del `telaio_2x1`,
+byte per byte. La riga d'intestazione non porta data né versione, quindi il confronto è
+sull'intero file, nessuna riga esclusa.
+
+`tests/fixture/telaio_2x1_riferimento.tcl` **non è più** l'uscita di `main` @ `2c120fa`: il fix
+del round 1 (`algorithm Newton` al posto di `Linear` nel ramo elastico, che su un telaio
+iperstatico con `eleLoad` non chiudeva l'equilibrio) cambia due righe per caso, e il riferimento
+è stato rigenerato dal codice corretto. Da lì in poi morde come prima: qualunque riga che si
+muova senza che nessuno l'abbia voluta fa cadere questo test. Si rigenera con
+
+    .venv/bin/python -c "
+    import json
+    from pathlib import Path
+    from nova import deck, modello as _m, sidecar
+    m = _m.assicura_peso_proprio(_m.carica(json.loads(
+        Path('tests/fixture/telaio_2x1.nova.json').read_text(encoding='utf-8'))))
+    d = deck.scrivi(m, sidecar._casi_delle_analisi(m), Path('tests/fixture/_rif'))
+    Path('tests/fixture/telaio_2x1_riferimento.tcl').write_text(
+        d.percorso.read_text(encoding='utf-8'), encoding='utf-8')"
+
+e poi si cancella `tests/fixture/_rif`. Rigenerarlo è una scelta che si dichiara nel commit,
+non un modo di far tacere il test.
 """
 import pytest
 
@@ -36,7 +54,7 @@ def _testo(m, casi, tmp_path, **extra) -> str:
 
 # --- regressione: `legami: elastico` (default) scrive quel che scriveva prima del refactor ---
 
-def test_il_deck_elastico_del_telaio_2x1_e_identico_a_prima_del_refactor(tmp_path):
+def test_il_deck_elastico_del_telaio_2x1_e_identico_al_riferimento(tmp_path):
     m = _carica("telaio_2x1.nova.json")
     casi = _sidecar._casi_delle_analisi(m)
     assert casi == ["Z1", "Z2", "C1", "Z3"]  # l'ordine è quello del riferimento

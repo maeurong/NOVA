@@ -72,12 +72,19 @@ def test_due_casi_sono_indipendenti(chiedi, tmp_path, binario_opensees):
         assert _mezzeria(ris["per_caso"][caso]["sollecitazioni"]["1"])["My"] == pytest.approx(atteso, rel=1e-3), caso
 
 
-def test_asta_a_lunghezza_zero_forzata_mostra_lo_squilibrio(chiedi, tmp_path, binario_opensees):
-    """OpenSees la risolve senza un `WARNING`: l'unico segnale è il verdetto sulle reazioni."""
+def test_asta_a_lunghezza_zero_forzata_non_arriva_a_convergenza(chiedi, tmp_path, binario_opensees):
+    """Il segnale si è **spostato in avanti** col fix C1 del round 1, e si è irrobustito.
+
+    Con `algorithm Linear` OpenSees fattorizzava una matrice singolare, usciva 0 e scriveva
+    numeri: l'unico segnale era il verdetto sulle reazioni, a valle. Con `Newton` il solutore
+    non converge e lo dice — misurato il 05/09/2026, `CTestNormDispIncr::test() - failed to
+    converge` con la norma assoluta come con quella relativa, quindi è il modello a essere
+    singolare e non la tolleranza a essere stretta. Il rifiuto arriva prima dei numeri, che è
+    dove serve: un'asta a lunghezza zero non ha un risultato da mostrare.
+    """
     fin = _corsa(chiedi, "asta_lunghezza_zero.nova.json", tmp_path, forza=True)[-1]
-    assert fin["esito"] == "ok", fin
-    reazioni = [v for v in fin["risultati"]["verdetti"] if v["controllo"] == "reazioni"]
-    assert len(reazioni) == 4 and all(v["esito"] == "non_passato" for v in reazioni), reazioni
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore", fin
+    assert "non è arrivato a convergenza" in fin["motivo"], fin["motivo"]
 
 
 def test_senza_forza_il_check_rifiuta_prima_del_deck(chiedi, tmp_path):
@@ -218,15 +225,24 @@ def test_i_modi_chiesti_di_troppo_dicono_quanti_ne_ha_estratti(chiedi, binario_o
     assert fin["risultati"]["run"]["modi_estratti"] == 9  # le traslazioni libere del telaio
 
 
-def test_il_nodo_libero_forzato_non_e_verde_sulla_massa_modale(chiedi, binario_opensees, tmp_path):
-    """Il meccanismo non lo vede `autovalori` (il rapporto f1/f2 resta sopra 0,2: misurato
-    il 05/09/2026, 14,695 e 20,2161 Hz), lo vede la massa che i modi non catturano."""
+def test_il_nodo_libero_forzato_non_arriva_alla_modale(chiedi, binario_opensees, tmp_path):
+    """Il nodo 7 non ha aste: sei gradi di libertà senza rigidezza, matrice singolare.
+
+    Prima del fix C1 il caso statico ci passava sopra — `algorithm Linear` fattorizzava lo
+    stesso, con tanto di `BandGenLinLapackSolver::solve() - factorization failed, matrix
+    singular U(i,i) = 0` nel registro e `exit 0` — e la corsa arrivava fino alla modale, dove
+    il verdetto `massa_modale` diventava rosso. Con `Newton` il rifiuto arriva alla statica.
+
+    Il verdetto `massa_modale: non_passato` non perde copertura: lo pinzano
+    `test_corsa.py::test_nessun_modo_estratto_non_e_non_applicabile` e
+    `::test_la_massa_modale_conta_solo_le_direzioni_con_massa`, senza binario e senza appoggiarsi
+    a una fattorizzazione che il solutore stesso dichiara fallita.
+    """
     m = _modale(leggi_fixture("nodo_libero.nova.json"), modi=3)
     (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path), "forza": True})
     fin = r[-1]
-    assert fin["esito"] == "ok", fin
-    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
-    assert esiti["massa_modale"] == "non_passato"
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore", fin
+    assert "matrix singular" in fin["coda_log"], fin["coda_log"][-500:]
 
 
 def test_la_modale_scrive_le_masse_da_azioni_e_abbassa_le_frequenze(chiedi, binario_opensees, tmp_path):
@@ -407,19 +423,19 @@ def test_il_telaio_a_fibre_tiene_l_equilibrio_del_caso_elastico(chiedi, tmp_path
         assert np.linalg.norm(somma["fi"] - somma["el"]) <= 1e-4 * max(atteso, 1.0), caso
 
 
-def test_lo_scarto_fra_elastico_e_fibre_e_quello_del_modulo_del_nucleo(chiedi, tmp_path, binario_opensees):
-    """Il piano si aspettava il 3 %: la misura dice altro, e dice anche perché.
+def test_lo_scarto_fra_elastico_e_fibre_sta_sotto_il_tre_per_cento(chiedi, tmp_path, binario_opensees):
+    """L'oracolo del piano — «spostamenti entro 3 %» — è vero, e il 45,8 % del primo giro era
+    un bug del ramo **elastico**, non una proprietà del legame: `algorithm Linear` su un telaio
+    iperstatico con `eleLoad` non chiudeva l'equilibrio (fix round 1, C1).
 
-    Il nucleo confinato non ha `E_cm`. `Concrete02` non prende `Ec`: la rigidezza iniziale è
-    `2 f_cc/ε_c2,c`, e con la [4.1.10] (`ε_c2,c = ε_c2 (f_cc/f_c)²`) vale `2 f_c²/(f_cc ε_c2)`,
-    cioè **meno** di `E_cm` proprio perché il nucleo è confinato (doc 09 §1.3, §3.3: 92 % di
-    `E_cm` nell'esempio). Il telaio 2×1 non è oltre la fessurazione — max |My| in C1 è
-    4,67e7 N·mm contro un `M_cr` di 3,21e7 sulla 30×50 e 1,15e7 sulla 30×30 — quindi lo
-    scarto che resta è quello del modulo, non il quadro fessurativo.
-
-    Misurato il 05/09/2026: Z1 45,8 %, Z2 0,24 %, C1 8,27 %. Z1 è la freccia più piccola di
-    tutte (0,0598 mm elastici), e il 45,8 % sono 0,027 mm: si pinza largo perché è rumore su
-    un numero piccolo, non un fatto sul legame.
+    Misurato il 05/09/2026 dopo il fix, OpenSees 3.8.0, telaio 2×1, `u_max` per caso:
+    Z1 +0,03 %, Z2 −0,24 %, C1 +2,11 %. Quel che resta è il modulo del nucleo confinato:
+    `Concrete02` non prende `Ec`, la rigidezza è `2 f_cc/ε_c2,c`, e con la [4.1.10]
+    (`ε_c2,c = ε_c2 (f_cc/f_c)²`, con `ε_c2 = 0,002` **fisso** di norma) esce `1000 f_c²/f_cc`.
+    Il copriferro parte invece da `epsc0 = 2 f_c/E_cm` = 0,002097, che è più grande: sul
+    telaio 2×1 il nucleo è quindi **più rigido** di `E_cm`, 100,63 % sulla 30×30 e 101,77 %
+    sulla 30×50 (misurato). Scende sotto `E_cm` solo quando il confinamento supera il 4,8 %
+    di guadagno — è il caso del pilastro di doc 09 §3.3, dove vale il 91,3 %.
     """
     casi = ["Z1", "Z2", "C1"]
     el = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path / "el", casi)
@@ -430,11 +446,11 @@ def test_lo_scarto_fra_elastico_e_fibre_e_quello_del_modulo_del_nucleo(chiedi, t
         return max(np.linalg.norm(v[:3])
                    for v in d["risultati"]["per_caso"][caso]["spostamenti"].values())
 
-    scarto = {c: abs(u_max(fi, c) - u_max(el, c)) / u_max(el, c) for c in casi}
-    assert scarto["C1"] == pytest.approx(0.083, abs=0.02), scarto
-    assert scarto["Z2"] < 0.01, scarto
-    assert scarto["Z1"] < 0.6, scarto
-    assert abs(u_max(fi, "Z1") - u_max(el, "Z1")) < 0.05, scarto  # 0,027 mm in valore assoluto
+    scarto = {c: (u_max(fi, c) - u_max(el, c)) / u_max(el, c) for c in casi}
+    assert all(abs(x) <= 0.03 for x in scarto.values()), scarto
+    assert scarto["C1"] == pytest.approx(0.0211, abs=0.005), scarto
+    assert scarto["Z1"] == pytest.approx(0.0003, abs=0.002), scarto
+    assert scarto["Z2"] == pytest.approx(-0.0024, abs=0.002), scarto
 
 
 def test_la_statica_a_fibre_dichiara_la_convergenza_e_stampa_i_materiali(chiedi, tmp_path, binario_opensees):
@@ -532,3 +548,40 @@ def test_la_sezione_senza_barre_rifiuta_una_statica_a_fibre_e_con_forza_corre(
                    "forza": True})
     assert r[-1]["esito"] == "ok", r[-1]
     assert r[-1]["risultati"]["run"]["materiali"]["2"]["acciaio"] is None
+
+
+# --- fix round 1, C1: dove Linear e Newton devono coincidere -----------------------------
+
+def test_i_carichi_nodali_non_si_accorgono_del_cambio_di_algoritmo(chiedi, tmp_path, binario_opensees):
+    """Non-regressione sul fix C1. Senza `eleLoad` non c'è niente da ridistribuire nella
+    determinazione di stato dell'elemento a forze, e `Linear` e `Newton` danno lo stesso
+    campo: misurato il 05/09/2026 sul telaio 2×1 caso Z2 (sola spinta in testa), max |Δ| sugli
+    spostamenti 3,3e-17 mm. `ux` del nodo 5 vale 0,917409 mm prima come dopo.
+    """
+    fin = _gira(chiedi, leggi_fixture("telaio_2x1.nova.json"), tmp_path, ["Z2"])
+    assert fin["esito"] == "ok", fin
+    u = fin["risultati"]["per_caso"]["Z2"]["spostamenti"]
+    assert max(np.linalg.norm(v[:3]) for v in u.values()) == pytest.approx(0.917409, abs=1e-6)
+
+
+def test_la_trave_determinata_non_si_accorge_del_cambio_di_algoritmo(chiedi, tmp_path, binario_opensees):
+    """Stessa non-regressione su una struttura **determinata** con `eleLoad`: lì il residuo
+    non c'è per costruzione. Misurato il 05/09/2026: max |Δ| 3,3e-17 mm fra i due algoritmi,
+    freccia in mezzeria 1,570949 mm e `My` = qL²/8 = 4,5e7 N·mm esatto.
+
+    Il piano del fix dava 3,141898 mm per questa freccia: è il doppio del misurato, e 1,570949
+    non è nemmeno `5qL⁴/384EI` nudo (1,7157 mm) — le sei Ø16 irrigidiscono la sezione a fibre
+    di circa il 9 %. L'oracolo duro qui è `My`, che è di statica e non di rigidezza.
+
+    La freccia si legge sul modello col **nodo** in mezzeria: `spostamenti` porta i soli nodi
+    dichiarati, e la suddivisione che la fixture genera non ci arriva (è lo stesso motivo per
+    cui `_trave_con_mezzeria` esiste).
+    """
+    fin = _gira(chiedi, leggi_fixture("trave_appoggiata.nova.json"), tmp_path / "sudd")
+    assert fin["esito"] == "ok", fin
+    st = fin["risultati"]["per_caso"]["Z1"]["sollecitazioni"]["1"]
+    assert _mezzeria(st)["My"] == pytest.approx(10.0 * 6000 ** 2 / 8, rel=1e-9)
+    con_nodo = _gira(chiedi, _trave_con_mezzeria(), tmp_path / "nodo")
+    assert con_nodo["esito"] == "ok", con_nodo
+    assert con_nodo["risultati"]["per_caso"]["Z1"]["spostamenti"]["3"][2] == pytest.approx(
+        -1.570949, abs=1e-5)

@@ -619,8 +619,23 @@ def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
     registratori pieni dell'ultimo stato buono, e il lettore non lo distinguerebbe da un risultato.
     """
     if legami_ != "fibre":
+        # `algorithm Newton` e non il `Linear` di MeshRec (`opensees._passo_statico`). Su un
+        # telaio iperstatico con `eleLoad -beamUniform` su `forceBeamColumn` una passata sola
+        # **non** chiude l'equilibrio: l'elemento a forze distribuisce il carico nella propria
+        # determinazione di stato, e il residuo globale resta fuori. Misurato il 05/09/2026,
+        # OpenSees 3.8.0, telaio 2×1 caso Z1: `ux` nodo 5 −0,0026 con Linear contro +0,0497
+        # con Newton, `Rz` nodo 2 55 884 contro 66 993, `My` staz. 1 el. 4 2,63e7 contro
+        # 6,98e6 — cioè due campate appoggiate scollegate invece del telaio. Σ reazioni è
+        # identica nei due casi, ed è il motivo per cui il verdetto `reazioni` non se ne
+        # accorgeva: l'equilibrio globale sta in piedi anche su un campo di spostamenti falso.
+        # Su carichi nodali e su una trave determinata i due algoritmi coincidono a 3e-17.
+        #
+        # `RelativeNormDispIncr` e non la norma assoluta: su un modello rigido il primo
+        # incremento può stare sotto 1e-8 mm e chiudere il test alla prima iterazione, prima
+        # che Newton abbia corretto alcunché. Relativa al primo incremento del passo, Newton
+        # chiude in due iterazioni su un modello lineare.
         return ["constraints Transformation", "numberer RCM", "system BandGeneral",
-                "test NormDispIncr 1.0e-8 10", "algorithm Linear",
+                "test RelativeNormDispIncr 1.0e-8 10", "algorithm Newton",
                 "integrator LoadControl 1.0", "analysis Static",
                 "if {[analyze 1] != 0} {",
                 f'    puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non è arrivato a convergenza"',

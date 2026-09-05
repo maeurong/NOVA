@@ -67,8 +67,8 @@ recorder Element -file Z1_sez5.out -precision 12 -eleRange 1 5 section 5 force
 constraints Transformation
 numberer RCM
 system BandGeneral
-test NormDispIncr 1.0e-8 10
-algorithm Linear
+test RelativeNormDispIncr 1.0e-8 10
+algorithm Newton
 integrator LoadControl 1.0
 analysis Static
 if {[analyze 1] != 0} {
@@ -96,8 +96,8 @@ recorder Element -file Z2_sez5.out -precision 12 -eleRange 1 5 section 5 force
 constraints Transformation
 numberer RCM
 system BandGeneral
-test NormDispIncr 1.0e-8 10
-algorithm Linear
+test RelativeNormDispIncr 1.0e-8 10
+algorithm Newton
 integrator LoadControl 1.0
 analysis Static
 if {[analyze 1] != 0} {
@@ -127,8 +127,8 @@ recorder Element -file C1_sez5.out -precision 12 -eleRange 1 5 section 5 force
 constraints Transformation
 numberer RCM
 system BandGeneral
-test NormDispIncr 1.0e-8 10
-algorithm Linear
+test RelativeNormDispIncr 1.0e-8 10
+algorithm Newton
 integrator LoadControl 1.0
 analysis Static
 if {[analyze 1] != 0} {
@@ -160,8 +160,8 @@ recorder Element -file Z3_sez5.out -precision 12 -eleRange 1 5 section 5 force
 constraints Transformation
 numberer RCM
 system BandGeneral
-test NormDispIncr 1.0e-8 10
-algorithm Linear
+test RelativeNormDispIncr 1.0e-8 10
+algorithm Newton
 integrator LoadControl 1.0
 analysis Static
 if {[analyze 1] != 0} {
