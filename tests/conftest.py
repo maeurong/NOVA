@@ -31,6 +31,14 @@ def chiedi():
 
 
 @pytest.fixture(scope="session")
+def binario_ccx() -> str:
+    percorso = shutil.which("ccx")
+    if percorso is None:
+        pytest.skip("ccx non è nel PATH: la corsa vera non si prova qui")
+    return percorso
+
+
+@pytest.fixture(scope="session")
 def binario_opensees() -> str:
     percorso = shutil.which("OpenSees")
     if percorso is None:

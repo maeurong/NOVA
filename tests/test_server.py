@@ -520,3 +520,52 @@ def test_importa_un_percorso_relativo_e_risolto_dal_server(cliente, tmp_path, mo
     assert r.status_code == 200
     percorso = Path(r.json()["resoconto"]["percorso"])
     assert percorso.is_absolute() and percorso == (tmp_path / "12_wall.json").resolve()
+
+
+# --- POST /api/ccx (Task 1 di T3) -------------------------------------------
+
+def _trave() -> Path:
+    from conftest import FIXTURE
+    return FIXTURE / "solido_piccolo" / "trave.inp"
+
+
+def test_ccx_gira_nella_cartella_della_corsa(cliente, tmp_path, binario_ccx):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["esito"] == "ok" and corpo["fasi"] == ["copio il deck", "lancio ccx", "leggo .dat e .frd"]
+    cartella = tmp_path / "corse" / corpo["run_id"]
+    assert (cartella / "solido.inp").is_file() and (cartella / "risultati_solido.json").is_file()
+    assert corpo["risultati"]["run"]["deck"] == str(cartella / "solido.inp")
+
+
+def test_ccx_accetta_un_percorso_con_puntini_e_lo_copia_come_solido(cliente, tmp_path, binario_ccx):
+    """Percorso dell'utente locale: `..` è lecito. Quello che non deve succedere è che un
+    suo pezzo entri nel comando: il file copiato si chiama sempre `solido.inp`."""
+    dentro = tmp_path / "giu"
+    dentro.mkdir()
+    (dentro / "mio.inp").write_bytes(_trave().read_bytes())
+    r = cliente.post("/api/ccx", json={"inp": f"{dentro}/../giu/mio.inp"})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["esito"] == "ok"
+    assert Path(corpo["risultati"]["run"]["deck"]).name == "solido.inp"
+
+
+def test_ccx_con_un_inp_che_non_esiste(cliente, tmp_path):
+    r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
+    assert r.status_code == 200 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
+
+
+def test_ccx_rifiuta_la_cartella_dal_corpo(cliente):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave()), "cartella": "/tmp"})
+    assert r.status_code == 422 and "cartella" in r.json()["motivo"]
+
+
+def test_il_solutore_di_opensees_non_finisce_dentro_ccx(tmp_path, binario_ccx):
+    """`--solutore` di `python -m nova` è il binario di OpenSees: passarlo a `ccx` come
+    percorso dichiarato farebbe lanciare quello. Qui il «solutore» non è nemmeno
+    eseguibile, e la corsa deve riuscire lo stesso perché ccx si cerca nel PATH."""
+    cliente = _app_con_solutore(tmp_path, str(_trave()))
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200 and r.json()["esito"] == "ok", r.text

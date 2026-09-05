@@ -30,6 +30,11 @@ from nova import sidecar as _sidecar
 STATICI = Path(__file__).resolve().parent.parent / "static"
 _RUN_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 
+# `--solutore` di `python -m nova` è il binario di OpenSees: dichiararlo a `ccx` gli farebbe
+# lanciare quello (`solve._trova` prende il percorso dichiarato e **non** ripiega sul PATH).
+# CalculiX si cerca nel PATH, che è come `DOVE_PRENDERLO` dice di installarlo.
+_COMANDI_SENZA_SOLUTORE = ("ccx",)
+
 
 class SidecarInProcesso:
     """Il sidecar in memoria: comodo per i test, nessun sottoprocesso."""
@@ -38,7 +43,7 @@ class SidecarInProcesso:
         self.solutore = solutore
 
     def chiedi(self, req: dict) -> list[dict]:
-        if self.solutore:
+        if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
             req = {**req, "solutore": self.solutore}
         righe: list[dict] = []
         risposta = _sidecar.rispondi(req, righe.append)
@@ -66,7 +71,7 @@ class SidecarProcesso:
             self.n += 1
             rid = self.n
             corpo = {**req, "id": rid}
-            if self.solutore:
+            if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
                 corpo["solutore"] = self.solutore
             try:
                 self.p.stdin.write(json.dumps(corpo) + "\n")
@@ -121,6 +126,10 @@ class CorsaReq(_CorpoBase):
     casi: list[Annotated[str, Field(pattern=_modello.FORMA_CASO)]] | None = None
 
 
+class CcxReq(_CorpoBase):
+    inp: str
+
+
 def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
@@ -166,6 +175,16 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
     def corsa(corpo: CorsaReq):
         run_id = secrets.token_hex(6)
         righe = sidecar.chiedi({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi,
+                                "cartella": str(cartella_corse / run_id)})
+        fin = _o_400(_finale(righe))
+        return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+
+    @app.post("/api/ccx")
+    def ccx(corpo: CcxReq):
+        """Il deck del solido, dal disco dell'utente locale: `..` è lecito, il file si legge
+        e basta, e la copia nella cartella della corsa si chiama sempre `solido.inp`."""
+        run_id = secrets.token_hex(6)
+        righe = sidecar.chiedi({"comando": "ccx", "inp": str(Path(corpo.inp).resolve()),
                                 "cartella": str(cartella_corse / run_id)})
         fin = _o_400(_finale(righe))
         return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}

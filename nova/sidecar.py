@@ -10,13 +10,14 @@ import sys
 import time
 from pathlib import Path
 
+from nova import ccx as _ccx
 from nova import check as _check
 from nova import corsa as _corsa
 from nova import deck as _deck
 from nova import importa as _importa
 from nova import modello as _modello
 
-COMANDI = ("verifica", "check", "deck", "corsa", "importa", "fine")
+COMANDI = ("verifica", "check", "deck", "corsa", "ccx", "importa", "fine")
 
 
 class _Rifiuto(Exception):
@@ -144,6 +145,18 @@ def comando_corsa(req: dict, emetti) -> dict:
     return esito
 
 
+def comando_ccx(req: dict, emetti) -> dict:
+    """La corsa del solido: il deck `.inp` è già scritto (lo fa MeshRec), qui si copia e si lancia.
+
+    Nessun Check Model davanti: quello vale sul modello NOVA del telaio, e un deck di
+    CalculiX non è un modello NOVA.
+    """
+    percorso = req.get("inp")
+    if not percorso:
+        raise _Rifiuto("deck", "serve il deck: «inp» con il percorso di un file .inp")
+    return _ccx.esegui(Path(percorso), Path(req.get("cartella") or "corsa"), req.get("solutore"), emetti)
+
+
 def rispondi(req: dict, emetti) -> dict:
     comando = req.get("comando")
     try:
@@ -151,6 +164,8 @@ def rispondi(req: dict, emetti) -> dict:
             return comando_verifica(req)
         if comando == "corsa":
             return comando_corsa(req, emetti)
+        if comando == "ccx":
+            return comando_ccx(req, emetti)
         if comando == "check":
             return comando_check(req)
         if comando == "deck":

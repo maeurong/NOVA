@@ -300,10 +300,10 @@ def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | N
             "articolo": None, "valori": valori, "rimedio": None}
 
 
-def _non_applicabile(controllo: str, ragione: str) -> dict:
+def _non_applicabile(controllo: str, ragione: str, caso: str | None = None) -> dict:
     """Il verdetto a tre valori dove `solve.esito_non_applicabile` non ha una riga in tabella:
     stessa forma, `non_applicabile`, e la ragione la dà chi sa perché."""
-    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": None,
+    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": caso,
             "esito": "non_applicabile", "ragione": ragione, "articolo": None,
             "valori": {}, "rimedio": None}
 
