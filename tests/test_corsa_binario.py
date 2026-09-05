@@ -178,18 +178,18 @@ def test_modi_auto_cresce_fino_all_85_per_cento(chiedi, binario_opensees, tmp_pa
     assert sum("modale" in f for f in fasi) == len(provati)
 
 
-def test_il_telaio_piano_non_arriva_all_85_per_cento_in_verticale(chiedi, binario_opensees, tmp_path):
-    """Misura del 05/09/2026: a sei modi il telaio 2×1 cattura 99,999 % in x, 100 % in y e
-    75,15 % in z. La scala di «auto» si ferma a sei (nove traslazioni libere), quindi il
-    verdetto è rosso e lo dice con le frazioni: non è un'eccezione, è una corsa riuscita."""
+def test_lultimo_tentativo_di_auto_e_il_tetto_dei_gradi_liberi(chiedi, binario_opensees, tmp_path):
+    """Misura del 05/09/2026: a sei modi il telaio 2×1 cattura 75,15 % in z, a nove il 100 %.
+    La scala salta da sei a dodici, che è oltre le nove traslazioni libere: l'ultimo tentativo
+    è il tetto, e con il tetto i modi bastano sempre quando la struttura li ha."""
     m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi="auto")
     (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
     fin = r[-1]
     assert fin["esito"] == "ok", fin
-    assert fin["risultati"]["run"]["modi_provati"] == [3, 6]
+    assert fin["risultati"]["run"]["modi_provati"] == [3, 6, 9]
     massa = next(v for v in fin["risultati"]["verdetti"] if v["controllo"] == "massa_modale")
-    assert massa["esito"] == "non_passato"
-    assert massa["valori"]["per_direzione"]["z"] < 0.85
+    assert massa["esito"] == "passato"
+    assert min(massa["valori"]["per_direzione"].values()) >= 0.85
 
 
 def test_modi_auto_si_ferma_al_primo_tentativo_che_basta(chiedi, binario_opensees, tmp_path):
@@ -236,3 +236,4 @@ def test_la_modale_scrive_le_masse_da_azioni_e_abbassa_le_frequenze(chiedi, bina
         return r[-1]["risultati"]["modi"][0]["f"]
 
     assert prima([{"azione": 1, "coefficiente": 1.0}], tmp_path / "con") < prima([], tmp_path / "senza")
+

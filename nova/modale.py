@@ -123,9 +123,18 @@ def gradi_liberi(m: Modello) -> int:
 
     Conta i soli nodi del modello: i nodi che le suddivisioni aggiungono portano massa
     anche loro, quindi il tetto vero è più alto e questo resta dalla parte prudente.
+
+    Conta anche i soli nodi che la massa ce l'hanno: un nodo che nessuna asta tocca e senza
+    `massa_nodale` ha tre gradi liberi e zero massa, quindi non porta nessun modo. Contarli
+    alzava il tetto sopra i modi che il problema generalizzato ha, e l'ultimo tentativo di
+    «auto» faceva uscire OpenSees (`nodo_libero` forzato, `eigen -fullGenLapack 12` su nove
+    gradi con massa: codice d'uscita −5, misurato il 05/09/2026 — e in modo intermittente,
+    che è il modo peggiore).
     """
+    con_massa = {x for a in m.aste for x in (a.nodo_i, a.nodo_j)}
+    con_massa |= {n.id for n in m.nodi if n.massa_nodale}
     return sum(3 if n.vincolo is None else sum(1 for g in n.vincolo.gradi()[:3] if not g)
-               for n in m.nodi)
+               for n in m.nodi if n.id in con_massa)
 
 
 def analisi(m: Modello):

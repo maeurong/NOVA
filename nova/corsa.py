@@ -118,15 +118,24 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
 
 def _tentativi(m: Modello, an) -> list[int | None]:
     """I numeri di modi che la corsa proverà, in ordine. `[None]` senza analisi modale (una
-    corsa statica sola), `[n]` con i modi imposti, la scala di `modale.SCALA_MODI` sotto il
-    tetto dei gradi liberi con «auto». Il primo gradino c'è sempre, anche su un modello con
-    meno di tre traslazioni libere: `deck.scrivi` lo taglia a quel che il telaio regge."""
+    corsa statica sola), `[n]` con i modi imposti, con «auto» la scala di `modale.SCALA_MODI`
+    **sotto** il tetto più il tetto stesso.
+
+    Il tetto chiude sempre la scala e non si salta: `SCALA_MODI` va di raddoppi, e sul telaio
+    2×1 (nove traslazioni libere) si fermerebbe a sei, cioè al 75,15 % di massa in z, mentre
+    a nove modi la cumulata è 100 % su tutte e tre le direzioni (misurato il 05/09/2026,
+    OpenSees 3.8.0). Un verdetto rosso per un gradino mancante, non per il modello.
+
+    ponytail: con il tetto molto alto l'ultimo giro chiede tutti i modi a un solutore denso, e
+    il costo va col cubo. Sui telai di c.a. di v1 non si vede; se un modello diventa grande,
+    la scala vuole un tetto suo (per esempio `min(gradi_liberi, 48)`) e una rimisura.
+    """
     if an is None:
         return [None]
     if isinstance(an.modi, int):
         return [an.modi]
-    tetto = max(modale.SCALA_MODI[0], modale.gradi_liberi(m))
-    return [n for n in modale.SCALA_MODI if n <= tetto]
+    tetto = modale.gradi_liberi(m)
+    return [n for n in modale.SCALA_MODI if n < tetto] + [tetto]
 
 
 def _lancia(m: Modello, casi: list[str], cartella: Path, n_modi: int | None, stato: dict,

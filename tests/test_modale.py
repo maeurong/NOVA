@@ -86,3 +86,12 @@ def test_i_gradi_liberi_sono_il_tetto_dei_modi():
     """Telaio 2×1: tre nodi incastrati, tre liberi, nove traslazioni con massa."""
     m = modello.carica(leggi_fixture("telaio_2x1.nova.json"))
     assert modale.gradi_liberi(m) == 9
+
+
+def test_i_gradi_liberi_non_contano_il_nodo_che_nessuna_asta_tocca():
+    """`nodo_libero` ha il nodo 7 scollegato: nessuna asta gli dà massa, e i suoi tre gradi
+    non portano nessun modo. Contarli alzava il tetto di «auto» sopra i modi che il problema
+    generalizzato ha davvero, e l'ultimo tentativo faceva uscire OpenSees (codice −5,
+    misurato il 05/09/2026)."""
+    m = modello.carica(leggi_fixture("nodo_libero.nova.json"))
+    assert modale.gradi_liberi(m) == 9
