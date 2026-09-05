@@ -33,6 +33,20 @@ TIPO_ESATTO = "C3D4"
 # simmetria (`*BOUNDARY SIMM, 1, 2`) non regge un grammo di quel peso.
 _DOF_VERTICALE = 3
 
+# Carte che portano dentro la corsa qualcosa che non sta nel deck: `*INCLUDE` un file
+# qualunque del disco, `*RESTART` lo stato di un'altra corsa, `*USER MATERIAL` codice
+# compilato dall'utente. `ccx.esegui` copia il deck e lo lancia com'è, quindi ignorarle qui
+# vorrebbe dire lasciarle eseguire senza che nessuno le abbia guardate.
+_CARTE_VIETATE = ("INCLUDE", "RESTART", "USER MATERIAL")
+
+# `*NSET, GENERATE` materializza la lista: `1, 10000000000, 1` esaurisce la memoria prima
+# che qualunque controllo a valle possa dire qualcosa.
+_TETTO_GENERATE = 10_000_000
+
+
+class _Rifiutata(ValueError):
+    """Un rifiuto già formulato: il ciclo di `leggi` non lo riscrive come «riga illeggibile»."""
+
 
 @dataclass(frozen=True)
 class Passo:
@@ -59,6 +73,7 @@ class Inp:
     tipo_elemento: str | None
     nodi: dict[int, tuple[float, float, float]]
     elementi: list[tuple[int, ...]]
+    n_materiali: int = 0
 
     @property
     def vincolati(self) -> list[int]:
@@ -159,6 +174,7 @@ def leggi(percorso: str | Path) -> Inp:
     vincoli: list[tuple[str, int, int]] = []
     passi: list[Passo] = []
     tipi: set[str] = set()
+    n_materiali = 0
     densita = elastico = g = None
     sezione, parametri, nome_atteso, aperto, continua = None, {}, None, None, False
 
@@ -173,6 +189,11 @@ def leggi(percorso: str | Path) -> Inp:
         if pulita.startswith("*"):
             sezione, parametri = _carta(pulita)
             continua = False
+            if sezione in _CARTE_VIETATE:
+                raise _Rifiutata(f"{p}, riga {numero}: carta *{sezione} non ammessa "
+                                 "(legge file o codice fuori dal deck)")
+            if sezione == "MATERIAL":
+                n_materiali += 1
             if sezione == "STEP":
                 aperto = {"nome": nome_atteso or f"passo {len(passi) + 1}", "tipo": "statico",
                           "n_modi": None, "dload": [], "altri": False, "g": None}
@@ -209,9 +230,19 @@ def leggi(percorso: str | Path) -> Inp:
                 numeri = [int(x) for x in campi if x]
                 if "GENERATE" in parametri:
                     inizio, fine, salto = (numeri + [1])[:3]
+                    if salto <= 0:
+                        raise _Rifiutata(f"{p}, riga {numero}: NSET GENERATE con salto {salto}, "
+                                         "che non arriva mai alla fine")
+                    quanti = max(0, (fine - inizio) // salto + 1)
+                    if quanti > _TETTO_GENERATE:
+                        raise _Rifiutata(f"{p}, riga {numero}: NSET GENERATE chiede {quanti} nodi, "
+                                         f"oltre il tetto di {_TETTO_GENERATE // 1_000_000} M")
                     numeri = list(range(inizio, fine + 1, salto))
                 set_nodi[parametri.get("NSET", "").upper()] += numeri
-            elif sezione == "BOUNDARY":
+            # un `*BOUNDARY` dentro `*STEP` è del passo, non del modello: `vincolati` e la
+            # quota tributaria parlano dei vincoli globali, e contarci quelli di un passo
+            # gonfierebbe il peso atteso di tutti gli altri
+            elif sezione == "BOUNDARY" and aperto is None:
                 # i dof contano: `BASE, 1, 3` regge il peso, `SIMM, 1, 2` no
                 vincoli.append((campi[0].upper(), int(campi[1]), int(campi[2] if len(campi) > 2 else campi[1])))
             elif sezione == "DENSITY" and densita is None:
@@ -229,13 +260,22 @@ def leggi(percorso: str | Path) -> Inp:
                     aperto["altri"] = True
             elif sezione in ("CLOAD", "DSLOAD") and aperto is not None:
                 aperto["altri"] = True
+        except _Rifiutata:
+            raise
         except (ValueError, IndexError) as e:
+            # la riga tronca: una riga di dati di un deck vero può essere lunghissima, e il
+            # messaggio d'errore non è il posto dove rimandarla intera
+            letta = riga if len(riga) <= 80 else riga[:80] + "…"
             raise ValueError(f"{p}, riga {numero}: riga di dati illeggibile sotto *{sezione} ({e}). "
-                             f"Riga letta: {riga!r}") from None
+                             f"Riga letta: {letta!r}") from None
 
     if not passi:
         raise ValueError(f"{p}: nessun passo (*STEP) nel deck, non c'è niente da risolvere")
     # più tipi di elemento nella stessa mesh: il nome li porta tutti, e `_volumi` si ferma —
     # senza questo numpy solleverebbe sulle righe di lunghezza diversa, a corsa già fatta
-    return Inp(passi=passi, set_nodi=set_nodi, vincoli=vincoli, densita=densita, elastico=elastico,
-               g=g, tipo_elemento="+".join(sorted(tipi)) or None, nodi=nodi, elementi=elementi)
+    # due `*MATERIAL` e la prima `*DENSITY` non è la densità del solido: ρ·V darebbe un
+    # numero plausibile e sbagliato, e `None` fa uscire il verdetto `non_applicabile`
+    return Inp(passi=passi, set_nodi=set_nodi, vincoli=vincoli,
+               densita=densita if n_materiali <= 1 else None, elastico=elastico,
+               g=g, tipo_elemento="+".join(sorted(tipi)) or None, nodi=nodi, elementi=elementi,
+               n_materiali=n_materiali)

@@ -254,3 +254,82 @@ def test_elemento_su_due_righe_con_virgola_finale_si_concatena(tmp_path):
                 "*DENSITY\n2.5e-09\n*STEP\n*STATIC\n*END STEP\n")
     d = _inp.leggi(p)
     assert d.n_elementi == 1 and d.elementi == [(1, 2, 3, 4)]
+
+
+# --- ondata finale: carte pericolose, tetto di GENERATE, materiali, righe lunghe ----
+
+@pytest.mark.parametrize("carta", ["*INCLUDE, INPUT=x.inp", "*Include, input=x.inp",
+                                   "*RESTART, READ", "*RESTART, WRITE", "*USER MATERIAL, CONSTANTS=2"])
+def test_le_carte_che_portano_dentro_file_o_codice_sono_rifiutate(tmp_path, carta):
+    """`ccx` esegue il deck com'è: `*INCLUDE` gli fa leggere un file che il parser non vede,
+    `*RESTART` uno stato di un'altra corsa, `*USER MATERIAL` codice compilato dall'utente.
+    Ignorarle qui vorrebbe dire lasciarle passare al solutore senza che nessuno le guardi."""
+    p = _scrivi(tmp_path, "vietata.inp", f"{carta}\n*STEP\n*STATIC\n*END STEP\n")
+    with pytest.raises(ValueError) as e:
+        _inp.leggi(p)
+    assert "non ammessa" in str(e.value) and carta.split(",")[0][1:].upper() in str(e.value)
+
+
+def test_nset_generate_oltre_il_tetto_e_un_rifiuto_non_una_lista_da_dieci_miliardi(tmp_path):
+    p = _scrivi(tmp_path, "enorme.inp",
+                "*NSET, NSET=TUTTI, GENERATE\n1, 10000000000, 1\n*STEP\n*STATIC\n*END STEP\n")
+    with pytest.raises(ValueError) as e:
+        _inp.leggi(p)
+    assert "tetto" in str(e.value) and "10 M" in str(e.value)
+
+
+def test_nset_generate_con_salto_zero_e_un_rifiuto_non_un_range_che_esplode(tmp_path):
+    p = _scrivi(tmp_path, "salto.inp",
+                "*NSET, NSET=A, GENERATE\n1, 9, 0\n*STEP\n*STATIC\n*END STEP\n")
+    with pytest.raises(ValueError) as e:
+        _inp.leggi(p)
+    assert "salto" in str(e.value)
+
+
+def test_nset_generate_con_inizio_oltre_la_fine_e_un_set_vuoto(tmp_path):
+    """Riga: «GENERATE con `inizio > fine` → lista vuota, nessuna eccezione, nessun tetto»."""
+    p = _scrivi(tmp_path, "vuoto_gen.inp",
+                "*NSET, NSET=A, GENERATE\n9, 1, 1\n*STEP\n*STATIC\n*END STEP\n")
+    assert _inp.leggi(p).set_nodi["A"] == []
+
+
+def test_due_materiali_lasciano_la_massa_nulla(tmp_path):
+    """Due `*MATERIAL` nel deck: la prima `*DENSITY` non è la densità di tutto il solido, e
+    ρ·V sarebbe un numero plausibile e sbagliato."""
+    p = _scrivi(tmp_path, "due_materiali.inp",
+                "*NODE\n1, 0.0, 0.0, 0.0\n2, 1.0, 0.0, 0.0\n3, 0.0, 1.0, 0.0\n4, 0.0, 0.0, 1.0\n"
+                "*ELEMENT, TYPE=C3D4, ELSET=A\n1, 1, 2, 3, 4\n"
+                "*MATERIAL, NAME=CLS\n*DENSITY\n2.5e-09\n"
+                "*MATERIAL, NAME=ACCIAIO\n*DENSITY\n7.85e-09\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.n_materiali == 2 and d.densita is None and d.massa is None
+    assert d.volume is not None  # il volume resta: è della mesh, non del materiale
+
+
+def test_una_densita_senza_carta_material_resta_presa(tmp_path):
+    """Riga: «deck con zero carte `*MATERIAL` ma una `*DENSITY` → densità presa»."""
+    p = _scrivi(tmp_path, "senza_material.inp",
+                "*DENSITY\n2.5e-09\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.n_materiali == 0 and d.densita == pytest.approx(2.5e-09)
+
+
+def test_una_riga_di_dati_lunghissima_non_finisce_intera_nel_messaggio(tmp_path):
+    p = _scrivi(tmp_path, "lunga.inp", "*NODE\n" + ", ".join(["boh"] * 200) + "\n")
+    with pytest.raises(ValueError) as e:
+        _inp.leggi(p)
+    letta = str(e.value).split("Riga letta: ", 1)[1]
+    assert letta.endswith("…'") and len(letta) < 100
+
+
+def test_boundary_dentro_un_passo_non_conta_fra_i_vincoli_globali(tmp_path):
+    """Un `*BOUNDARY` dentro `*STEP` è del passo, non del modello: contarlo nella quota
+    tributaria gonfierebbe il peso atteso di tutti i passi."""
+    testo = TRAVE.read_text(encoding="ascii")
+    dentro = testo.replace("*STEP\n*STATIC\n*DLOAD, OP=NEW\n",
+                           "*STEP\n*STATIC\n*BOUNDARY\nTOP, 1, 3\n*DLOAD, OP=NEW\n", 1)
+    p = _scrivi(tmp_path, "vincolo_nel_passo.inp", dentro)
+    d = _inp.leggi(p)
+    atteso = _inp.leggi(TRAVE)
+    assert d.vincoli == atteso.vincoli
+    assert d.quota_vincolati == pytest.approx(atteso.quota_vincolati, rel=1e-12)

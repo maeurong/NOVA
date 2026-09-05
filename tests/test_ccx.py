@@ -101,6 +101,16 @@ def test_un_deck_senza_step_e_errore_di_deck(tmp_path):
     assert r["esito"] == "errore" and r["fase"] == "deck" and "nessun passo" in r["motivo"]
 
 
+def test_un_deck_con_include_e_errore_di_deck_e_ccx_non_parte(tmp_path):
+    """`*INCLUDE` fa leggere a ccx un file che il parser non vede: la corsa si ferma prima
+    di copiare il deck, e l'errore è del deck (fase «deck», HTTP 400)."""
+    p = tmp_path / "include.inp"
+    p.write_text("*INCLUDE, INPUT=/etc/passwd\n*STEP\n*STATIC\n*END STEP\n", encoding="ascii")
+    r = _errore_deck(p, tmp_path)
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "INCLUDE" in r["motivo"]
+    assert not (tmp_path / "corsa" / _ccx.NOME_DECK).exists()
+
+
 # --- la corsa buona ----------------------------------------------------------
 
 @pytest.fixture
@@ -137,10 +147,8 @@ def test_le_reazioni_lette_stanno_sui_tre_passi_statici(corsa):
 
 def test_lo_spostamento_di_top_viene_dal_frd(corsa):
     top = corsa["risultati"]["passi"]["GRAVITA"]["u_set"]["TOP"]
-    assert top["max"][2] == pytest.approx(-4.02422e-4, rel=1e-4)   # abbassamento, segno tenuto
-    assert top["max"][2] <= top["medio"][2] < 0.0  # il massimo è il più basso di tutti
-    assert top["medio"][2] == pytest.approx(-3.94202e-4, rel=1e-4)
-    assert corsa["risultati"]["passi"]["CARICO_TOP"]["u_set"]["TOP"]["max"][2] < top["max"][2]
+    assert top["medio"][2] == pytest.approx(-3.94202e-4, rel=1e-4)  # abbassamento, segno tenuto
+    assert corsa["risultati"]["passi"]["CARICO_TOP"]["u_set"]["TOP"]["medio"][2] < top["medio"][2]
 
 
 def test_i_modi_portano_frazioni_di_massa_partecipante(corsa):
@@ -256,6 +264,23 @@ def test_senza_densita_la_massa_e_nulla_e_il_verdetto_non_si_applica(tmp_path, u
     assert v["esito"] == "non_applicabile" and "DENSITY" in v["ragione"]
 
 
+def test_due_materiali_il_verdetto_dice_che_la_massa_non_e_rho_per_v(tmp_path, uscite_vere):
+    """Due `*MATERIAL`: la prima `*DENSITY` non è la densità del solido, la massa non si
+    calcola e la ragione lo dice — non «il deck non dichiara *DENSITY», che sarebbe falso."""
+    due = _variante(tmp_path, "due_materiali.inp",
+                    lambda t: _senza_modale(t).replace(
+                        "*BOUNDARY\n",
+                        "*MATERIAL, NAME=ACCIAIO\n*ELASTIC\n210000.0, 0.3\n*DENSITY\n7.85e-09\n"
+                        "*BOUNDARY\n", 1))
+    finto = _finto_ccx(tmp_path, f'cp "{uscite_vere}"/solido.dat "{uscite_vere}"/solido.frd . '
+                                 f'&& echo "Job finished"\n')
+    r = _ccx.esegui(due, tmp_path / "corsa", percorso_solutore=finto)
+    assert r["esito"] == "ok", r
+    assert r["risultati"]["massa"] is None
+    v = _verdetto(r["risultati"], "reazioni", "GRAVITA")
+    assert v["esito"] == "non_applicabile" and "due materiali" in v["ragione"]
+
+
 # --- deck senza le carte che il lettore si aspetta ---------------------------
 
 def test_un_deck_senza_passo_modale_non_ha_modi(tmp_path, binario_ccx):
@@ -328,7 +353,7 @@ def test_lo_spostamento_viene_dall_ultimo_incremento():
     nodi = np.array(deck.set_nodi["TOP"][:2])
     primo = Blocco("DISP", 1, False, 0.5, nodi, np.array([[0.0, 0.0, -1.0], [0.0, 0.0, -1.0]]))
     ultimo = Blocco("DISP", 1, False, 1.0, nodi, np.array([[0.0, 0.0, -2.0], [0.0, 0.0, -2.0]]))
-    assert _ccx._sommita([primo, ultimo], 1, deck)["TOP"]["max"][2] == -2.0
+    assert _ccx._sommita([primo, ultimo], 1, deck)["TOP"]["medio"][2] == -2.0
 
 
 def test_la_versione_e_quella_del_banner_non_di_un_avviso():

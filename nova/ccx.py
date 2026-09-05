@@ -153,9 +153,9 @@ def _versione(registro: str) -> str | None:
 
 
 def _sommita(blocchi: list, passo: int, deck: _inp.Inp) -> dict:
-    """`max` (il valore di modulo massimo, col suo segno) e `medio` per componente, sui soli
-    nodi del set di sommità. Set assente o nessun blocco per quel passo: dizionario vuoto,
-    non un `KeyError` — un deck che non dichiara `TOP` non è un deck rotto."""
+    """Lo spostamento `medio` per componente, sui soli nodi del set di sommità. Set assente o
+    nessun blocco per quel passo: dizionario vuoto, non un `KeyError` — un deck che non
+    dichiara `TOP` non è un deck rotto."""
     nodi = deck.set_nodi.get(SET_SOMMITA)
     if not nodi:
         return {}
@@ -167,9 +167,7 @@ def _sommita(blocchi: list, passo: int, deck: _inp.Inp) -> dict:
         dati = b.dati[np.isin(b.nodi, np.array(nodi))][:, :3]
         if not len(dati):
             break
-        estremo = dati[np.argmax(np.abs(dati), axis=0), range(3)]
-        return {SET_SOMMITA: {"max": [float(x) for x in estremo],
-                              "medio": [float(x) for x in dati.mean(axis=0)]}}
+        return {SET_SOMMITA: {"medio": [float(x) for x in dati.mean(axis=0)]}}
     return {}
 
 
@@ -220,7 +218,8 @@ def _verdetto_reazioni(passo: _inp.Passo, reazioni: dict, deck: _inp.Inp) -> dic
         return non_applicabile("reazioni", "carichi del deck non ricostruiti: fuori dal passo "
                                "gravitazionale il peso atteso non si conosce", passo.nome)
     if deck.massa is None or passo.g is None:
-        manca = ("il deck non dichiara *DENSITY" if deck.densita is None else
+        manca = ("due materiali, la massa non è ρ·V" if deck.n_materiali > 1 else
+                 "il deck non dichiara *DENSITY" if deck.densita is None else
                  f"elemento {deck.tipo_elemento}: volume e quota tributaria sono esatti solo "
                  f"su {_inp.TIPO_ESATTO}")
         return non_applicabile("reazioni", f"{manca}: il peso atteso non si calcola", passo.nome)
