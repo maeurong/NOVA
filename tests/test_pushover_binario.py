@@ -52,8 +52,10 @@ def test_la_curva_e_monotona_in_spostamento_e_in_equilibrio_a_ogni_passo(uniform
     assert len(passi) == 60 and ris["caduta"] is None
     assert [p["n"] for p in passi] == list(range(1, 61))
     assert all(b["spostamento"] > a["spostamento"] for a, b in zip(passi, passi[1:]))
-    # passo costante di 1 mm: la gravità sposta il nodo di controllo prima che la spinta
-    # cominci, quindi lo spostamento non è il numero del passo — l'incremento sì
+    # lo spostamento è **relativo** allo stato dopo la gravità: la curva parte dall'incremento
+    # e finisce esattamente a `spostamento_max`
+    assert passi[0]["spostamento"] == pytest.approx(1.0, abs=1e-3)
+    assert passi[-1]["spostamento"] == pytest.approx(60.0, abs=1e-3)
     assert all(b["spostamento"] - a["spostamento"] == pytest.approx(1.0, abs=1e-9)
                for a, b in zip(passi, passi[1:]))
     assert all(p["incremento"] == 1.0 for p in passi)
@@ -83,7 +85,7 @@ def test_la_pushover_che_arriva_in_fondo_e_una_convergenza_passata(uniforme):
     ris = uniforme[0]["risultati"]
     v = next(x for x in ris["verdetti"] if x["controllo"] == "convergenza" and x["caso"] == "pushover")
     assert v["esito"] == "passato"
-    assert v["valori"]["spostamento"] == pytest.approx(60.0, abs=1.0)
+    assert v["valori"]["spostamento"] == pytest.approx(60.0, abs=1e-3)
 
 
 def test_lo_stato_delle_sezioni_parte_elastico_e_finisce_fessurato(uniforme):
@@ -199,3 +201,103 @@ def test_la_distribuzione_modo1_gira_davvero_sul_binario(tmp_path, binario_opens
     assert len(ris["passi"]) == 20 and ris["caduta"] is None
     assert ris["modi"][0]["f"] == pytest.approx(5.8187, rel=1e-3)
     assert ris["passi"][-1]["taglio_base"] > 0.0
+
+
+# --- fix round 1: lo zero della curva, la caduta onesta, il copriferro ---
+
+def test_lo_zero_della_curva_e_lo_stato_dopo_la_gravita(uniforme):
+    """`u0` è lo spostamento che la gravità ha già dato al nodo di controllo, e sta nel JSON:
+    senza, `passi[].spostamento` non si sa rispetto a cosa è misurato. Misurato il 05/09/2026
+    (OpenSees 3.8.0) sul telaio 2×1 con `caso_gravita: "Z3"`: u₀ = 0,0160294 mm."""
+    ris = uniforme[0]["risultati"]
+    assert ris["run"]["pushover"]["u0"] == pytest.approx(0.0160294, abs=1e-6)
+    assert ris["passi"][0]["spostamento"] == pytest.approx(1.0, abs=1e-3)
+
+
+def test_la_gravita_che_muove_il_nodo_di_controllo_non_accorcia_la_corsa(tmp_path, binario_opensees):
+    """`caso_gravita: "C1"` porta la spinta in testa da 30 kN: il nodo 4 parte già a 1,486 mm,
+    cioè **oltre** lo `spostamento_max` di 1 mm che si chiede alla pushover. Con la misura
+    assoluta il `while` non entrava nemmeno; con quella relativa la corsa è intera.
+    Misurato il 05/09/2026, OpenSees 3.8.0: u₀ = 1,48621 mm, due passi da 0,5."""
+    r = _corri(tmp_path, _modello_pushover(caso_gravita="C1", incremento=0.5, spostamento_max=1.0))
+    assert r["esito"] == "ok", r
+    ris = r["risultati"]
+    assert ris["run"]["pushover"]["u0"] == pytest.approx(1.48621, rel=1e-3)
+    assert ris["run"]["pushover"]["u0"] > 1.0  # la gravità è già oltre lo spostamento chiesto
+    assert [p["spostamento"] for p in ris["passi"]] == pytest.approx([0.5, 1.0], abs=1e-6)
+    assert ris["caduta"] is None
+
+
+def test_i_passi_max_raggiunti_con_la_spinta_arrivata_non_sono_una_caduta(tmp_path, binario_opensees):
+    """`(spostamento_max 5, incremento 1, passi_max 5)`: la spinta arriva **e** tocca il tetto
+    allo stesso passo. Chiamarla caduta faceva `convergenza: non_passato` su una corsa riuscita."""
+    r = _corri(tmp_path, _modello_pushover(spostamento_max=5.0, passi_max=5))
+    assert r["esito"] == "ok", r
+    ris = r["risultati"]
+    assert len(ris["passi"]) == 5 and ris["passi"][-1]["spostamento"] == pytest.approx(5.0, abs=1e-6)
+    assert ris["caduta"] is None
+    v = next(x for x in ris["verdetti"] if x["controllo"] == "convergenza" and x["caso"] == "pushover")
+    assert v["esito"] == "passato"
+
+
+def test_il_copriferro_schiaccia_ventiquattro_passi_prima_del_nucleo(tmp_path, binario_opensees):
+    """L'oracolo di I3, letto dalle fibre e non dallo stato composto: sulla corsa a 5 000 mm con
+    passo 25 il copriferro supera `epsU` = 0,35 % al **passo 3** (u = 75 mm) e il nucleo la sua
+    `ε_cu2,c` al **passo 27** (u = 675 mm) — misurato il 05/09/2026, OpenSees 3.8.0.
+    Registrare il solo nucleo diceva «non schiacciata» per ventiquattro passi su ventisette."""
+    r = _corri(tmp_path, _modello_pushover(incremento=25.0, spostamento_max=5000.0))
+    assert r["esito"] == "ok", r
+    ris = r["risultati"]
+    n = len(ris["passi"])
+    m = _modello.assicura_peso_proprio(_modello.carica(_modello_pushover()))
+    d = _deck.scrivi(m, ["Z3"], tmp_path / "_rif")
+    primo = {}
+    for tag, fibre in d.fibre_registrate.items():
+        for i, f in enumerate(fibre):
+            if f["ruolo"] == "acciaio":
+                continue
+            soglia = d.materiali[str(d.sezione_per_tag[tag])][f["ruolo"]]["epsU"]
+            for st in range(1, _deck.STAZIONI + 1):
+                dati = np.loadtxt(tmp_path / _deck.nome_fibra("push", tag, st, i))[-n:]
+                schiacciati = np.nonzero((dati[:, 2::2] <= soglia).any(axis=1))[0]
+                if len(schiacciati):
+                    k = int(schiacciati[0]) + 1
+                    primo[f["ruolo"]] = min(primo.get(f["ruolo"], k), k)
+    assert primo["copriferro"] < primo["nucleo"], primo
+    assert primo["copriferro"] == 3 and primo["nucleo"] == 27, primo
+    # e lo stato composto se ne accorge al passo del copriferro, non a quello del nucleo
+    stato = ris["passi"][primo["copriferro"] - 1]["stato_sezioni"]
+    assert "schiacciata" in {s["calcestruzzo"] for st in stato.values() for s in st}
+
+
+def test_una_riga_in_meno_nelle_reazioni_e_un_errore_di_fase_solutore(tmp_path, binario_opensees,
+                                                                     monkeypatch):
+    """Uno slice `[-n:]` più corto del dovuto non solleva: sollevava molto dopo, come `IndexError`
+    nudo, che `corsa` non cattura. La guardia sta dove il file si legge e nomina il file."""
+    vero = corsa._lancia
+
+    def tronca(*a, **k):
+        esito = vero(*a, **k)
+        f = tmp_path / "push_reazioni.out"
+        f.write_text("\n".join(f.read_text().splitlines()[:-1]) + "\n")
+        return esito
+
+    monkeypatch.setattr(corsa, "_lancia", tronca)
+    r = _corri(tmp_path, _modello_pushover(spostamento_max=5.0))
+    assert r["esito"] == "errore" and r["fase"] == "solutore", r
+    assert "push_reazioni.out" in r["motivo"] and "4 passi invece di 5" in r["motivo"], r["motivo"]
+
+
+def test_il_marcatore_dello_zero_assente_dal_registro_e_un_errore_che_lo_dice(uniforme, tmp_path):
+    """Registro troncato prima di `NOVA_PUSHOVER_U0`: senza lo zero la curva non si può leggere,
+    e va detto — non `KeyError`, non uno zero inventato."""
+    _, cartella = uniforme
+    m = _modello.assicura_peso_proprio(_modello.carica(_modello_pushover()))
+    d = _deck.scrivi(m, ["Z3"], tmp_path)
+    for f in [*cartella.glob("*.out"), cartella / "13_solver.log"]:
+        (tmp_path / f.name).write_bytes(f.read_bytes())
+    registro = (tmp_path / "13_solver.log").read_text()
+    (tmp_path / "13_solver.log").write_text(
+        "\n".join(r for r in registro.splitlines() if _deck.MARCA_U0 not in r) + "\n")
+    with pytest.raises(ValueError, match=_deck.MARCA_U0):
+        _passi.leggi(tmp_path, d)

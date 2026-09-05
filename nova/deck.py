@@ -25,8 +25,8 @@ import numpy as np
 from meshrec.core import armatura, opensees
 from nova import catalogo, modale
 from nova import legami as _legami
-from nova.modello import (AnalisiPushover, Modello, Sezione, caso_valido, casi_dichiarati,
-                          senza_barre)
+from nova.modello import (DOF_COLONNA, AnalisiPushover, Modello, Sezione, caso_valido,
+                          casi_dichiarati, senza_barre)
 
 NOME_TCL = "13_telaio.tcl"
 GRAVITA = 9806.65
@@ -61,11 +61,15 @@ MARCA_PASSO_PUSHOVER = "NOVA_PUSHOVER"
 # passo convergente vale, e il marcatore di fine si scrive lo stesso. Non è `MARCA_FINE_MANCA`,
 # che invece dice «questa corsa non ha un risultato».
 MARCA_CADUTA = "NOVA_CADUTA"
+# Lo spostamento del nodo di controllo **prima** della spinta, cioè lo zero della curva.
+MARCA_U0 = "NOVA_PUSHOVER_U0"
 # Otto e non sei come nella statica: qui il passo è uno spostamento imposto, e vicino al picco
 # della curva un solo dimezzamento non basta — si scende da 1 mm a 4 µm prima di dichiarare.
 DIMEZZAMENTI_PUSHOVER = 8
 PREFISSO_PUSHOVER = "push"
-DOF_INDICE = {"ux": 1, "uy": 2, "uz": 3}
+# OpenSees conta i gradi di libertà da 1: il `+1` sull'offset di colonna, esplicito e
+# in un punto solo (`modello.DOF_COLONNA` è la base zero, che usano `Nodo.libero` e i recorder).
+DOF_TCL = {k: v + 1 for k, v in DOF_COLONNA.items()}
 
 
 class Barra(NamedTuple):
@@ -514,18 +518,32 @@ def _nucleo(s: Sezione, verticale: bool):
     return -lungo_e1 / 2, -lungo_e2 / 2, lungo_e1 / 2, lungo_e2 / 2
 
 
-def _fibre_estreme(nucleo, tag_nucleo: int, ruolo: str, barre: list[Barra],
+def _spigoli(rettangolo) -> tuple[tuple[float, float], ...]:
+    y0, z0, y1, z1 = rettangolo
+    return ((y0, z0), (y1, z0), (y1, z1), (y0, z1))
+
+
+def _fibre_estreme(nucleo, tag_nucleo: int, contorno, tag_copriferro: int, barre: list[Barra],
                    tag_acciaio: int | None) -> list[dict]:
-    """Le fibre che raccontano lo stato della sezione: i quattro spigoli del nucleo e le barre
-    estreme, una per verso di ciascun asse locale. Task 3 ci costruisce sopra i recorder e lo
-    stato a quattro valori; qui si decidono le **posizioni**, che sono un fatto della sezione.
+    """Le fibre che raccontano lo stato della sezione: i quattro spigoli del **contorno** (il
+    copriferro), i quattro del nucleo dove un nucleo c'è, e le barre estreme, una per verso di
+    ciascun asse locale. Task 3 ci costruisce sopra i recorder e lo stato a quattro valori; qui
+    si decidono le **posizioni**, che sono un fatto della sezione.
+
+    Il copriferro c'è **sempre**, anche sulle sezioni confinate a due patch: è lui a schiacciare
+    per primo (`epsU` = 0,35 % contro la `ε_cu2,c` della [4.1.11], che sul telaio 2×1 vale il
+    triplo), e registrare il solo nucleo avrebbe dato «elastica» a una sezione col copriferro
+    già espulso. Con una patch sola nucleo e copriferro sono lo stesso legame e i quattro
+    spigoli del contorno bastano: `nucleo` arriva a `None` e non si registra niente in più.
 
     Una barra sola (o nessuna) non ha estremi da distinguere: la lista si sfoltisce da sé,
     perché è un `dict` sulle coordinate e non una somma di quattro voci.
     """
-    yc0, zc0, yc1, zc1 = nucleo
-    fibre = {(y, z): {"y": y, "z": z, "mat": tag_nucleo, "ruolo": ruolo}
-             for y, z in ((yc0, zc0), (yc1, zc0), (yc1, zc1), (yc0, zc1))}
+    fibre = {(y, z): {"y": y, "z": z, "mat": tag_copriferro, "ruolo": "copriferro"}
+             for y, z in _spigoli(contorno)}
+    if nucleo is not None:
+        for y, z in _spigoli(nucleo):
+            fibre[(y, z)] = {"y": y, "z": z, "mat": tag_nucleo, "ruolo": "nucleo"}
     if barre and tag_acciaio is not None:
         # una barra per verso di ciascun asse, con lo spigolo a rompere la parità: su una fila
         # `inf`/`sup` le barre d'angolo servono due versi, e il `dict` sulle coordinate le unisce
@@ -646,11 +664,7 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
     if una_patch:  # nucleo e copriferro sono lo stesso legame: due patch sarebbero la stessa cosa
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
-        # la patch unica **è** il copriferro, e le fibre estreme stanno sul contorno: chiamarle
-        # «nucleo» direbbe a Task 3 di leggerle con le soglie del confinato, che qui non c'è
-        nucleo, ruolo = (y0, z0, y1, z1), "copriferro"
     else:
-        ruolo = "nucleo"
         yc0, zc0, yc1, zc1 = nucleo
         righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {yc0:.10g} {zc0:.10g} {yc1:.10g} {zc1:.10g}")
         # le quattro fasce esterne: sotto e sopra per tutta la larghezza, i due fianchi fra le due
@@ -661,7 +675,8 @@ def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: 
     for b in barre:
         righe.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_acciaio}")
     righe.append("}")
-    sez.fibre_registrate[tag_sezione] = _fibre_estreme(nucleo, tag_nucleo, ruolo, barre, tag_acciaio)
+    sez.fibre_registrate[tag_sezione] = _fibre_estreme(
+        nucleo, tag_nucleo, contorno, tag_copriferro, barre, tag_acciaio)
     return tag_mat
 
 
@@ -857,7 +872,7 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
     if an.nodo_controllo not in g.mappa_nodo:
         raise ValueError(f"pushover: il nodo di controllo {an.nodo_controllo} non esiste "
                          f"(i nodi sono {sorted(g.mappa_nodo)})")
-    nodo, dof = g.mappa_nodo[an.nodo_controllo], DOF_INDICE[an.dof]
+    nodo, dof = g.mappa_nodo[an.nodo_controllo], DOF_TCL[an.dof]
     r = ["", "# ===== pushover in controllo di spostamento ====="]
     if an.caso_gravita:
         r += [f"timeSeries Linear {serie}", f"pattern Plain {serie} {serie} {{",
@@ -904,15 +919,22 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
           f"-nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 reaction"]
     r += _recorder_fibre(PREFISSO_PUSHOVER, g, sez.fibre_registrate, tempo=True)
     scala = " ".join(SCALA_ALGORITMI)
+    # lo spostamento della curva è **relativo** allo stato da cui la spinta parte: la gravità
+    # ha già mosso il nodo di controllo, e `spostamento_max` è la corsa che si chiede alla
+    # spinta, non la quota assoluta del nodo. `u0` finisce nel registro con un marcatore suo,
+    # perché `passi.py` deve sottrarlo anche alle righe dei recorder, che sono assolute.
+    u = f"[expr {{[nodeDisp {nodo} {dof}] - $_nova_u0}}]"
     r += [
         "constraints Transformation", "numberer RCM", "system BandGeneral",
         f"test RelativeNormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
         f"set _nova_d {an.incremento:.10g}",
         f"integrator DisplacementControl {nodo} {dof} $_nova_d",
         "algorithm Newton", "analysis Static",
+        f"set _nova_u0 [nodeDisp {nodo} {dof}]",
+        f'puts "{MARCA_U0}: [format %.10g $_nova_u0]"',
         "set _nova_passo 0",
         "set _nova_caduta 0",
-        f"while {{[nodeDisp {nodo} {dof}] < {an.spostamento_max:.10g} "
+        f"while {{{u} < {an.spostamento_max:.10g} "
         f"&& $_nova_passo < {an.passi_max}}} {{",
         "    incr _nova_passo",
         "    set _nova_esito -1",
@@ -934,18 +956,22 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
         "    }",
         "    if {$_nova_esito != 0} {",
         f'        puts "{MARCA_CADUTA}: passo $_nova_passo spostamento '
-        f'[format %.10g [nodeDisp {nodo} {dof}]] algoritmo $_nova_usato motivo non_convergenza"',
+        f'[format %.10g {u}] algoritmo $_nova_usato motivo non_convergenza"',
         "        set _nova_caduta 1",
         "        break",
         "    }",
         # niente `record`: il recorder scrive già una riga per `analyze` riuscito (misurato il
         # 05/09/2026, OpenSees 3.8.0: 60 passi → 60 righe), e forzarlo ne scriverebbe due
         f'    puts "{MARCA_PASSO_PUSHOVER}: passo $_nova_passo algoritmo $_nova_usato '
-        f'incremento [format %.10g $_nova_dp] spostamento [format %.10g [nodeDisp {nodo} {dof}]]"',
+        f'incremento [format %.10g $_nova_dp] spostamento [format %.10g {u}]"',
         "}",
-        f"if {{$_nova_caduta == 0 && $_nova_passo >= {an.passi_max}}} {{",
+        # `passi_max` è una caduta solo se la spinta **non** è arrivata: il tetto raggiunto
+        # esattamente all'ultimo passo utile è una corsa riuscita, e chiamarla caduta faceva
+        # rosso un `convergenza` verde (misurato: max 5, incremento 1, passi_max 5)
+        f"if {{$_nova_caduta == 0 && $_nova_passo >= {an.passi_max} "
+        f"&& {u} < {an.spostamento_max:.10g}}} {{",
         f'    puts "{MARCA_CADUTA}: passo $_nova_passo spostamento '
-        f'[format %.10g [nodeDisp {nodo} {dof}]] algoritmo $_nova_usato motivo passi_max"',
+        f'[format %.10g {u}] algoritmo $_nova_usato motivo passi_max"',
         "}",
         "remove recorders", "wipeAnalysis",
     ]

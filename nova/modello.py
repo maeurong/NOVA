@@ -21,6 +21,13 @@ FORMA_CASO = r"^[ZC][0-9]+$"
 _FORMA_CASO = re.compile(FORMA_CASO)
 
 
+# `ux`/`uy`/`uz` → offset di colonna, cioè l'ordine di `Vincolo.gradi()` e delle sei colonne
+# che un `recorder Node -dof 1 2 3 4 5 6` scrive per nodo. OpenSees conta i dof **da 1**, e la
+# conversione la fa `deck.DOF_TCL` con un `+1` esplicito: due dizionari con le stesse chiavi e
+# basi diverse erano il modo più silenzioso di sbagliare una colonna.
+DOF_COLONNA = {"ux": 0, "uy": 1, "uz": 2}
+
+
 def caso_valido(caso) -> bool:
     return isinstance(caso, str) and _FORMA_CASO.fullmatch(caso) is not None
 

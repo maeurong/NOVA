@@ -114,6 +114,24 @@ def test_le_fibre_registrate_sono_gli_spigoli_del_nucleo_e_le_barre_estreme(tmp_
     assert {f["mat"] for f in acciaio} == {3}  # il terzo tag della terna nucleo, copriferro, acciaio
 
 
+def test_la_sezione_confinata_registra_anche_le_quattro_fibre_di_copriferro(tmp_path):
+    """Il copriferro schiaccia **per primo**: `epsU` = 0,35 % contro la `ε_cu2,c` della [4.1.11],
+    che sulla 30×50 del telaio vale il triplo. Registrare il solo nucleo dava «elastica» a una
+    sezione col copriferro già espulso, e la soglia che `passi._stato` promette non aveva una
+    fibra su cui applicarsi."""
+    m = _carica("trave_appoggiata.nova.json",
+                analisi=[{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}])
+    d = _deck.scrivi(m, ["Z1"], tmp_path)
+    (fibre,) = d.fibre_registrate.values()
+    copriferro = [f for f in fibre if f["ruolo"] == "copriferro"]
+    assert {(f["y"], f["z"]) for f in copriferro} == {(-150.0, -250.0), (150.0, -250.0),
+                                                      (150.0, 250.0), (-150.0, 250.0)}
+    assert {f["mat"] for f in copriferro} == {2}  # secondo tag della terna nucleo, copriferro, acciaio
+    assert len([f for f in fibre if f["ruolo"] == "nucleo"]) == 4
+    assert d.materiali["2"]["copriferro"]["epsU"] == -0.0035
+    assert d.materiali["2"]["nucleo"]["epsU"] < -0.0035  # ε_cu2,c > 0,35 %: il nucleo tiene di più
+
+
 def test_il_confinamento_mander_scrive_concrete04_sul_nucleo_e_concrete02_sul_copriferro(tmp_path):
     dati = leggi_fixture("trave_appoggiata.nova.json")
     dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre"}]
@@ -552,8 +570,9 @@ def test_i_recorder_delle_fibre_sono_uno_per_fibra_e_raggruppati_per_sezione(tmp
     d = _deck.scrivi(_con_pushover(), ["Z1", "Z3"], tmp_path)
     righe = [r.split() for r in d.percorso.read_text(encoding="utf-8").splitlines()
              if "_fibre" not in r and "stressStrain" in r and "push_" in r]
+    # 11 fibre per tag: 4 spigoli di contorno (copriferro), 4 di nucleo, 3 barre estreme
     atteso = sum(len(f) for f in d.fibre_registrate.values()) * _deck.STAZIONI
-    assert len(righe) == atteso == 2 * 7 * 5
+    assert len(righe) == atteso == 2 * 11 * 5
     assert all(r.count("fiber") == 1 for r in righe)
     # tag 1 = sezione 1 in piedi (i tre pilastri), tag 2 = sezione 2 coricata (le due travi)
     per_file = {r[r.index("-file") + 1]: r for r in righe}

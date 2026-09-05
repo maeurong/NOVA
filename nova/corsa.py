@@ -279,7 +279,8 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
             "sollecitazioni": _stazioni(d, caso, cartella),
             # lo stato delle sezioni **all'ultimo passo** del caso: in una statica a passi è
             # lo stato sotto il carico intero, che è quello di cui si risponde
-            "stato_sezioni": _passi.stato_sezioni(cartella, d, caso, False, 1)[0],
+            "stato_sezioni": _passi.stato_sezioni(cartella, d, caso, con_tempo=False,
+                                                 n_passi=1)[0],
         }
     # `None` = nessuna analisi modale nel modello; `[]` = dichiarata, ma o non c'era niente da
     # estrarre (nessuna direzione con massa) o il passo non ha reso niente
@@ -300,7 +301,10 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
                 # vincolo globale T4: ogni parametro entrato nel `.tcl` dei materiali si stampa
                 # con la sua provenienza (`classe`, `veste`, `articolo`). Vuoto se elastico.
                 "legami": d.legami, "passi": d.passi, "materiali": d.materiali,
-                "pushover": d.resoconto.get("pushover"),
+                # `u0` è lo zero della curva: senza, `passi[].spostamento` non si sa rispetto
+                # a cosa è misurato, e la spinta parte da dove la gravità ha lasciato il nodo
+                "pushover": (d.resoconto["pushover"] | {"u0": curva["u0"]}
+                             if d.pushover is not None else None),
                 "mappa_tag": {"nodo": {str(k): v for k, v in d.mappa_nodo.items()},
                               "asta": {str(k): v for k, v in d.mappa_asta.items()}}},
         "per_caso": per_caso, "modi": modi or [], "verdetti": verdetti,

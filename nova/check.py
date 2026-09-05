@@ -38,9 +38,6 @@ def _porta_il_peso_proprio(a) -> bool:
     return a.generata or any(c.tipo == "gravita" and c.fattore_z for c in a.carichi)
 
 
-_DOF_INDICE = {"ux": 0, "uy": 1, "uz": 2}
-
-
 def _pushover(m: Modello, an, nodi: dict, dichiarati: set, riferimenti: list, note: list) -> None:
     """Quel che una pushover chiede al modello, e che il solutore non chiede mai due volte.
 
@@ -56,7 +53,7 @@ def _pushover(m: Modello, an, nodi: dict, dichiarati: set, riferimenti: list, no
     n = nodi.get(an.nodo_controllo)
     if n is None:
         riferimenti.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo})
-    elif not n.libero(_DOF_INDICE[an.dof]):
+    elif not n.libero(_modello.DOF_COLONNA[an.dof]):
         riferimenti.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo,
                             "dof": an.dof})
         note.append(f"il nodo di controllo è vincolato in {an.dof}: "

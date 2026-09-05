@@ -36,6 +36,7 @@ _RIGA_PASSO = re.compile(
 _RIGA_CADUTA = re.compile(
     re.escape(_deck.MARCA_CADUTA)
     + r": passo (\d+) spostamento (\S+) algoritmo (\S+) motivo (\S+)")
+_RIGA_U0 = re.compile(re.escape(_deck.MARCA_U0) + r": (\S+)")
 
 
 def _matrice(percorso: Path, colonne: int) -> np.ndarray:
@@ -67,12 +68,28 @@ def _matrice(percorso: Path, colonne: int) -> np.ndarray:
     return np.array(valori, dtype=np.float64)
 
 
+def _righe_curva(percorso: Path, colonne: int, n: int) -> np.ndarray:
+    """Le ultime `n` righe di un recorder di nodo, con la guardia che `_matrice` non può dare:
+    il **numero** di righe. Meno righe dei passi che il registro dichiara vuol dire che il
+    file è stato troncato in coda, e uno slice `[-n:]` più corto non solleva — solleva molto
+    dopo, come `IndexError` nudo dentro la composizione dei passi.
+    """
+    dati = _matrice(percorso, colonne)
+    if len(dati) < n:
+        raise ValueError(f"{percorso}: {len(dati)} passi invece di {n} dichiarati dal registro. "
+                         "L'uscita è troncata in coda")
+    return dati[-n:]
+
+
 def _stato(eps: float, par: dict, ruolo: str) -> str:
     """Lo stato di una fibra dalle sole soglie che il deck ha stampato.
 
     Calcestruzzo: `schiacciata` oltre `epsU` (che è il copriferro a 0,35 % sulla fibra di
     copriferro e la `ε_cu2,c` della [4.1.11] nel nucleo, già distinti nel dizionario del
-    materiale), `fessurata` oltre `ε_ct = f_ctm/E_c`, `elastica` in mezzo.
+    materiale), `fessurata` oltre `ε_ct = f_ctm/E_c`, `elastica` in mezzo. Il canale della
+    stazione prende il **peggiore** fra le sue fibre, copriferro e nucleo insieme: il
+    copriferro schiaccia per primo, e la promessa di questa soglia si mantiene solo perché
+    `deck._fibre_estreme` registra i quattro spigoli del contorno anche sulle sezioni confinate.
 
     La soglia di compressione «0,3·ε_c0» che la spec nomina nella definizione di `elastica`
     **non discrimina**: il canale del calcestruzzo ha tre valori e nessuno di essi descrive
@@ -126,7 +143,7 @@ def _fibre_lette(cartella: Path, d: _deck.Deck, prefisso: str, con_tempo: bool,
     return letto
 
 
-def stato_sezioni(cartella: Path, d: _deck.Deck, prefisso: str, con_tempo: bool,
+def stato_sezioni(cartella: Path, d: _deck.Deck, prefisso: str, *, con_tempo: bool,
                   n_passi: int) -> list[dict[str, list[dict]]]:
     """Per passo: `{asta: [per stazione: {calcestruzzo, acciaio}]}`.
 
@@ -179,27 +196,34 @@ def leggi(cartella: Path, d: _deck.Deck, registro: str | None = None) -> dict:
     passo di gravità, che nella curva non ci va).
     """
     cartella = Path(cartella)
+    an = d.pushover
+    if an is None:  # prima di leggere il registro: senza pushover non c'è niente da cercarci
+        return {"passi": [], "caduta": None, "u0": None}
     if registro is None:
         registro = (cartella / opensees.NOME_REGISTRO).read_text(encoding="utf-8", errors="replace")
-    an = d.pushover
-    if an is None:
-        return {"passi": [], "caduta": None}
     dichiarati = [(int(k), alg, float(inc), float(u)) for k, alg, inc, u in _RIGA_PASSO.findall(registro)]
     caduta = None
     trovata = _RIGA_CADUTA.findall(registro)
     if trovata:
         k, u, alg, motivo = trovata[-1]
         caduta = {"passo": int(k), "spostamento": float(u), "algoritmo": alg, "motivo": motivo}
+    trovato_u0 = _RIGA_U0.findall(registro)
+    if not trovato_u0:
+        raise ValueError(
+            f"il registro non porta il marcatore «{_deck.MARCA_U0}»: senza lo spostamento del "
+            "nodo di controllo prima della spinta la curva non ha uno zero, e leggerla come "
+            "assoluta darebbe una corsa più lunga o più corta di quella chiesta")
+    u0 = float(trovato_u0[-1])
     n = len(dichiarati)
     if n == 0:
-        return {"passi": [], "caduta": caduta}
+        return {"passi": [], "caduta": caduta, "u0": u0}
 
     n_nodi = len(d.nodi)
     tag_a_id = {v: k for k, v in d.mappa_nodo.items()}
-    dof = _deck.DOF_INDICE[an.dof]
-    U = _matrice(cartella / f"{_deck.PREFISSO_PUSHOVER}_spostamenti.out", 1 + 6 * n_nodi)[-n:]
-    R = _matrice(cartella / f"{_deck.PREFISSO_PUSHOVER}_reazioni.out", 1 + 6 * n_nodi)[-n:]
-    stati = stato_sezioni(cartella, d, _deck.PREFISSO_PUSHOVER, True, n)
+    dof = _deck.DOF_COLONNA[an.dof]
+    U = _righe_curva(cartella / f"{_deck.PREFISSO_PUSHOVER}_spostamenti.out", 1 + 6 * n_nodi, n)
+    R = _righe_curva(cartella / f"{_deck.PREFISSO_PUSHOVER}_reazioni.out", 1 + 6 * n_nodi, n)
+    stati = stato_sezioni(cartella, d, _deck.PREFISSO_PUSHOVER, con_tempo=True, n_passi=n)
     tag_controllo = d.mappa_nodo[an.nodo_controllo]
 
     def colonna(tag: int, i: int) -> int:
@@ -209,14 +233,16 @@ def leggi(cartella: Path, d: _deck.Deck, registro: str | None = None) -> dict:
     for k, (numero, algoritmo, incremento, _) in enumerate(dichiarati):
         passi.append({
             "n": numero,
-            "spostamento": float(U[k, colonna(tag_controllo, dof - 1)]),
+            # relativo a `u0`: la curva parte da zero, non dalla quota che la gravità
+            # ha lasciato al nodo di controllo
+            "spostamento": float(U[k, colonna(tag_controllo, dof)]) - u0,
             # il taglio alla base **è** la somma delle reazioni cambiata di segno: la stessa
             # identità che il verdetto `reazioni` controlla sui casi statici, per passo
-            "taglio_base": float(-sum(R[k, colonna(t, dof - 1)] for t in d.vincolati)),
+            "taglio_base": float(-sum(R[k, colonna(t, dof)] for t in d.vincolati)),
             "spostamenti": {str(tag_a_id[t]): [float(x) for x in U[k, colonna(t, 0):colonna(t, 6)]]
                             for t in tag_a_id},
             "stato_sezioni": stati[k],
             "algoritmo": algoritmo,
             "incremento": incremento,
         })
-    return {"passi": passi, "caduta": caduta}
+    return {"passi": passi, "caduta": caduta, "u0": u0}
