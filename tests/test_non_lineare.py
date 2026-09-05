@@ -451,3 +451,176 @@ def test_la_riduzione_a_zero_in_elastico_e_identica_a_nessuna_riduzione(tmp_path
     dati["sezioni"][0]["riduzione"] = {"sup": 0, "inf": 0, "sx": 0, "dx": 0}
     con = _testo(_modello.assicura_peso_proprio(_modello.carica(dati)), ["Z1"], tmp_path / "b")
     assert con == senza
+
+
+# --- T4 Task 3: la pushover, il deck senza binario ---
+
+def _con_pushover(nome="telaio_2x1.nova.json", statica=True, modale=False, **campi):
+    """Il telaio con una statica a fibre e una pushover: la pushover **richiede** le fibre."""
+    dati = leggi_fixture(nome)
+    analisi = []
+    if statica:
+        analisi.append({"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4})
+    if modale:
+        analisi.append({"tipo": "modale", "modi": 1})
+    analisi.append({"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 4,
+                    "dof": "ux", "incremento": 1.0, "spostamento_max": 60.0} | campi)
+    dati["analisi"] = analisi
+    return _modello.assicura_peso_proprio(_modello.carica(dati))
+
+
+def test_la_pushover_scrive_displacement_control_la_scala_e_gli_otto_dimezzamenti(tmp_path):
+    testo = _testo(_con_pushover(caso_gravita="Z3"), ["Z1", "Z3"], tmp_path)
+    assert "integrator DisplacementControl 4 1 $_nova_d" in testo
+    assert f"foreach alg {{{' '.join(_deck.SCALA_ALGORITMI)}}}" in testo
+    assert f"$_nova_giro <= {_deck.DIMEZZAMENTI_PUSHOVER}" in testo and _deck.DIMEZZAMENTI_PUSHOVER == 8
+    assert "algorithm ModifiedNewton -initial" in testo
+    # la caduta si dichiara e **non** ferma la corsa: la curva fino a lì vale
+    dopo = testo.split(_deck.MARCA_CADUTA, 1)[1].split("# ===== pushover")[0]
+    assert "exit 1" not in dopo
+    assert _deck.MARCA_PASSO_PUSHOVER in testo
+
+
+def test_la_pushover_ripristina_il_passo_pieno_dopo_un_dimezzamento(tmp_path):
+    """Il dimezzamento è del passo di turno, non dell'incremento dichiarato: `_nova_d` non si
+    tocca mai, si dimezza `_nova_dp`, che riparte pieno a ogni giro del `while`."""
+    testo = _testo(_con_pushover(), ["Z1", "Z3"], tmp_path)
+    assert "set _nova_dp $_nova_d" in testo
+    assert "set _nova_dp [expr {$_nova_dp / 2.0}]" in testo
+    assert "set _nova_d [expr" not in testo  # l'incremento dichiarato resta quello
+
+
+def test_la_pushover_uniforme_carica_i_soli_nodi_liberi_in_proporzione_alla_massa(tmp_path):
+    """`uniforme` = forze ∝ massa lumped del deck lungo `dof`, normalizzate a Σ|F| = 1.
+
+    I nodi bloccati nella direzione di spinta restano fuori: una `load` su un dof `fix` finisce
+    dentro la reazione di quel nodo, e `taglio_base = −Σ reazioni` non sarebbe più il taglio.
+    """
+    testo = _testo(_con_pushover(), ["Z1", "Z3"], tmp_path)
+    blocco = testo.split("# ===== pushover")[1]
+    carichi = [r.split() for r in blocco.splitlines() if r.strip().startswith("load ")]
+    assert {int(r[1]) for r in carichi} == {4, 5, 6}  # 1, 2, 3 sono incastrati
+    assert sum(float(r[2]) for r in carichi) == pytest.approx(1.0)
+    assert all(float(x) == 0.0 for r in carichi for x in r[3:])
+    # ogni nodo porta metà delle travi che tocca: il 5 le tocca tutte e due, il 4 la campata
+    # da 5000 e il 6 quella da 4000 — le luci del telaio 2×1 non sono uguali
+    q = {int(r[1]): float(r[2]) for r in carichi}
+    assert q[5] > q[4] > q[6]
+
+
+def test_la_pushover_nodale_scrive_le_forze_dichiarate(tmp_path):
+    m = _con_pushover(distribuzione="nodale",
+                      forze_nodali=[{"nodo": 4, "fx": 1000.0}, {"nodo": 5, "fx": 2000.0}])
+    blocco = _testo(m, ["Z1", "Z3"], tmp_path).split("# ===== pushover")[1]
+    carichi = [r.split() for r in blocco.splitlines() if r.strip().startswith("load ")]
+    assert [(int(r[1]), float(r[2])) for r in carichi] == [(4, 1000.0), (5, 2000.0)]
+
+
+def test_la_pushover_modo1_legge_l_autovettore_nel_tcl(tmp_path):
+    """φ₁ lo sa OpenSees dopo `eigen`, non NOVA prima di scrivere: la distribuzione si compone
+    nel `.tcl` con `nodeEigenvector`, e il blocco sta **dopo** il passo modale."""
+    testo = _testo(_con_pushover(distribuzione="modo1", modale=True), ["Z1", "Z3"], tmp_path)
+    assert "nodeEigenvector $n 1 1" in testo
+    assert testo.index("eigen -fullGenLapack") < testo.index("# ===== pushover")
+
+
+def test_la_pushover_modo1_senza_modale_e_un_rifiuto_del_deck(tmp_path):
+    """Il Check Model lo dice per primo, ma con «forza» il deck ci arriva lo stesso: senza
+    `eigen`, `nodeEigenvector` è un errore Tcl a metà corsa invece di un rifiuto."""
+    m = _con_pushover(distribuzione="modo1", modale=False)
+    with pytest.raises(ValueError, match="modo1.*analisi modale"):
+        _deck.scrivi(m, ["Z1", "Z3"], tmp_path)
+
+
+def test_la_pushover_tiene_la_gravita_con_loadconst(tmp_path):
+    testo = _testo(_con_pushover(caso_gravita="Z3"), ["Z1"], tmp_path)
+    blocco = testo.split("# ===== pushover")[1]
+    assert "loadConst -time 0.0" in blocco
+    # la gravità è un pattern suo dentro il blocco: i casi statici finiscono con `reset`
+    assert blocco.index("eleLoad") < blocco.index("loadConst -time 0.0")
+    assert blocco.index("loadConst -time 0.0") < blocco.index("DisplacementControl")
+
+
+def test_la_pushover_senza_gravita_non_scrive_loadconst(tmp_path):
+    assert "loadConst" not in _testo(_con_pushover(), ["Z1", "Z3"], tmp_path)
+
+
+def test_i_recorder_delle_fibre_sono_uno_per_fibra_e_raggruppati_per_sezione(tmp_path):
+    """Misurato il 05/09/2026, OpenSees 3.8.0: un secondo `fiber … stressStrain` nello stesso
+    `recorder` è **ignorato in silenzio** — il file esce identico a quello con una fibra sola.
+    Quindi un recorder per fibra, e `-ele` con i soli elementi di quel tag di sezione."""
+    d = _deck.scrivi(_con_pushover(), ["Z1", "Z3"], tmp_path)
+    righe = [r.split() for r in d.percorso.read_text(encoding="utf-8").splitlines()
+             if "_fibre" not in r and "stressStrain" in r and "push_" in r]
+    atteso = sum(len(f) for f in d.fibre_registrate.values()) * _deck.STAZIONI
+    assert len(righe) == atteso == 2 * 7 * 5
+    assert all(r.count("fiber") == 1 for r in righe)
+    # tag 1 = sezione 1 in piedi (i tre pilastri), tag 2 = sezione 2 coricata (le due travi)
+    per_file = {r[r.index("-file") + 1]: r for r in righe}
+    ele = lambda nome: per_file[nome][per_file[nome].index("-ele") + 1:per_file[nome].index("section")]
+    assert ele("push_sez1_st1_f0.out") == ["1", "2", "3"]
+    assert ele("push_sez2_st1_f0.out") == ["4", "5"]
+    assert "-time" in per_file["push_sez1_st1_f0.out"]
+
+
+def test_la_statica_a_fibre_registra_le_fibre_per_lo_stato_delle_sezioni(tmp_path):
+    """Task 2 aveva rinviato qui i recorder: senza, `per_caso[caso].stato_sezioni` non esiste."""
+    d = _deck.scrivi(_con_pushover(), ["Z1", "Z3"], tmp_path)
+    testo = d.percorso.read_text(encoding="utf-8")
+    assert "recorder Element -file Z1_sez1_st1_f0.out" in testo
+    # senza fibre non c'è niente da registrare: il ramo elastico resta com'era
+    elastico = _testo(_carica("telaio_2x1.nova.json"), ["Z1"], tmp_path / "e")
+    assert "stressStrain" not in elastico
+
+
+def test_l_incremento_non_positivo_e_un_rifiuto_del_modello():
+    for campo, valore in (("incremento", 0.0), ("incremento", -1.0), ("spostamento_max", 0.0)):
+        with pytest.raises(ValueError, match=campo):
+            _con_pushover(**{campo: valore})
+
+
+# --- C1: quel che la pushover chiede al modello ---
+
+def _riferimenti(m) -> dict:
+    from nova import check
+    return next(v for v in check.check_model(m) if v["controllo"] == "riferimenti")
+
+
+def test_la_pushover_ben_posta_passa_i_riferimenti():
+    assert _riferimenti(_con_pushover(caso_gravita="Z3"))["esito"] == "passato"
+
+
+def test_il_nodo_di_controllo_inesistente_e_un_riferimento_rotto():
+    v = _riferimenti(_con_pushover(nodo_controllo=99))
+    assert v["esito"] == "non_passato" and {"analisi": "pushover", "nodo_controllo": 99} in v["oggetto"]
+
+
+def test_il_nodo_di_controllo_vincolato_nella_direzione_di_spinta_e_un_rosso():
+    v = _riferimenti(_con_pushover(nodo_controllo=1))  # il nodo 1 è incastrato
+    assert v["esito"] == "non_passato"
+    assert "il nodo di controllo è vincolato in ux" in v["ragione"]
+
+
+def test_la_distribuzione_modo1_senza_modale_e_un_rosso():
+    v = _riferimenti(_con_pushover(distribuzione="modo1", modale=False))
+    assert v["esito"] == "non_passato"
+    assert "la distribuzione modo1 richiede l'analisi modale" in v["ragione"]
+
+
+def test_la_distribuzione_nodale_senza_forze_e_un_rosso():
+    v = _riferimenti(_con_pushover(distribuzione="nodale"))
+    assert v["esito"] == "non_passato" and "forze_nodali" in v["ragione"]
+
+
+def test_il_caso_di_gravita_inesistente_e_un_riferimento_rotto():
+    v = _riferimenti(_con_pushover(caso_gravita="Z9"))
+    assert v["esito"] == "non_passato"
+    assert {"analisi": "pushover", "caso_gravita": "Z9"} in v["oggetto"]
+
+
+def test_la_pushover_senza_una_statica_a_fibre_e_un_rosso():
+    """La pushover **è** un'analisi a fibre: senza una statica dichiarata «legami: fibre» il
+    deck scriverebbe sezioni elastiche, e la curva sarebbe una retta con un nome non lineare."""
+    v = _riferimenti(_con_pushover(statica=False))
+    assert v["esito"] == "non_passato"
+    assert "la pushover richiede sezioni a fibre" in v["ragione"]

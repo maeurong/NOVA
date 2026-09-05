@@ -294,7 +294,38 @@ class AnalisiModale(_Base):
     masse_da_azioni: list[MassaDaAzione] = []
 
 
-Analisi = Annotated[Union[AnalisiStatica, AnalisiModale], Field(discriminator="tipo")]
+class ForzaNodale(_Base):
+    nodo: int
+    fx: float = 0.0
+    fy: float = 0.0
+    fz: float = 0.0
+
+
+class AnalisiPushover(_Base):
+    """La pushover monotona in controllo di spostamento: si spinge il `nodo_controllo` lungo
+    `dof` a passi di `incremento` fino a `spostamento_max`, e si legge il taglio alla base.
+
+    `caso_gravita` è il caso statico applicato **prima** e tenuto addosso alla struttura con
+    `loadConst -time 0.0`: senza, la pushover partirebbe da una struttura scarica, che non è
+    la condizione in cui un edificio prende il sisma.
+
+    Non porta `legami`: la pushover **è** a fibre, e il Check Model rifiuta un modello che
+    non dichiari almeno una statica «legami: fibre» — i tag di sezione sono gli stessi per
+    tutto il deck, e una pushover su sezioni elastiche sarebbe una retta con un nome non lineare.
+    """
+    tipo: Literal["pushover"]
+    distribuzione: Literal["nodale", "uniforme", "modo1"]
+    nodo_controllo: int
+    dof: Literal["ux", "uy", "uz"]
+    incremento: float = Field(gt=0)
+    spostamento_max: float = Field(gt=0)
+    forze_nodali: list[ForzaNodale] = []
+    caso_gravita: Annotated[str, Field(pattern=FORMA_CASO)] | None = None
+    passi_max: int = Field(2000, ge=1)
+
+
+Analisi = Annotated[Union[AnalisiStatica, AnalisiModale, AnalisiPushover],
+                    Field(discriminator="tipo")]
 
 
 class ImpostazioniAnalisi(_Base):
@@ -418,6 +449,7 @@ def assicura_peso_proprio(m: Modello) -> Modello:
 
 def casi_dichiarati(m: Modello) -> list[str]:
     return [f"Z{a.id}" for a in m.azioni] + [f"C{c.id}" for c in m.combinazioni]
+
 
 
 def grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:

@@ -38,6 +38,47 @@ def _porta_il_peso_proprio(a) -> bool:
     return a.generata or any(c.tipo == "gravita" and c.fattore_z for c in a.carichi)
 
 
+_DOF_INDICE = {"ux": 0, "uy": 1, "uz": 2}
+
+
+def _pushover(m: Modello, an, nodi: dict, dichiarati: set, riferimenti: list, note: list) -> None:
+    """Quel che una pushover chiede al modello, e che il solutore non chiede mai due volte.
+
+    Tutto finisce in `riferimenti`, che è già il controllo dove sta «l'analisi nomina qualcosa
+    che non va»: un nodo di controllo che non esiste e un nodo di controllo incastrato nella
+    direzione di spinta si correggono nello stesso campo, e separarli in due verdetti darebbe
+    due righe da leggere per una cosa sola da sistemare.
+
+    L'ultima — «serve una statica a fibre» — non è un capriccio: i tag di sezione sono uno per
+    (sezione, orientamento) e valgono per tutto il deck, quindi senza una statica dichiarata
+    `legami: fibre` la pushover girerebbe su sezioni elastiche e renderebbe una retta.
+    """
+    n = nodi.get(an.nodo_controllo)
+    if n is None:
+        riferimenti.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo})
+    elif not n.libero(_DOF_INDICE[an.dof]):
+        riferimenti.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo,
+                            "dof": an.dof})
+        note.append(f"il nodo di controllo è vincolato in {an.dof}: "
+                    "in controllo di spostamento non si muove")
+    if an.caso_gravita and an.caso_gravita not in dichiarati:
+        riferimenti.append({"analisi": "pushover", "caso_gravita": an.caso_gravita})
+    if an.distribuzione == "modo1" and not any(a.tipo == "modale" for a in m.analisi):
+        riferimenti.append({"analisi": "pushover", "distribuzione": "modo1"})
+        note.append("la distribuzione modo1 richiede l'analisi modale: φ₁ lo estrae «eigen», "
+                    "e senza il passo modale nel deck non esiste")
+    if an.distribuzione == "nodale" and not an.forze_nodali:
+        riferimenti.append({"analisi": "pushover", "distribuzione": "nodale"})
+        note.append("la distribuzione nodale non ha forze_nodali: non c'è niente da spingere")
+    for f in an.forze_nodali:
+        if f.nodo not in nodi:
+            riferimenti.append({"analisi": "pushover", "forza_nodale": f.nodo})
+    if not any(a.tipo == "statica" and a.legami == "fibre" for a in m.analisi):
+        riferimenti.append({"analisi": "pushover", "legami": "fibre"})
+        note.append("la pushover richiede sezioni a fibre: dichiara una statica con "
+                    "«legami»: «fibre», i tag di sezione valgono per tutto il deck")
+
+
 def check_model(m: Modello) -> list[dict]:
     v: list[dict] = []
     nodi = {n.id: n for n in m.nodi}
@@ -157,6 +198,8 @@ def check_model(m: Modello) -> list[dict]:
                     riferimenti.append({"analisi": "modale", "azione": massa.azione})
                     note.append(f"il peso proprio è già massa (densità): togli l'azione "
                                 f"{massa.azione} da masse_da_azioni")
+        elif an.tipo == "pushover":
+            _pushover(m, an, nodi, dichiarati, riferimenti, note)
     v.append(_v("riferimenti", "non_passato" if riferimenti else "passato",
                 "; ".join([*note, f"riferimenti a oggetti inesistenti: {riferimenti or 'nessuno'}"]),
                 riferimenti or None,

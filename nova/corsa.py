@@ -16,6 +16,7 @@ from meshrec.core import opensees, solve
 from meshrec.core.config import SolutoreConfig
 from nova import deck as _deck
 from nova import modale
+from nova import passi as _passi
 from nova.modello import AnalisiModale, Modello
 
 NOME_RISULTATI = "risultati.nova.risultati.json"
@@ -276,6 +277,9 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
             "spostamenti": {str(tag_a_id[t]): [_numero(x) for x in U[t - 1]] for t in tag_a_id},
             "reazioni": {str(tag_a_id[t]): [_numero(x) for x in R[t - 1]] for t in d.vincolati},
             "sollecitazioni": _stazioni(d, caso, cartella),
+            # lo stato delle sezioni **all'ultimo passo** del caso: in una statica a passi è
+            # lo stato sotto il carico intero, che è quello di cui si risponde
+            "stato_sezioni": _passi.stato_sezioni(cartella, d, caso, False, 1)[0],
         }
     # `None` = nessuna analisi modale nel modello; `[]` = dichiarata, ma o non c'era niente da
     # estrarre (nessuna direzione con massa) o il passo non ha reso niente
@@ -285,7 +289,8 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
         modi, direzioni = [], modale.direzioni_con_massa(m)
     else:
         modi, direzioni = None, ()
-    verdetti = controlli(d, per_caso, registro, modi, direzioni)
+    curva = _passi.leggi(cartella, d, registro)
+    verdetti = controlli(d, per_caso, registro, modi, direzioni, curva)
     return {
         "run": {"id": uuid.uuid4().hex[:12], "data": _dt.datetime.now().isoformat(timespec="seconds"),
                 "hash_modello": hash_modello, "versione_opensees": _versione(registro),
@@ -295,9 +300,12 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
                 # vincolo globale T4: ogni parametro entrato nel `.tcl` dei materiali si stampa
                 # con la sua provenienza (`classe`, `veste`, `articolo`). Vuoto se elastico.
                 "legami": d.legami, "passi": d.passi, "materiali": d.materiali,
+                "pushover": d.resoconto.get("pushover"),
                 "mappa_tag": {"nodo": {str(k): v for k, v in d.mappa_nodo.items()},
                               "asta": {str(k): v for k, v in d.mappa_asta.items()}}},
         "per_caso": per_caso, "modi": modi or [], "verdetti": verdetti,
+        # la curva della pushover: vuota (e `caduta: null`) quando il modello non ne dichiara una
+        "passi": curva["passi"], "caduta": curva["caduta"],
     }
 
 
@@ -357,6 +365,34 @@ def _verdetto_convergenza(d: _deck.Deck, caso: str, registro: str) -> dict:
                        else "; Newton a ogni passo"))
 
 
+def _convergenza_pushover(d: _deck.Deck, curva: dict) -> dict:
+    """«La spinta è arrivata allo spostamento chiesto, e come?»
+
+    La **caduta** non è un verdetto: è un fatto, e sta nel JSON con il passo, lo spostamento,
+    l'algoritmo e il motivo. Il verdetto è `convergenza`, e la caduta lo fa rosso — la curva
+    fino a lì resta buona, ma nessuno deve leggerla come la capacità della struttura.
+    """
+    an, passi, caduta = d.pushover, curva["passi"], curva["caduta"]
+    ultimo = passi[-1]["spostamento"] if passi else 0.0
+    c = {"passato": caduta is None and bool(passi),
+         "passi": len(passi), "spostamento": ultimo, "spostamento_max": an.spostamento_max,
+         "taglio_base_max": max((p["taglio_base"] for p in passi), default=None),
+         "algoritmi": [p["algoritmo"] for p in passi], "caduta": caduta}
+    if caduta is not None:
+        ragione = (f"caduta al passo {caduta['passo']}, spostamento "
+                   f"{caduta['spostamento']:.6g} mm, ultimo algoritmo {caduta['algoritmo']} "
+                   f"(motivo: {caduta['motivo']})")
+    elif not passi:
+        ragione = "nessun passo convergente: la spinta non è partita"
+    else:
+        scesi = [str(p["n"]) for p in passi if p["algoritmo"] != _deck.SCALA_ALGORITMI[0]]
+        ragione = (f"{len(passi)} passi fino a {ultimo:.6g} mm su "
+                   f"{an.spostamento_max:.6g} chiesti"
+                   + (f"; scala di algoritmi ai passi {', '.join(scesi)}" if scesi
+                      else "; Newton a ogni passo"))
+    return verdetto("convergenza", c, "pushover", ragione)
+
+
 def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]:
     """`autovalori` e `massa_modale` quando il modello dichiara un'analisi modale.
 
@@ -391,7 +427,7 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
 
 
 def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | None = None,
-              direzioni: tuple[str, ...] = ()) -> list[dict]:
+              direzioni: tuple[str, ...] = (), curva: dict | None = None) -> list[dict]:
     """I sette controlli di solve.py riletti nel verdetto a tre valori: uno per caso dove il caso conta.
 
     `modi` a `None` è la corsa senza passo modale, e i due verdetti modali restano
@@ -415,6 +451,8 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
                            f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
                            f"su {dimensione:.6g} mm"))
         v.append(_verdetto_convergenza(d, caso, registro))
+    if d.pushover is not None:
+        v.append(_convergenza_pushover(d, curva or {"passi": [], "caduta": None}))
     n = opensees.conta_avvisi(registro)
     v.append(verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
     # `esito_non_applicabile` rende `None` dove il controllo **varrebbe** sul telaio (autovalori e

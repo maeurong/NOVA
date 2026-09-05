@@ -25,7 +25,8 @@ import numpy as np
 from meshrec.core import armatura, opensees
 from nova import catalogo, modale
 from nova import legami as _legami
-from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati, senza_barre
+from nova.modello import (AnalisiPushover, Modello, Sezione, caso_valido, casi_dichiarati,
+                          senza_barre)
 
 NOME_TCL = "13_telaio.tcl"
 GRAVITA = 9806.65
@@ -51,6 +52,20 @@ ITERAZIONI_FIBRE = 50
 GIRI_PER_PASSO = 20
 # Il registro del passo convergente, che `corsa` rilegge per il verdetto `convergenza`.
 MARCA_PASSO = "NOVA_PASSO"
+
+# --- la pushover (T4, Task 3) ---
+# Il passo convergente della pushover porta lo **spostamento** e non il fattore λ: in controllo
+# di spostamento il moltiplicatore dei carichi è l'incognita, non il dato.
+MARCA_PASSO_PUSHOVER = "NOVA_PUSHOVER"
+# La caduta si **dichiara** e non ferma la corsa (vincolo globale T4): la curva fino all'ultimo
+# passo convergente vale, e il marcatore di fine si scrive lo stesso. Non è `MARCA_FINE_MANCA`,
+# che invece dice «questa corsa non ha un risultato».
+MARCA_CADUTA = "NOVA_CADUTA"
+# Otto e non sei come nella statica: qui il passo è uno spostamento imposto, e vicino al picco
+# della curva un solo dimezzamento non basta — si scende da 1 mm a 4 µm prima di dichiarare.
+DIMEZZAMENTI_PUSHOVER = 8
+PREFISSO_PUSHOVER = "push"
+DOF_INDICE = {"ux": 1, "uy": 2, "uz": 3}
 
 
 class Barra(NamedTuple):
@@ -94,6 +109,11 @@ class Deck:
     # `{tag_sezione: [{y, z, mat, ruolo}]}`: gli spigoli del nucleo e le barre estreme. Task 3 ci
     # costruisce i recorder delle fibre e lo stato delle sezioni; qui si decidono le posizioni.
     fibre_registrate: dict = field(default_factory=dict)
+    # `{tag_sezione: id_sezione}`: `fibre_registrate` è per tag (sezione + orientamento),
+    # `materiali` è per id di sezione. Senza questa mappa `passi.py` non sa con quali soglie
+    # leggere una fibra.
+    sezione_per_tag: dict = field(default_factory=dict)
+    pushover: AnalisiPushover | None = None
 
 
 @dataclass
@@ -721,8 +741,226 @@ def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
     ]
 
 
+def _righe_carico(g: Geometria, c: Carichi, caso: str) -> list[str]:
+    """Il corpo di un `pattern Plain` per un caso: nodali, distribuiti, cedimenti.
+
+    Estratto da `_scrivi` perché la pushover lo riusa per il caso di gravità, che ha il proprio
+    pattern dentro il blocco della spinta: i casi statici finiscono con `reset`, e il carico
+    verticale della pushover non può appoggiarsi a uno di quelli.
+    """
+    righe = [f"    load {tag} " + " ".join(f"{x:.10g}" for x in v)
+             for tag, v in c.nodali[caso].items()]
+    for e in g.elementi:
+        w = np.array(e.w[caso])
+        if np.any(w):
+            righe.append(f"    eleLoad -ele {e.tag} -type -beamUniform "
+                         f"{np.dot(w, e.e1):.10g} {np.dot(w, e.e2):.10g} {np.dot(w, e.a):.10g}")
+    righe += [f"    sp {tag} {dof} {val:.10g}" for tag, dof, val in c.cedimenti[caso]]
+    return righe
+
+
+def elementi_per_sezione(elementi: list[Elemento]) -> dict[int, list[int]]:
+    """`{tag_sezione: [tag elemento]}`, nell'ordine in cui i recorder scrivono le colonne.
+
+    Pubblica perché `passi.py` legge quei file e deve indicizzare le colonne con **la stessa**
+    lista: due ordinamenti che divergono darebbero lo stato di un elemento a un altro senza
+    che nessun controllo se ne accorga.
+    """
+    per_tag: dict[int, list[int]] = {}
+    for e in elementi:
+        per_tag.setdefault(e.sezione_tag, []).append(e.tag)
+    return per_tag
+
+
+def nome_fibra(prefisso: str, tag_sezione: int, stazione: int, indice: int) -> str:
+    """Il file di una fibra registrata. Pubblico per lo stesso motivo di `elementi_per_sezione`."""
+    return f"{prefisso}_sez{tag_sezione}_st{stazione}_f{indice}.out"
+
+
+def _recorder_fibre(prefisso: str, g: Geometria, fibre_registrate: dict, tempo: bool) -> list[str]:
+    """Un recorder **per fibra**, con gli elementi raggruppati per tag di sezione.
+
+    Due misure del 05/09/2026 (OpenSees 3.8.0, telaio 2×1) decidono la forma:
+
+    - un `-eleRange 1 n` non regge, perché `<y> <z> <mat>` valgono per un tag di sezione solo:
+      il confinamento dipende dalla sezione, e i tag di materiale con esso;
+    - un secondo `fiber … stressStrain` dentro lo stesso `recorder` è **ignorato in silenzio**
+      — il file esce identico a quello con una fibra sola. Quindi un file per fibra, non uno
+      per stazione: sul telaio 2×1 sono 2 tag × 5 stazioni × 7 fibre = 70 file per caso.
+
+    Il ramo elastico non registra niente: `fibre_registrate` è vuoto e non c'è uno stato di
+    sezione da leggere su una `patch` di `uniaxialMaterial Elastic`.
+    """
+    per_tag = elementi_per_sezione(g.elementi)
+    righe: list[str] = []
+    for tag_sezione, fibre in sorted(fibre_registrate.items()):
+        ele = " ".join(str(t) for t in per_tag.get(tag_sezione, ()))
+        if not ele:  # una sezione a catalogo e non montata non ha elementi da registrare
+            continue
+        for st in range(1, STAZIONI + 1):
+            for i, f in enumerate(fibre):
+                righe.append(
+                    f"recorder Element -file {nome_fibra(prefisso, tag_sezione, st, i)} "
+                    f"-precision 12{' -time' if tempo else ''} -ele {ele} "
+                    f"section {st} fiber {f['y']:.10g} {f['z']:.10g} {f['mat']} stressStrain")
+    return righe
+
+
+def _riga_load(tag: int, dof: int, valore: float) -> str:
+    v = ["0"] * 6
+    v[dof - 1] = f"{valore:.10g}"
+    return f"    load {tag} " + " ".join(v)
+
+
+def _masse_lumped(g: Geometria, masse_nodo: dict[int, float]) -> dict[int, float]:
+    """`{tag nodo: massa [t]}` come il deck la monta davvero: le `mass` dichiarate più metà
+    della massa di ciascun elemento che tocca il nodo (`forceBeamColumn -mass` è lumped)."""
+    masse = dict(masse_nodo)
+    for e in g.elementi:
+        meta = e.massa_lineare * e.L / 2
+        masse[e.i] = masse.get(e.i, 0.0) + meta
+        masse[e.j] = masse.get(e.j, 0.0) + meta
+    return masse
+
+
+def _spingibili(m: Modello, g: Geometria, masse: dict[int, float], dof: int) -> dict[int, float]:
+    """I nodi che la distribuzione può caricare: massa non nulla e dof di spinta **libero**.
+
+    Un `load` su un dof bloccato da `fix` finisce dentro la reazione di quel nodo, e
+    `taglio_base = −Σ reazioni` smetterebbe di essere il taglio alla base senza dirlo. I nodi
+    che le suddivisioni aggiungono non hanno `fix` e ci stanno tutti.
+    """
+    id_per_tag = {v: k for k, v in g.mappa_nodo.items()}
+    fuori = set()
+    for tag, id_nodo in id_per_tag.items():
+        n = m.nodo(id_nodo)
+        if n is not None and not n.libero(dof - 1):
+            fuori.add(tag)
+    return {t: q for t, q in sorted(masse.items()) if q and t not in fuori}
+
+
+def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, sez: Sezioni,
+                     masse: dict[int, float], serie: int, legami_: str, passi: int,
+                     n_nodi: int) -> list[str]:
+    """La spinta monotona in controllo di spostamento, con la sua scala di algoritmi.
+
+    Tre cose la separano dalla statica a passi, e sono il motivo per cui il ciclo Tcl non è lo
+    stesso di `_blocco_statico` con un integratore diverso:
+
+    1. la **condizione di fine** è uno spostamento letto dal modello (`nodeDisp`), non un
+       fattore di carico che il ciclo si porta da sé;
+    2. la caduta **non** ferma la corsa: si dichiara (`MARCA_CADUTA`) e il marcatore di fine
+       si scrive lo stesso, perché la curva fino all'ultimo passo convergente è un risultato;
+    3. la gravità va applicata prima e **congelata** (`loadConst -time 0.0`), altrimenti il
+       `DisplacementControl` la scalerebbe insieme alla spinta.
+    """
+    if an.nodo_controllo not in g.mappa_nodo:
+        raise ValueError(f"pushover: il nodo di controllo {an.nodo_controllo} non esiste "
+                         f"(i nodi sono {sorted(g.mappa_nodo)})")
+    nodo, dof = g.mappa_nodo[an.nodo_controllo], DOF_INDICE[an.dof]
+    r = ["", "# ===== pushover in controllo di spostamento ====="]
+    if an.caso_gravita:
+        r += [f"timeSeries Linear {serie}", f"pattern Plain {serie} {serie} {{",
+              *_righe_carico(g, c, an.caso_gravita), "}"]
+        r += _blocco_statico(an.caso_gravita, legami_, passi)
+        # `loadConst` toglie il carico verticale dall'incremento e riazzera il tempo: da qui
+        # in poi il solo `pattern` che cresce è quello della spinta.
+        r += ["loadConst -time 0.0", "wipeAnalysis"]
+        serie += 1
+    if an.distribuzione == "nodale":
+        corpo = []
+        for f in an.forze_nodali:
+            if f.nodo not in g.mappa_nodo:
+                raise ValueError(f"pushover: la forza nodale sul nodo {f.nodo} non esiste")
+            corpo.append(f"    load {g.mappa_nodo[f.nodo]} {f.fx:.10g} {f.fy:.10g} {f.fz:.10g} 0 0 0")
+    else:
+        spingibili = _spingibili(m, g, masse, dof)
+        if not spingibili:
+            raise ValueError(f"pushover: nessun nodo con massa e {an.dof} libero da spingere")
+        if an.distribuzione == "uniforme":
+            totale = sum(abs(q) for q in spingibili.values())
+            corpo = [_riga_load(t, dof, q / totale) for t, q in spingibili.items()]
+        else:
+            # modo1: φ₁ lo sa OpenSees dopo `eigen`, non NOVA prima di scrivere il deck. Le
+            # masse sono le stesse di `uniforme` — le lumped del deck — e il prodotto φ₁·m si
+            # normalizza a Σ|F| = 1 dentro il `.tcl`.
+            r += ["set _nova_masse {"
+                  + " ".join(f"{t} {q:.10g}" for t, q in spingibili.items()) + "}",
+                  "set _nova_tot 0.0",
+                  "foreach {n mn} $_nova_masse {",
+                  f"    set _nova_f($n) [expr {{$mn * [nodeEigenvector $n 1 {dof}]}}]",
+                  "    set _nova_tot [expr {$_nova_tot + abs($_nova_f($n))}]",
+                  "}",
+                  "if {$_nova_tot <= 0.0} {",
+                  f'    puts "{opensees.MARCA_FINE}_MANCA: il primo modo non ha componente '
+                  f'in {an.dof}"',
+                  "    exit 1", "}"]
+            corpo = ["    foreach {n mn} $_nova_masse {",
+                     f"        load $n {_espressione_load(dof)}", "    }"]
+    r += [f"timeSeries Linear {serie}", f"pattern Plain {serie} {serie} {{", *corpo, "}"]
+    r += [f"recorder Node -file {PREFISSO_PUSHOVER}_spostamenti.out -precision 12 -time "
+          f"-nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 disp",
+          f"recorder Node -file {PREFISSO_PUSHOVER}_reazioni.out -precision 12 -time "
+          f"-nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 reaction"]
+    r += _recorder_fibre(PREFISSO_PUSHOVER, g, sez.fibre_registrate, tempo=True)
+    scala = " ".join(SCALA_ALGORITMI)
+    r += [
+        "constraints Transformation", "numberer RCM", "system BandGeneral",
+        f"test RelativeNormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
+        f"set _nova_d {an.incremento:.10g}",
+        f"integrator DisplacementControl {nodo} {dof} $_nova_d",
+        "algorithm Newton", "analysis Static",
+        "set _nova_passo 0",
+        "set _nova_caduta 0",
+        f"while {{[nodeDisp {nodo} {dof}] < {an.spostamento_max:.10g} "
+        f"&& $_nova_passo < {an.passi_max}}} {{",
+        "    incr _nova_passo",
+        "    set _nova_esito -1",
+        '    set _nova_usato "-"',
+        "    set _nova_dp $_nova_d",
+        f"    for {{set _nova_giro 0}} {{$_nova_giro <= {DIMEZZAMENTI_PUSHOVER}}} {{incr _nova_giro}} {{",
+        f"        integrator DisplacementControl {nodo} {dof} $_nova_dp",
+        f"        foreach alg {{{scala}}} {{",
+        '            if {$alg eq "ModifiedNewton"} {algorithm ModifiedNewton -initial} '
+        "else {algorithm $alg}",
+        # l'algoritmo si segna **prima** di provarlo: su un passo riuscito è quello che ha
+        # chiuso, su una caduta è l'ultimo tentato — e «ultimo algoritmo -» non dice niente
+        "            set _nova_usato $alg",
+        "            set _nova_esito [analyze 1]",
+        "            if {$_nova_esito == 0} {break}",
+        "        }",
+        "        if {$_nova_esito == 0} {break}",
+        "        set _nova_dp [expr {$_nova_dp / 2.0}]",
+        "    }",
+        "    if {$_nova_esito != 0} {",
+        f'        puts "{MARCA_CADUTA}: passo $_nova_passo spostamento '
+        f'[format %.10g [nodeDisp {nodo} {dof}]] algoritmo $_nova_usato motivo non_convergenza"',
+        "        set _nova_caduta 1",
+        "        break",
+        "    }",
+        # niente `record`: il recorder scrive già una riga per `analyze` riuscito (misurato il
+        # 05/09/2026, OpenSees 3.8.0: 60 passi → 60 righe), e forzarlo ne scriverebbe due
+        f'    puts "{MARCA_PASSO_PUSHOVER}: passo $_nova_passo algoritmo $_nova_usato '
+        f'incremento [format %.10g $_nova_dp] spostamento [format %.10g [nodeDisp {nodo} {dof}]]"',
+        "}",
+        f"if {{$_nova_caduta == 0 && $_nova_passo >= {an.passi_max}}} {{",
+        f'    puts "{MARCA_CADUTA}: passo $_nova_passo spostamento '
+        f'[format %.10g [nodeDisp {nodo} {dof}]] algoritmo $_nova_usato motivo passi_max"',
+        "}",
+        "remove recorders", "wipeAnalysis",
+    ]
+    return r
+
+
+def _espressione_load(dof: int) -> str:
+    v = ["0"] * 6
+    v[dof - 1] = "[expr {$_nova_f($n)/$_nova_tot}]"
+    return " ".join(v)
+
+
 def _scrivi(m: Modello, casi: list[str], g: Geometria, c: Carichi, sez: Sezioni,
-            da_azioni: dict[int, float], n_modi: int | None, legami_: str, passi: int) -> list[str]:
+            da_azioni: dict[int, float], n_modi: int | None, legami_: str, passi: int,
+            an_push: AnalisiPushover | None = None) -> list[str]:
     """Le righe del `.tcl`, nell'ordine in cui OpenSees le vuole."""
     r = ["# Deck generato da NOVA (nova/deck.py). Unità: mm, N, MPa, t, s.",
          "# Si esegue con la cartella di lavoro sulla cartella di uscita.",
@@ -749,21 +987,14 @@ def _scrivi(m: Modello, casi: list[str], g: Geometria, c: Carichi, sez: Sezioni,
     n_nodi, n_el = len(g.nodi), len(g.elementi)
     for k, caso in enumerate(casi, start=1):
         r += ["", f"# ===== caso di carico {caso} =====", f"timeSeries Linear {k}", f"pattern Plain {k} {k} {{"]
-        for tag, v in c.nodali[caso].items():
-            r.append(f"    load {tag} " + " ".join(f"{x:.10g}" for x in v))
-        for e in g.elementi:
-            w = np.array(e.w[caso])
-            if np.any(w):
-                r.append(f"    eleLoad -ele {e.tag} -type -beamUniform "
-                         f"{np.dot(w, e.e1):.10g} {np.dot(w, e.e2):.10g} {np.dot(w, e.a):.10g}")
-        for tag, dof, val in c.cedimenti[caso]:
-            r.append(f"    sp {tag} {dof} {val:.10g}")
+        r += _righe_carico(g, c, caso)
         r.append("}")
         r += [f"recorder Node -file {caso}_spostamenti.out -precision 12 -nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 disp",
               f"recorder Node -file {caso}_reazioni.out -precision 12 -nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 reaction",
               f"recorder Element -file {caso}_localforce.out -precision 12 -eleRange 1 {n_el} localForce"]
         for st in range(1, STAZIONI + 1):
             r.append(f"recorder Element -file {caso}_sez{st}.out -precision 12 -eleRange 1 {n_el} section {st} force")
+        r += _recorder_fibre(caso, g, sez.fibre_registrate, tempo=False)
         r += _blocco_statico(caso, legami_, passi)
         # `remove loadPattern` + `reset` bastano a rendere i casi indipendenti: misurato il
         # 05/09/2026 con OpenSees 3.8.0 sul telaio 2×1, il caso Z2 (sola spinta in testa) dopo
@@ -780,6 +1011,11 @@ def _scrivi(m: Modello, casi: list[str], g: Geometria, c: Carichi, sez: Sezioni,
         # `.index` e non una sostituzione a tentoni: se MeshRec cambia quella riga, si rompe qui.
         blocco[blocco.index(f"eigen {n_modi}")] = f"eigen -fullGenLapack {n_modi}"
         r += ["", *blocco]
+    if an_push is not None:
+        # dopo la modale, e non è un dettaglio d'ordine: con `distribuzione: modo1` la spinta
+        # legge φ₁ con `nodeEigenvector`, che senza `eigen` non esiste
+        r += _blocco_pushover(m, an_push, g, c, sez, _masse_lumped(g, masse_nodo),
+                              len(casi) + 1, legami_, passi, n_nodi)
     r += ["", "wipe", f'set _fine [open "{opensees.NOME_FINE}" w]', f'puts $_fine "{opensees.MARCA_FINE}"',
           "close $_fine", ""]
     return r
@@ -808,14 +1044,24 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None,
     legami_ = dichiarati if legami is None else legami
     if legami_ not in ("elastico", "fibre"):
         raise ValueError(f"legami «{legami_}» sconosciuto: i legami sono elastico, fibre")
+    spinte = [a for a in m.analisi if a.tipo == "pushover"]
+    if len(spinte) > 1:
+        raise ValueError(f"una sola pushover per modello, e ne sono dichiarate {len(spinte)}")
+    an_push = spinte[0] if spinte else None
     g = _geometria(m)
-    c = _carichi(m, casi, g)
+    # il caso di gravità ha il proprio `pattern` dentro il blocco della spinta e può non stare
+    # fra i casi statici: i suoi carichi vanno composti lo stesso
+    c = _carichi(m, casi + ([an_push.caso_gravita] if an_push and an_push.caso_gravita
+                            and an_push.caso_gravita not in casi else []), g)
     sez = _sezioni(m, g, legami_)
     if modi is None:
         modi = modale.modi_dichiarati(m)
     n_modi = min(modi, modale.gradi_liberi(m)) if modi else None
+    if an_push is not None and an_push.distribuzione == "modo1" and not n_modi:
+        raise ValueError("pushover: la distribuzione modo1 richiede l'analisi modale, "
+                         "che questo modello non dichiara")
     da_azioni = _masse_da_azioni(m, g.elementi, g.per_asta, g.mappa_nodo)
-    righe = _scrivi(m, casi, g, c, sez, da_azioni, n_modi, legami_, passi or 1)
+    righe = _scrivi(m, casi, g, c, sez, da_azioni, n_modi, legami_, passi or 1, an_push)
     cartella.mkdir(parents=True, exist_ok=True)  # dopo le validazioni: un rifiuto non lascia cartelle
     percorso = cartella / NOME_TCL
     percorso.write_text("\n".join(righe), encoding="utf-8")
@@ -826,7 +1072,9 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None,
                  "legami": legami_, "passi": passi if legami_ == "fibre" else None,
                  "materiali": sez.materiali, "avvisi": sez.avvisi, "note": sez.note,
                  "mappa_nodo": {str(k): v for k, v in g.mappa_nodo.items()},
-                 "mappa_asta": {str(k): v for k, v in g.mappa_asta.items()}}
+                 "mappa_asta": {str(k): v for k, v in g.mappa_asta.items()},
+                 "pushover": an_push.model_dump(mode="json") if an_push else None}
+    sezione_per_tag = {tag: id_sezione for (id_sezione, _), tag in g.sezioni_tag.items()}
     return Deck(percorso, list(casi), g.nodi, g.mappa_nodo, g.mappa_asta, g.elementi, g.vincolati,
                 c.totale, resoconto, n_modi, legami_, passi if legami_ == "fibre" else 0,
-                sez.materiali, sez.fibre_registrate)
+                sez.materiali, sez.fibre_registrate, sezione_per_tag, an_push)
