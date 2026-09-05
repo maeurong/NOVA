@@ -10,6 +10,10 @@ NTC 2018. Applicazione locale, per macOS e Windows.
 MeshRec in `meshrec/core/` con impronta sha256 verificata da test
 (`meshrec/IMPRONTE.md`). Test: `uv run pytest`.
 
+Avvio: `uv run python -m nova` apre il server locale e il browser su
+`http://127.0.0.1:8765/`. Porta e solutore si scelgono con `--porta`/`NOVA_PORTA`
+e `--solutore`; nessuno dei due arriva mai dalla richiesta HTTP.
+
 Tre fatti sono già stabiliti dalla ricerca, misurati e non opinabili:
 
 - **Il solutore vive fuori processo.** Un errore di modello banale — due nodi
