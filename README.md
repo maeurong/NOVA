@@ -86,7 +86,12 @@ Due misure che vale la pena conoscere prima di leggere i numeri:
   essere assurdo: la trave di 6 000 mm che scende di 3 769 passava il controllo
   di T1, che guarda la diagonale del modello. Ora `spostamenti` guarda anche il
   rapporto con la luce dell'asta più corta al nodo: oltre 1/10 è rosso, fra 1/50
-  e 1/10 è verde con un avviso.
+  e 1/10 è verde con `valori.avviso: true`. Il rapporto è il **massimo su tutti
+  i nodi con aste**, non quello del nodo più spostato — il nodo peggiore può
+  essere un altro, e `valori.nodo`, `valori.u`, `valori.luce_minima` sono i
+  suoi. Le due scale portano due soglie con due nomi (`soglia_luce` 1/10 e
+  `soglia_avviso_luce` 1/50 per la luce, `soglia_diagonale` per la diagonale):
+  chi legge `valori` deve poter rifare il conto che ha deciso l'esito.
 
 Caso studio con la pushover vera, curva e stato delle sezioni:
 [`docs/caso-studio/README.md`](docs/caso-studio/README.md).
