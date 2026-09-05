@@ -153,16 +153,17 @@ class Legame(_Base):
     """
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
-    tipo: Literal["elastico", "concrete02", "concrete04", "steel02"] = "elastico"
+    # Il materiale non dichiara il proprio `uniaxialMaterial`: lo decide `confinamento` per il
+    # calcestruzzo (`Concrete02` di norma, `Concrete04` con Mander) e la famiglia per l'acciaio.
     confinamento: Literal["nessuno", "ntc", "mander"] = "ntc"
-    epsU_copriferro: float = 0.0035
-    epsU_nucleo: float | None = None  # None → ε_cu2,c dalla [4.1.11]
-    lambda_: float = Field(0.1, alias="lambda")
-    fpcu_su_fpc: float = 0.2
-    Es: float = 200000.0
+    epsU_copriferro: float = Field(0.0035, gt=0)
+    epsU_nucleo: float | None = Field(None, gt=0)  # None → ε_cu2,c dalla [4.1.11]
+    lambda_: float = Field(0.1, ge=0, le=1, alias="lambda")  # è un rapporto fra pendenze
+    fpcu_su_fpc: float = Field(0.2, ge=0)  # 0 = copriferro che si sbriciola (RCFrameGravity)
+    Es: float = Field(200000.0, gt=0)
     fym: float | None = None  # None → f_yk della classe (450 per B450C): f_ym non ha fonte
-    b: float | None = None  # None → da k e ε_ud della classe (0,0045 per B450C)
-    R0: float = 18
+    b: float | None = Field(None, ge=0)  # None → da k e ε_ud della classe; 0 = elastico-perfetto
+    R0: float = Field(18, gt=0)
     cR1: float = 0.925
     cR2: float = 0.15
 

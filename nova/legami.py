@@ -31,8 +31,12 @@ EPS_CU2 = 0.0035
 # Resta un parametro perché la sezione conosce l'id del proprio acciaio ma non il modello.
 F_YK_ST = 450.0
 AVVISO_PROGETTO = "veste di progetto nel legame: rigidezza dimezzata, non è la prassi"
+# Quanto una barra può stare dentro lo spigolo del nucleo e valere ancora come barra d'angolo
+# trattenuta: il gancio della staffa più il raggio della barra, con 5 mm di gioco di posa.
+GIOCO_ANGOLO = 5.0
 
 _NOMI_TCL = {"concrete02": "Concrete02", "concrete04": "Concrete04", "steel02": "Steel02"}
+_VESTI = ("caratteristica", "media", "progetto", "esistente")
 
 
 def veste_valori(materiale: Materiale, veste: str) -> dict:
@@ -46,6 +50,8 @@ def veste_valori(materiale: Materiale, veste: str) -> dict:
     Prende il materiale e non la sola classe: senza, l'override `personalizzato` di
     `catalogo.valori` — la via per un calcestruzzo misurato in opera — sparirebbe qui.
     """
+    if veste not in _VESTI:
+        raise ValueError(f"veste «{veste}» sconosciuta: le vesti sono {', '.join(_VESTI)}")
     v = catalogo.valori(materiale)
     avvisi = [AVVISO_PROGETTO] if veste == "progetto" else []
     note = (["veste «esistente»: valori medi con FC = 1,0, perché il fattore di confidenza "
@@ -72,33 +78,39 @@ def veste_valori(materiale: Materiale, veste: str) -> dict:
     return {**base, "fyk": fyk, "fy": fy, "ftk": v["ftk"], "epsuk": v["epsuk"], "articolo": articolo}
 
 
-def _somma_bi2(barre, bx: float, by: float) -> float:
-    """`Σ b_i²` della [4.1.12.f], con le barre di ciascuna faccia distribuite uniformemente
-    sul lato del nucleo: `n` barre contenute su un lato lungo `L` danno `n−1` interassi
-    `L/(n−1)`, cioè `L²/(n−1)`.
+def _somma_bi2(barre) -> float:
+    """`Σ b_i²` della [4.1.12.f] letterale: `b_i` è l'interasse fra barre longitudinali
+    **consecutive** contenute, cioè la distanza fra i loro centri veri lungo il perimetro
+    del nucleo — le barre trattenute ne sono i vertici, e il giro si chiude sull'ultima.
 
-    Le barre si raggruppano per faccia dalle loro posizioni vere (`deck._barre`): sta a un
-    diametro dalla faccia chi ci appartiene, e le barre d'angolo cadono in due gruppi, come
-    devono, perché le staffe le trattengono in tutte e due le direzioni.
+    L'ordine lungo il perimetro è l'ordine angolare attorno al baricentro: le barre di
+    `deck._barre` stanno tutte sul contorno di un rettangolo centrato lì, e per un contorno
+    convesso i due ordini coincidono (inf da sx a dx, dx dal basso in alto, sup, sx).
 
-    Sul lato lungo si prende `L` = dimensione del nucleo alla linea media delle staffe e non
-    la distanza fra i centri delle barre d'angolo: è l'ipotesi dell'esempio §3.3 del doc di
-    ricerca (`Σ b_i²` = 4·116² + 4·216² con `b_x` 232 e `b_y` 432), che ignora i ~14 mm di
-    scarto fra linea media della staffa e centro della barra d'angolo e sta **dalla parte
-    della sicurezza** (`α` 0,416 contro 0,457 con i centri veri, misurato il 05/09/2026).
+    Sul pilastro del doc §3.3 esce `Σ b_i²` = 4·102² + 4·202² = 204 832 e `α` = 0,457, non i
+    4·116² + 4·216² e `α` = 0,416 del doc: quell'esempio idealizza le barre d'angolo **sullo
+    spigolo** del nucleo, mentre i loro centri stanno ~14 mm più dentro (linea media della
+    staffa a copriferro + φ_st/2 = 34 mm dalla faccia, centro della barra a copriferro + φ_st
+    + φ/2 = 48). Qui contano le posizioni vere, che sono quelle che la [4.1.12.f] nomina.
     """
-    if not barre:
+    if len(barre) < 2:
         return 0.0
-    tolleranza = max(x.diametro for x in barre)
-    ys = [x.y for x in barre]
-    zs = [x.z for x in barre]
-    somma = 0.0
-    for coordinate, faccia, lato in ((zs, min(zs), bx), (zs, max(zs), bx),
-                                     (ys, min(ys), by), (ys, max(ys), by)):
-        n = sum(1 for c in coordinate if abs(c - faccia) <= tolleranza)
-        if n >= 2:
-            somma += lato ** 2 / (n - 1)
-    return somma
+    giro = sorted(barre, key=lambda x: math.atan2(x.z, x.y))
+    return sum(math.dist((a.y, a.z), (b.y, b.z)) ** 2
+               for a, b in zip(giro, giro[1:] + giro[:1]))
+
+
+def _angoli_trattenuti(barre, bx: float, by: float, phi_st: float) -> bool:
+    """Ogni spigolo del nucleo ha la sua barra longitudinale trattenuta dal gancio della staffa.
+
+    È il presupposto del confinamento di norma: le [4.1.12.f-g] misurano l'efficienza di un
+    reticolo che ha i vertici agli spigoli, e senza barre d'angolo non c'è nessun puntone
+    diagonale da attivare. Quattro barre a mezzeria delle facce darebbero `Σ b_i²` piccolo e
+    quindi `α_n` alto — confinamento massimo da un'armatura che non confina niente.
+    """
+    spigoli = ((-bx / 2, -by / 2), (bx / 2, -by / 2), (bx / 2, by / 2), (-bx / 2, by / 2))
+    return all(any(math.dist((x.y, x.z), s) <= phi_st + x.diametro / 2 + GIOCO_ANGOLO
+                   for x in barre) for s in spigoli)
 
 
 def confinamento_ntc(b: float, h: float, copriferro: float, staffe: Staffe, barre,
@@ -109,10 +121,11 @@ def confinamento_ntc(b: float, h: float, copriferro: float, staffe: Staffe, barr
     la norma scrive `f_ck`, ma la chiave `fck_c` che esce di qui porta la stessa veste che è
     entrata — la [4.1.8] è un fattore moltiplicativo, non un cambio di veste.
 
-    Due degeneri che la formula da sola non regge: senza barre longitudinali contenute non
-    c'è nessun `b_i` e `α_n` vale 0 (non 1, che sarebbe il confinamento perfetto); con staffe
-    rade i due fattori negativi della [4.1.12.g] si moltiplicherebbero in un `α_s` positivo,
-    e allora si azzera ciascuno dei due prima del prodotto.
+    Tre degeneri che la formula da sola non regge: senza barre longitudinali contenute non
+    c'è nessun `b_i` e `α_n` vale 0 (non 1, che sarebbe il confinamento perfetto); senza una
+    barra a ciascuno spigolo del nucleo il reticolo delle [4.1.12.f-g] non esiste e vale lo
+    stesso 0; con staffe rade i due fattori negativi della [4.1.12.g] si moltiplicherebbero
+    in un `α_s` positivo, e allora si azzera ciascuno dei due prima del prodotto.
     """
     bx = b - 2 * copriferro - staffe.diametro  # alla linea media delle staffe
     by = h - 2 * copriferro - staffe.diametro
@@ -125,11 +138,15 @@ def confinamento_ntc(b: float, h: float, copriferro: float, staffe: Staffe, barr
     sigma_ly = a_st * f_yk_st / (bx * s)
     sigma_l = math.sqrt(sigma_lx * sigma_ly)  # [4.1.12.c]
     note: list[str] = []
-    if barre:
-        alpha_n = max(0.0, 1.0 - _somma_bi2(barre, bx, by) / (6 * bx * by))  # [4.1.12.f]
-    else:
+    if not barre:
         alpha_n = 0.0
         note.append("nessuna barra longitudinale contenuta: α_n = 0, il nucleo non è confinato")
+    elif not _angoli_trattenuti(barre, bx, by, staffe.diametro):
+        alpha_n = 0.0
+        note.append("senza barre d'angolo trattenute il confinamento NTC non si applica; "
+                    "nucleo = copriferro")
+    else:
+        alpha_n = max(0.0, 1.0 - _somma_bi2(barre) / (6 * bx * by))  # [4.1.12.f]
     alpha_s = max(0.0, 1.0 - s / (2 * bx)) * max(0.0, 1.0 - s / (2 * by))  # [4.1.12.g]
     if alpha_s == 0.0:
         note.append(f"staffe a passo {s:g} mm ≥ 2·{min(bx, by):g} mm: α_s = 0, nessun confinamento")
@@ -155,7 +172,7 @@ def _concrete02(fc: float, epsc0: float, epsU: float, v: dict, lg, articolo: str
             "Ec": 2 * fc / epsc0, "classe": v["classe"], "veste": v["veste"], "articolo": articolo}
 
 
-def _mander(fc: float, conf: dict, v: dict, lg, epsU: float) -> dict:
+def _mander(fc: float, conf: dict, v: dict, epsU: float) -> dict:
     """`f'cc` ed `ε_cc` di Mander, Priestley, Park 1988, espressioni (29) e (5), con `k_e` = `α`.
 
     Due approssimazioni dichiarate, tutte e due dal doc §3.2. La (29) vale per pressioni
@@ -163,7 +180,7 @@ def _mander(fc: float, conf: dict, v: dict, lg, epsU: float) -> dict:
     rottura senza forma chiusa: qui si usa la media di `f'_lx` e `f'_ly`, come fanno i tool.
     E `k_e` è l'`α` delle NTC [4.1.12.e], non il `k_e` della (22), che divide per (1 − ρ_cc)
     e misura distanze nette invece che interassi: le due efficienze non coincidono per
-    costruzione (0,416 contro 0,472 nell'esempio §3.3).
+    costruzione (0,457 contro 0,472 nell'esempio §3.3, con i `b_i` veri).
 
     `ε_cu` resta quella della [4.1.11]: la deformazione ultima di Mander è un bilancio
     energetico senza forma chiusa (conclusione 5 dell'articolo), e non si inventa qui.
@@ -173,8 +190,9 @@ def _mander(fc: float, conf: dict, v: dict, lg, epsU: float) -> dict:
     fcc = fc * (-1.254 + 2.254 * math.sqrt(1.0 + 7.94 * r) - 2.0 * r)  # (29)
     ecc = EPS_C2 * (1.0 + 5.0 * (fcc / fc - 1.0))  # (5), con ε_co = 0,002
     return {"tipo": "concrete04", "fpc": -fcc, "epsc0": -ecc, "epsU": -epsU, "Ec": v["Ecm"],
-            "ft": v["fct"], "et": v["fct"] / v["Ecm"], "fcc": fcc, "epscc": ecc, "epscu": epsU,
-            "f_l": fl, "k_e": conf["alpha"], "alpha": conf["alpha"], "sigma2": conf["sigma2"],
+            "ft": v["fct"], "et": v["fct"] / v["Ecm"], "confinamento": "mander",
+            "fcc": fcc, "epscc": ecc, "epscu": epsU, "f_l": fl,
+            "alpha": conf["alpha"], "sigma2": conf["sigma2"],
             "classe": v["classe"], "veste": v["veste"],
             "articolo": f"Mander 1988 (29), (5) con k_e = α [4.1.12.e]; ε_cu [4.1.11] {conf['articolo']}"}
 
@@ -186,7 +204,10 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     Il copriferro è sempre un `Concrete02` non confinato con `epsU` = 0,35 %, che è la lettura
     letterale del §7.4.1 («perdita dei copriferri al raggiungimento … 0,35%»). Il nucleo segue
     `legame.confinamento`: `ntc` (default) `Concrete02` con [4.1.8]–[4.1.11], `mander`
-    `Concrete04`, `nessuno` — o sezione senza staffe — lo stesso legame del copriferro.
+    `Concrete04`, `nessuno` — o sezione senza staffe, o `α` = 0 — lo stesso legame del
+    copriferro, con lo stesso corredo di chiavi (`confinamento`, `articolo`, `fcc`, `epscc`,
+    `epscu`, `alpha`, `sigma2`) così che chi legge il dizionario non debba chiedere quale ramo
+    l'ha scritto. `confinamento` racconta il ramo **applicato**, che non è sempre quello chiesto.
 
     Le posizioni delle barre se le prende da `deck._barre` con un import pigro: servono per i
     `b_i` della [4.1.12.f], e a livello di modulo l'import sarebbe circolare (in T2 è `deck`
@@ -199,41 +220,51 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     v = veste_valori(materiale, veste)
     lg = materiale.legame
     fc = v["fc"]
-    copriferro = _concrete02(fc, 2 * fc / v["Ecm"], lg.epsU_copriferro, v, lg,
+    epsc0 = 2 * fc / v["Ecm"]
+    copriferro = _concrete02(fc, epsc0, lg.epsU_copriferro, v, lg,
                              f"{v['articolo']}, [11.2.5], §7.4.1")
     note = list(v["note"])
-    confinamento = lg.confinamento
-    if confinamento != "nessuno" and sezione.staffe is None:
-        confinamento = "nessuno"
-        note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: confinamento «nessuno», "
-                    "il nucleo prende il legame del copriferro")
-    if confinamento == "nessuno":
-        nucleo = dict(copriferro)
-    else:
-        from nova.deck import _barre  # pigro: in T2 è `deck` a importare `legami`
-        conf = confinamento_ntc(sezione.b, sezione.h, sezione.copriferro, sezione.staffe,
-                                _barre(sezione, False), fc)
-        note += conf["note"]
-        epsU = lg.epsU_nucleo if lg.epsU_nucleo is not None else conf["epscu2_c"]
-        if confinamento == "mander":
-            nucleo = _mander(fc, conf, v, lg, epsU)
+    conf = None
+    if lg.confinamento != "nessuno":
+        if sezione.staffe is None:
+            note.append(f"sezione {sezione.id} «{sezione.nome}» senza staffe: confinamento "
+                        "«nessuno», il nucleo prende il legame del copriferro")
         else:
-            nucleo = _concrete02(conf["fck_c"], conf["epsc2_c"], epsU, v, lg, conf["articolo"])
-            nucleo |= {"fcc": conf["fck_c"], "epscc": conf["epsc2_c"], "epscu": epsU,
-                       "alpha": conf["alpha"], "sigma2": conf["sigma2"]}
-        nucleo["confinamento"] = conf
+            from nova.deck import _barre  # pigro: in T2 è `deck` a importare `legami`
+            conf = confinamento_ntc(sezione.b, sezione.h, sezione.copriferro, sezione.staffe,
+                                    _barre(sezione, False), fc)
+            note += conf["note"]
+            if conf["alpha"] == 0.0:  # la nota che dice perché l'ha già scritta `confinamento_ntc`
+                conf = None
+    if conf is None:  # nucleo = copriferro, con `epsU_nucleo` onorato se dichiarato
+        epsU = lg.epsU_nucleo if lg.epsU_nucleo is not None else lg.epsU_copriferro
+        nucleo = _concrete02(fc, epsc0, epsU, v, lg, copriferro["articolo"]) | {
+            "confinamento": "nessuno", "fcc": fc, "epscc": epsc0, "epscu": epsU,
+            "alpha": 0.0, "sigma2": 0.0}
+    else:
+        epsU = lg.epsU_nucleo if lg.epsU_nucleo is not None else conf["epscu2_c"]
+        if lg.confinamento == "mander":
+            nucleo = _mander(fc, conf, v, epsU)
+        else:
+            nucleo = _concrete02(conf["fck_c"], conf["epsc2_c"], epsU, v, lg, conf["articolo"]) | {
+                "confinamento": "ntc", "fcc": conf["fck_c"], "epscc": conf["epsc2_c"],
+                "epscu": epsU, "alpha": conf["alpha"], "sigma2": conf["sigma2"]}
     return {"copriferro": copriferro, "nucleo": nucleo, "classe": v["classe"], "veste": veste,
-            "confinamento": confinamento, "avvisi": list(v["avvisi"]), "note": note}
+            "confinamento": nucleo["confinamento"], "avvisi": list(v["avvisi"]), "note": note}
 
 
 def acciaio(materiale: Materiale, veste: str) -> dict:
     """I sei parametri di `Steel02` più la `ε_ud` con cui controllare le fibre a valle.
 
     `b` è la pendenza del ramo incrudente del modello (a) di §4.1.2.1.2.2, la retta da
-    (`ε_yd`, `f_yd`) a (`ε_ud`, `k f_yd`): un **rapporto**, non una resistenza, e l'unico
-    punto in cui la norma definisce l'incrudimento. Con `k` = 1,15 e `ε_ud` = 0,9·`ε_uk`
-    = 0,0675 vale 0,0045 per il B450C (doc §2). `Steel02` non ha tetto a `ε_ud`: il ramo è
-    indefinito e la deformazione limite si controlla sulle fibre, non qui.
+    (`ε_y`, `f_y`) a (`ε_ud`, `k f_y`): un rapporto, e l'unico punto in cui la norma
+    definisce l'incrudimento. Si calcola con **lo stesso `f_y` che entra in `Fy`** — quello
+    della veste, o il `fym` dichiarato — e non con `f_yd` come fa il doc §2: il vincolo
+    globale di T4 tiene i valori di progetto fuori dal legame, e un `b` che li usasse
+    descriverebbe una retta che non passa per il punto di snervamento del materiale scritto.
+    Con `f_y` = 450, `k` = 1,15 e `ε_ud` = 0,9·`ε_uk` = 0,0675 vale 0,0052 (con `f_yd` sarebbe
+    0,0045, il numero del doc). `Steel02` non ha tetto a `ε_ud`: il ramo è indefinito e la
+    deformazione limite si controlla sulle fibre, non qui.
     """
     if materiale.tipo != "acciaio":
         raise ValueError(f"materiale «{materiale.nome}» ({materiale.classe}) è di tipo "
@@ -242,9 +273,9 @@ def acciaio(materiale: Materiale, veste: str) -> dict:
     lg = materiale.legame
     eps_ud = 0.9 * v["epsuk"]
     k = v["ftk"] / v["fyk"]
-    fyd = v["fyk"] / _materiali.GAMMA_S
-    b = lg.b if lg.b is not None else (k - 1.0) * fyd / ((eps_ud - fyd / lg.Es) * lg.Es)
-    return {"tipo": "steel02", "Fy": lg.fym if lg.fym is not None else v["fy"], "E": lg.Es,
+    fy = lg.fym if lg.fym is not None else v["fy"]
+    b = lg.b if lg.b is not None else (k - 1.0) * fy / ((eps_ud - fy / lg.Es) * lg.Es)
+    return {"tipo": "steel02", "Fy": fy, "E": lg.Es,
             "b": b, "R0": lg.R0, "cR1": lg.cR1, "cR2": lg.cR2, "eps_ud": eps_ud, "k": k,
             "classe": v["classe"], "veste": v["veste"], "avvisi": list(v["avvisi"]),
             "note": list(v["note"]),
@@ -262,12 +293,18 @@ def righe_tcl(tag: int, parametri: dict) -> list[str]:
     """L'unica funzione che formatta: da qui esce la riga `uniaxialMaterial`, con in coda la
     provenienza (`classe`, `veste`, `articolo`) che il vincolo globale di T4 chiede stampata.
 
-    La guardia sul segno non è teorica: `fpc` e `epsc0` positivi sono ammessi dall'interprete
-    e danno un materiale che si rompe a trazione e regge a compressione senza dirlo.
+    Le guardie non sono teoriche: l'interprete accetta i segni sbagliati e ne esce un materiale
+    che si rompe a trazione e regge a compressione senza dirlo. Tutti e quattro i parametri di
+    compressione vanno negativi, non il solo `fpc`, e la deformazione ultima deve stare **oltre**
+    quella di picco — `|epsU| ≤ |epsc0|` è una curva che si schiaccia prima di arrivare in cima.
     """
     nome = _NOMI_TCL[parametri["tipo"]]
-    if "fpc" in parametri and parametri["fpc"] >= 0:
-        raise ValueError(f"{nome} vuole compressioni negative: fpc = {parametri['fpc']:g}")
+    for k in ("fpc", "epsc0", "fpcu", "epsU"):
+        if k in parametri and parametri[k] >= 0:
+            raise ValueError(f"{nome} vuole compressioni negative: {k} = {parametri[k]:g}")
+    if "epsU" in parametri and abs(parametri["epsU"]) <= abs(parametri["epsc0"]):
+        raise ValueError(f"{nome}: epsU = {parametri['epsU']:g} non va oltre epsc0 = "
+                         f"{parametri['epsc0']:g}, la deformazione ultima precede il picco")
     valori_ = " ".join(f"{parametri[k]:.10g}" for k in _ORDINE[parametri["tipo"]])
     return [f"uniaxialMaterial {nome} {tag} {valori_}"
             f"    ;# {parametri['classe']}, veste {parametri['veste']}, {parametri['articolo']}"]

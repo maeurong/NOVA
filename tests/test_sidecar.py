@@ -909,7 +909,10 @@ def test_la_corsa_oltre_il_timeout_e_un_errore_di_fase_solutore(chiedi, tmp_path
     monkeypatch.setattr(_c, "_TIMEOUT_S", 0.5)
     fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo comincio\nsleep 5\n"))
     assert fin["esito"] == "errore" and fin["fase"] == "solutore" and "timeout" in fin["motivo"]
-    assert "comincio" in (tmp_path / "c" / "13_solver.log").read_text()  # il registro c'è comunque
+    # Il registro c'è comunque (`corsa._errore_solutore` lo scrive prima di tornare); il suo
+    # **contenuto** no: sotto carico il `sleep 5` viene ucciso a 0,5 s senza che l'`echo` sia
+    # arrivato a `capture_output`, e asserire «comincio» rendeva il test rosso a caso.
+    assert (tmp_path / "c" / "13_solver.log").is_file()
 
 
 def test_forza_fa_partire_la_corsa_e_tiene_il_rifiuto_del_check(chiedi, tmp_path):
