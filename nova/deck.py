@@ -17,6 +17,7 @@ import numpy as np
 
 from meshrec.core import armatura, opensees
 from nova import catalogo, modale
+from nova import legami as _legami
 from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati, senza_barre
 
 NOME_TCL = "13_telaio.tcl"
@@ -24,6 +25,16 @@ GRAVITA = 9806.65
 STAZIONI = 5
 XI_LOBATTO = (0.0, 0.1726731646, 0.5, 0.8273268354, 1.0)
 _COSENO_VERTICALE = 0.999
+
+# La scala di algoritmi della statica non lineare, nell'ordine in cui il ciclo Tcl li prova.
+# `ModifiedNewton` va con `-initial`: la tangente aggiornata l'ha già provata `Newton`, e
+# rifarla con la stessa matrice sarebbe lo stesso giro due volte (spec, story 50).
+SCALA_ALGORITMI = ("Newton", "ModifiedNewton", "KrylovNewton")
+DIMEZZAMENTI = 6           # quante volte il passo si dimezza prima di dichiarare la caduta
+TOLLERANZA_FIBRE = 1.0e-6  # `test NormDispIncr`: il lineare sta a 1e-8, le fibre non ci arrivano
+ITERAZIONI_FIBRE = 50
+# Il registro del passo convergente, che `corsa` rilegge per il verdetto `convergenza`.
+MARCA_PASSO = "NOVA_PASSO"
 
 
 class Barra(NamedTuple):
@@ -59,6 +70,47 @@ class Deck:
     carico_totale: dict[str, tuple[float, float, float]]
     resoconto: dict
     modi: int | None = None
+    legami: str = "elastico"
+    passi: int = 0
+    # `{str(sezione_id): {nucleo, copriferro, acciaio}}`: i parametri che sono finiti nel `.tcl`,
+    # con la loro provenienza. Vuoto in una corsa elastica, dove il legame non c'è.
+    materiali: dict = field(default_factory=dict)
+    # `{tag_sezione: [{y, z, mat, ruolo}]}`: gli spigoli del nucleo e le barre estreme. Task 3 ci
+    # costruisce i recorder delle fibre e lo stato delle sezioni; qui si decidono le posizioni.
+    fibre_registrate: dict = field(default_factory=dict)
+
+
+@dataclass
+class Geometria:
+    """Il modello discretizzato: quel che `_geometria` deriva senza guardare i carichi."""
+    nodi: dict[int, tuple[float, float, float]]
+    mappa_nodo: dict[int, int]
+    mappa_asta: dict[int, list[int]]
+    elementi: list[Elemento]
+    sezioni_tag: dict[tuple[int, bool], int]
+    vincolati: list[int]
+    per_asta: dict[int, list[Elemento]]
+
+
+@dataclass
+class Carichi:
+    """I carichi per caso. I distribuiti non stanno qui: vivono in `Elemento.w[caso]`,
+    perché il taglio per stazione li rilegge dall'elemento e non dal caso."""
+    nodali: dict[str, dict[int, list[float]]]
+    cedimenti: dict[str, list[tuple[int, int, float]]]
+    totale: dict[str, tuple[float, float, float]]
+
+
+@dataclass
+class Sezioni:
+    """Le righe delle sezioni e quel che se ne impara: parametri stampati, fibre da registrare,
+    sezioni senza barre, avvisi e note dei legami."""
+    righe: list[str]
+    materiali: dict
+    fibre_registrate: dict
+    senza_barre: list[int]
+    avvisi: list[str]
+    note: list[str]
 
 
 class _ArmaturaDuck(NamedTuple):
@@ -278,28 +330,29 @@ def _masse_da_azioni(m: Modello, elementi: list[Elemento], per_asta: dict[int, l
     return masse
 
 
-def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None) -> Deck:
-    """Scrive `13_telaio.tcl` nella cartella e rende quel che serve a leggerne le uscite.
+def _legami_dichiarati(m: Modello) -> tuple[str, int]:
+    """`("fibre", passi)` se una statica lo chiede, `("elastico", 0)` altrimenti.
 
-    `modi` intero aggiunge in coda il passo modale, dopo l'ultimo caso statico e il suo
-    `reset`: i registratori di `eigen` chiedono `record` e vogliono la cartella pulita dai
-    registratori statici, che ogni caso rimuove già da sé.
-
-    I cedimenti finiscono in `sp` dentro il pattern del caso, anche su un dof che i vincoli
-    dichiarati hanno già bloccato con `fix`: misurato il 05/09/2026 con OpenSees 3.8.0 e
-    `constraints Transformation`, `fix 2 1 1 1 0 0 0` più `sp 2 3 -5.0` dà `analyze` a 0,
-    `nodeDisp 2 3 = -5` e la reazione EA/L·5 corretta. Il `fix` non va tolto.
+    La scelta è **del deck**, non del caso: i tag di sezione sono uno per (sezione, orientamento)
+    e una stessa `section Fiber` non può essere elastica per un caso e non lineare per un altro.
+    Con più statiche a fibre vince il passo più fitto — dimezzarlo è sempre lecito, allargarlo no.
     """
-    cartella = Path(cartella)
-    casi = list(dict.fromkeys(casi))  # due volte lo stesso caso sono due pattern e un'uscita sola
+    passi = [a.passi for a in m.analisi if a.tipo == "statica" and a.legami == "fibre"]
+    return ("fibre", max(passi)) if passi else ("elastico", 0)
+
+
+def _geometria(m: Modello) -> Geometria:
+    """Nodi, elementi, tag di sezione e vincoli: la parte del deck che non guarda i carichi.
+
+    Le validazioni di sezione stanno in testa e non in `check.py` perché con «forza» il Check
+    Model è già stato scavalcato: il riferimento rotto arriva fin qui, e senza guardia diventerebbe
+    un `AttributeError` su `None` invece di un rifiuto che nomina la sezione.
+    """
     for s in m.sezioni:
         r = s.riduzione
         if r and (r.sup + r.inf >= s.h or r.sx + r.dx >= s.b):
             raise ValueError(f"sezione {s.id} «{s.nome}»: la riduzione ({r.sup:g}+{r.inf:g} su h={s.h:g}, "
                              f"{r.sx:g}+{r.dx:g} su b={s.b:g}) non lascia sezione")
-        # come per le aste senza sezione: con «forza» il riferimento rotto arriva fin qui, e
-        # `catalogo.valori(None)` farebbe `AttributeError` su `materiale.classe`. Qui, e non
-        # in `catalogo`, perché il rifiuto deve nominare la sezione che sta sbagliando.
         for campo, id_materiale in (("calcestruzzo", s.calcestruzzo), ("acciaio", s.acciaio)):
             if m.materiale(id_materiale) is None:
                 raise ValueError(f"sezione {s.id} «{s.nome}»: il materiale {campo} {id_materiale} non esiste")
@@ -317,8 +370,6 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
     elementi: list[Elemento] = []
     mappa_asta: dict[int, list[int]] = {}
     for a in m.aste:
-        # con «forza» il Check Model è già stato scavalcato: il riferimento rotto arriva fin qui,
-        # e senza guardia diventerebbe un `AttributeError` su `None` invece di un rifiuto leggibile
         s = m.sezione(a.sezione)
         if s is None:
             raise ValueError(f"asta {a.id}: la sezione {a.sezione} non esiste")
@@ -341,16 +392,21 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
             tag = len(elementi) + 1
             elementi.append(Elemento(tag, a.id, i, j, L / a.suddivisioni, asse, e1, e2, tag_sezione, massa))
             mappa_asta[a.id].append(tag)
+    return Geometria(nodi_xyz, mappa_nodo, mappa_asta, elementi, sezioni_tag,
+                     [mappa_nodo[n.id] for n in m.nodi if n.vincolato()],
+                     {a.id: [e for e in elementi if e.asta == a.id] for a in m.aste})
 
-    # ---- carichi per caso: nodali (globali), distribuiti per elemento (vettore globale per lunghezza), cedimenti
+
+def _carichi(m: Modello, casi: list[str], g: Geometria) -> Carichi:
+    """Carichi per caso: nodali (globali), distribuiti per elemento (vettore globale per unità
+    di lunghezza, scritto dentro `Elemento.w`), cedimenti come `sp`, e la risultante per caso."""
     nodali: dict[str, dict[int, list[float]]] = {}
     cedimenti: dict[str, list[tuple[int, int, float]]] = {}
-    carico_totale: dict[str, tuple[float, float, float]] = {}
-    per_asta = {a.id: [e for e in elementi if e.asta == a.id] for a in m.aste}
+    totale: dict[str, tuple[float, float, float]] = {}
     for caso in casi:
         fattori = _fattori(m, caso)
         nodali[caso] = {}; cedimenti[caso] = []
-        for e in elementi:
+        for e in g.elementi:
             e.w[caso] = (0.0, 0.0, 0.0)
         for id_azione, coeff in fattori.items():
             azione = m.azione(id_azione)
@@ -358,40 +414,249 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
                 raise ValueError(f"caso {caso}: l'azione {id_azione} non esiste")
             for c in azione.carichi:
                 if c.tipo == "nodale":
-                    v = nodali[caso].setdefault(mappa_nodo[c.nodo], [0.0] * 6)
+                    v = nodali[caso].setdefault(g.mappa_nodo[c.nodo], [0.0] * 6)
                     for k, comp in enumerate((c.Fx, c.Fy, c.Fz, c.Mx, c.My, c.Mz)):
                         v[k] += coeff * comp
                 elif c.tipo == "distribuito":
-                    for e in per_asta[c.asta]:
+                    for e in g.per_asta[c.asta]:
                         d = _versore(e, c.direzione)
                         e.w[caso] = tuple(float(w + coeff * c.q * dk) for w, dk in zip(e.w[caso], d))
                 elif c.tipo == "gravita":
-                    for e in elementi:
-                        g = e.massa_lineare * GRAVITA
-                        e.w[caso] = tuple(w + coeff * g * f
+                    for e in g.elementi:
+                        peso = e.massa_lineare * GRAVITA
+                        e.w[caso] = tuple(w + coeff * peso * f
                                           for w, f in zip(e.w[caso], (c.fattore_x, c.fattore_y, c.fattore_z)))
                 elif c.tipo == "cedimento":
                     for dof, val in enumerate((c.ux, c.uy, c.uz, c.rx, c.ry, c.rz), start=1):
                         if val is not None:
-                            cedimenti[caso].append((mappa_nodo[c.nodo], dof, coeff * val))
+                            cedimenti[caso].append((g.mappa_nodo[c.nodo], dof, coeff * val))
                 # termico: rifiutato dal Check Model, qui non arriva
         tot = np.zeros(3)
         for v in nodali[caso].values():
             tot += np.array(v[:3])
-        for e in elementi:
+        for e in g.elementi:
             tot += np.array(e.w[caso]) * e.L
-        carico_totale[caso] = tuple(float(x) for x in tot)
+        totale[caso] = tuple(float(x) for x in tot)
+    return Carichi(nodali, cedimenti, totale)
 
-    # ---- il file
-    vincolati = [mappa_nodo[n.id] for n in m.nodi if n.vincolato()]
+
+def _contorno(s: Sezione, verticale: bool) -> tuple[float, float, float, float]:
+    """`(y0, z0, y1, z1)` del contorno di calcestruzzo nel piano locale, riduzione compresa:
+    il contorno si restringe, le barre restano dove il copriferro nominale le mette."""
+    lungo_e1, lungo_e2 = _dimensioni_lungo(s, verticale)
+    y0, y1 = -lungo_e1 / 2, lungo_e1 / 2
+    z0, z1 = -lungo_e2 / 2, lungo_e2 / 2
+    if (rid := s.riduzione):
+        y0 += rid.inf if verticale else rid.sx; y1 -= rid.sup if verticale else rid.dx
+        z0 += rid.sx if verticale else rid.inf; z1 -= rid.dx if verticale else rid.sup
+    return y0, z0, y1, z1
+
+
+def _nucleo(s: Sezione, verticale: bool, contorno: tuple[float, float, float, float]):
+    """Il rettangolo del nucleo confinato, alla **linea media delle staffe**: `b − 2(c + φ_st/2)`
+    lungo `b` e `h − 2(c + φ_st/2)` lungo `h`, poi portato sugli assi locali come la `patch rect`.
+
+    Le stesse `b_x`, `b_y` che la [4.1.12] usa per il confinamento (`legami.confinamento_ntc`):
+    due formule diverse per lo stesso rettangolo darebbero un nucleo confinato con l'area di
+    un altro. Il contorno lo taglia: con una riduzione più profonda del copriferro il nucleo
+    finirebbe fuori dalla sezione, e una `patch rect` fuori contorno OpenSees la accetta.
+    """
+    st = s.staffe
+    bx, by = s.b - 2 * s.copriferro - st.diametro, s.h - 2 * s.copriferro - st.diametro
+    lungo_e1, lungo_e2 = (by, bx) if verticale else (bx, by)
+    y0, z0, y1, z1 = contorno
+    yc0, yc1 = max(-lungo_e1 / 2, y0), min(lungo_e1 / 2, y1)
+    zc0, zc1 = max(-lungo_e2 / 2, z0), min(lungo_e2 / 2, z1)
+    if yc1 - yc0 <= 0 or zc1 - zc0 <= 0:
+        raise ValueError(
+            f"sezione {s.id} «{s.nome}»: copriferro {s.copriferro:g} e staffa Ø{st.diametro:g} "
+            f"non lasciano nucleo dentro {s.b:g}×{s.h:g} (b_x = {bx:g}, b_y = {by:g} mm)")
+    return yc0, zc0, yc1, zc1
+
+
+def _fibre_estreme(nucleo, tag_nucleo: int, barre: list[Barra], tag_acciaio: int | None) -> list[dict]:
+    """Le fibre che raccontano lo stato della sezione: i quattro spigoli del nucleo e le barre
+    estreme, una per verso di ciascun asse locale. Task 3 ci costruisce sopra i recorder e lo
+    stato a quattro valori; qui si decidono le **posizioni**, che sono un fatto della sezione.
+
+    Una barra sola (o nessuna) non ha estremi da distinguere: la lista si sfoltisce da sé,
+    perché è un `dict` sulle coordinate e non una somma di quattro voci.
+    """
+    yc0, zc0, yc1, zc1 = nucleo
+    fibre = {(y, z): {"y": y, "z": z, "mat": tag_nucleo, "ruolo": "nucleo"}
+             for y, z in ((yc0, zc0), (yc1, zc0), (yc1, zc1), (yc0, zc1))}
+    if barre and tag_acciaio is not None:
+        for chiave in (lambda b: b.y, lambda b: -b.y, lambda b: b.z, lambda b: -b.z):
+            b = max(barre, key=chiave)
+            fibre[(b.y, b.z)] = {"y": b.y, "z": b.z, "mat": tag_acciaio, "ruolo": "acciaio"}
+    return list(fibre.values())
+
+
+def _sezioni(m: Modello, g: Geometria, legami_: str) -> Sezioni:
+    """Le `uniaxialMaterial` e le `section Fiber`, elastiche (T1) o non lineari a due patch (T4).
+
+    Elastico: un `Elastic` per il calcestruzzo e uno per l'acciaio, una `patch rect` sul contorno.
+    Fibre: nucleo e copriferro da `legami.calcestruzzo`, acciaio da `legami.acciaio`, il nucleo
+    su una `patch rect` alla linea media delle staffe e il copriferro sulle quattro fasce fuori.
+    Quando nucleo e copriferro escono **identici** (staffe assenti, `α` = 0, `confinamento:
+    nessuno`) la sezione torna a una patch sola: due patch con lo stesso materiale sono lo stesso
+    calcestruzzo scritto due volte, e la riga in più direbbe di un confinamento che non c'è.
+    """
+    righe: list[str] = ["", "# --- materiali elastici (T1) e sezioni a fibre ---" if legami_ != "fibre"
+                        else "# --- materiali non lineari e sezioni a fibre a due patch ---"]
+    sez = Sezioni(righe, {}, {}, [], [], [])
+    veste = m.impostazioni_analisi.veste
+    n_f = m.impostazioni_analisi.fibre
+    tag_mat = 1
+    for (id_sezione, verticale), tag_sezione in g.sezioni_tag.items():
+        s = m.sezione(id_sezione)
+        cls_mat, acc_mat = m.materiale(s.calcestruzzo), m.materiale(s.acciaio)
+        cls = catalogo.valori(cls_mat)
+        contorno = _contorno(s, verticale)
+        G = cls["E"] / (2 * (1 + cls["nu"]))
+        gj = G * opensees._costante_torsionale(*_dimensioni_lungo(s, verticale))
+        barre = _barre(s, verticale)
+        if not barre and s.id not in sez.senza_barre:
+            sez.senza_barre.append(s.id)
+        if legami_ == "fibre":
+            tag_mat = _sezione_a_fibre(m, s, veste, n_f, tag_sezione, tag_mat, gj,
+                                       contorno, verticale, barre, sez)
+            continue
+        acc = catalogo.valori(acc_mat)
+        righe.append(f"uniaxialMaterial Elastic {tag_mat} {cls['E']:.10g}"
+                     f"    ;# {cls_mat.classe}, sezione {s.id}")
+        righe.append(f"uniaxialMaterial Elastic {tag_mat + 1} {acc['E']:.10g}"
+                     f"    ;# {acc_mat.classe}, sezione {s.id}")
+        y0, z0, y1, z1 = contorno
+        righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
+        righe.append(f"    patch rect {tag_mat} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
+        for b in barre:
+            righe.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_mat + 1}")
+        righe.append("}")
+        tag_mat += 2
+    return sez
+
+
+def _sezione_a_fibre(m: Modello, s: Sezione, veste: str, n_f: int, tag_sezione: int, tag_mat: int,
+                     gj: float, contorno, verticale: bool, barre: list[Barra], sez: Sezioni) -> int:
+    """Una `section Fiber` non lineare; rende il primo tag di materiale ancora libero.
+
+    I parametri li deriva `legami` dalla classe NTC, dalla veste e **dalla sezione** (il
+    confinamento dipende da staffe e barre): due sezioni sullo stesso calcestruzzo hanno due
+    terne distinte, con tag distinti, e non si possono condividere. La `section` senza staffe
+    resta a una patch di copriferro: `_barre` non colloca niente senza staffe, e un nucleo
+    confinato da un'armatura trasversale che non c'è sarebbe una resistenza inventata.
+    """
+    d = _legami.calcestruzzo(m.materiale(s.calcestruzzo), veste, s)
+    righe = sez.righe
+    riga_nucleo = _legami.righe_tcl(tag_mat, d["nucleo"])
+    riga_copriferro = _legami.righe_tcl(tag_mat, d["copriferro"])
+    una_patch = riga_nucleo == riga_copriferro  # stesso tag: se le righe coincidono è lo stesso legame
+    righe += [r + f"    ;# nucleo, sezione {s.id}" for r in riga_nucleo]
+    tag_nucleo, tag_mat = tag_mat, tag_mat + 1
+    tag_copriferro = tag_nucleo
+    if not una_patch:
+        righe += [r + f"    ;# copriferro, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, d["copriferro"])]
+        tag_copriferro, tag_mat = tag_mat, tag_mat + 1
+    acciaio = _legami.acciaio(m.materiale(s.acciaio), veste) if barre else None
+    tag_acciaio = None
+    if acciaio is not None:
+        righe += [r + f"    ;# acciaio, sezione {s.id}" for r in _legami.righe_tcl(tag_mat, acciaio)]
+        tag_acciaio, tag_mat = tag_mat, tag_mat + 1
+    sez.materiali[str(s.id)] = {"nucleo": d["nucleo"], "copriferro": d["copriferro"], "acciaio": acciaio}
+    for avviso in d["avvisi"] + (acciaio["avvisi"] if acciaio else []):
+        if avviso not in sez.avvisi:
+            sez.avvisi.append(avviso)
+    for nota in d["note"] + (acciaio["note"] if acciaio else []):
+        if nota not in sez.note:
+            sez.note.append(nota)
+
+    y0, z0, y1, z1 = contorno
+    righe.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
+    if una_patch:
+        righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
+        nucleo = (y0, z0, y1, z1)
+    else:
+        nucleo = yc0, zc0, yc1, zc1 = _nucleo(s, verticale, contorno)
+        righe.append(f"    patch rect {tag_nucleo} {n_f} {n_f} {yc0:.10g} {zc0:.10g} {yc1:.10g} {zc1:.10g}")
+        # le quattro fasce esterne: sotto e sopra per tutta la larghezza, i due fianchi fra le due
+        for a, b_, c_, d_ in ((y0, z0, y1, zc0), (y0, zc1, y1, z1), (y0, zc0, yc0, zc1), (yc1, zc0, y1, zc1)):
+            if c_ - a > 0 and d_ - b_ > 0:  # una riduzione può mangiarsi la fascia per intero
+                righe.append(f"    patch rect {tag_copriferro} {n_f} {n_f} "
+                             f"{a:.10g} {b_:.10g} {c_:.10g} {d_:.10g}")
+    for b in barre:
+        righe.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_acciaio}")
+    righe.append("}")
+    sez.fibre_registrate[tag_sezione] = _fibre_estreme(nucleo, tag_nucleo, barre, tag_acciaio)
+    return tag_mat
+
+
+def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
+    """Il blocco d'analisi di un caso: lineare come MeshRec (`opensees._passo_statico`), oppure
+    a passi con la scala di algoritmi quando la statica è dichiarata a fibre.
+
+    La scala è quella dei `LoadControl` di OpenSees: `Newton` prima, `ModifiedNewton -initial`
+    quando la tangente aggiornata non chiude, `KrylovNewton` quando neanche quella. Solo dopo
+    i tre si dimezza il passo, fino a `DIMEZZAMENTI` volte, e il passo pieno torna al giro dopo:
+    un passo che ha chiesto aiuto una volta non condanna tutti quelli che seguono.
+
+    La caduta si dichiara e ferma la corsa (`exit 1`, marcatore di fine non scritto), come per
+    il caso lineare che non converge: un'analisi che non ha chiuso l'ultimo passo lascerebbe i
+    registratori pieni dell'ultimo stato buono, e il lettore non lo distinguerebbe da un risultato.
+    """
+    if legami_ != "fibre":
+        return ["constraints Transformation", "numberer RCM", "system BandGeneral",
+                "test NormDispIncr 1.0e-8 10", "algorithm Linear",
+                "integrator LoadControl 1.0", "analysis Static",
+                "if {[analyze 1] != 0} {",
+                f'    puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non è arrivato a convergenza"',
+                "    exit 1", "}"]
+    scala = " ".join(SCALA_ALGORITMI)
+    return [
+        "constraints Transformation", "numberer RCM", "system BandGeneral",
+        f"test NormDispIncr {TOLLERANZA_FIBRE:g} {ITERAZIONI_FIBRE}",
+        f"set dt [expr {{1.0/{passi}}}]",
+        "integrator LoadControl $dt", "algorithm Newton", "analysis Static",
+        "set fatto 0.0", "set passo 0",
+        "while {$fatto < 0.9999999} {",
+        "    incr passo",
+        "    set d $dt",
+        "    set esito -1",
+        '    set usato "-"',
+        f"    for {{set giro 0}} {{$giro <= {DIMEZZAMENTI}}} {{incr giro}} {{",
+        "        if {$fatto + $d > 1.0} {set d [expr {1.0 - $fatto}]}",
+        "        integrator LoadControl $d",
+        f"        foreach alg {{{scala}}} {{",
+        '            if {$alg eq "ModifiedNewton"} {algorithm ModifiedNewton -initial} '
+        "else {algorithm $alg}",
+        "            set esito [analyze 1]",
+        "            if {$esito == 0} {set usato $alg; break}",
+        "        }",
+        "        if {$esito == 0} {break}",
+        "        set d [expr {$d / 2.0}]",
+        "    }",
+        "    if {$esito != 0} {",
+        f'        puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} è caduto al passo $passo, '
+        'fattore [format %.6g $fatto]"',
+        "        exit 1",
+        "    }",
+        "    set fatto [expr {$fatto + $d}]",
+        f'    puts "{MARCA_PASSO}: caso {caso} passo $passo algoritmo $usato '
+        'fattore [format %.6g $fatto]"',
+        "}",
+    ]
+
+
+def _scrivi(m: Modello, casi: list[str], g: Geometria, c: Carichi, sez: Sezioni,
+            da_azioni: dict[int, float], n_modi: int | None, legami_: str, passi: int) -> list[str]:
+    """Le righe del `.tcl`, nell'ordine in cui OpenSees le vuole."""
     r = ["# Deck generato da NOVA (nova/deck.py). Unità: mm, N, MPa, t, s.",
          "# Si esegue con la cartella di lavoro sulla cartella di uscita.",
          "wipe", "model BasicBuilder -ndm 3 -ndf 6", "", "# --- nodi ---"]
-    for tag, (x, y, z) in nodi_xyz.items():
+    for tag, (x, y, z) in g.nodi.items():
         r.append(f"node {tag} {x:.10g} {y:.10g} {z:.10g}")
     # la massa è scalare e uguale sulle tre traslazioni: la direzione la decide `eigen`
-    da_azioni = _masse_da_azioni(m, elementi, per_asta, mappa_nodo)
-    masse_nodo = {mappa_nodo[n.id]: float(n.massa_nodale) for n in m.nodi if n.massa_nodale}
+    masse_nodo = {g.mappa_nodo[n.id]: float(n.massa_nodale) for n in m.nodi if n.massa_nodale}
     for tag, quanta in da_azioni.items():
         masse_nodo[tag] = masse_nodo.get(tag, 0.0) + quanta
     for tag in sorted(masse_nodo):
@@ -400,52 +665,24 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
     r += ["", "# --- vincoli dichiarati ---"]
     for n in m.nodi:
         if n.vincolato():
-            r.append(f"fix {mappa_nodo[n.id]} " + " ".join(str(g) for g in n.vincolo.gradi()))
-    r += ["", "# --- materiali elastici (T1) e sezioni a fibre ---"]
-    sezioni_senza_barre: list[int] = []
-    tag_mat = 1
-    for (id_sezione, verticale), tag_sezione in sezioni_tag.items():
-        s = m.sezione(id_sezione)
-        cls = catalogo.valori(m.materiale(s.calcestruzzo)); acc = catalogo.valori(m.materiale(s.acciaio))
-        r.append(f"uniaxialMaterial Elastic {tag_mat} {cls['E']:.10g}"
-                 f"    ;# {m.materiale(s.calcestruzzo).classe}, sezione {s.id}")
-        r.append(f"uniaxialMaterial Elastic {tag_mat + 1} {acc['E']:.10g}"
-                 f"    ;# {m.materiale(s.acciaio).classe}, sezione {s.id}")
-        lungo_e1, lungo_e2 = _dimensioni_lungo(s, verticale)
-        rid = s.riduzione
-        y0, y1 = -lungo_e1 / 2, lungo_e1 / 2
-        z0, z1 = -lungo_e2 / 2, lungo_e2 / 2
-        if rid:  # il contorno si restringe, le barre restano dove il copriferro nominale le mette
-            y0 += rid.inf if verticale else rid.sx; y1 -= rid.sup if verticale else rid.dx
-            z0 += rid.sx if verticale else rid.inf; z1 -= rid.dx if verticale else rid.sup
-        G = cls["E"] / (2 * (1 + cls["nu"]))
-        gj = G * opensees._costante_torsionale(lungo_e1, lungo_e2)
-        n_f = m.impostazioni_analisi.fibre
-        r.append(f"section Fiber {tag_sezione} -GJ {gj:.10g} {{")
-        r.append(f"    patch rect {tag_mat} {n_f} {n_f} {y0:.10g} {z0:.10g} {y1:.10g} {z1:.10g}")
-        barre = _barre(s, verticale)
-        if not barre and s.id not in sezioni_senza_barre:
-            sezioni_senza_barre.append(s.id)
-        for b in barre:
-            r.append(f"    fiber {b.y:.10g} {b.z:.10g} {math.pi * b.diametro ** 2 / 4:.10g} {tag_mat + 1}")
-        r.append("}")
-        tag_mat += 2
+            r.append(f"fix {g.mappa_nodo[n.id]} " + " ".join(str(x) for x in n.vincolo.gradi()))
+    r += sez.righe
     r += ["", "# --- trasformazioni ed elementi ---"]
-    for e in elementi:
+    for e in g.elementi:
         r.append(f"geomTransf Linear {e.tag} {e.e2[0]:.10g} {e.e2[1]:.10g} {e.e2[2]:.10g}")
         r.append(f"element forceBeamColumn {e.tag} {e.i} {e.j} {STAZIONI} {e.sezione_tag} {e.tag} "
                  f"-mass {e.massa_lineare:.10g}")
-    n_nodi, n_el = len(nodi_xyz), len(elementi)
+    n_nodi, n_el = len(g.nodi), len(g.elementi)
     for k, caso in enumerate(casi, start=1):
         r += ["", f"# ===== caso di carico {caso} =====", f"timeSeries Linear {k}", f"pattern Plain {k} {k} {{"]
-        for tag, v in nodali[caso].items():
+        for tag, v in c.nodali[caso].items():
             r.append(f"    load {tag} " + " ".join(f"{x:.10g}" for x in v))
-        for e in elementi:
+        for e in g.elementi:
             w = np.array(e.w[caso])
             if np.any(w):
                 r.append(f"    eleLoad -ele {e.tag} -type -beamUniform "
                          f"{np.dot(w, e.e1):.10g} {np.dot(w, e.e2):.10g} {np.dot(w, e.a):.10g}")
-        for tag, dof, val in cedimenti[caso]:
+        for tag, dof, val in c.cedimenti[caso]:
             r.append(f"    sp {tag} {dof} {val:.10g}")
         r.append("}")
         r += [f"recorder Node -file {caso}_spostamenti.out -precision 12 -nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 disp",
@@ -453,18 +690,11 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
               f"recorder Element -file {caso}_localforce.out -precision 12 -eleRange 1 {n_el} localForce"]
         for st in range(1, STAZIONI + 1):
             r.append(f"recorder Element -file {caso}_sez{st}.out -precision 12 -eleRange 1 {n_el} section {st} force")
-        r += ["constraints Transformation", "numberer RCM", "system BandGeneral", "test NormDispIncr 1.0e-8 10",
-              "algorithm Linear", "integrator LoadControl 1.0", "analysis Static",
-              "if {[analyze 1] != 0} {",
-              f'    puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non è arrivato a convergenza"',
-              "    exit 1", "}",
-              # `remove loadPattern` + `reset` bastano a rendere i casi indipendenti: misurato il
-              # 05/09/2026 con OpenSees 3.8.0 sul telaio 2×1, il caso Z2 (sola spinta in testa) dopo
-              # Z1 (solo distribuito) dà somma delle reazioni z = 0, cioè zero residuo del caso prima.
-              "remove recorders", "wipeAnalysis", f"remove loadPattern {k}", "reset"]
-    if modi is None:
-        modi = modale.modi_dichiarati(m)
-    n_modi = min(modi, modale.gradi_liberi(m)) if modi else None
+        r += _blocco_statico(caso, legami_, passi)
+        # `remove loadPattern` + `reset` bastano a rendere i casi indipendenti: misurato il
+        # 05/09/2026 con OpenSees 3.8.0 sul telaio 2×1, il caso Z2 (sola spinta in testa) dopo
+        # Z1 (solo distribuito) dà somma delle reazioni z = 0, cioè zero residuo del caso prima.
+        r += ["remove recorders", "wipeAnalysis", f"remove loadPattern {k}", "reset"]
     if n_modi:
         blocco = opensees._passo_modale(n_modi, n_nodi)
         # `-fullGenLapack` e non l'Arpack che `_passo_modale` scrive: con la massa lumped di
@@ -478,14 +708,51 @@ def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None)
         r += ["", *blocco]
     r += ["", "wipe", f'set _fine [open "{opensees.NOME_FINE}" w]', f'puts $_fine "{opensees.MARCA_FINE}"',
           "close $_fine", ""]
+    return r
+
+
+def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None,
+           legami: str | None = None) -> Deck:
+    """Scrive `13_telaio.tcl` nella cartella e rende quel che serve a leggerne le uscite.
+
+    `modi` intero aggiunge in coda il passo modale, dopo l'ultimo caso statico e il suo
+    `reset`: i registratori di `eigen` chiedono `record` e vogliono la cartella pulita dai
+    registratori statici, che ogni caso rimuove già da sé.
+
+    `legami` a `None` — il default — lo legge dal modello, come fa `modi`: chi chiama non deve
+    ricordarsi di passarlo, e una statica dichiarata a fibre non può finire scritta elastica
+    perché un chiamante ha dimenticato un argomento. Il valore esplicito resta per i test.
+
+    I cedimenti finiscono in `sp` dentro il pattern del caso, anche su un dof che i vincoli
+    dichiarati hanno già bloccato con `fix`: misurato il 05/09/2026 con OpenSees 3.8.0 e
+    `constraints Transformation`, `fix 2 1 1 1 0 0 0` più `sp 2 3 -5.0` dà `analyze` a 0,
+    `nodeDisp 2 3 = -5` e la reazione EA/L·5 corretta. Il `fix` non va tolto.
+    """
+    cartella = Path(cartella)
+    casi = list(dict.fromkeys(casi))  # due volte lo stesso caso sono due pattern e un'uscita sola
+    dichiarati, passi = _legami_dichiarati(m)
+    legami_ = dichiarati if legami is None else legami
+    if legami_ not in ("elastico", "fibre"):
+        raise ValueError(f"legami «{legami_}» sconosciuto: i legami sono elastico, fibre")
+    g = _geometria(m)
+    c = _carichi(m, casi, g)
+    sez = _sezioni(m, g, legami_)
+    if modi is None:
+        modi = modale.modi_dichiarati(m)
+    n_modi = min(modi, modale.gradi_liberi(m)) if modi else None
+    da_azioni = _masse_da_azioni(m, g.elementi, g.per_asta, g.mappa_nodo)
+    righe = _scrivi(m, casi, g, c, sez, da_azioni, n_modi, legami_, passi or 1)
     cartella.mkdir(parents=True, exist_ok=True)  # dopo le validazioni: un rifiuto non lascia cartelle
     percorso = cartella / NOME_TCL
-    percorso.write_text("\n".join(r), encoding="utf-8")
-    resoconto = {"tcl": str(percorso), "nodi": n_nodi, "elementi": n_el, "casi": list(casi),
-                 "vincolati": len(vincolati), "carico_totale": carico_totale,
-                 "sezioni_senza_barre": sezioni_senza_barre, "modi": n_modi,
+    percorso.write_text("\n".join(righe), encoding="utf-8")
+    resoconto = {"tcl": str(percorso), "nodi": len(g.nodi), "elementi": len(g.elementi),
+                 "casi": list(casi), "vincolati": len(g.vincolati), "carico_totale": c.totale,
+                 "sezioni_senza_barre": sez.senza_barre, "modi": n_modi,
                  "massa_da_azioni": sum(da_azioni.values()),
-                 "mappa_nodo": {str(k): v for k, v in mappa_nodo.items()},
-                 "mappa_asta": {str(k): v for k, v in mappa_asta.items()}}
-    return Deck(percorso, list(casi), nodi_xyz, mappa_nodo, mappa_asta, elementi, vincolati,
-                carico_totale, resoconto, n_modi)
+                 "legami": legami_, "passi": passi if legami_ == "fibre" else None,
+                 "materiali": sez.materiali, "avvisi": sez.avvisi, "note": sez.note,
+                 "mappa_nodo": {str(k): v for k, v in g.mappa_nodo.items()},
+                 "mappa_asta": {str(k): v for k, v in g.mappa_asta.items()}}
+    return Deck(percorso, list(casi), g.nodi, g.mappa_nodo, g.mappa_asta, g.elementi, g.vincolati,
+                c.totale, resoconto, n_modi, legami_, passi if legami_ == "fibre" else 0,
+                sez.materiali, sez.fibre_registrate)

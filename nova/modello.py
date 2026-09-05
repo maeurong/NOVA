@@ -270,8 +270,17 @@ class Combinazione(_Base):
 
 
 class AnalisiStatica(_Base):
+    """`legami: "fibre"` è la stessa statica con le sezioni non lineari e il carico applicato in
+    `passi` incrementi (`LoadControl 1/passi`) invece che in una botta sola.
+
+    La veste dei legami **non** sta qui: è `impostazioni_analisi.veste`, una per modello, perché
+    un pilastro non può essere di calcestruzzo medio in una corsa e caratteristico in un'altra
+    dentro lo stesso deck — i tag di sezione sono gli stessi.
+    """
     tipo: Literal["statica"]
     casi: list[Annotated[str, Field(pattern=FORMA_CASO)]]
+    legami: Literal["elastico", "fibre"] = "elastico"
+    passi: int = Field(10, ge=1)
 
 
 class MassaDaAzione(_Base):
