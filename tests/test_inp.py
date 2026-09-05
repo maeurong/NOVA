@@ -148,3 +148,76 @@ def test_deck_vero_mesh_massa_e_quota():
     assert d.volume == pytest.approx(2.17728627e08, rel=1e-8)   # 0,2177 m³
     assert d.massa == pytest.approx(0.5550556, rel=1e-6)        # t
     assert d.quota_vincolati == pytest.approx(0.1219690, rel=1e-6)
+
+
+# --- fix round 1 ------------------------------------------------------------
+
+def _scrivi(tmp_path, nome: str, testo: str) -> Path:
+    p = tmp_path / nome
+    p.write_text(testo, encoding="ascii")
+    return p
+
+
+def test_la_quota_conta_solo_i_nodi_bloccati_in_z(tmp_path):
+    """`*BOUNDARY` porta i dof: un vincolo di simmetria (1,2) non regge il peso, e contarlo
+    nella quota tributaria gonfierebbe il peso atteso con nodi che in z sono liberi."""
+    testo = TRAVE.read_text(encoding="ascii")
+    simmetria = "*NSET, NSET=SIMM\n" + ", ".join(str(n) for n in range(301, 316)) + "\n"
+    p = _scrivi(tmp_path, "dof.inp", testo.replace(
+        "*BOUNDARY\nBASE, 1, 3\n", simmetria + "*BOUNDARY\nBASE, 3, 3\nSIMM, 1, 2\n"))
+    d = _inp.leggi(p)
+    assert d.vincoli == [("BASE", 3, 3), ("SIMM", 1, 2)]
+    assert d.vincolati == _inp.leggi(TRAVE).set_nodi["BASE"]   # `SIMM` non è bloccato in z
+    assert d.quota_vincolati == pytest.approx(0.00127465, rel=1e-9)
+
+
+def test_ogni_passo_porta_il_proprio_g(tmp_path):
+    """`g` del passo, non il primo `GRAV` del file: un deck che apre con la spinta a 0,1 g
+    darebbe 981 al passo del peso proprio, e il peso atteso sbaglierebbe di dieci volte."""
+    p = _scrivi(tmp_path, "ordine.inp",
+                "** NOME PASSO: SPINTA\n*STEP\n*STATIC\n*DLOAD\nA, GRAV, 981.0, 0.0, 1.0, 0.0\n*END STEP\n"
+                "** NOME PASSO: GRAVITA\n*STEP\n*STATIC\n*DLOAD\nA, GRAV, 9810.0, 0.0, 0.0, -1.0\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert [x.g for x in d.passi] == [981.0, 9810.0]
+    assert [x.gravita for x in d.passi] == [False, True]
+    assert d.g == 981.0  # il primo del file, per la sola provenienza
+
+
+@pytest.mark.parametrize("prima", ["C3D4", "T3D2"])
+def test_una_mesh_di_tipi_misti_non_ha_volume(tmp_path, prima):
+    """Due `*ELEMENT` di tipo diverso: il volume non si calcola, e non deve nemmeno provarci
+    (numpy solleverebbe sulle righe di lunghezza diversa, dopo la corsa)."""
+    dopo = "T3D2" if prima == "C3D4" else "C3D4"
+    quattro, due = "1, 1, 2, 3, 4\n", "2, 1, 2\n"
+    p = _scrivi(tmp_path, f"misto_{prima}.inp",
+                "*NODE\n1, 0.0, 0.0, 0.0\n2, 1.0, 0.0, 0.0\n3, 0.0, 1.0, 0.0\n4, 0.0, 0.0, 1.0\n"
+                f"*ELEMENT, TYPE={prima}, ELSET=A\n{quattro if prima == 'C3D4' else due}"
+                f"*ELEMENT, TYPE={dopo}, ELSET=B\n{due if prima == 'C3D4' else quattro}"
+                "*DENSITY\n2.5e-09\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.tipo_elemento == "C3D4+T3D2" and d.n_elementi == 2
+    assert d.volume is None and d.massa is None and d.quota_vincolati is None
+
+
+def test_i_nomi_dei_set_non_distinguono_le_maiuscole(tmp_path):
+    """`ccx` risolve gli `*NSET` senza distinguere il caso (`meshrec/core/config.py:43-55`)."""
+    p = _scrivi(tmp_path, "caso.inp",
+                "*NSET, NSET=Base\n1, 2\n*BOUNDARY\nBASE, 1, 3\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert list(d.set_nodi) == ["BASE"] and d.vincolati == [1, 2]
+
+
+def test_una_pressione_toglie_il_passo_dai_gravitazionali(tmp_path):
+    p = _scrivi(tmp_path, "pressione.inp",
+                "*STEP\n*STATIC\n*DLOAD\nA, GRAV, 9810.0, 0.0, 0.0, -1.0\n"
+                "*DSLOAD\nA, P1, 0.5\n*END STEP\n")
+    assert _inp.leggi(p).passi[0].gravita is False
+
+
+def test_due_passi_con_lo_stesso_nome_sono_un_rifiuto(tmp_path):
+    p = _scrivi(tmp_path, "doppio.inp",
+                "** NOME PASSO: GRAVITA\n*STEP\n*STATIC\n*END STEP\n"
+                "** NOME PASSO: GRAVITA\n*STEP\n*STATIC\n*END STEP\n")
+    with pytest.raises(ValueError) as e:
+        _inp.leggi(p)
+    assert "duplicato" in str(e.value) and "GRAVITA" in str(e.value)

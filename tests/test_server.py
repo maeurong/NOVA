@@ -569,3 +569,13 @@ def test_il_solutore_di_opensees_non_finisce_dentro_ccx(tmp_path, binario_ccx):
     cliente = _app_con_solutore(tmp_path, str(_trave()))
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
     assert r.status_code == 200 and r.json()["esito"] == "ok", r.text
+
+
+def test_i_risultati_del_solido_si_rileggono_dal_run_id(cliente, tmp_path, binario_ccx):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["cartella"] == str(tmp_path / "corse" / corpo["run_id"])
+    riletti = cliente.get(f"/api/risultati/{corpo['run_id']}")
+    assert riletti.status_code == 200, riletti.text
+    assert riletti.json()["massa"] == corpo["risultati"]["massa"]

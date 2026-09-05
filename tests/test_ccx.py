@@ -281,3 +281,47 @@ def test_deck_vero(tmp_path, binario_ccx):
     assert ris["modi"][0]["f"] == pytest.approx(21.007, abs=0.01)
     assert ris["modi"][1]["f"] == pytest.approx(34.011, abs=0.01)
     assert _verdetto(ris, "reazioni", "GRAVITA")["esito"] == "passato"
+
+
+# --- fix round 1 ------------------------------------------------------------
+
+def test_le_uscite_di_un_altro_lavoro_nella_cartella_sopravvivono(tmp_path, binario_ccx):
+    """La cartella la sceglie il chiamante: `wall_model.dat` di MeshRec non è roba nostra.
+    Si cancellano i nomi esatti della corsa, non tutto quello che finisce per `.dat`."""
+    cartella = tmp_path / "corsa"
+    cartella.mkdir()
+    for nome in ("wall_model.dat", "wall_model.frd", "altro.12d"):
+        (cartella / nome).write_text("roba di un altro lavoro\n", encoding="ascii")
+    assert _ccx.esegui(TRAVE, cartella)["esito"] == "ok"
+    for nome in ("wall_model.dat", "wall_model.frd", "altro.12d"):
+        assert (cartella / nome).is_file(), nome
+
+
+def test_un_passo_senza_reazioni_stampate_non_ha_somma(tmp_path, binario_ccx):
+    """Zero reazioni non è «somma zero»: un `*NODE PRINT` che manca è un dato che non c'è."""
+    p = _variante(tmp_path, "muto.inp", lambda t: t.replace("*NODE PRINT, NSET=BASE\nRF\n", "", 1))
+    r = _ccx.esegui(p, tmp_path / "corsa")
+    assert r["esito"] == "ok", r
+    gravita = r["risultati"]["passi"]["GRAVITA"]
+    assert gravita["n_reazioni"] == 0 and gravita["reazioni_somma"] is None
+    v = _verdetto(r["risultati"], "reazioni", "GRAVITA")
+    assert v["esito"] == "non_applicabile" and "nessuna reazione stampata" in v["ragione"]
+    assert r["risultati"]["passi"]["CARICO_TOP"]["n_reazioni"] == 15  # gli altri passi restano interi
+
+
+def test_lo_spostamento_viene_dall_ultimo_incremento():
+    """Due `DISP` per lo stesso passo: `leggi_reazioni` prende l'ultimo blocco, e la sommità
+    deve venire dallo stesso incremento — o si confrontano due istanti diversi."""
+    import numpy as np
+    from meshrec.core.solve import Blocco
+
+    deck = _ccx._inp.leggi(TRAVE)
+    nodi = np.array(deck.set_nodi["TOP"][:2])
+    primo = Blocco("DISP", 1, False, 0.5, nodi, np.array([[0.0, 0.0, -1.0], [0.0, 0.0, -1.0]]))
+    ultimo = Blocco("DISP", 1, False, 1.0, nodi, np.array([[0.0, 0.0, -2.0], [0.0, 0.0, -2.0]]))
+    assert _ccx._sommita([primo, ultimo], 1, deck)["TOP"]["max"][2] == -2.0
+
+
+def test_la_versione_e_quella_del_banner_non_di_un_avviso():
+    registro = "*WARNING in e_c3d: Version 1 element\nCalculiX Version 2.22, Copyright(C) 1998-2024\n"
+    assert _ccx._versione(registro) == "CalculiX Version 2.22, Copyright(C) 1998-2024"

@@ -28,6 +28,11 @@ _MARCA_NOME = "** NOME PASSO:"
 # `non_applicabile`, che è la risposta onesta: non un numero plausibile e sbagliato.
 TIPO_ESATTO = "C3D4"
 
+# Il grado di libertà lungo z. La quota tributaria si somma sui soli nodi bloccati in
+# quella direzione: `Passo.gravita` pretende una gravità lungo −z, e un vincolo di
+# simmetria (`*BOUNDARY SIMM, 1, 2`) non regge un grammo di quel peso.
+_DOF_VERTICALE = 3
+
 
 @dataclass(frozen=True)
 class Passo:
@@ -40,19 +45,29 @@ class Passo:
     tipo: str            # "statico" | "modale"
     n_modi: int | None
     gravita: bool
+    g: float | None      # il `GRAV` di **questo** passo, non il primo del file
 
 
 @dataclass(frozen=True)
 class Inp:
     passi: list[Passo]
     set_nodi: dict[str, list[int]]
-    vincolati: list[int]
+    vincoli: list[tuple[str, int, int]]   # (set o nodo, dof iniziale, dof finale)
     densita: float | None
     elastico: tuple[float, float] | None
     g: float | None
     tipo_elemento: str | None
     nodi: dict[int, tuple[float, float, float]]
     elementi: list[tuple[int, ...]]
+
+    @property
+    def vincolati(self) -> list[int]:
+        """I nodi bloccati lungo z, gli unici che portano via una quota del peso."""
+        nodi: set[int] = set()
+        for nome, inizio, fine in self.vincoli:
+            if inizio <= _DOF_VERTICALE <= fine:
+                nodi.update([int(nome)] if nome.lstrip("+-").isdigit() else self.set_nodi.get(nome, ()))
+        return sorted(nodi)
 
     @property
     def n_nodi(self) -> int:
@@ -123,7 +138,10 @@ def _carta(riga: str) -> tuple[str, dict[str, str]]:
 
 
 def _gravitazionale(passo: dict) -> bool:
-    return (passo["tipo"] == "statico" and not passo["cload"] and len(passo["dload"]) == 1
+    """Il solo peso proprio e nient'altro: un `*CLOAD`, una pressione `*DSLOAD` o un secondo
+    `*DLOAD` qualsiasi tolgono il passo dai gravitazionali, perché la somma delle reazioni
+    non è più il peso e nessun oracolo chiuso la prevede."""
+    return (passo["tipo"] == "statico" and not passo["altri"] and len(passo["dload"]) == 1
             and passo["dload"][0][1] == (0.0, 0.0, -1.0))
 
 
@@ -138,9 +156,10 @@ def leggi(percorso: str | Path) -> Inp:
     nodi: dict[int, tuple[float, float, float]] = {}
     elementi: list[tuple[int, ...]] = []
     set_nodi: dict[str, list[int]] = {}
-    vincolati_grezzi: list[str] = []
+    vincoli: list[tuple[str, int, int]] = []
     passi: list[Passo] = []
-    densita = elastico = g = tipo_elemento = None
+    tipi: set[str] = set()
+    densita = elastico = g = None
     sezione, parametri, nome_atteso, aperto, continua = None, {}, None, None, False
 
     for numero, riga in enumerate(righe, start=1):
@@ -156,17 +175,22 @@ def leggi(percorso: str | Path) -> Inp:
             continua = False
             if sezione == "STEP":
                 aperto = {"nome": nome_atteso or f"passo {len(passi) + 1}", "tipo": "statico",
-                          "n_modi": None, "dload": [], "cload": False}
+                          "n_modi": None, "dload": [], "altri": False, "g": None}
                 nome_atteso = None
             elif aperto is not None and sezione == "FREQUENCY":
                 aperto["tipo"] = "modale"
             elif aperto is not None and sezione == "END STEP":
-                passi.append(Passo(aperto["nome"], aperto["tipo"], aperto["n_modi"], _gravitazionale(aperto)))
+                if any(x.nome == aperto["nome"] for x in passi):
+                    raise ValueError(f"{p}, riga {numero}: nome di passo duplicato «{aperto['nome']}». "
+                                     "I risultati sono per nome di passo, e due passi con lo stesso "
+                                     "nome ne lascerebbero uno solo")
+                passi.append(Passo(aperto["nome"], aperto["tipo"], aperto["n_modi"],
+                                   _gravitazionale(aperto), aperto["g"]))
                 aperto = None
             elif sezione == "ELEMENT":
-                tipo_elemento = parametri.get("TYPE") or tipo_elemento
+                tipi.add(parametri.get("TYPE", "").upper())
             elif sezione == "NSET":
-                set_nodi.setdefault(parametri.get("NSET", ""), [])
+                set_nodi.setdefault(parametri.get("NSET", "").upper(), [])
             continue
         campi = [x.strip() for x in pulita.split(",")]
         try:
@@ -186,28 +210,32 @@ def leggi(percorso: str | Path) -> Inp:
                 if "GENERATE" in parametri:
                     inizio, fine, salto = (numeri + [1])[:3]
                     numeri = list(range(inizio, fine + 1, salto))
-                set_nodi[parametri.get("NSET", "")] += numeri
+                set_nodi[parametri.get("NSET", "").upper()] += numeri
             elif sezione == "BOUNDARY":
-                vincolati_grezzi.append(campi[0])
+                # i dof contano: `BASE, 1, 3` regge il peso, `SIMM, 1, 2` no
+                vincoli.append((campi[0].upper(), int(campi[1]), int(campi[2] if len(campi) > 2 else campi[1])))
             elif sezione == "DENSITY" and densita is None:
                 densita = float(campi[0])
             elif sezione == "ELASTIC" and elastico is None:
                 elastico = (float(campi[0]), float(campi[1]))
             elif sezione == "FREQUENCY" and aperto is not None and aperto["n_modi"] is None:
                 aperto["n_modi"] = int(campi[0])
-            elif sezione == "DLOAD" and aperto is not None and len(campi) >= 6 and campi[1].upper() == "GRAV":
-                aperto["dload"].append((float(campi[2]), tuple(float(x) for x in campi[3:6])))
-                g = g if g is not None else float(campi[2])
-            elif sezione == "CLOAD" and aperto is not None:
-                aperto["cload"] = True
+            elif sezione == "DLOAD" and aperto is not None:
+                if len(campi) >= 6 and campi[1].upper() == "GRAV":
+                    aperto["dload"].append((float(campi[2]), tuple(float(x) for x in campi[3:6])))
+                    aperto["g"] = aperto["g"] if aperto["g"] is not None else float(campi[2])
+                    g = g if g is not None else float(campi[2])
+                else:
+                    aperto["altri"] = True
+            elif sezione in ("CLOAD", "DSLOAD") and aperto is not None:
+                aperto["altri"] = True
         except (ValueError, IndexError) as e:
             raise ValueError(f"{p}, riga {numero}: riga di dati illeggibile sotto *{sezione} ({e}). "
                              f"Riga letta: {riga!r}") from None
 
     if not passi:
         raise ValueError(f"{p}: nessun passo (*STEP) nel deck, non c'è niente da risolvere")
-    vincolati: set[int] = set()
-    for nome in vincolati_grezzi:
-        vincolati.update([int(nome)] if nome.lstrip("+-").isdigit() else set_nodi.get(nome, ()))
-    return Inp(passi=passi, set_nodi=set_nodi, vincolati=sorted(vincolati), densita=densita,
-               elastico=elastico, g=g, tipo_elemento=tipo_elemento, nodi=nodi, elementi=elementi)
+    # più tipi di elemento nella stessa mesh: il nome li porta tutti, e `_volumi` si ferma —
+    # senza questo numpy solleverebbe sulle righe di lunghezza diversa, a corsa già fatta
+    return Inp(passi=passi, set_nodi=set_nodi, vincoli=vincoli, densita=densita, elastico=elastico,
+               g=g, tipo_elemento="+".join(sorted(tipi)) or None, nodi=nodi, elementi=elementi)

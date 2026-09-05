@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 import nova
+from nova import ccx as _ccx
 from nova import corsa as _corsa
 from nova import modello as _modello
 from nova import sidecar as _sidecar
@@ -34,6 +35,10 @@ _RUN_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 # lanciare quello (`solve._trova` prende il percorso dichiarato e **non** ripiega sul PATH).
 # CalculiX si cerca nel PATH, che è come `DOVE_PRENDERLO` dice di installarlo.
 _COMANDI_SENZA_SOLUTORE = ("ccx",)
+
+# I due nomi che una cartella di corsa può portare: il telaio e il solido. `/api/risultati`
+# li prova tutti e due, o il `run_id` che `/api/ccx` ha appena reso non si rileggerebbe.
+_NOMI_RISULTATI = (_corsa.NOME_RISULTATI, _ccx.NOME_RISULTATI)
 
 
 class SidecarInProcesso:
@@ -187,7 +192,8 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         righe = sidecar.chiedi({"comando": "ccx", "inp": str(Path(corpo.inp).resolve()),
                                 "cartella": str(cartella_corse / run_id)})
         fin = _o_400(_finale(righe))
-        return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+        return {"run_id": run_id, "cartella": str(cartella_corse / run_id),
+                "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
 
     @app.get("/api/risultati/{run_id}")
     def risultati(run_id: str):
@@ -195,13 +201,15 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         if not _RUN_ID_RE.fullmatch(run_id):
             raise rifiuta
         radice = cartella_corse.resolve()
-        p = (cartella_corse / run_id / _corsa.NOME_RISULTATI).resolve()
-        if radice not in p.parents or not p.is_file():
-            raise rifiuta
-        try:  # una corsa interrotta lascia un file troncato: è una corsa che non c'è, non un 500
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (ValueError, OSError) as e:
-            raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
+        for nome in _NOMI_RISULTATI:
+            p = (cartella_corse / run_id / nome).resolve()
+            if radice not in p.parents or not p.is_file():
+                continue
+            try:  # una corsa interrotta lascia un file troncato: è una corsa che non c'è, non un 500
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (ValueError, OSError) as e:
+                raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
+        raise rifiuta
 
     @app.post("/api/modello/apri")
     def apri(corpo: ApriReq):

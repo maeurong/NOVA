@@ -35,10 +35,14 @@ import numpy as np
 from meshrec.core import solve
 from meshrec.core.config import SolutoreConfig
 from nova import inp as _inp
-from nova.corsa import _non_applicabile, _testo, _verdetto  # stessa forma dei verdetti del telaio
+from nova.corsa import non_applicabile, testo, verdetto  # stessa forma dei verdetti del telaio
 
+# `solve._TOLLERANZA_REAZIONI` e `solve._INTESTAZIONE_MODALE` sono privati di MeshRec e si
+# usano lo stesso: `meshrec/` non si tocca (vincolo del piano), e ricopiarne il valore qui
+# vorrebbe dire tenerne due che possono divergere in silenzio.
 NOME_RISULTATI = "risultati_solido.json"
-NOME_DECK = "solido.inp"
+_NOME = "solido"
+NOME_DECK = f"{_NOME}.inp"
 NOME_REGISTRO = "ccx_stdout.log"
 MARCA_FINE = "Job finished"
 
@@ -53,8 +57,10 @@ SET_SOMMITA = "TOP"
 _TIMEOUT_S = 1800
 
 # Quello che una corsa lascia in cartella e che una corsa nuova non deve poter rileggere.
-# `.12d` e `spooles.out` li scrive ccx da sé, anche vuoti.
-_USCITE = ("*.dat", "*.frd", "*.sta", "*.cvg", "*.12d", "spooles.out", NOME_RISULTATI)
+# `.12d` e `spooles.out` li scrive ccx da sé, anche vuoti. **Nomi esatti, non `*.dat`**: la
+# cartella la sceglie chi chiama, e un glob ci cancellerebbe il `wall_model.dat` di MeshRec.
+_USCITE = (f"{_NOME}.dat", f"{_NOME}.frd", f"{_NOME}.sta", f"{_NOME}.cvg", f"{_NOME}.12d",
+           "spooles.out", NOME_RISULTATI)
 
 
 def _solutore(percorso: str | None) -> SolutoreConfig:
@@ -94,8 +100,8 @@ def esegui(inp: str | Path, cartella: str | Path, percorso_solutore: str | None 
     try:
         # prima si pulisce, poi si copia: un `.dat` di ieri letto come il risultato di oggi
         # è il modo peggiore di sbagliare, perché il numero esce plausibile
-        for vecchia in [x for forma in _USCITE for x in cartella.glob(forma)]:
-            vecchia.unlink(missing_ok=True)
+        for nome in _USCITE:
+            (cartella / nome).unlink(missing_ok=True)
         shutil.copyfile(inp, copia)
     except OSError as e:
         return {"esito": "errore", "fase": "deck", "motivo": f"{Path(inp)}: non si copia nella cartella "
@@ -107,10 +113,10 @@ def esegui(inp: str | Path, cartella: str | Path, percorso_solutore: str | None 
                                   capture_output=True, timeout=_TIMEOUT_S)
     except subprocess.TimeoutExpired as e:
         return _errore(f"ccx non è finito entro il timeout di {_TIMEOUT_S:g} s",
-                       _testo(e.stdout) + _testo(e.stderr), cartella, t0)
+                       testo(e.stdout) + testo(e.stderr), cartella, t0)
     except (OSError, subprocess.SubprocessError) as e:
         return _errore(f"«{stato['percorso']}» non è eseguibile: {e}", "", cartella, t0)
-    registro = _testo(processo.stdout) + _testo(processo.stderr)
+    registro = testo(processo.stdout) + testo(processo.stderr)
     if MARCA_FINE not in registro:
         return _errore(f"ccx non ha scritto «{MARCA_FINE}»: la corsa non è arrivata in fondo "
                        f"(codice d'uscita {processo.returncode}, che non è il segnale)",
@@ -141,7 +147,9 @@ def _errore(motivo: str, registro: str, cartella: Path, t0: float) -> dict:
 
 def _versione(registro: str) -> str | None:
     """La riga del banner: «CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt»."""
-    return next((r.strip() for r in registro.splitlines() if "Version" in r), None)
+    # «CalculiX Version», non «Version»: un `*WARNING` che nomina la versione di un elemento
+    # non è la versione del solutore
+    return next((r.strip() for r in registro.splitlines() if "CalculiX Version" in r), None)
 
 
 def _sommita(blocchi: list, passo: int, deck: _inp.Inp) -> dict:
@@ -151,7 +159,9 @@ def _sommita(blocchi: list, passo: int, deck: _inp.Inp) -> dict:
     nodi = deck.set_nodi.get(SET_SOMMITA)
     if not nodi:
         return {}
-    for b in blocchi:
+    # a ritroso: l'ultimo incremento scritto per quel passo è quello a cui `leggi_reazioni`
+    # legge le forze, e sommità e reazioni devono venire dallo stesso istante
+    for b in reversed(blocchi):
         if b.grandezza != "DISP" or b.modale or b.passo != passo:
             continue
         dati = b.dati[np.isin(b.nodi, np.array(nodi))][:, :3]
@@ -203,19 +213,22 @@ def _modi(dat: Path, righe: list[str]) -> list[dict]:
 
 
 def _verdetto_reazioni(passo: _inp.Passo, reazioni: dict, deck: _inp.Inp) -> dict:
+    if not reazioni:
+        return non_applicabile("reazioni", "nessuna reazione stampata per questo passo: il deck "
+                               "non ci ha messo un *NODE PRINT con RF", passo.nome)
     if not passo.gravita:
-        return _non_applicabile("reazioni", "carichi del deck non ricostruiti: fuori dal passo "
-                                "gravitazionale il peso atteso non si conosce", passo.nome)
-    if deck.massa is None or deck.g is None:
+        return non_applicabile("reazioni", "carichi del deck non ricostruiti: fuori dal passo "
+                               "gravitazionale il peso atteso non si conosce", passo.nome)
+    if deck.massa is None or passo.g is None:
         manca = ("il deck non dichiara *DENSITY" if deck.densita is None else
                  f"elemento {deck.tipo_elemento}: volume e quota tributaria sono esatti solo "
                  f"su {_inp.TIPO_ESATTO}")
-        return _non_applicabile("reazioni", f"{manca}: il peso atteso non si calcola", passo.nome)
+        return non_applicabile("reazioni", f"{manca}: il peso atteso non si calcola", passo.nome)
     # la reazione è opposta al carico, e `Passo.gravita` ha già preteso che la gravità
     # del passo vada esattamente lungo −z: il peso atteso in reazione è quindi +z
-    atteso = (0.0, 0.0, (deck.massa - deck.quota_vincolati) * deck.g)
+    atteso = (0.0, 0.0, (deck.massa - deck.quota_vincolati) * passo.g)
     c = solve.controlla_reazioni(reazioni, atteso, solve._TOLLERANZA_REAZIONI)
-    return _verdetto("reazioni", c, passo.nome,
+    return verdetto("reazioni", c, passo.nome,
                      f"Σ reazioni {c['somma']} contro (ρV − quota dei vincolati)·g {atteso}, "
                      f"scarto {c['scarto_relativo']}")
 
@@ -228,14 +241,16 @@ def _componi(deck: _inp.Inp, copia: Path, dat: Path, blocchi: list, righe: list[
         if passo.tipo != "statico":
             continue  # il blocco «forces» dopo il passo modale appartiene ai modi, non a un passo
         reazioni = solve.leggi_reazioni(dat, passo=numero, righe=righe)
-        somma = np.sum(np.array(list(reazioni.values()) or [[0.0, 0.0, 0.0]]), axis=0)
-        passi[passo.nome] = {"reazioni_somma": [float(x) for x in somma], "n_reazioni": len(reazioni),
+        # nessuna reazione stampata non è «somma zero»: è un dato che non c'è
+        somma = ([float(x) for x in np.sum(np.array(list(reazioni.values())), axis=0)]
+                 if reazioni else None)
+        passi[passo.nome] = {"reazioni_somma": somma, "n_reazioni": len(reazioni),
                              "u_set": _sommita(blocchi, numero, deck)}
         verdetti.append(_verdetto_reazioni(passo, reazioni, deck))
     avvisi = registro.count("*WARNING")
-    verdetti.append(_verdetto("avvisi", solve.controlla_avvisi(avvisi), None,
+    verdetti.append(verdetto("avvisi", solve.controlla_avvisi(avvisi), None,
                               f"{avvisi} *WARNING nel registro"))
-    verdetti.append(_verdetto("marcatore", {"passato": True, "marcatore": MARCA_FINE}, None,
+    verdetti.append(verdetto("marcatore", {"passato": True, "marcatore": MARCA_FINE}, None,
                               f"«{MARCA_FINE}» nello stdout e {len(blocchi)} blocchi chiusi nel .frd"))
     return {
         "run": {"id": uuid.uuid4().hex[:12], "data": _dt.datetime.now().isoformat(timespec="seconds"),
