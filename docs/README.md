@@ -11,8 +11,6 @@
   [`2026-09-05-nova-v1-design.md`](superpowers/specs/2026-09-05-nova-v1-design.md),
   sintetizza la mappa wayfinder #1 chiusa il 04/09/2026.
 
-Cartelle previste, non ancora esistenti:
-
 - [`superpowers/plans/`](superpowers/plans/) — piani di implementazione:
   T0+T1 [`2026-09-05-t0-t1-scaffold-modello-sidecar-statica.md`](superpowers/plans/2026-09-05-t0-t1-scaffold-modello-sidecar-statica.md)
   (eseguito, PR #18 e #21), T2 [`2026-09-05-t2-modale-importatore-caso-studio.md`](superpowers/plans/2026-09-05-t2-modale-importatore-caso-studio.md),
