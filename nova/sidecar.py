@@ -85,12 +85,12 @@ def comando_deck(req: dict) -> dict:
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
 
 
-def _motivo_prior(e: Exception) -> str:
-    """Il prior rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
+def _motivo_campi(e: Exception, testa: str) -> str:
+    """Il file rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
     parla a se stesso, e chi ha in mano un rilievo non sa che farsene."""
     if isinstance(e, KeyError):
-        return f"il prior non è leggibile: manca il campo «{e.args[0]}»"
-    return f"il prior non è leggibile: un campo porta un valore inatteso ({e})"
+        return f"{testa}: manca il campo «{e.args[0]}»"
+    return f"{testa}: un campo porta un valore inatteso ({e})"
 
 
 def comando_importa(req: dict) -> dict:
@@ -115,7 +115,7 @@ def comando_importa(req: dict) -> dict:
         # Un prior mutilato non è un difetto del sidecar: senza questo ramo la risposta
         # uscirebbe con `fase: sidecar`, che il server passa come 200. `AttributeError` ci
         # sta perché una voce che non è un oggetto (`scartate: ["boh"]`) muore su `.get`.
-        raise _Rifiuto("importa", _motivo_prior(e)) from None
+        raise _Rifiuto("importa", _motivo_campi(e, "il prior non è leggibile")) from None
     resoconto = dict(imp.resoconto)
     if percorso:
         resoconto["percorso"] = str(Path(percorso).resolve())
@@ -156,14 +156,24 @@ def comando_ccx(req: dict, emetti) -> dict:
     percorso = req.get("inp")
     if not percorso:
         raise _Rifiuto("deck", "serve il deck: «inp» con il percorso di un file .inp")
-    return _ccx.esegui(Path(percorso), Path(req.get("cartella") or "corsa"), req.get("solutore"), emetti)
+    try:
+        return _ccx.esegui(Path(percorso), Path(req.get("cartella") or "corsa"),
+                           req.get("solutore"), emetti)
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # un `.dat` o un `.frd` mutilati muoiono dentro `_componi`: senza questo ramo la
+        # risposta esce con `fase: sidecar`, che il server passa come 200
+        raise _Rifiuto("deck", _motivo_campi(e, "le uscite di ccx non sono leggibili")) from None
 
 
 def _leggi_json(percorso: str, che_cosa: str) -> dict:
     try:
-        return json.loads(Path(percorso).read_text(encoding="utf-8"))
+        letto = json.loads(Path(percorso).read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         raise _Rifiuto("confronto", f"{che_cosa} illeggibile ({percorso}): {e}") from None
+    if not isinstance(letto, dict):
+        raise _Rifiuto("confronto", f"{che_cosa} non è un oggetto JSON ({percorso}): "
+                       f"trovato {type(letto).__name__}")
+    return letto
 
 
 def comando_confronto(req: dict) -> dict:
@@ -184,6 +194,10 @@ def comando_confronto(req: dict) -> dict:
         tabella = _confronto.confronta(telaio, solido, abaqus, req.get("mappa_casi") or {})
     except ValueError as e:
         raise _Rifiuto("confronto", str(e)) from None
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # risultati mutilati (un campo che manca, una lista dove serviva un oggetto): sono
+        # dell'utente, non del sidecar, e devono uscire con la loro fase
+        raise _Rifiuto("confronto", _motivo_campi(e, "i risultati non sono leggibili")) from None
     file: dict = {}
     if req.get("cartella"):
         try:

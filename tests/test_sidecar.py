@@ -1437,3 +1437,18 @@ def test_ccx_fa_il_giro_sul_protocollo(chiedi, tmp_path, binario_ccx):
     assert fin["esito"] == "ok", fin
     assert fin["risultati"]["massa"] == pytest.approx(2.5493e-09 * 2.0e7, rel=1e-9)
     assert (tmp_path / "risultati_solido.json").is_file()
+
+
+def test_ccx_che_muore_leggendo_le_uscite_resta_fase_deck(monkeypatch):
+    """C4: `_componi` legge `.dat` e `.frd` e può sollevare `KeyError`/`IndexError` su
+    un'uscita mutilata. Senza il ramo la risposta usciva `fase: sidecar`, che il server
+    passa come 200 con dentro il gergo di Python."""
+    from nova import sidecar
+
+    def muore(*a, **k):
+        raise KeyError("disponibile")
+
+    monkeypatch.setattr(sidecar._ccx, "esegui", muore)
+    r = sidecar.rispondi({"comando": "ccx", "inp": "qualunque.inp"}, lambda ev: None)
+    assert r["esito"] == "errore" and r["fase"] == "deck", r
+    assert "disponibile" in r["motivo"] and "KeyError" not in r["motivo"]

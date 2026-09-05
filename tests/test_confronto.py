@@ -740,3 +740,26 @@ def test_it_a_cavallo_della_potenza_di_dieci_resta_posizionale():
     dell'arrotondamento sono ciò che `.4g` farebbe in posizionale. Mai un esponente."""
     assert _confronto._it(9999.5) == "10000"
     assert _confronto._it(0.00099995) == "0,0010000"
+
+
+def test_comando_confronto_telaio_che_non_e_un_oggetto_e_fase_confronto(chiedi, tmp_path):
+    """C4: un `telaio.json` che porta una lista finiva su `AttributeError` in `_valida` e
+    usciva `fase: sidecar` — HTTP 200 con dentro il gergo di Python."""
+    telaio_p = tmp_path / "telaio.json"
+    telaio_p.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    (r,) = chiedi({"id": 1, "comando": "confronto", "telaio": str(telaio_p), "mappa_casi": MAPPA})
+    fin = r[-1]
+    assert fin["esito"] == "errore" and fin["fase"] == "confronto", fin
+    assert "oggetto JSON" in fin["motivo"]
+
+
+def test_comando_confronto_telaio_senza_carico_totale_e_fase_confronto(chiedi, tmp_path):
+    """C4: il campo che manca detto per nome, non `KeyError: 'carico_totale'`."""
+    telaio = _telaio()
+    del telaio["run"]["carico_totale"]
+    telaio_p = tmp_path / "telaio.json"
+    telaio_p.write_text(json.dumps(telaio), encoding="utf-8")
+    (r,) = chiedi({"id": 1, "comando": "confronto", "telaio": str(telaio_p), "mappa_casi": MAPPA})
+    fin = r[-1]
+    assert fin["esito"] == "errore" and fin["fase"] == "confronto", fin
+    assert "carico_totale" in fin["motivo"] and "KeyError" not in fin["motivo"]

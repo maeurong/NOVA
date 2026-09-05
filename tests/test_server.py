@@ -554,7 +554,7 @@ def test_ccx_accetta_un_percorso_con_puntini_e_lo_copia_come_solido(cliente, tmp
 
 def test_ccx_con_un_inp_che_non_esiste(cliente, tmp_path):
     r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
-    assert r.status_code == 200 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
+    assert r.status_code == 400 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
 
 
 def test_ccx_rifiuta_la_cartella_dal_corpo(cliente):
@@ -579,3 +579,41 @@ def test_i_risultati_del_solido_si_rileggono_dal_run_id(cliente, tmp_path, binar
     riletti = cliente.get(f"/api/risultati/{corpo['run_id']}")
     assert riletti.status_code == 200, riletti.text
     assert riletti.json()["massa"] == corpo["risultati"]["massa"]
+
+
+# --- ondata finale: percorsi risolti, deck = 400, sidecar occupato = 409 -----------
+
+def test_confronto_risolve_i_tre_percorsi_relativi(cliente, tmp_path, monkeypatch):
+    """C5: `/api/importa` risolve il relativo perché il sidecar può girare in un altro
+    processo con un'altra cwd; `/api/confronto` no, e «telaio.json» era un altro file."""
+    monkeypatch.chdir(tmp_path)
+    r = cliente.post("/api/confronto", json={"telaio": "manca.json"})
+    assert r.status_code == 400, r.text
+    assert str(tmp_path.resolve() / "manca.json") in r.json()["motivo"]
+
+
+def test_ccx_con_un_deck_rifiutato_e_400_non_200(cliente, tmp_path):
+    """C6: `fase: deck` è un errore di chi ha scritto il deck, come `modello` e `importa`:
+    200 lo faceva sembrare una corsa andata a buon fine."""
+    r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
+    assert r.status_code == 400 and r.json()["fase"] == "deck"
+
+
+def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
+    """C7: una corsa di ccx può tenere il sidecar per mezz'ora, e la seconda richiesta
+    restava appesa sul lock senza che nessuno lo sapesse. Ora è un 409 immediato, e la
+    richiesta rifiutata non tocca il lock di chi sta lavorando."""
+    from nova.server import SidecarProcesso, create_app
+
+    class _FintoProcesso:
+        stdin = stdout = None
+
+    sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
+    assert sp._lock.acquire(blocking=False)
+    cliente = TestClient(create_app(sp, tmp_path / "corse"), raise_server_exceptions=False,
+                         base_url="http://127.0.0.1")
+    r = cliente.get("/api/salute")
+    assert r.status_code == 409, r.text
+    assert r.json()["fase"] == "sidecar" and "occupato" in r.json()["motivo"]
+    assert sp._lock.locked()   # il lock resta di chi lo ha preso
+    sp._lock.release()

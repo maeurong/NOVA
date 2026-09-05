@@ -72,7 +72,12 @@ class SidecarProcesso:
         self._lock = threading.Lock()
 
     def chiedi(self, req: dict) -> list[dict]:
-        with self._lock:
+        # senza `blocking=False` la seconda richiesta resta appesa qui finché la prima non
+        # finisce: una corsa di ccx può tenere il sidecar fino al suo timeout di mezz'ora
+        if not self._lock.acquire(blocking=False):
+            raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
+                                             "motivo": "il sidecar è occupato da un'altra corsa"})
+        try:
             self.n += 1
             rid = self.n
             corpo = {**req, "id": rid}
@@ -98,6 +103,8 @@ class SidecarProcesso:
                         return righe
             except Exception as e:  # pipe chiusa, riga non JSON: un errore di dominio, non un 500 muto
                 return [{"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}]
+        finally:
+            self._lock.release()
 
 
 def _finale(righe: list[dict]) -> dict:
@@ -164,7 +171,10 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         return await call_next(request)
 
     def _o_400(fin: dict) -> dict:
-        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa", "confronto"):
+        # `deck` come `modello`/`importa`/`confronto`: è un errore di chi ha scritto il
+        # deck, non del server. `solutore` e `assente` restano 200: là la richiesta era
+        # buona, è la macchina a non avere il solutore.
+        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa", "confronto", "deck"):
             raise HTTPException(400, detail=fin)
         return fin
 
@@ -205,10 +215,17 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
     @app.post("/api/confronto")
     def confronto(corpo: ConfrontoReq):
         """`telaio`/`solido`/`abaqus` sono percorsi dell'utente locale, letti e basta; la
-        cartella d'export è sempre quella che il server genera, come `corsa` e `ccx`."""
+        cartella d'export è sempre quella che il server genera, come `corsa` e `ccx`.
+
+        I relativi si risolvono **qui**, come in `importa`: il sidecar può girare in un
+        altro processo, con la cwd sulla radice del pacchetto, e là «telaio.json» sarebbe
+        un altro file."""
         run_id = secrets.token_hex(6)
-        righe = sidecar.chiedi({"comando": "confronto", "telaio": corpo.telaio, "solido": corpo.solido,
-                                "abaqus": corpo.abaqus, "mappa_casi": corpo.mappa_casi,
+        righe = sidecar.chiedi({"comando": "confronto",
+                                "telaio": str(Path(corpo.telaio).resolve()),
+                                "solido": str(Path(corpo.solido).resolve()) if corpo.solido else None,
+                                "abaqus": str(Path(corpo.abaqus).resolve()) if corpo.abaqus else None,
+                                "mappa_casi": corpo.mappa_casi,
                                 "cartella": str(cartella_corse / run_id)})
         fin = _o_400(_finale(righe))
         return {"run_id": run_id, "cartella": str(cartella_corse / run_id), **fin}
