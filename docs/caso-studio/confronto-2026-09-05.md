@@ -4,7 +4,7 @@ Generato il 05/09/2026, **rigenerato il 05/09/2026 dopo il fix #25** e di nuovo 
 (branch `feat/non-lineare`, `.superpowers/sdd/2026-09-06-t4-non-lineare/`): il ramo elastico del
 deck itera con `Newton` invece di `Linear`, e gli **spostamenti** del telaio cambiano. Reazioni,
 massa e frequenze **no**: quelle le porta il carico, non l'algoritmo. L'ultima passata
-(`516cefd`) non muove nessun numero della tabella — muove `hash_modello`, che ora esclude i
+(`fa3b2e3`) non muove nessun numero della tabella — muove `hash_modello`, che ora esclude i
 default (§«Che cosa è cambiato»), e rifà **tutte** le celle del documento dal JSON: quelle di
 `u_sommita_x` C2 erano rimaste alla corsa di prima del fix #25. Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json)
 (T2, Task 4), corsa `ccx` sul deck vero `lab_telaio_v2/wall_model.inp` (non versionato, 2,5 MB).
@@ -16,14 +16,14 @@ rigenerati da questi file, mai scritti a mano.
 
 | voce | valore |
 |---|---|
-| commit NOVA (codice che ha prodotto questi export) | `516cefd` |
-| run telaio | `f9ea10a953ef` |
-| run solido | `150e375a6ab0` |
-| hash modello telaio | `9fa9b29a2eb61384ceec4041ed49a7c5675471ba2a0bacca135dd512f4608db3` |
+| commit NOVA (codice che ha prodotto questi export) | `fa3b2e3` |
+| run telaio | `3fb8d0907967` |
+| run solido | `68f88432812d` |
+| hash modello telaio | `0137e564e923ec1e62688bfa9e12591acb4ae6125d3a6e1b1dfefdcfe2169bb0` |
 | sha256 deck | `c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126` |
 | OpenSees | Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4) |
 | CalculiX | CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt |
-| data corsa | 2026-09-05T17:26:24 |
+| data corsa | 2026-09-05T17:51:19 |
 | `mappa_casi` | `{"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP", "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}` |
 
 **AVVERTENZA: verifica del codice, non validazione — non è una prova di carico.**
@@ -149,10 +149,17 @@ deformabile del solido, e la lettura della tabella non cambia.
 L'**impronta del modello** è cambiata due volte senza che [`muro_1.nova.json`](muro_1.nova.json)
 sia stato toccato: `a0768dcb…` → `2bf56c67…` quando T4 ha aggiunto campi al modello dati
 (`legami`, `passi`, `impostazioni_analisi`), perché `modello.impronta` serializzava il modello
-**con** i suoi default, e poi `2bf56c67…` → `9fa9b29a…` con il fix che toglie i default dal
-canonico (`model_dump(exclude_defaults=True)`). Questa è l'**ultima migrazione dell'impronta**:
-da qui in avanti un campo aggiunto allo schema non muove più `hash_modello` di nessun modello.
-Ogni `hash_modello` scritto prima si legge come stantio, ed è la volta buona.
+**con** i suoi default, e poi `2bf56c67…` → `9fa9b29a…` → **`0137e564…`** con i due fix di fine
+T4: il canonico esclude i default (`model_dump(exclude_defaults=True)`) e porta
+`VERSIONE_IMPRONTA`, la versione dei default stessi.
+
+Le due cose insieme chiudono i due versi del problema. Senza la prima, ogni campo **aggiunto**
+allo schema rendeva stantio ogni risultato; senza la seconda, ogni default **cambiato di valore**
+(per esempio `Legame.epsU_copriferro` da 0,0035 a 0,004) cambierebbe il `.tcl` di tutti i modelli
+che non lo dichiarano senza muovere nessuna impronta — il verso peggiore, perché non fa rumore.
+`VERSIONE_IMPRONTA` si bumpa a mano, e uno snapshot dei default che entrano nel deck
+(`tests/test_sidecar.py`) fallisce apposta per ricordarlo. Ogni `hash_modello` scritto prima si
+legge come stantio.
 
 ## Cosa non è coperto
 

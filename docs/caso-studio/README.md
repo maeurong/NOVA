@@ -56,8 +56,9 @@ casi del deck e la modale sono l'oggetto del confronto (#11).
 ## Modello NOVA (T2, task 4)
 
 File: [`muro_1.nova.json`](muro_1.nova.json), impronta
-`9fa9b29a2eb61384ceec4041ed49a7c5675471ba2a0bacca135dd512f4608db3` (codice `516cefd`; l'impronta
-esclude i default da questo commit — vedi `confronto-2026-09-05.md` §«Che cosa è cambiato»).
+`0137e564e923ec1e62688bfa9e12591acb4ae6125d3a6e1b1dfefdcfe2169bb0` (codice `fa3b2e3`; da fine T4
+l'impronta esclude i default e porta la versione dei default — vedi `confronto-2026-09-05.md`
+§«Che cosa è cambiato»).
 Corsa vera su OpenSees 3.8.0 (`chiedi` + `binario_opensees`, `tests/test_caso_studio.py`), esito
 **[M]** misurato il 05/09/2026.
 
@@ -124,7 +125,7 @@ telaio con `eleLoad -beamUniform` su `forceBeamColumn` non chiudeva l'equilibrio
 verticale di sommità cresce del 9,5 %. Il prima/dopo riga per riga sta in
 [`confronto-2026-09-05.md`](confronto-2026-09-05.md) §«Che cosa è cambiato con #25».
 
-Spostamenti dopo #25 (corsa del 05/09/2026, OpenSees 3.8.0, codice `516cefd`), `u_max` sul
+Spostamenti dopo #25 (corsa del 05/09/2026, OpenSees 3.8.0, codice `fa3b2e3`), `u_max` sul
 nodo 3 e verdetto `spostamenti` con la soglia nuova sulla luce (#26, `soglia_luce` 1/10, luce
 minima 1 607,5 mm — il pilastro; il nodo peggiore per u/L è qui lo stesso di `u_max`):
 
@@ -167,7 +168,7 @@ discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio
 ai pistoni: nessun numero qui è confrontato con una misura di laboratorio.
 
 File: [`muro_1_pushover.nova.json`](muro_1_pushover.nova.json), impronta
-`86a95ff5edb0d18adf161f0cd78182ad32abf6dc50ed088e64818091bf74c1b3` — **lo stesso telaio** di
+`8956b5d57e88589307a013dded52a7409555b2602304366dd64a834e387f28ea` — **lo stesso telaio** di
 `muro_1.nova.json`, con altre analisi. Sono due file e non uno per un motivo di codice, non di
 comodità: `deck._legami_dichiarati` sceglie i legami per **tutto** il deck, quindi una statica
 `legami: fibre` dentro `muro_1.nova.json` avrebbe reso a fibre anche i casi C1/C2/C3 del
@@ -187,7 +188,7 @@ ancora un ramo calante; a 60 mm il massimo è al passo 109 e il ramo calante c'�
 curva **continua a non cadere** (240 passi, 72 115,2 N al passo 109, 69 763,7 N alla fine).
 Si ferma a 60 mm: è dove la curva dice quel che ha da dire.
 
-### La curva — misure del 05/09/2026, OpenSees 3.8.0, codice `516cefd`
+### La curva — misure del 05/09/2026, OpenSees 3.8.0, codice `fa3b2e3`
 
 Curva completa in [`pushover.csv`](pushover.csv) (`passo;spostamento_mm;taglio_base_N;algoritmo`),
 scritta dai `passi[]` della corsa e mai a mano; il test la rimette a confronto passo per passo
@@ -235,7 +236,7 @@ fissi, esattamente dove ci si aspetta le cerniere. Il taglio alla base smette di
 
 Tabella completa telaio NOVA ↔ solido CalculiX sul deck vero: [`confronto-2026-09-05.md`](confronto-2026-09-05.md)
 (`confronto.json`/`.csv`/`.tex` nella stessa cartella, rigenerati da `nova.confronto.confronta`/`esporta`
-a fine T4 (commit `516cefd`), mai a mano;
+a fine T4 (commit `fa3b2e3`), mai a mano;
 `tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
 `confronto.tex` richiede `\usepackage{booktabs}` nel documento che lo include (i comandi
 `\toprule`/`\midrule`/`\bottomrule` vengono da lì).
