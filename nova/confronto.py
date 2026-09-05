@@ -431,6 +431,9 @@ def _csv(tabella: Tabella) -> str:
                     "bias_atteso", "ragione"]
     buf = io.StringIO()
     buf.write("# unita: mm N t Hz; separatore ;\n")
+    # AVVERTENZA anche qui: il docstring del modulo promette «ogni export porta AVVERTENZA»,
+    # e prima d'ora il CSV era l'unico a non mantenerla (il .tex ce l'ha nel piede).
+    buf.write(f"# avvertenza: {tabella.avvertenza}\n")
     # csv.writer, non ";".join: bias_atteso contiene un ";" letterale, il join lo confonde
     # col separatore e sfalsa il numero di campi della riga.
     scrittore = csv.writer(buf, delimiter=";", lineterminator="\n")

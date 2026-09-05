@@ -140,3 +140,16 @@ Le frequenze sono quelle delle aste suddivise in quattro, e non sono le stesse d
 lumped di `forceBeamColumn -mass` si concentra ai quattro nodi del modello, che è un modello di
 inerzia più grossolano. Massa totale e reazioni non cambiano — quelle le porta il carico, non la
 discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio.
+
+## Confronto (T3)
+
+Tabella completa telaio NOVA ↔ solido CalculiX sul deck vero: [`confronto-2026-09-05.md`](confronto-2026-09-05.md)
+(`confronto.json`/`.csv`/`.tex` nella stessa cartella, `tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
+
+- Massa: telaio 0,7694 t, solido (ρ·V del deck) 0,5551 t, scarto **+27,86 %** (zapatas e tamponatura
+  fuori dal telaio; **non** il +38,6 % stimato nel brief — la stima usava il denominatore opposto, vedi
+  il `.md` per il dettaglio).
+- Modi, appaiati per direzione fisica (non per lettera d'asse: il telaio e il solido non condividono
+  l'orientamento degli assi su questo deck, vedi il `.md`): nel piano 31,85 Hz telaio contro 34,01 Hz
+  ccx; fuori piano 20,45 Hz telaio contro 21,01 Hz ccx; ccx ha in più un modo torsionale a 42,79 Hz
+  senza equivalente nel telaio piano.
