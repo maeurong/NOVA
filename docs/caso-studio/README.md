@@ -115,6 +115,22 @@ non validazione.
 | C2 (+ spinta 0,1 g) | −754,54 | 7 545,44 | passato | passato |
 | C3 (+ carico in sommità) | 0,00 | 8 745,44 | passato | passato |
 
+Le reazioni sono **le stesse** di prima del fix #25: le porta il carico, non l'algoritmo. Gli
+**spostamenti no** — il ramo elastico del deck itera con `Newton` invece di `Linear`, che su un
+telaio con `eleLoad -beamUniform` su `forceBeamColumn` non chiudeva l'equilibrio, e la freccia
+verticale di sommità cresce del 9,5 %. Il prima/dopo riga per riga sta in
+[`confronto-2026-09-05.md`](confronto-2026-09-05.md) §«Che cosa è cambiato con #25».
+
+Spostamenti dopo #25 (corsa del 05/09/2026, OpenSees 3.8.0, codice `56ebb68`), `u_max` sul
+nodo 3 e verdetto `spostamenti` con la soglia nuova sulla luce (#26, luce minima 1 607,5 mm —
+il pilastro):
+
+| caso | u_max [mm] | u/L | verdetto |
+|---|---|---|---|
+| C1 | 0,002091 | 1,30 · 10⁻⁶ | passato |
+| C2 | 0,02822 | 1,76 · 10⁻⁵ | passato |
+| C3 | 0,003054 | 1,90 · 10⁻⁶ | passato |
+
 Equilibrio: Σ Rz(C1) = massa NOVA · g (entro 1e-6 relativo); Σ Rx(C2) = −0,10 · Σ Rz(C1) (la
 spinta è 0,1 g della massa del telaio, entro 1e-6); Σ Rz(C3) = Σ Rz(C1) + 1 200 N (entro 1e-6) —
 gli stessi tre passi del deck ccx (`GRAVITA`, `SPINTA_ORIZZONTALE`, `CARICO_TOP`).
@@ -142,11 +158,76 @@ lumped di `forceBeamColumn -mass` si concentra ai quattro nodi del modello, che 
 inerzia più grossolano. Massa totale e reazioni non cambiano — quelle le porta il carico, non la
 discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio.
 
+## Pushover (T4)
+
+**AVVERTENZA: verifica del codice, non validazione.** La tavola non documenta nessuna prova
+ai pistoni: nessun numero qui è confrontato con una misura di laboratorio.
+
+File: [`muro_1_pushover.nova.json`](muro_1_pushover.nova.json) — **lo stesso telaio** di
+`muro_1.nova.json`, con altre analisi. Sono due file e non uno per un motivo di codice, non di
+comodità: `deck._legami_dichiarati` sceglie i legami per **tutto** il deck, quindi una statica
+`legami: fibre` dentro `muro_1.nova.json` avrebbe reso a fibre anche i casi C1/C2/C3 del
+confronto con ccx, che è lineare elastico. `tests/test_caso_studio.py::test_il_file_della_spinta_e_lo_stesso_telaio_con_altre_analisi`
+pinza che i due file differiscano nelle **sole** analisi.
+
+Analisi del file della spinta:
+
+- statica `legami: fibre` sui casi `C1` e `C3`, 10 passi;
+- pushover `uniforme` (forze ∝ massa lumped dei nodi liberi), nodo di controllo **3**,
+  direzione **`ux`**, incremento **0,5 mm**, `spostamento_max` **60 mm**,
+  `caso_gravita: "C1"`.
+
+`spostamento_max` è **misurato**, non scelto a tavolino: a 40 mm (il valore di partenza) il
+taglio alla base cresce ancora e il massimo cade sull'ultimo passo, cioè la curva non ha
+ancora un ramo calante; a 60 mm il massimo è al passo 109 e il ramo calante c'è; a 120 mm la
+curva **continua a non cadere** (240 passi, 72 115,2 N al passo 109, 69 763,7 N alla fine).
+Si ferma a 60 mm: è dove la curva dice quel che ha da dire.
+
+### La curva — misure del 05/09/2026, OpenSees 3.8.0, codice `56ebb68`
+
+Curva completa in [`pushover.csv`](pushover.csv) (`passo;spostamento_mm;taglio_base_N;algoritmo`),
+scritta dai `passi[]` della corsa e mai a mano; il test la rimette a confronto passo per passo
+(`::test_la_curva_esportata_e_quella_della_corsa`).
+
+| grandezza | valore |
+|---|---|
+| passi convergenti | **120**, da 0,5 mm, nessun dimezzamento |
+| algoritmi | `Newton` ovunque tranne i passi **18, 36, 89, 113**, che chiudono con `KrylovNewton` |
+| `u0` (gravità prima della spinta, nodo 3, `ux`) | 0,0002494 mm |
+| spostamento passo 1 → passo 120 | 0,500 → 60,000 mm (relativi a `u0`) |
+| taglio alla base **massimo** | **72 115,2 N al passo 109**, a 54,5 mm |
+| taglio alla base all'ultimo passo | 70 932,9 N (98,4 % del massimo) |
+| **caduta** | **`null`** — la spinta arriva a `spostamento_max` senza cadere |
+| verdetto `convergenza` (`caso: "pushover"`) | `passato` |
+| verdetto `spostamenti` (`caso: "pushover"`) | `passato` con avviso: u/L = 0,0400 al nodo 4, luce minima 1 607,5 mm |
+| tempo della corsa | 1,8 s |
+| `risultati.nova.risultati.json` | 774 340 byte (494 863 sul filo di `/api/risultati`, senza indentazione); 514 file `.out` |
+
+La caduta è `null` e va detto per esteso: **non** significa che il telaio regge 60 mm. Significa
+che il modello continua a convergere — `Steel02` non ha rottura e `Concrete02` tiene la
+resistenza residua `fpcu` — mentre lo **stato delle sezioni** dice che i piedi dei pilastri
+hanno già ceduto. È il motivo per cui lo stato è un canale separato dalla convergenza.
+
+### Stato delle sezioni all'ultimo passo (60 mm)
+
+68 stazioni (4 aste suddivise in 4, 17 stazioni per asta):
+
+| canale | passo 1 | passo 120 |
+|---|---|---|
+| calcestruzzo | 68 `elastica` | 37 `fessurata`, 27 `elastica`, **4 `schiacciata`** |
+| acciaio | 68 `elastica` | 62 `elastica`, 2 `snervata`, **4 `rotta`** |
+
+Le quattro stazioni schiacciate — e sono le stesse quattro con l'acciaio `rotta` — sono i **piedi
+dei pilastri** (aste 2 e 3, stazione 0, cioè i nodi 1 e 2 incastrati) e i **due estremi della
+trave superiore** (asta 4, stazioni 0 e 16, cioè i nodi 3 e 4): il meccanismo del telaio a nodi
+fissi, esattamente dove ci si aspetta le cerniere. Il taglio alla base smette di crescere a
+54,5 mm, che è dove quel ceduto si fa sentire sulla curva.
+
 ## Confronto
 
 Tabella completa telaio NOVA ↔ solido CalculiX sul deck vero: [`confronto-2026-09-05.md`](confronto-2026-09-05.md)
 (`confronto.json`/`.csv`/`.tex` nella stessa cartella, rigenerati da `nova.confronto.confronta`/`esporta`
-dopo il fix round C del pavimento (commit `cb5c006`), mai a mano;
+dopo il fix #25 (commit `56ebb68`), mai a mano;
 `tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
 `confronto.tex` richiede `\usepackage{booktabs}` nel documento che lo include (i comandi
 `\toprule`/`\midrule`/`\bottomrule` vengono da lì).
