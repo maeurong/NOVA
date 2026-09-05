@@ -102,6 +102,10 @@ Firma e raccomandazioni verbatim [V] https://opensees.github.io/OpenSeesDocument
 | `Fy` | `f_yk` = `f_y,nom` = 450 MPa, frattile 5 % (§11.3.2.1 Tab. 11.3.Ia-b); `f_yd` = 450/1,15 = 391,3 (§4.1.2.1.1.3) | 450 / 391,3 | Mazzoni 66,8 ksi; FGU 420; RCFrame 60 ksi | **`f_ym` per B450C: [NON TROVATO]** in NTC e Circolare. La norma dà solo un tetto: `(f_y/f_y,nom)_k` ≤ 1,25 al frattile 10 % (Tab. 11.3.Ib) |
 | `E0` | Circolare C4.1.2.2.5: `E_s` = 210 000 (in un paragrafo SLE); EN 1992-1-1 §3.2.7(4): 200 000 | 200 000 (coerente con l'oracolo di `armatura.py`, `05-*.md` §4) | 29 000 ksi = 200 000; FGU 210 000 | divergenza già aperta in `ricerca-ntc-2018…` §2.3 |
 | `b` | dal modello (a) di §4.1.2.1.2.2: retta da (`ε_yd`, `f_yd`) a (`ε_ud`, `k f_yd`), `k` = (`f_t/f_y`)_k, `ε_ud` = 0,9·0,075 = 0,0675 | `b` = (`k`−1)·`f_yd` / [(`ε_ud`−`ε_yd`)·`E_s`] = **0,0045** con `k` = 1,15; 0,0062 con `f_tk`/`f_yk` nominali 540/450; 0,0108 con `k` = 1,35 [INF] | 0,01 (Mazzoni, RCFrame), 0,005 (FGU) | `Steel02` non ha tetto a `ε_ud`: il ramo è indefinito, la deformazione limite va controllata a valle sulle fibre |
+
+> **Nota del 05/09/2026 (T4).** Il codice calcola `b` con lo stesso `f_y` che dà a `Fy` (la veste dell'analisi:
+> `f_yk` = 450 per `media`, o `fym` dichiarato), mai con `f_yd`, per il vincolo «mai `f_cd`/`f_yd` dentro il legame»
+> del §7: `b` = 0,15·450 / [(0,0675 − 0,00225)·200 000] = **0,00517**. Lo 0,0045 qui sopra è con `f_yd`.
 | `R0 cR1 cR2` | nessuna fonte di norma | 15-20 / 0,925 / 0,15 | 18 (Mazzoni), 20 (FGU, doc) | citabili dalla doc, non tarature |
 
 Riga pronta:
@@ -176,6 +180,13 @@ Ipotesi: copriferro netto 30 mm; nucleo alla linea media staffe `b_x` = 232, `b_
 | con `f_ck` = 25: resistenza confinata | `σ2/f_ck` 0,0357 ≤ 0,05 → `f_ck,c` = **29,46** (×1,178) | `f'cc` = **31,69** (×1,268) |
 | picco | `ε_c2,c` = **0,00278** | `ε_cc` = **0,00468** |
 | ultima | `ε_cu2,c` = **0,0106** | energia (nessuna forma chiusa); Priestley 1996 → 0,0189 [NON VERIFICATO] |
+
+> **Nota del 05/09/2026 (T4, `nova/legami.py`).** I numeri della tabella idealizzano le barre d'angolo sullo
+> spigolo della linea media delle staffe (`b_i` = 116 e 216). Il codice applica la [4.1.12.f] alla lettera, con le
+> posizioni vere delle barre (`deck._barre`: angoli a ±102, ±202, cioè ~14 mm dentro lo spigolo): `Σb_i²` = 204 832,
+> `α_n` = 0,659, **`α` = 0,457**, `σ2` = 0,980, `f_ck,c` = 29,90, `ε_cu2,c` = 0,01134. Sono i valori pinzati in
+> `tests/test_legami.py`; la tabella resta come derivazione a mano. Regola in più del codice: senza una barra
+> trattenuta entro `φ_st + φ/2 + 5 mm` da ogni spigolo del nucleo, `α` = 0 (nucleo = copriferro, con nota).
 | con `f_cm` = 33 | `f_c,c` 37,46 (×1,135), `ε_c2,c` 0,00258, `ε_cu2,c` 0,0089 | `f'cc` 39,84 (×1,207), `ε_cc` 0,00407 |
 
 Confronto con la prassi: `Kfc` 1,3 di Mazzoni è un segnaposto («mander model» in commento, nessun calcolo dalle staffe) [V]; 1,12 nel telaio FGU; 1,2 in `RCFrameGravity`. Il pilastro sopra, staffato come vuole §7.4.6 in CD"B", sta fra 1,14 e 1,27 [INF].
@@ -309,6 +320,9 @@ Cinque esempi, cinque `K` (1,12 · 1,2 · 1,25 · 1,3 · —) e nessuno calcolat
 **Materiali.** Copriferro `Concrete02(−f_cm, −2·f_cm/E_cm, −0,2 f_cm, −0,0035 o −0,01, 0,1, f_ctm, f_ctm/0,002)`; nucleo con `f_c,c` ed `ε_c2,c` da **NTC [4.1.8]-[4.1.12.i]** come default (norma primaria, stessa `α` della Circolare C8, rigidezza del nucleo entro l'8 % di `E_cm`), `ε_cu2,c` [4.1.11]; Mander 1988 come opzione, e se Mander allora **`Concrete04`** con `Ec` = `E_cm` (§3.4). Acciaio `Steel02(450, 200000, 0,005, 18, 0,925, 0,15)` con controllo a valle delle fibre a `ε_ud` = 0,0675. Ingressi che il modello dati deve avere per il nucleo: `b_x, b_y` (da copriferro e φ staffa), `A_st,x, A_st,y` (bracci), `s`, elenco `b_i` (o «tutte contenute»), `f_yk,st` — nessuno misurabile, tutti dichiarati, come già in `08-modelli-dati-riferimento.md` (armatura costruttiva → fibre derivate).
 
 **Oracoli per il codice** (da `calc_legami.py`, [INF]): C25/30 media → `E_c` = 2·33/0,0021 = 31 429 ≈ `E_cm` 31 476; pilastro 30×50 φ8/100 → `α` = 0,416, `σ2` = 0,892, `f_ck,c` = 29,46, `ε_cu2,c` = 0,0106; B450C `k` = 1,15 → `b` = 0,0045.
+
+> Misurati poi in `nova/legami.py` con le posizioni vere delle barre e `f_y` al posto di `f_yd` (note ai §2 e §3.3):
+> `α` = 0,457, `σ2` = 0,980, `f_ck,c` = 29,90, `ε_cu2,c` = 0,01134, `b` = 0,00517.
 
 ---
 
