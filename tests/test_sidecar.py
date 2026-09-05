@@ -56,6 +56,41 @@ def test_impronta_stabile_e_sensibile():
     assert impronta(a) != impronta(b)
 
 
+def test_un_campo_al_default_scritto_per_esteso_non_sposta_limpronta():
+    """Ingresso degenere: lo stesso modello con e senza il `legame` scritto tutto ai default.
+    Sono lo stesso modello, e devono avere la stessa impronta — se non ce l'hanno, ogni campo
+    aggiunto allo schema rende stantio ogni `hash_modello` scritto prima."""
+    from nova.modello import Legame, carica, impronta
+    nudo = carica(leggi_fixture("pilastro_30x50.nova.json"))
+    dati = leggi_fixture("pilastro_30x50.nova.json")
+    for mat in dati["materiali"]:
+        mat["legame"] = Legame().model_dump(mode="json")
+    assert impronta(carica(dati)) == impronta(nudo)
+
+
+def test_un_campo_nuovo_con_default_non_cambia_limpronta_e_un_valore_diverso_si():
+    """L'oracolo di §1 su due modelli di prova, che è il solo modo di simulare *l'aggiunta*
+    di un campo allo schema senza toccare lo schema: `Dopo` ha un campo che `Prima` non ha,
+    con il suo default, e l'impronta non si muove; cambiarne il valore la muove."""
+    from pydantic import BaseModel
+
+    from nova.modello import impronta
+
+    class Prima(BaseModel):
+        a: int = 1
+        b: str = "vecchio"
+
+    class Dopo(BaseModel):
+        a: int = 1
+        b: str = "vecchio"
+        c: float | None = None
+        d: bool = False
+
+    assert impronta(Prima()) == impronta(Dopo())
+    assert impronta(Dopo(d=True)) != impronta(Prima())
+    assert impronta(Prima(b="altro")) != impronta(Prima())
+
+
 def test_il_peso_proprio_e_generato_una_volta_sola():
     from nova.modello import assicura_peso_proprio, carica
     m = carica(leggi_fixture("telaio_2x1.nova.json"))

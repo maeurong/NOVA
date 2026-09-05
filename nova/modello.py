@@ -446,7 +446,17 @@ def carica(dati: dict) -> Modello:
 
 
 def impronta(m: Modello) -> str:
-    canonico = json.dumps(m.model_dump(mode="json", exclude_none=True), sort_keys=True, separators=(",", ":"))
+    """L'identità del modello, e quel che decide se un risultato è stantio.
+
+    `exclude_defaults` e non `exclude_none`: un campo lasciato al proprio default non descrive
+    il modello, lo descrive lo schema. Con `exclude_none` ogni campo aggiunto allo schema
+    cambiava `hash_modello` di **ogni** modello — T4 ha aggiunto `Legame`, `legami`, `passi`,
+    `AnalisiPushover`, e `muro_1.nova.json` intatto è passato da `a0768dcb…` a `2bf56c67…`,
+    rendendo stantii risultati che nessuno aveva toccato. Un campo scritto al proprio valore
+    di default e un campo assente sono lo stesso modello, e ora hanno la stessa impronta.
+    """
+    canonico = json.dumps(m.model_dump(mode="json", exclude_defaults=True),
+                          sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonico.encode("utf-8")).hexdigest()
 
 
