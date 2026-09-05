@@ -13,5 +13,14 @@
 
 Cartelle previste, non ancora esistenti:
 
+- [`superpowers/plans/`](superpowers/plans/) — piani di implementazione:
+  T0+T1 [`2026-09-05-t0-t1-scaffold-modello-sidecar-statica.md`](superpowers/plans/2026-09-05-t0-t1-scaffold-modello-sidecar-statica.md)
+  (eseguito, PR #18 e #21), T2 [`2026-09-05-t2-modale-importatore-caso-studio.md`](superpowers/plans/2026-09-05-t2-modale-importatore-caso-studio.md),
+  T3 [`2026-09-06-t3-confronto-calculix.md`](superpowers/plans/2026-09-06-t3-confronto-calculix.md),
+  T4 [`2026-09-06-t4-non-lineare.md`](superpowers/plans/2026-09-06-t4-non-lineare.md),
+  T5 (bozza, con Mario) [`2026-09-06-t5-interfaccia-bozza.md`](superpowers/plans/2026-09-06-t5-interfaccia-bozza.md).
+- [`caso-studio/`](caso-studio/) — il telaio di laboratorio MURO 1: tavola, scheda delle
+  misure, corsa CalculiX sul deck vero.
+- [`adr/`](adr/) — decisioni architetturali (la prima: il deck lo scrive NOVA).
 - `adr/` — decisioni architetturali, una per file `YYYY-MM-DD-<slug>.md`, quando
   la prima decisione arriverà.

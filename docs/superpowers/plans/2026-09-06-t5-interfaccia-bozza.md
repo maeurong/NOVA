@@ -1,0 +1,35 @@
+# NOVA T5 — interfaccia (giorni 10–15, con Mario) — BOZZA di piano
+
+> **Bozza, non piano eseguibile.** Scritta dal controller nella notte fra il 5 e il 6/09/2026 per orientare le sei giornate di UI con Mario. Prima di ogni giornata: `superpowers:brainstorming` (percorso bounded, il flusso esiste già in `static/`) → design in chat → approvazione di Mario → `frontend-engineer` con `impeccable` (**mai** senza: PRODUCT.md e la nota [[feedback-prototipi-ai-slop]] valgono: zero sovrapposizioni, zero testo tagliato, verifica in browser a più larghezze) → review a quattro → PR. Ogni giornata chiude con `python -m nova` avviato e la funzione provata da Mario a mano.
+
+**Goal:** tutta l'interfaccia della spec (story 1–14 spazio; 15–22 sezioni/armature/materiali; 23–28 vincoli/azioni/combinazioni; 29–35 check e corsa; 36–42 risultati statici; 45 modi animati; 48 curva pushover con scrubber; 56–57 scheda Confronto; 62–64 presentazione; 65–68 file). Variante **B «Doppia vista»** del prototipo #8 (ramo `prototype/spazio-di-modellazione`: `index.html`, `app.js`, `model.js`, `plane.js`, `fe.js`, `palette.js`), letta per la struttura e non per il dettaglio.
+
+**Architecture (dalla spec «Interfaccia»):** JS a mano + three.js (CDN allowlist? no: NOVA è locale, i file stanno in `static/`, three.js copiato in `static/vendor/` con licenza MIT accanto); stato in memoria con uno snapshot per comando e cronologia lineare; selezione unica sincronizzata fra albero, piano (SVG), spazio (three.js) e pannello; risultati dal file della corsa via `/api/risultati/{run_id}`, marcati stantii per impronta; test con `node` sui moduli puri (`model.js`, riduttori dei comandi, layout delle etichette) come deciso in «Testing Decisions»; il server serve `static/` e le rotte di T1–T4. Tema chiaro «colonna tensegrale» (`#dcdad5`, `#141414`, `#b8321e`, mono tabulare), un solo rosso, unità in un punto.
+
+## Backend già pronto (T1–T4) su cui la UI si appoggia
+
+`GET /api/salute` · `POST /api/check` · `POST /api/corsa {modello, casi?}` → `run_id` · `GET /api/risultati/{run_id}` · `POST /api/modello/apri|salva` · `POST /api/importa {percorso}` (T2) · `POST /api/ccx {inp}`, `POST /api/confronto` (T3) · pushover e stato sezioni dentro `corsa` (T4). Forme: `verdetti[]{controllo, oggetto, stazione, caso, esito, ragione, articolo, valori, rimedio}`; `per_caso[caso]{spostamenti, reazioni, sollecitazioni[asta][stazione]{x_rel, N, Vy, Vz, T, My, Mz}}` (momento positivo tende le fibre inferiori, taglio dei manuali); `modi[n]{f, T, forma, massa_partecipante, cumulata}`; `passi[]{spostamento, taglio_base, spostamenti, stato_sezioni, algoritmo}`; `run.hash_modello` = impronta di `apri`/`salva`. Manca (da aggiungere in T5 se serve): un endpoint di streaming degli eventi di fase (oggi la risposta arriva intera; per l'«attesa parlante» serve SSE su `/api/corsa` o polling di `fasi` — decidere il giorno 12).
+
+## Sei giornate (proposta, da confermare con Mario il giorno 10)
+
+| giorno | consegna | story | verifica a fine giornata |
+|---|---|---|---|
+| 10 | **Spazio di modellazione**: piano SVG + spazio three.js affiancati e sincronizzati, nodi con `N` e `x; z`, estrusione `B` con ghost/Esc/Invio, selezione unica, albero a sinistra, barra dei tasti in basso, stati vuoti che insegnano il gesto | 1–7, 10–14 | telaio 2×1 disegnato da zero in < 2 min da Mario, cronometrato |
+| 11 | **Pannello destro + palette + cronologia + file**: ispettore della selezione (nome, coordinate, vincolo con preimpostazioni incastro/cerniera/carrello), sezioni con editor delle barre (file per lato, staffe, copriferro, riduzione, danno), materiali per classe con «personalizzato» e veste, azioni/carichi/combinazioni, `⌘K` con valori nella query, `⌘Z`/`⇧⌘Z`, apri/salva | 8–9, 12, 15–28, 65–67 | il MURO 1 ricostruito da `docs/caso-studio/README.md` solo con tastiera e palette; salvato, riaperto, stessa impronta |
+| 12 | **Check Model + corsa + attesa parlante**: verdetti a doppio canale con `rimedio` cliccabile (seleziona l'oggetto), localizzazione del solutore con «dove prenderlo», fasi nominate e durata misurata, errore del solutore con coda del registro, risultati stantii in rosso per impronta | 29–35, 41–42, 68 | corsa del telaio 2×1 e del MURO 1 dalla UI; un modello malato rifiutato con il rimedio che porta all'oggetto |
+| 13 | **Risultati statici**: deformata con scala stampata «×n (auto \| a mano)» e ombra indeformata, M sul lato teso con etichetta al picco, V e N con segno e verso i→j in legenda, stazioni, M srotolato sotto il piano, spostamenti/reazioni per nodo; **collisioni delle etichette risolte** (leader line, priorità, nascondi sotto soglia) | 36–40 | trave appoggiata: M(mid) = qL²/8 letto sull'etichetta; nessuna etichetta sovrapposta a 1280 e a 1920 px |
+| 14 | **Modi animati + pushover + Confronto**: modi con `1 2 3`, frequenza e massa partecipante accanto; curva taglio–spostamento con passi cliccabili e scrubber sulla deformata, stato delle sezioni a 4 valori su due canali; scheda Confronto con tabella (massa prima), classi, bias, export CSV/LaTeX e PNG/SVG delle figure | 45, 48–49, 56–61 | MURO 1: modo 2 nel piano animato; pushover scorsa con lo scrubber; tabella esportata uguale a `docs/caso-studio/confronto.csv` |
+| 15 | **Presentazione + critique + polish**: tasto `P` (pannelli ritratti, etichette ≥ 46 px, testo ≥ 32 px, aste ≥ 6 px, nodi ≥ 14 px, contrasto ≥ 3:1), un solo rosso, viridis con legenda, leggibile in bianco e nero; `impeccable critique` + `polish` + `audit` (a11y, responsive); riserva per ciò che è scivolato | 62–64 + tutto | letto da 8 m su uno schermo di 2 m (prova in aula o con lo zoom del browser a 25 %); zero sovrapposizioni; `audit` senza finding Important |
+
+## Rischi noti e decisioni da prendere il giorno 10
+
+- **AI slop del prototipo**: si riusa la struttura (doppia vista, albero, pannello, palette, tastiera), non il codice: `app.js`/`plane.js` del prototipo si leggono e si riscrivono con `impeccable`, non si copiano.
+- **three.js**: in `static/vendor/three.module.js` (MIT, versione fissata e annotata) — nessun CDN: NOVA gira senza rete.
+- **Test JS con node**: i moduli puri (stato, riduttori dei comandi, cronologia, layout etichette, formattazione italiana dei numeri) hanno test `node --test`; il DOM non si testa (si guarda in browser, con `frontend-engineer` che verifica davvero).
+- **Attesa parlante**: SSE o polling — decidere con Mario; il sidecar emette già gli eventi di fase riga per riga.
+- **Tagli** (spec «Further Notes»): se il tempo manca, in ordine: pushover con scrubber → stato sezioni → export PNG/SVG → Confronto in UI (resta l'export da riga di comando di T3). Mai: Check Model, controlli, scala stampata, presentazione.
+- **Mobile**: fuori scope (app locale da scrivania); responsive solo fra 1280 e 2560 px.
+
+## Cosa NON è in questa bozza
+
+Codice, test, step: arrivano giornata per giornata dal brainstorming con Mario. La bozza serve a non ricominciare da zero il giorno 10 e a tenere l'ordine delle consegne allineato alle story e ai tagli.
