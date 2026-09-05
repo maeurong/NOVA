@@ -127,3 +127,15 @@ def test_il_taglio_lungo_laltro_asse_ha_lo_stesso_segno(chiedi, tmp_path, binari
     st = r[-1]["risultati"]["per_caso"]["Z1"]["sollecitazioni"]["1"]
     assert st[0]["Vy"] == pytest.approx(10.0 * 6000 / 2, rel=1e-3)
     assert st[-1]["Vy"] == pytest.approx(-10.0 * 6000 / 2, rel=1e-3)
+
+
+def test_la_sezione_senza_barre_corre_e_resta_un_non_applicabile(chiedi, tmp_path, binario_opensees):
+    """Il segnale che stava solo nel `resoconto` del deck ora arriva nei verdetti C1 della corsa."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    del m["sezioni"][0]["staffe"]
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path), "casi": ["Z3"]})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    v = {x["controllo"]: x for x in fin["verdetti_check"]}
+    assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] == [1]
+    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"

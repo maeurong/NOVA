@@ -305,9 +305,11 @@ def test_telaio_sano_passa_il_check(chiedi):
     esiti = _esiti(r[-1]["verdetti"])
     assert esiti["nodi_coincidenti"] == "passato" and esiti["vincoli"] == "passato"
     assert esiti["moti_rigidi"] == "non_applicabile"
-    assert set(esiti) >= {"unita", "nodi_coincidenti", "aste_sconnesse", "aste_lunghezza_zero", "aste_duplicate",
+    # l'insieme dei controlli C1 è sempre lo stesso, e sono quindici: chi ne aggiunge uno
+    # aggiorna qui, così una voce nuova non entra in silenzio senza il suo oracolo
+    assert set(esiti) == {"unita", "nodi_coincidenti", "aste_sconnesse", "aste_lunghezza_zero", "aste_duplicate",
                           "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "massa_nulla", "vincoli",
-                          "carico_termico", "moti_rigidi"}
+                          "carico_termico", "moti_rigidi", "armatura_mancante", "vincoli_dedotti"}
 
 
 def test_asta_a_lunghezza_zero_e_rifiutata(chiedi):
@@ -335,7 +337,7 @@ def test_nodo_su_asta_chiede_di_spezzare(chiedi):
     m["aste"].append({"id": 6, "nodo_i": 7, "nodo_j": 2, "sezione": 1})
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodo_su_asta")
-    assert v["esito"] == "non_passato" and v["azione"] == "spezza asta" and [7, 4] in v["oggetto"]
+    assert v["esito"] == "non_passato" and v["rimedio"] == "spezza asta" and [7, 4] in v["oggetto"]
 
 
 def test_carico_termico_e_rifiutato_in_v1(chiedi):
@@ -343,7 +345,7 @@ def test_carico_termico_e_rifiutato_in_v1(chiedi):
     m["azioni"][0]["carichi"].append({"tipo": "termico", "asta": 4, "dT_uniforme": 20})
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "carico_termico")
-    assert v["esito"] == "non_passato" and v["azione"] == "togli il carico termico"
+    assert v["esito"] == "non_passato" and v["rimedio"] == "togli il carico termico"
 
 
 def test_riferimenti_rotti_sono_sconnessi(chiedi):
@@ -450,7 +452,7 @@ def test_riferimenti_nomina_sezione_e_materiale(chiedi):
     m["sezioni"][0]["calcestruzzo"] = 9
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
-    assert v["esito"] == "non_passato" and v["azione"] == "correggi il riferimento"
+    assert v["esito"] == "non_passato" and v["rimedio"] == "correggi il riferimento"
     assert {"sezione": 1, "calcestruzzo": 9} in v["oggetto"]
 
 
@@ -471,10 +473,10 @@ def test_riferimento_rotto_e_rifiutato_prima_del_deck(chiedi, muta):
     assert _esiti(r[-1]["verdetti"])["riferimenti"] == "non_passato"
 
 
-def test_nodi_liberi_azione_ed_id(chiedi):
+def test_nodi_liberi_rimedio_ed_id(chiedi):
     (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("nodo_libero.nova.json")})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "nodi_liberi")
-    assert v["oggetto"] == [7] and v["azione"] == "elimina il nodo"
+    assert v["oggetto"] == [7] and v["rimedio"] == "elimina il nodo"
 
 
 def test_nessun_nodo_vincolato_e_rifiutato(chiedi):
@@ -483,7 +485,7 @@ def test_nessun_nodo_vincolato_e_rifiutato(chiedi):
         n.pop("vincolo", None)
     (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
     v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "vincoli")
-    assert v["esito"] == "non_passato" and v["azione"] == "vincola un nodo"
+    assert v["esito"] == "non_passato" and v["rimedio"] == "vincola un nodo"
 
 
 def test_tutti_i_nodi_incastrati_su_sei_gradi_e_rifiutato(chiedi):
@@ -585,7 +587,7 @@ def test_il_cedimento_tutto_nullo_non_scrive_sp(chiedi, tmp_path):
 def test_senza_analisi_statiche_resta_il_solo_peso_proprio(chiedi, tmp_path):
     m = leggi_fixture("telaio_2x1.nova.json")
     m["analisi"] = []
-    r = _deck(chiedi, tmp_path, m, casi=[])
+    r = _deck(chiedi, tmp_path, m)  # `casi` assente: decide il default delle analisi
     assert r["resoconto"]["casi"] == ["Z3"]
 
 
@@ -979,3 +981,106 @@ def test_il_deck_rifiutato_non_tocca_le_uscite_precedenti(chiedi, tmp_path):
     fin = _corsa(chiedi, tmp_path, casi=["Z9"], solutore=_finto(tmp_path, "exit 0\n"))
     assert fin["esito"] == "errore" and fin["fase"] == "deck"
     assert (vecchia / "Z1_spostamenti.out").is_file() and (vecchia / NOME_RISULTATI).is_file()
+
+
+# --- Review finale: gli ingressi degeneri che il ramo non copriva ancora -------
+
+
+@pytest.mark.parametrize("versione", ["2", None, [1], True, 1.5])
+def test_schema_version_non_intera_e_un_rifiuto_di_fase_modello(chiedi, versione):
+    """`versione > VERSIONE_SCHEMA` su una non-intera dava `TypeError` invece del rifiuto."""
+    m = leggi_fixture("telaio_2x1.nova.json") | {"schema_version": versione}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello"
+    assert "schema_version deve essere un intero" in r[-1]["motivo"]
+
+
+@pytest.mark.parametrize("lato", ["inf", "sup", "sx", "dx"])
+def test_i_copriferri_opposti_che_si_sovrappongono_nominano_sezione_e_lato(chiedi, tmp_path, lato):
+    """300×100 con copriferro 40, staffe Ø8 e barre Ø16: 40 + 8 + 8 ≥ 100/2, le barre
+    finivano dalla parte sbagliata del baricentro senza che nulla sollevasse."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0].update({"b": 300, "h": 100, "copriferro": 40,
+                            "file": [{"lato": lato, "n": 2, "diametro": 16}]})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "sezione 1" in r["motivo"] and "i copriferri opposti si sovrappongono su h" in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_la_sezione_a_fibre_valida_resta_quella_di_prima(chiedi, tmp_path):
+    """La guardia non tocca una 300×500 sana: barre a ±204 = ±(250 − 30 − 8 − 8)."""
+    _deck(chiedi, tmp_path, leggi_fixture("trave_appoggiata.nova.json"))
+    fibre = [x for x in _tcl(tmp_path).splitlines() if x.strip().startswith("fiber ")]
+    assert sorted({float(x.split()[2]) for x in fibre}) == [-204.0, 204.0]
+    assert sorted({float(x.split()[1]) for x in fibre}) == [-104.0, 0.0, 104.0]
+
+
+def test_la_sezione_senza_barre_e_un_non_applicabile_del_check(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    del m["sezioni"][0]["staffe"]
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "ok"
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}
+    assert v["armatura_mancante"]["esito"] == "non_applicabile"
+    assert v["armatura_mancante"]["oggetto"] == [1]
+    assert "non lineare (T4)" in v["armatura_mancante"]["ragione"]
+
+
+def test_i_due_controlli_rinviati_non_sono_mai_passato(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}
+    assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] is None
+    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
+    assert "importatore (T2)" in v["vincoli_dedotti"]["ragione"]
+
+
+def test_il_caso_con_a_capo_e_rifiutato_e_non_finisce_nel_tcl(chiedi, tmp_path):
+    """`$` di Python accetta l'a capo finale e `int("1\\n")` passa: il caso arrivava nel deck."""
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=["Z1\n"])
+    assert r["esito"] == "errore" and r["fase"] == "deck" and "Z1" in r["motivo"]
+    assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_forza_con_sezione_inesistente_nomina_lid(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["sezione"] = 99
+    r = _deck(chiedi, tmp_path, m, forza=True)
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "99" in r["motivo"] and "AttributeError" not in r["motivo"]
+
+
+def test_forza_con_azione_inesistente_in_combinazione_nomina_lid(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["combinazioni"][0]["termini"].append({"azione": 99, "coefficiente": 1.0})
+    r = _deck(chiedi, tmp_path, m, forza=True, casi=["C1"])
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "99" in r["motivo"] and "AttributeError" not in r["motivo"]
+
+
+@pytest.mark.parametrize("comando", ["deck", "corsa"])
+def test_la_lista_di_casi_vuota_e_un_rifiuto_non_il_default(chiedi, tmp_path, comando):
+    (r,) = chiedi({"id": 1, "comando": comando, "modello": leggi_fixture("telaio_2x1.nova.json"),
+                   "cartella": str(tmp_path / "c"), "casi": []})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "deck"
+    assert "nessun caso richiesto" in r[-1]["motivo"]
+
+
+def test_i_casi_assenti_restano_il_default_delle_analisi(chiedi, tmp_path):
+    r = _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"), casi=None)
+    assert r["esito"] == "ok" and r["resoconto"]["casi"] == ["Z1", "Z2", "C1", "Z3"]
+
+
+def test_sezione_con_base_nulla_dice_maggiore_di_zero_in_italiano(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0]["b"] = 0
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["fase"] == "modello" and "deve essere maggiore di 0" in r[-1]["motivo"]
+
+
+def test_il_validator_custom_non_porta_il_prefisso_di_pydantic(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"][1]["categoria"] = None  # natura Q senza categoria d'uso
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["fase"] == "modello" and "Value error" not in r[-1]["motivo"]
+    assert "natura Q senza categoria" in r[-1]["motivo"]

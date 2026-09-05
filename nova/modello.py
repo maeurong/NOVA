@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -11,6 +12,16 @@ from meshrec.core import materiali as _materiali
 
 UNITA = "mm-N-MPa-t-s"
 VERSIONE_SCHEMA = 1
+
+# La forma di un caso di carico, in **un** punto solo: `AnalisiStatica` la dà a pydantic,
+# `deck.py` e `server.py` la rileggono da qui. Chi la usa in Python passa da `caso_valido`
+# e non da `match`: `$` di Python accetta l'a capo finale, e `int("1\n")` non se ne accorge.
+FORMA_CASO = r"^[ZC][0-9]+$"
+_FORMA_CASO = re.compile(FORMA_CASO)
+
+
+def caso_valido(caso) -> bool:
+    return isinstance(caso, str) and _FORMA_CASO.fullmatch(caso) is not None
 
 
 class _Base(BaseModel):
@@ -201,7 +212,7 @@ class Combinazione(_Base):
 
 class AnalisiStatica(_Base):
     tipo: Literal["statica"]
-    casi: list[Annotated[str, Field(pattern=r"^[ZC]\d+$")]]
+    casi: list[Annotated[str, Field(pattern=FORMA_CASO)]]
 
 
 class MassaDaAzione(_Base):
@@ -269,7 +280,8 @@ MIGRAZIONI: dict[int, callable] = {}  # {da_versione: fn(dati) -> dati}; vuoto f
 
 
 # I `type` di pydantic più comuni, tradotti; gli altri passano col `msg` inglese di pydantic
-# com'è (meglio un inglese leggibile che un buco nella traduzione).
+# com'è (meglio un inglese leggibile che un buco nella traduzione). Le frasi si formattano
+# col `ctx` dell'errore, che porta il limite vero (`gt`, `ge`, …).
 _FRASI_ERRORE: dict[str, str] = {
     "missing": "campo obbligatorio",
     "extra_forbidden": "campo non previsto",
@@ -278,8 +290,20 @@ _FRASI_ERRORE: dict[str, str] = {
     "literal_error": "valore non ammesso",
     "string_pattern_mismatch": "non rispetta il formato richiesto",
     "finite_number": "deve essere un numero finito (niente NaN/Infinity)",
+    "greater_than": "deve essere maggiore di {gt:g}",
     "greater_than_equal": "deve essere maggiore o uguale al minimo consentito",
 }
+
+# Pydantic incarta il `ValueError` di un validator scritto a mano in «Value error, …»:
+# a chi legge il rifiuto quel prefisso non dice nulla che non sappia già.
+_PREFISSO_PYDANTIC = "Value error, "
+
+
+def _frase(err: dict) -> str:
+    modello = _FRASI_ERRORE.get(err["type"])
+    if modello is None:
+        return err["msg"].removeprefix(_PREFISSO_PYDANTIC)
+    return modello.format(**err.get("ctx", {}))
 
 
 def carica(dati: dict) -> Modello:
@@ -287,6 +311,10 @@ def carica(dati: dict) -> Modello:
     if not isinstance(dati, dict):
         raise ValueError("il modello deve essere un oggetto JSON")
     versione = dati.get("schema_version", 1)
+    # `bool` è un `int` per Python ma non è una versione di schema; il confronto con
+    # `VERSIONE_SCHEMA` su una stringa o una lista darebbe `TypeError` invece del rifiuto.
+    if type(versione) is not int:
+        raise ValueError(f"schema_version deve essere un intero, non {type(versione).__name__}")
     while versione in MIGRAZIONI:
         dati = MIGRAZIONI[versione](dati)
         versione = dati["schema_version"]
@@ -300,8 +328,7 @@ def carica(dati: dict) -> Modello:
         righe = []
         for err in e.errors():
             dove = ".".join(str(p) for p in err["loc"]) or "radice"
-            frase = _FRASI_ERRORE.get(err["type"], err["msg"])
-            righe.append(f"{dove}: {frase}")
+            righe.append(f"{dove}: {_frase(err)}")
         raise ValueError("modello rifiutato — " + "; ".join(righe)) from None
 
 

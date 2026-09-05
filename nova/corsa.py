@@ -14,7 +14,7 @@ import numpy as np
 from meshrec.core import opensees, solve
 from meshrec.core.config import SolutoreConfig
 from nova import deck as _deck
-from nova.modello import Modello, impronta
+from nova.modello import Modello
 
 NOME_RISULTATI = "risultati.nova.risultati.json"
 
@@ -73,11 +73,12 @@ def _pulito(v):
     return v
 
 
-def esegui(m: Modello, casi: list[str], cartella: Path, percorso_solutore: str | None = None,
-           emetti=lambda ev: None, hash_modello: str | None = None) -> dict:
+def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
+           percorso_solutore: str | None = None, emetti=lambda ev: None) -> dict:
     """Scrive il deck, lancia il binario, legge le uscite. `hash_modello` è l'impronta del
     modello **prima** del peso proprio generato: qui `m` ce l'ha già dentro e ricalcolarla
-    darebbe una seconda impronta per lo stesso file."""
+    darebbe una seconda impronta per lo stesso file. Per questo è obbligatoria e senza
+    ripiego: un default silenzioso rimetterebbe in piedi proprio quella seconda impronta."""
     t0 = time.perf_counter()
     stato = solve.disponibilita(_solutore(percorso_solutore))["opensees"]
     if not stato["disponibile"]:
@@ -161,7 +162,7 @@ def _stazioni(d: _deck.Deck, caso: str, cartella: Path) -> dict[str, list[dict]]
 
 
 def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str,
-                        hash_modello: str | None = None) -> dict:
+                        hash_modello: str) -> dict:
     n_nodi = len(d.nodi)
     tag_a_id = {v: k for k, v in d.mappa_nodo.items()}
     per_caso: dict[str, dict] = {}
@@ -177,7 +178,7 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
     verdetti = controlli(d, per_caso, registro)
     return {
         "run": {"id": uuid.uuid4().hex[:12], "data": _dt.datetime.now().isoformat(timespec="seconds"),
-                "hash_modello": hash_modello or impronta(m), "versione_opensees": _versione(registro),
+                "hash_modello": hash_modello, "versione_opensees": _versione(registro),
                 "solutore": "OpenSees", "deck": str(d.percorso),
                 "registro": str(cartella / opensees.NOME_REGISTRO),
                 "carico_totale": d.carico_totale, "casi": d.casi,
@@ -203,10 +204,12 @@ def _esito(c: dict) -> str:
 
 
 def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | None = None) -> dict:
+    """Stessa forma dei verdetti C1 (`check._v`): le nove chiavi ci sono sempre."""
     valori = {k: _pulito(v) for k, v in c.items()
               if k not in ("passato", "applicabile", "motivo", "controllo", "modello")}
-    return {"controllo": controllo, "esito": _esito(c), "caso": caso,
-            "ragione": ragione or c.get("motivo") or "", "valori": valori}
+    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": caso,
+            "esito": _esito(c), "ragione": ragione or c.get("motivo") or "",
+            "articolo": None, "valori": valori, "rimedio": None}
 
 
 def controlli(d: _deck.Deck, per_caso: dict, registro: str) -> list[dict]:
@@ -237,6 +240,7 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str) -> list[dict]:
                                ("vincolo_in_pianta", "non calcolato in una corsa statica")):
         c = solve.esito_non_applicabile(controllo, "telaio")
         v.append(_verdetto(controllo, c) if c else
-                 {"controllo": controllo, "esito": "non_applicabile", "caso": None,
-                  "ragione": ragione, "valori": {}})
+                 {"controllo": controllo, "oggetto": None, "stazione": None, "caso": None,
+                  "esito": "non_applicabile", "ragione": ragione, "articolo": None,
+                  "valori": {}, "rimedio": None})
     return v

@@ -327,6 +327,11 @@ def cliente_sottoprocesso(tmp_path):
                          base_url="http://127.0.0.1")
     yield cliente
     sp.p.terminate()
+    # chiudere le pipe e attendere il figlio, non solo `terminate`: con `filterwarnings = error`
+    # il `ResourceWarning` del `Popen.__del__` sporcherebbe l'uscita della suite
+    sp.p.stdin.close()
+    sp.p.stdout.close()
+    sp.p.wait()
 
 
 def test_sidecarprocesso_reale_non_espone_id_nel_corpo(cliente_sottoprocesso):
@@ -399,3 +404,76 @@ def test_sidecarprocesso_riga_corrotta_diventa_errore_fase_sidecar():
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
     assert righe[-1]["esito"] == "errore" and righe[-1]["fase"] == "sidecar"
+
+
+# --- Review finale: gli ingressi degeneri che arrivano dalla tratta HTTP -------
+
+VERSIONI_NON_INTERE = ["2", None, [1], True, 1.5]
+
+
+@pytest.mark.parametrize("versione", VERSIONI_NON_INTERE)
+def test_apri_schema_version_non_intera_e_400_non_500(cliente, tmp_path, versione):
+    p = tmp_path / "modello.nova.json"
+    p.write_text(json.dumps(leggi_fixture("telaio_2x1.nova.json") | {"schema_version": versione}),
+                 encoding="utf-8")
+    r = cliente.post("/api/modello/apri", json={"percorso": str(p)})
+    assert r.status_code == 400 and "schema_version" in r.json()["motivo"]
+
+
+@pytest.mark.parametrize("versione", VERSIONI_NON_INTERE)
+def test_salva_schema_version_non_intera_e_400_non_500(cliente, tmp_path, versione):
+    fuori = tmp_path / "mai.json"
+    r = cliente.post("/api/modello/salva", json={
+        "percorso": str(fuori),
+        "modello": leggi_fixture("telaio_2x1.nova.json") | {"schema_version": versione}})
+    assert r.status_code == 400 and "schema_version" in r.json()["motivo"]
+    assert not fuori.exists()
+
+
+def test_risultati_troncati_sono_404_non_500(cliente, tmp_path):
+    from nova.corsa import NOME_RISULTATI
+
+    run_id = "0123456789ab"
+    cartella = tmp_path / "corse" / run_id
+    cartella.mkdir(parents=True)
+    (cartella / NOME_RISULTATI).write_text('{"tronc', encoding="utf-8")
+    r = cliente.get(f"/api/risultati/{run_id}")
+    assert r.status_code == 404 and "illeggibili" in r.json()["motivo"]
+
+
+def test_corsa_con_un_caso_che_porta_un_a_capo_e_422(cliente):
+    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json"),
+                                         "casi": ["Z1\n"]})
+    assert r.status_code == 422 and "casi" in r.json()["motivo"]
+
+
+def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_path):
+    """`create_app` stava fuori dal `try`: se sollevava, il sottoprocesso restava orfano."""
+    import nova.__main__ as m
+
+    monkeypatch.chdir(tmp_path)
+    terminato = []
+    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+
+    def _static_assente(*a, **k):
+        raise RuntimeError("Directory 'static' does not exist")
+
+    monkeypatch.setattr(m, "create_app", _static_assente)
+    with pytest.raises(SystemExit) as exc:
+        m.main([])
+    assert "static" in str(exc.value) and terminato == [True]
+
+
+def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
+    import nova.__main__ as m
+
+    monkeypatch.chdir(tmp_path)
+    visti = []
+    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: None})()})()
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+    monkeypatch.setattr(m, "create_app", lambda _s, cartella, **k: visti.append(cartella))
+    monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(lambda *a, **k: None)}))
+    monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
+    m.main([])
+    assert visti[0].is_absolute() and visti[0].name == "corse"

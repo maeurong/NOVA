@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import math
 
+from nova import deck as _deck
 from nova import modello as _modello
 from nova.modello import Modello
 
 TOLLERANZA_MM = 1.0
 
 
-def _v(controllo, esito, ragione, oggetto=None, azione=None) -> dict:
-    return {"controllo": controllo, "esito": esito, "ragione": ragione, "oggetto": oggetto, "azione": azione}
+def _v(controllo, esito, ragione, oggetto=None, rimedio=None) -> dict:
+    """La forma unica del verdetto (spec «Modello dati»): le stesse nove chiavi di C3,
+    a `None` o `{}` dove il controllo non le riempie. Un consumatore solo per le due liste."""
+    return {"controllo": controllo, "oggetto": oggetto, "stazione": None, "caso": None,
+            "esito": esito, "ragione": ragione, "articolo": None, "valori": {}, "rimedio": rimedio}
 
 
 def _dist(a, b) -> float:
@@ -149,6 +153,15 @@ def check_model(m: Modello) -> list[dict]:
                 "togli il carico termico" if termici else None))
 
     v.append(_v("moti_rigidi", "non_applicabile", "si legge dopo la corsa dalla prima frequenza (controllo autovalori)"))
+
+    # Due controlli che in T1 non hanno un oracolo: dichiararli qui come «non applicabile» è
+    # l'unico modo di non farli sembrare verdi. Il primo sostituisce `sezioni_senza_barre` del
+    # resoconto del deck, che nessuno leggeva fuori dal comando `deck`.
+    scoperte = [s.id for s in m.sezioni if _deck.senza_barre(s)]
+    v.append(_v("armatura_mancante", "non_applicabile",
+                "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
+                "con il non lineare (T4)", scoperte or None))
+    v.append(_v("vincoli_dedotti", "non_applicabile", "rinviato all'importatore (T2)"))
     return v
 
 

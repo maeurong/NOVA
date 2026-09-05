@@ -14,13 +14,13 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Annotated, Callable
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 import nova
 from nova import corsa as _corsa
@@ -113,7 +113,8 @@ class CheckReq(_CorpoBase):
 
 class CorsaReq(_CorpoBase):
     modello: dict | None = None
-    casi: list[str] | None = None
+    # stessa forma del modello dati: un caso malformato si ferma sul bordo HTTP, non nel deck
+    casi: list[Annotated[str, Field(pattern=_modello.FORMA_CASO)]] | None = None
 
 
 def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
@@ -167,7 +168,10 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         p = (cartella_corse / run_id / _corsa.NOME_RISULTATI).resolve()
         if radice not in p.parents or not p.is_file():
             raise rifiuta
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:  # una corsa interrotta lascia un file troncato: è una corsa che non c'è, non un 500
+            return json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as e:
+            raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
 
     @app.post("/api/modello/apri")
     def apri(corpo: ApriReq):

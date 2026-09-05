@@ -54,6 +54,17 @@ def _casi_delle_analisi(m) -> list[str]:
     return casi
 
 
+def _casi(req: dict, m) -> list[str]:
+    """`casi` assente o `null` = «decidi tu»; `casi: []` = «nessuno», che è una richiesta
+    sbagliata e non il permesso di sostituirla in silenzio col default delle analisi."""
+    casi = req.get("casi")
+    if casi is None:
+        return _casi_delle_analisi(m)
+    if not casi:
+        raise _Rifiuto("deck", "nessun caso richiesto: «casi» è una lista vuota")
+    return casi
+
+
 def comando_deck(req: dict) -> dict:
     """Il deck si scrive dopo il Check Model: `forza` scavalca il rifiuto, non lo cancella."""
     m, _ = _carica(req)
@@ -64,7 +75,7 @@ def comando_deck(req: dict) -> dict:
                 "motivo": f"il Check Model rifiuta il modello: {', '.join(bocciati)} "
                           "(rilancia con «forza»: true per scrivere lo stesso)"}
     try:
-        d = _deck.scrivi(m, req.get("casi") or _casi_delle_analisi(m), Path(req.get("cartella") or "corsa"))
+        d = _deck.scrivi(m, _casi(req, m), Path(req.get("cartella") or "corsa"))
     except (ValueError, OSError) as e:
         raise _Rifiuto("deck", str(e)) from None
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
@@ -83,8 +94,8 @@ def comando_corsa(req: dict, emetti) -> dict:
     if _check.rifiutato(verdetti) and not req.get("forza"):
         return {"esito": "rifiutato", "verdetti_check": verdetti, "secondi": time.perf_counter() - t0}
     try:
-        esito = _corsa.esegui(m, req.get("casi") or _casi_delle_analisi(m),
-                              Path(req.get("cartella") or "corsa"), req.get("solutore"), emetti, imp)
+        esito = _corsa.esegui(m, _casi(req, m), Path(req.get("cartella") or "corsa"), imp,
+                              req.get("solutore"), emetti)
     except (ValueError, OSError) as e:
         return {"esito": "errore", "fase": "deck", "motivo": str(e), "verdetti_check": verdetti,
                 "secondi": time.perf_counter() - t0}

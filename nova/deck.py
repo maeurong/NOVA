@@ -9,7 +9,6 @@ distribuiti come `eleLoad -beamUniform` proiettati nel riferimento locale, cedim
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
@@ -18,14 +17,13 @@ import numpy as np
 
 from meshrec.core import armatura, opensees
 from nova import catalogo
-from nova.modello import Modello, Sezione, casi_dichiarati
+from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati
 
 NOME_TCL = "13_telaio.tcl"
 GRAVITA = 9806.65
 STAZIONI = 5
 XI_LOBATTO = (0.0, 0.1726731646, 0.5, 0.8273268354, 1.0)
 _COSENO_VERTICALE = 0.999
-_FORMA_CASO = re.compile(r"^[ZC]\d+$")
 
 
 class Barra(NamedTuple):
@@ -100,6 +98,11 @@ def _dimensioni_lungo(s: Sezione, verticale: bool) -> tuple[float, float]:
     return (s.h, s.b) if verticale else (s.b, s.h)
 
 
+def senza_barre(s: Sezione) -> bool:
+    """La condizione con cui `_barre` rende la lista vuota, letta anche dal Check Model (C1)."""
+    return not s.file or s.staffe is None
+
+
 def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     """Posizioni delle barre nel piano locale (e1, e2), centrate sul baricentro.
 
@@ -107,22 +110,36 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     perpendicolari ad `h` (distese lungo `b`), `sx`/`dx` quelle alle facce perpendicolari a `b`
     (distese lungo `h`). `colloca` riceve sempre la sezione nominale `(b, h)` e le coordinate si
     portano sugli assi locali dopo, con la stessa rotazione della `patch rect`: un pilastro 300×600
-    con `inf` tiene le barre a −252 dal baricentro lungo `h` (300 − copriferro 30 − staffa 8 −
-    diametro/2 10), non spalmate sui 600.
+    con `inf` tiene le barre a −252 dal baricentro lungo `h` (600/2 − copriferro 30 − staffa 8
+    − diametro/2 10), non spalmate sui 600.
 
     `inf`/`sup` passano da `armatura.colloca` (verificata in MeshRec); `sx`/`dx` a filo dei lati,
     equidistanti fra i due strati (ponytail: una fila per lato, senza interferro verificato).
     La geometria impossibile che `colloca` solleva si rilancia col numero della sezione: il
     messaggio di MeshRec parla di millimetri e non sa quale sezione stia misurando.
+
+    `colloca` guarda la sola altezza utile e non si accorge del caso in cui i due copriferri
+    opposti si scavalcano: misurato il 05/09/2026 su una 300×100 con copriferro 40, staffe Ø8
+    e barre Ø16 (40 + 8 + 8 = 56 > 50), dove le barre `inf` finivano a z = +6, cioè **sopra**
+    il baricentro, e le `sx`/`dx` si ammucchiavano attorno a zero con passo negativo. La
+    guardia sta qui e non in `meshrec/`, che è copia verbatim.
     """
     lati = [f.lato for f in s.file]
     doppio = next((x for x in lati if lati.count(x) > 1), None)
     if doppio:
         raise ValueError(f"sezione {s.id} «{s.nome}»: due file sul lato {doppio}, una fila per lato in v1")
+    if senza_barre(s):
+        return []
     file = {f.lato: f for f in s.file}
     st = s.staffe
-    if not file or st is None:
-        return []
+    mezza_barra = max(f.diametro for f in s.file) / 2
+    ingombro = s.copriferro + st.diametro + mezza_barra
+    for lato, dimensione in (("h", s.h), ("b", s.b)):
+        if 2 * ingombro >= dimensione:
+            raise ValueError(
+                f"sezione {s.id} «{s.nome}»: i copriferri opposti si sovrappongono su {lato} "
+                f"(copriferro {s.copriferro:g} + staffa {st.diametro:g} + mezza barra "
+                f"{mezza_barra:g} = {ingombro:g} mm, metà di {lato} = {dimensione / 2:g} mm)")
     inf, sup = file.get("inf"), file.get("sup")
     piano: list[Barra] = []  # y lungo b, z lungo h, dal baricentro
     try:
@@ -166,8 +183,7 @@ def _fattori(m: Modello, caso: str) -> dict[int, float]:
     La forma si guarda prima dell'`int`: un caso che arriva da fuori può essere qualunque cosa,
     e `int("ippo")` direbbe «invalid literal» invece di dire quali sono i casi.
     """
-    valido = isinstance(caso, str) and _FORMA_CASO.match(caso)
-    if valido:
+    if caso_valido(caso):
         n = int(caso[1:])
         if caso[0] == "Z" and m.azione(n) is not None:
             return {n: 1.0}
@@ -208,7 +224,11 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
     elementi: list[Elemento] = []
     mappa_asta: dict[int, list[int]] = {}
     for a in m.aste:
+        # con «forza» il Check Model è già stato scavalcato: il riferimento rotto arriva fin qui,
+        # e senza guardia diventerebbe un `AttributeError` su `None` invece di un rifiuto leggibile
         s = m.sezione(a.sezione)
+        if s is None:
+            raise ValueError(f"asta {a.id}: la sezione {a.sezione} non esiste")
         p = np.array(nodi_xyz[mappa_nodo[a.nodo_i]]); q = np.array(nodi_xyz[mappa_nodo[a.nodo_j]])
         L = float(np.linalg.norm(q - p))
         if L == 0.0:
@@ -240,7 +260,10 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
         for e in elementi:
             e.w[caso] = (0.0, 0.0, 0.0)
         for id_azione, coeff in fattori.items():
-            for c in m.azione(id_azione).carichi:
+            azione = m.azione(id_azione)
+            if azione is None:  # un termine di combinazione che punta a un'azione cancellata
+                raise ValueError(f"caso {caso}: l'azione {id_azione} non esiste")
+            for c in azione.carichi:
                 if c.tipo == "nodale":
                     v = nodali[caso].setdefault(mappa_nodo[c.nodo], [0.0] * 6)
                     for k, comp in enumerate((c.Fx, c.Fy, c.Fz, c.Mx, c.My, c.Mz)):

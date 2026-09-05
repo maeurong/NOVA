@@ -1,6 +1,8 @@
 """I sette verdetti C3 e la lettura del registro, senza binario: qui gli oracoli sono i casi degeneri."""
 import math
 
+import pytest
+
 from conftest import leggi_fixture
 from nova import corsa
 from nova import deck as _deck
@@ -75,3 +77,29 @@ def test_la_versione_e_il_banner_non_una_riga_qualunque():
     """Un avviso che nomina «Version» non è il banner: la riga della versione comincia per «Version»."""
     registro = "WARNING: Version mismatch in element 3\nVersion 3.8.0 64-Bit\n"
     assert corsa._versione(registro) == "Version 3.8.0 64-Bit"
+
+
+# --- Review finale: una forma sola per i verdetti, e l'hash che non si ricalcola ---
+
+CHIAVI_VERDETTO = {"controllo", "oggetto", "stazione", "caso", "esito", "ragione",
+                   "articolo", "valori", "rimedio"}
+
+
+def test_i_verdetti_c1_e_c3_hanno_le_stesse_chiavi(tmp_path):
+    """Spec «Modello dati»: una forma sola, `{controllo, oggetto?, stazione?, caso?,
+    esito, ragione, articolo?, valori{}}`. C1 dava cinque chiavi, C3 altre cinque."""
+    from nova import check as _check
+
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    c1 = _check.check_model(m)
+    c3 = corsa.controlli(d, _caso({"1": [0.0] * 6}), "")
+    assert c1 and c3
+    for v in c1 + c3:
+        assert set(v) == CHIAVI_VERDETTO, v["controllo"]
+
+
+def test_risultati_da_uscite_pretende_lhash_del_modello(tmp_path):
+    """Il fallback `hash_modello or impronta(m)` ricalcolava dopo il peso proprio: via."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    with pytest.raises(TypeError):
+        corsa.risultati_da_uscite(m, d, tmp_path, "")
