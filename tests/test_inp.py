@@ -221,3 +221,36 @@ def test_due_passi_con_lo_stesso_nome_sono_un_rifiuto(tmp_path):
     with pytest.raises(ValueError) as e:
         _inp.leggi(p)
     assert "duplicato" in str(e.value) and "GRAVITA" in str(e.value)
+
+
+# --- gap review pre-merge (Task 3) -------------------------------------------
+
+def test_boundary_su_set_inesistente_non_solleva(tmp_path):
+    """`*BOUNDARY` che nomina un set mai dichiarato (refuso nel nome): il vincolo resta
+    registrato ma non blocca nessun nodo, nessuna `KeyError` — `vincolati` usa già
+    `set_nodi.get(nome, ())` proprio per questo."""
+    p = _scrivi(tmp_path, "set_fantasma.inp",
+                "*BOUNDARY\nFANTASMA, 1, 3\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.vincoli == [("FANTASMA", 1, 3)]
+    assert d.vincolati == []
+
+
+def test_nset_dichiarato_due_volte_si_unisce(tmp_path):
+    """Due carte `*NSET` separate con lo stesso nome (non una riga continuata): i numeri
+    si sommano nello stesso set, `_carta` non azzera niente fra le due."""
+    p = _scrivi(tmp_path, "doppio_nset.inp",
+                "*NSET, NSET=TOP\n1, 2\n*NSET, NSET=TOP\n3, 4\n*STEP\n*STATIC\n*END STEP\n")
+    assert _inp.leggi(p).set_nodi["TOP"] == [1, 2, 3, 4]
+
+
+def test_elemento_su_due_righe_con_virgola_finale_si_concatena(tmp_path):
+    """`*ELEMENT` che finisce in virgola: il tetraedro continua sulla riga dopo, non è un
+    elemento a sé — senza `continua` la riga dopo diventerebbe un secondo elemento con un
+    solo nodo."""
+    p = _scrivi(tmp_path, "elemento_continua.inp",
+                "*NODE\n1, 0.0, 0.0, 0.0\n2, 1.0, 0.0, 0.0\n3, 0.0, 1.0, 0.0\n4, 0.0, 0.0, 1.0\n"
+                "*ELEMENT, TYPE=C3D4, ELSET=A\n1, 1, 2,\n3, 4\n"
+                "*DENSITY\n2.5e-09\n*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.n_elementi == 1 and d.elementi == [(1, 2, 3, 4)]

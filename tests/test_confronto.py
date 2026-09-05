@@ -244,6 +244,40 @@ def test_csv_unita_diversa_e_non_confrontabile_con_ragione(tmp_path):
     assert rz.abaqus is None and rz.classe_abaqus == "non_confrontabile" and rz.ragione
 
 
+@pytest.mark.xfail(strict=True, reason="nova/confronto.py:110 legge il CSV con encoding=\"utf-8\", non "
+                    "\"utf-8-sig\": un BOM in testa resta cucito al primo campo dell'intestazione "
+                    "(\\ufeffcaso), l'intestazione non combacia più con _COLONNE_CSV e leggi_csv rifiuta "
+                    "un CSV altrimenti valido")
+def test_leggi_csv_con_bom_intestazione_riconosciuta_comunque(tmp_path):
+    """Riga: «CSV Abaqus con BOM UTF-8 in testa → intestazione riconosciuta lo stesso»."""
+    p = tmp_path / "bom.csv"
+    p.write_bytes(b"\xef\xbb\xbf" + "caso;grandezza;valore;unita;fonte\nGRAVITA;massa;1,0;t;x\n"
+                  .encode("utf-8"))
+    righe = _confronto.leggi_csv(p)
+    assert righe[0]["caso"] == "GRAVITA"
+
+
+def test_leggi_csv_separatore_virgola_quando_manca_il_punto_e_virgola(tmp_path):
+    """Riga: «CSV con separatore "," invece di ";" (nessun ";" nella prima riga) → letto lo
+    stesso»: il delimitatore si sceglie dalla prima riga, non è fisso."""
+    p = tmp_path / "virgola.csv"
+    p.write_text("caso,grandezza,valore,unita,fonte\nGRAVITA,massa,1000.5,t,x\n", encoding="utf-8")
+    righe = _confronto.leggi_csv(p)
+    assert righe == [{"caso": "GRAVITA", "grandezza": "massa", "valore": pytest.approx(1000.5),
+                      "unita": "t", "fonte": "x"}]
+
+
+def test_leggi_csv_separatore_virgola_con_valore_a_virgola_decimale_e_errore_di_colonne(tmp_path):
+    """Un CSV a virgola come separatore **e** un valore in notazione italiana è ambiguo per
+    costruzione: la virgola del decimale diventa un campo di troppo, e l'errore lo dice —
+    non una lettura silenziosa che sposta i valori nelle colonne sbagliate."""
+    p = tmp_path / "ambiguo.csv"
+    p.write_text("caso,grandezza,valore,unita,fonte\nGRAVITA,massa,1000,5,t,x\n", encoding="utf-8")
+    with pytest.raises(ValueError) as e:
+        _confronto.leggi_csv(p)
+    assert "riga 2" in str(e.value) and "6 colonne" in str(e.value)
+
+
 def test_mappa_casi_caso_assente_nel_telaio_e_errore_con_nomi_validi():
     with pytest.raises(ValueError) as e:
         _confronto.confronta(_telaio(), _solido(), None, {"Z99": "GRAVITA", "nodi_sommita": [4]})
@@ -510,6 +544,18 @@ def test_comando_confronto_senza_telaio_e_errore():
     from nova import sidecar
     r = sidecar.rispondi({"comando": "confronto", "mappa_casi": {}}, lambda ev: None)
     assert r["esito"] == "errore" and r["fase"] == "confronto"
+
+
+def test_comando_confronto_mappa_casi_non_dict_e_errore_non_crash(chiedi, tmp_path):
+    """Riga: «mappa_casi non è un dict (es. una lista) → errore riportato, il sidecar non
+    crasha»: `req.get("mappa_casi") or {}` lascia passare una lista non vuota così com'è,
+    e `_valida` la userebbe come un dict; il guardrail che tiene in piedi il sidecar è il
+    catch-all di `rispondi` (`nova/sidecar.py`), non un controllo dedicato su mappa_casi."""
+    telaio_p = tmp_path / "telaio.json"
+    telaio_p.write_text(json.dumps(_telaio()), encoding="utf-8")
+    (r,) = chiedi({"id": 1, "comando": "confronto", "telaio": str(telaio_p), "mappa_casi": ["Z2"]})
+    fin = r[-1]
+    assert fin["esito"] == "errore"
 
 
 def test_comando_confronto_csv_rotto_e_errore_fase_confronto(tmp_path):

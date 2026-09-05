@@ -216,6 +216,15 @@ def test_il_timeout_e_errore_di_solutore(tmp_path, monkeypatch):
     assert r["esito"] == "errore" and r["fase"] == "solutore" and "timeout" in r["motivo"]
 
 
+def test_ccx_esce_zero_ma_senza_marcatore_e_errore_di_solutore(tmp_path):
+    """`ccx -v` è il caso reale: esce 0 e non stampa mai «Job finished» — il codice
+    d'uscita non è il segnale di fine, solo il marcatore lo è."""
+    finto = _finto_ccx(tmp_path, "echo 'tutto tranquillo'\nexit 0\n")
+    r = _ccx.esegui(TRAVE, tmp_path / "corsa", percorso_solutore=finto)
+    assert r["esito"] == "errore" and r["fase"] == "solutore"
+    assert _ccx.MARCA_FINE in r["motivo"] and "codice d'uscita 0" in r["motivo"]
+
+
 def test_reazioni_che_non_tornano_bocciano_il_passo(tmp_path, uscite_vere):
     """Una riga del `.dat` corrotta: l'equilibrio è un controllo vero, non una tautologia."""
     guasto = tmp_path / "guasto"
