@@ -296,3 +296,35 @@ def test_trave_di_fondazione_inclinata_ha_tutti_i_nodi_al_piede():
         modello.Asta(id=2, nodo_i=2, nodo_j=3, sezione=1),
     ])
     assert importa.piedi(m) == [1, 2, 3]
+
+
+def test_due_torri_sconnesse_hanno_ciascuna_i_propri_piedi():
+    """Fix round 1: `piedi` partiva da un solo minimo globale e perdeva la fondazione di
+    ogni sottostruttura non collegata alla prima. La torre B (fondazione piatta a z=100,
+    più alta della base di A) non deve sparire solo perché A è più in basso."""
+    m = modello.Modello(schema_version=1, unita=modello.UNITA, nodi=[
+        modello.Nodo(id=1, x=0, y=0, z=0),        # piede torre A
+        modello.Nodo(id=2, x=0, y=0, z=3000),     # cima torre A
+        modello.Nodo(id=3, x=5000, y=0, z=100),   # piede torre B
+        modello.Nodo(id=4, x=6000, y=0, z=100),   # piede torre B
+    ], aste=[
+        modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
+        modello.Asta(id=2, nodo_i=3, nodo_j=4, sezione=1),  # fondazione di B, coricata
+    ])
+    assert importa.piedi(m) == [1, 3, 4]
+    v = {x["controllo"]: x for x in check.check_model(m)}["vincoli_dedotti"]
+    assert v["esito"] == "non_passato" and v["oggetto"] == [1, 3, 4]
+    assert "2 componenti" in v["ragione"]
+
+
+def test_aste_tutte_degeneri_non_danno_nessun_piede():
+    """Un'asta i=j non entra nel grafo dei vicini: `piedi` resta vuoto anche con aste presenti,
+    e `vincoli_dedotti` lo dichiara `non_applicabile` invece di sollevare o fingere un piede."""
+    m = modello.Modello(schema_version=1, unita=modello.UNITA, nodi=[
+        modello.Nodo(id=1, x=0, y=0, z=0),
+        modello.Nodo(id=2, x=0, y=0, z=1000),
+    ], aste=[modello.Asta(id=1, nodo_i=1, nodo_j=1, sezione=1)])
+    assert importa.piedi(m) == []
+    v = {x["controllo"]: x for x in check.check_model(m)}["vincoli_dedotti"]
+    assert v["esito"] == "non_applicabile"
+    assert "nessun piede" in v["ragione"]

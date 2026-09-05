@@ -183,16 +183,19 @@ def check_model(m: Modello) -> list[dict]:
     elif len(piede) == len(m.nodi):
         v.append(_v("vincoli_dedotti", "non_applicabile", _modello.NOTA_TUTTI_AL_PIEDE))
     else:
+        # il conteggio componenti si mostra sempre qui: un modello spezzato in sottostrutture
+        # non collegate resta leggibile nel verdetto, non solo nel comportamento di `piedi`
+        componenti = f"{_modello.numero_componenti(m)} componenti"
         non_dichiarati = [k for k in piede if nodi[k].vincolo is None]
         if non_dichiarati:
-            proposte = [p for p in _modello.proposte_vincoli(m) if p["nodo"] in non_dichiarati]
+            proposte = [p for p in _modello.proposte_vincoli(m, piede) if p["nodo"] in non_dichiarati]
             v.append(_v("vincoli_dedotti", "non_passato",
-                        f"nodi al piede senza vincolo dichiarato: {non_dichiarati}",
+                        f"nodi al piede senza vincolo dichiarato: {non_dichiarati} ({componenti})",
                         non_dichiarati, "conferma i vincoli proposti al piede",
                         valori={"proposti": proposte}))
         else:
             v.append(_v("vincoli_dedotti", "passato",
-                        f"{len(piede)} nodi al piede, tutti con vincolo dichiarato: {piede}"))
+                        f"{len(piede)} nodi al piede, tutti con vincolo dichiarato: {piede} ({componenti})"))
     return v
 
 

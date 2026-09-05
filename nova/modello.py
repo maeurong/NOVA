@@ -366,6 +366,38 @@ def casi_dichiarati(m: Modello) -> list[str]:
     return [f"Z{a.id}" for a in m.azioni] + [f"C{c.id}" for c in m.combinazioni]
 
 
+def _grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:
+    """Nodo → lista di `(vicino, coricata)`: il grafo su cui camminano `piedi` e `numero_componenti`."""
+    nodi = {n.id: n for n in m.nodi}
+    vicini: dict[int, list[tuple[int, bool]]] = {}
+    for a in m.aste:
+        i, j = nodi.get(a.nodo_i), nodi.get(a.nodo_j)
+        if i is None or j is None or i.id == j.id:
+            continue
+        coricata = abs(j.z - i.z) < math.hypot(j.x - i.x, j.y - i.y)
+        vicini.setdefault(i.id, []).append((j.id, coricata))
+        vicini.setdefault(j.id, []).append((i.id, coricata))
+    return vicini
+
+
+def _componenti(vicini: dict[int, list[tuple[int, bool]]]) -> list[set[int]]:
+    """I nodi del grafo raggruppati per componente connessa, qualunque sia l'asta che li lega."""
+    visti: set[int] = set()
+    gruppi: list[set[int]] = []
+    for partenza in vicini:
+        if partenza in visti:
+            continue
+        gruppo, coda = {partenza}, [partenza]
+        while coda:
+            for altro, _ in vicini.get(coda.pop(), ()):
+                if altro not in gruppo:
+                    gruppo.add(altro)
+                    coda.append(altro)
+        visti |= gruppo
+        gruppi.append(gruppo)
+    return gruppi
+
+
 def piedi(m: Modello) -> list[int]:
     """Gli id dei nodi che poggiano a terra, dedotti dalla struttura e non da una soglia.
 
@@ -377,36 +409,34 @@ def piedi(m: Modello) -> list[int]:
 
     1. La membratura coricata che tocca il punto più basso ci poggia per tutta la propria
        lunghezza: si parte dal nodo di quota minima e si cammina sulle sole aste coricate.
+       **Per componente connessa**, non sul modello intero: un modello con due sottostrutture
+       non collegate (due torri, ciascuna con la propria fondazione) ha un minimo di quota a
+       testa, non uno solo — un solo minimo globale perderebbe la fondazione della torre più alta.
     2. Ogni nodo da cui la struttura sale soltanto, e sale in piedi: sotto non prosegue
        niente, quindi o poggia o penzola; che le aste siano in piedi esclude la punta di
-       uno sbalzo.
+       uno sbalzo. Questa regola guarda solo i vicini del nodo, quindi vale già per componente.
 
     Sta qui e non in `nova.importa` perché il Check Model (C1, `nova.check`) la usa e gira
     **prima** del deck: `nova.importa` importa `nova.deck` (per la terna e le dimensioni di
     sezione), e farla dipendere da `check` la tirerebbe dentro quella catena.
     """
     nodi = {n.id: n for n in m.nodi}
-    vicini: dict[int, list[tuple[int, bool]]] = {}
-    for a in m.aste:
-        i, j = nodi.get(a.nodo_i), nodi.get(a.nodo_j)
-        if i is None or j is None or i.id == j.id:
-            continue
-        coricata = abs(j.z - i.z) < math.hypot(j.x - i.x, j.y - i.y)
-        vicini.setdefault(i.id, []).append((j.id, coricata))
-        vicini.setdefault(j.id, []).append((i.id, coricata))
+    vicini = _grafo(m)
     if not vicini:
         return []
 
-    # `min` sui soli nodi che un'asta tocca, e a parità di quota l'id più piccolo: un nodo
-    # isolato più in basso non è un piede, è un nodo da cui non si cammina da nessuna parte.
-    partenza = min(vicini, key=lambda k: (nodi[k].z, k))
-    a_terra = {partenza}
-    da_visitare = [partenza]
-    while da_visitare:
-        for altro, coricata in vicini.get(da_visitare.pop(), ()):
-            if coricata and altro not in a_terra:
-                a_terra.add(altro)
-                da_visitare.append(altro)
+    a_terra: set[int] = set()
+    for gruppo in _componenti(vicini):
+        # `min` sui soli nodi che un'asta tocca, e a parità di quota l'id più piccolo: un nodo
+        # isolato più in basso non è un piede, è un nodo da cui non si cammina da nessuna parte.
+        partenza = min(gruppo, key=lambda k: (nodi[k].z, k))
+        raggiunti, da_visitare = {partenza}, [partenza]
+        while da_visitare:
+            for altro, coricata in vicini.get(da_visitare.pop(), ()):
+                if coricata and altro not in raggiunti:
+                    raggiunti.add(altro)
+                    da_visitare.append(altro)
+        a_terra |= raggiunti
     a_terra.update(
         k for k, intorno in vicini.items()
         if all(not coricata and nodi[altro].z > nodi[k].z for altro, coricata in intorno)
@@ -414,18 +444,26 @@ def piedi(m: Modello) -> list[int]:
     return sorted(a_terra)
 
 
+def numero_componenti(m: Modello) -> int:
+    """Quante sottostrutture sconnesse vede `piedi`: un telaio sano ne ha una sola."""
+    return len(_componenti(_grafo(m)))
+
+
 NOTA_TUTTI_AL_PIEDE = "tutti i nodi sarebbero al piede: nessuna proposta"
 
 
-def proposte_vincoli(m: Modello) -> list[dict]:
+def proposte_vincoli(m: Modello, piede: list[int] | None = None) -> list[dict]:
     """Un incastro per ogni nodo al piede, da proporre e non da applicare: dove il pezzo
     poggia è una lettura, non una misura del rilievo.
+
+    `piede`, se il chiamante l'ha già calcolato (`check.py` lo fa per il proprio verdetto),
+    evita di camminare due volte lo stesso grafo; se assente lo calcola qui.
 
     Nessuna proposta quando **ogni** nodo cadrebbe al piede — un rilievo della sola trave di
     fondazione: incastrare tutto è il modello che `check_model` rifiuta («non resta nulla da
     calcolare»), e proporlo sarebbe proporre una risposta sbagliata invece di nessuna.
     """
-    a_terra = piedi(m)
+    a_terra = piedi(m) if piede is None else piede
     if not a_terra or len(a_terra) == len(m.nodi):
         return []
     incastro = {"ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True}
