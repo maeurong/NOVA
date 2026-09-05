@@ -139,7 +139,8 @@ def test_la_sezione_senza_barre_corre_e_resta_un_non_applicabile(chiedi, tmp_pat
     assert fin["esito"] == "ok", fin
     v = {x["controllo"]: x for x in fin["verdetti_check"]}
     assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] == [1]
-    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
+    # Task 3: `vincoli_dedotti` non è più rinviato; su `telaio_2x1` la base è già incastrata.
+    assert v["vincoli_dedotti"]["esito"] == "passato"
 
 
 # --- T2: la corsa modale sul binario vero ---

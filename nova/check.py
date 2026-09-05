@@ -13,11 +13,11 @@ from nova.modello import Modello
 TOLLERANZA_MM = 1.0
 
 
-def _v(controllo, esito, ragione, oggetto=None, rimedio=None) -> dict:
+def _v(controllo, esito, ragione, oggetto=None, rimedio=None, valori=None) -> dict:
     """La forma unica del verdetto (spec «Modello dati»): le stesse nove chiavi di C3,
     a `None` o `{}` dove il controllo non le riempie. Un consumatore solo per le due liste."""
     return {"controllo": controllo, "oggetto": oggetto, "stazione": None, "caso": None,
-            "esito": esito, "ragione": ragione, "articolo": None, "valori": {}, "rimedio": rimedio}
+            "esito": esito, "ragione": ragione, "articolo": None, "valori": valori or {}, "rimedio": rimedio}
 
 
 def _dist(a, b) -> float:
@@ -175,7 +175,24 @@ def check_model(m: Modello) -> list[dict]:
     v.append(_v("armatura_mancante", "non_applicabile",
                 "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
                 "con il non lineare (T4)", scoperte or None))
-    v.append(_v("vincoli_dedotti", "non_applicabile", "rinviato all'importatore (T2)"))
+    piede = _modello.piedi(m)
+    if not m.aste:
+        v.append(_v("vincoli_dedotti", "non_applicabile", "nessuna asta: la regola del piede non si applica"))
+    elif not piede:
+        v.append(_v("vincoli_dedotti", "non_applicabile", "nessun piede individuato"))
+    elif len(piede) == len(m.nodi):
+        v.append(_v("vincoli_dedotti", "non_applicabile", _modello.NOTA_TUTTI_AL_PIEDE))
+    else:
+        non_dichiarati = [k for k in piede if nodi[k].vincolo is None]
+        if non_dichiarati:
+            proposte = [p for p in _modello.proposte_vincoli(m) if p["nodo"] in non_dichiarati]
+            v.append(_v("vincoli_dedotti", "non_passato",
+                        f"nodi al piede senza vincolo dichiarato: {non_dichiarati}",
+                        non_dichiarati, "conferma i vincoli proposti al piede",
+                        valori={"proposti": proposte}))
+        else:
+            v.append(_v("vincoli_dedotti", "passato",
+                        f"{len(piede)} nodi al piede, tutti con vincolo dichiarato: {piede}"))
     return v
 
 

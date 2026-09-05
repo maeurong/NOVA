@@ -30,7 +30,18 @@ from meshrec.core import materiali as _materiali
 from meshrec.core import telaio as _telaio
 from meshrec.core.config import Material, MaterialeDichiarato, RegioneConfig, SezioneConfig
 from nova import deck as _deck
-from nova.modello import UNITA, Asta, Materiale, Modello, Nodo, Origine, Sezione
+from nova.modello import (
+    NOTA_TUTTI_AL_PIEDE,
+    UNITA,
+    Asta,
+    Materiale,
+    Modello,
+    Nodo,
+    Origine,
+    Sezione,
+    piedi,
+    proposte_vincoli,
+)
 
 CLASSE_CALCESTRUZZO = "C25/30"
 CLASSE_ACCIAIO = "B450C"
@@ -102,68 +113,6 @@ def ruota(punti, riferimento: np.ndarray) -> np.ndarray:
     girati[:, 0] -= girati[:, 0].min()
     girati[:, 2] -= girati[:, 2].min()
     return girati
-
-
-def piedi(m: Modello) -> list[int]:
-    """Gli id dei nodi che poggiano a terra, dedotti dalla struttura e non da una soglia.
-
-    È la regola di `meshrec.core.opensees._al_piede`, riscritta sui nodi e sulle aste di
-    NOVA (là vuole gli elementi di MeshRec). Nessuna tolleranza sulla quota, e la ragione è
-    il difetto che quella regola ha sostituito: sul telaio sintetico la trave di fondazione
-    ha l'asse fuori piano di mezzo grado e i suoi nodi si spandono di quindici millimetri in
-    quota, così una tolleranza «entro un epsilon dalla quota minima» ne incastrava uno solo.
-
-    1. La membratura coricata che tocca il punto più basso ci poggia per tutta la propria
-       lunghezza: si parte dal nodo di quota minima e si cammina sulle sole aste coricate.
-    2. Ogni nodo da cui la struttura sale soltanto, e sale in piedi: sotto non prosegue
-       niente, quindi o poggia o penzola; che le aste siano in piedi esclude la punta di
-       uno sbalzo.
-    """
-    nodi = {n.id: n for n in m.nodi}
-    vicini: dict[int, list[tuple[int, bool]]] = {}
-    for a in m.aste:
-        i, j = nodi.get(a.nodo_i), nodi.get(a.nodo_j)
-        if i is None or j is None or i.id == j.id:
-            continue
-        coricata = abs(j.z - i.z) < math.hypot(j.x - i.x, j.y - i.y)
-        vicini.setdefault(i.id, []).append((j.id, coricata))
-        vicini.setdefault(j.id, []).append((i.id, coricata))
-    if not vicini:
-        return []
-
-    # `min` sui soli nodi che un'asta tocca, e a parità di quota l'id più piccolo: un nodo
-    # isolato più in basso non è un piede, è un nodo da cui non si cammina da nessuna parte.
-    partenza = min(vicini, key=lambda k: (nodi[k].z, k))
-    a_terra = {partenza}
-    da_visitare = [partenza]
-    while da_visitare:
-        for altro, coricata in vicini.get(da_visitare.pop(), ()):
-            if coricata and altro not in a_terra:
-                a_terra.add(altro)
-                da_visitare.append(altro)
-    a_terra.update(
-        k for k, intorno in vicini.items()
-        if all(not coricata and nodi[altro].z > nodi[k].z for altro, coricata in intorno)
-    )
-    return sorted(a_terra)
-
-
-NOTA_TUTTI_AL_PIEDE = "tutti i nodi sarebbero al piede: nessuna proposta"
-
-
-def proposte_vincoli(m: Modello) -> list[dict]:
-    """Un incastro per ogni nodo al piede, da proporre e non da applicare: dove il pezzo
-    poggia è una lettura, non una misura del rilievo.
-
-    Nessuna proposta quando **ogni** nodo cadrebbe al piede — un rilievo della sola trave di
-    fondazione: incastrare tutto è il modello che `check_model` rifiuta («non resta nulla da
-    calcolare»), e proporlo sarebbe proporre una risposta sbagliata invece di nessuna.
-    """
-    a_terra = piedi(m)
-    if not a_terra or len(a_terra) == len(m.nodi):
-        return []
-    incastro = {"ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True}
-    return [{"nodo": k, "vincolo": dict(incastro)} for k in a_terra]
 
 
 def _scartate(prior: dict) -> list[dict]:

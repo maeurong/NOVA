@@ -1027,12 +1027,50 @@ def test_la_sezione_senza_barre_e_un_non_applicabile_del_check(chiedi):
     assert "non lineare (T4)" in v["armatura_mancante"]["ragione"]
 
 
-def test_i_due_controlli_rinviati_non_sono_mai_passato(chiedi):
+def test_armatura_mancante_non_e_mai_passato(chiedi):
+    """Task 3 chiude `vincoli_dedotti`: resta un solo controllo rinviato (`armatura_mancante`, T4)."""
     (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
     v = {x["controllo"]: x for x in r[-1]["verdetti"]}
     assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] is None
-    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
-    assert "importatore (T2)" in v["vincoli_dedotti"]["ragione"]
+
+
+# --- Task 3: vincoli_dedotti -------------------------------------------------
+
+
+def test_vincoli_dedotti_passato_su_telaio_incastrato(chiedi):
+    """Regressione: `telaio_2x1` ha la base (nodi 1-3) incastrata, i soli piedi, già dichiarati."""
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "passato"
+
+
+def test_vincolo_esplicitamente_libero_al_piede_e_passato(chiedi):
+    """`{}` è una scelta dichiarata (nessun grado vincolato), non un piede dimenticato."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"][0]["vincolo"] = {}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "passato"
+
+
+def test_vincolo_null_al_piede_e_non_passato_con_le_proposte(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    del m["nodi"][0]["vincolo"]
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "non_passato"
+    assert v["oggetto"] == [1]
+    assert v["valori"]["proposti"] == [{"nodo": 1, "vincolo": {"ux": True, "uy": True, "uz": True,
+                                                               "rx": True, "ry": True, "rz": True}}]
+    assert v["rimedio"] == "conferma i vincoli proposti al piede"
+
+
+def test_vincoli_dedotti_non_applicabile_senza_aste(chiedi):
+    m = {"schema_version": 1, "unita": "mm-N-MPa-t-s", "nodi": [{"id": 1, "x": 0, "y": 0, "z": 0}], "aste": []}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "non_applicabile"
+    assert "nessuna asta" in v["ragione"]
 
 
 def test_il_caso_con_a_capo_e_rifiutato_e_non_finisce_nel_tcl(chiedi, tmp_path):

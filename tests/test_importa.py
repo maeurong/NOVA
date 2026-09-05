@@ -113,6 +113,16 @@ def test_il_check_model_dice_cosa_manca():
     assert v["nodi_coincidenti"]["esito"] == "passato" and v["aste_sconnesse"]["esito"] == "passato"
 
 
+def test_vincoli_dedotti_non_passato_sul_sintetico_senza_vincoli():
+    """Il rilievo non propone vincoli (spec «Importatore dal prior»): il check li deve chiedere."""
+    imp = importa.importa(_prior(SINTETICO))
+    v = {x["controllo"]: x for x in check.check_model(imp.modello)}["vincoli_dedotti"]
+    assert v["esito"] == "non_passato"
+    assert v["oggetto"] == importa.piedi(imp.modello)
+    assert v["valori"]["proposti"] == imp.proposte_vincoli
+    assert v["rimedio"] == "conferma i vincoli proposti al piede"
+
+
 def test_con_i_vincoli_proposti_il_modello_passa_il_check():
     imp = importa.importa(_prior(SINTETICO))
     dati = json.loads(imp.modello.model_dump_json(exclude_none=True))
@@ -244,3 +254,45 @@ def test_se_ogni_nodo_e_al_piede_non_si_propone_niente():
     assert importa.piedi(imp.modello) == [n.id for n in imp.modello.nodi]
     assert imp.proposte_vincoli == []
     assert imp.resoconto["nota_vincoli"] == "tutti i nodi sarebbero al piede: nessuna proposta"
+
+
+def test_vincoli_dedotti_non_applicabile_se_tutti_i_nodi_sono_al_piede():
+    """Coerente con `proposte_vincoli`: se il check chiedesse di confermare qui, chiederebbe
+    di incastrare tutto, e `check_model` lo rifiuterebbe («non resta nulla da calcolare»)."""
+    prior = _prior(SINTETICO)
+    prior["membrature"] = [prior["membrature"][1]]  # la sola trave di fondazione
+    prior["giunzioni"] = []
+    imp = importa.importa(prior)
+    v = {x["controllo"]: x for x in check.check_model(imp.modello)}["vincoli_dedotti"]
+    assert v["esito"] == "non_applicabile"
+    assert "tutti i nodi sarebbero al piede" in v["ragione"]
+
+
+# --- Task 3: la regola del piede sui casi limite ----------------------------
+
+def test_sbalzo_col_traverso_piu_basso_della_radice_non_e_un_piede():
+    """Regola 2 di `piedi`: si sale solo lungo aste in piedi. Il traverso che scende dalla
+    radice è coricato, quindi non promuove la propria punta a piede."""
+    m = modello.Modello(schema_version=1, unita=modello.UNITA, nodi=[
+        modello.Nodo(id=1, x=0, y=0, z=0),
+        modello.Nodo(id=2, x=0, y=0, z=3000),
+        modello.Nodo(id=3, x=2000, y=0, z=2500),  # punta dello sbalzo, più bassa della radice (nodo 2)
+    ], aste=[
+        modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
+        modello.Asta(id=2, nodo_i=2, nodo_j=3, sezione=1),
+    ])
+    assert importa.piedi(m) == [1]
+
+
+def test_trave_di_fondazione_inclinata_ha_tutti_i_nodi_al_piede():
+    """Regola 1: si cammina lungo le aste coricate dal nodo di quota minima. Uno 0,5° di
+    fuori piombo (pochi mm su metri) non deve fermare il cammino a metà trave."""
+    m = modello.Modello(schema_version=1, unita=modello.UNITA, nodi=[
+        modello.Nodo(id=1, x=0, y=0, z=0),
+        modello.Nodo(id=2, x=3000, y=0, z=20),
+        modello.Nodo(id=3, x=6000, y=0, z=5),
+    ], aste=[
+        modello.Asta(id=1, nodo_i=1, nodo_j=2, sezione=1),
+        modello.Asta(id=2, nodo_i=2, nodo_j=3, sezione=1),
+    ])
+    assert importa.piedi(m) == [1, 2, 3]
