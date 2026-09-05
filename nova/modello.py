@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Annotated, Literal, Union
 
@@ -47,6 +48,10 @@ class Vincolo(_Base):
     def gradi(self) -> tuple[int, int, int, int, int, int]:
         return tuple(int(v) for v in (self.ux, self.uy, self.uz, self.rx, self.ry, self.rz))
 
+    def libero(self, i: int) -> bool:
+        """Il grado `i` (l'ordine di `gradi`) non è bloccato."""
+        return not self.gradi()[i]
+
 
 class Nodo(_Base):
     id: int
@@ -54,9 +59,22 @@ class Nodo(_Base):
     x: float
     y: float = 0.0
     z: float
+    # `None` = vincolo non dichiarato (il check C1 lo segnala se il nodo è al piede);
+    # `Vincolo()`/`{}` = dichiarato libero, tutti i gradi falsi: è una scelta dell'utente,
+    # non una dimenticanza, e `vincoli_dedotti` la accetta senza chiedere conferma.
     vincolo: Vincolo | None = None
     massa_nodale: float = Field(default=0.0, ge=0.0)
     origine: Origine | None = None
+
+    # `deck`, `check` e `modale` chiedevano «questo grado è libero?» in cinque modi diversi,
+    # ognuno con la propria gestione del vincolo assente. Le due domande stanno qui.
+    def libero(self, i: int) -> bool:
+        """Il grado `i` è libero. Vincolo non dichiarato = tutti e sei liberi."""
+        return self.vincolo is None or self.vincolo.libero(i)
+
+    def vincolato(self) -> bool:
+        """Almeno un grado bloccato: è il nodo per cui il deck scrive una riga `fix`."""
+        return not all(self.libero(i) for i in range(6))
 
 
 class Danno(_Base):
@@ -128,6 +146,7 @@ class Materiale(_Base):
     # caratteri chiude la Tcl injection (`\n`/`{`/`}` = un comando) SEMPRE, anche
     # con `personalizzato: true` — non solo quando la classe deve esistere a catalogo.
     classe: str = Field(pattern=r"^[A-Za-z0-9 /_.-]+$")
+    origine: Origine | None = None
     valori: dict[str, float] = {}
     personalizzato: bool = False
 
@@ -226,12 +245,12 @@ class AnalisiStatica(_Base):
 
 class MassaDaAzione(_Base):
     azione: int
-    coefficiente: float
+    coefficiente: float = Field(ge=0)  # è la ψ di NTC [2.5.7]: una frazione, mai una massa che si toglie
 
 
 class AnalisiModale(_Base):
     tipo: Literal["modale"]
-    modi: int | Literal["auto"] = "auto"
+    modi: Annotated[int, Field(ge=1)] | Literal["auto"] = "auto"
     masse_da_azioni: list[MassaDaAzione] = []
 
 
@@ -359,3 +378,111 @@ def assicura_peso_proprio(m: Modello) -> Modello:
 
 def casi_dichiarati(m: Modello) -> list[str]:
     return [f"Z{a.id}" for a in m.azioni] + [f"C{c.id}" for c in m.combinazioni]
+
+
+def grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:
+    """Nodo → lista di `(vicino, coricata)`: il grafo su cui camminano `piedi` e `numero_componenti`.
+
+    È pubblico perché `check.py` chiede a entrambe la loro risposta per lo stesso verdetto, e
+    costruirlo due volte era camminare due volte le stesse aste.
+    """
+    nodi = {n.id: n for n in m.nodi}
+    vicini: dict[int, list[tuple[int, bool]]] = {}
+    for a in m.aste:
+        i, j = nodi.get(a.nodo_i), nodi.get(a.nodo_j)
+        if i is None or j is None or i.id == j.id:
+            continue
+        coricata = abs(j.z - i.z) < math.hypot(j.x - i.x, j.y - i.y)
+        vicini.setdefault(i.id, []).append((j.id, coricata))
+        vicini.setdefault(j.id, []).append((i.id, coricata))
+    return vicini
+
+
+def _componenti(vicini: dict[int, list[tuple[int, bool]]]) -> list[set[int]]:
+    """I nodi del grafo raggruppati per componente connessa, qualunque sia l'asta che li lega."""
+    visti: set[int] = set()
+    gruppi: list[set[int]] = []
+    for partenza in vicini:
+        if partenza in visti:
+            continue
+        gruppo, coda = {partenza}, [partenza]
+        while coda:
+            for altro, _ in vicini.get(coda.pop(), ()):
+                if altro not in gruppo:
+                    gruppo.add(altro)
+                    coda.append(altro)
+        visti |= gruppo
+        gruppi.append(gruppo)
+    return gruppi
+
+
+def piedi(m: Modello, vicini: dict | None = None) -> list[int]:
+    """Gli id dei nodi che poggiano a terra, dedotti dalla struttura e non da una soglia.
+
+    È la regola di `meshrec.core.opensees._al_piede`, riscritta sui nodi e sulle aste di
+    NOVA (là vuole gli elementi di MeshRec). Nessuna tolleranza sulla quota, e la ragione è
+    il difetto che quella regola ha sostituito: sul telaio sintetico la trave di fondazione
+    ha l'asse fuori piano di mezzo grado e i suoi nodi si spandono di quindici millimetri in
+    quota, così una tolleranza «entro un epsilon dalla quota minima» ne incastrava uno solo.
+
+    1. La membratura coricata che tocca il punto più basso ci poggia per tutta la propria
+       lunghezza: si parte dal nodo di quota minima e si cammina sulle sole aste coricate.
+       **Per componente connessa**, non sul modello intero: un modello con due sottostrutture
+       non collegate (due torri, ciascuna con la propria fondazione) ha un minimo di quota a
+       testa, non uno solo — un solo minimo globale perderebbe la fondazione della torre più alta.
+    2. Ogni nodo da cui la struttura sale soltanto, e sale in piedi: sotto non prosegue
+       niente, quindi o poggia o penzola; che le aste siano in piedi esclude la punta di
+       uno sbalzo. Questa regola guarda solo i vicini del nodo, quindi vale già per componente.
+
+    Sta qui e non in `nova.importa` perché il Check Model (C1, `nova.check`) la usa e gira
+    **prima** del deck: `nova.importa` importa `nova.deck` (per la terna e le dimensioni di
+    sezione), e farla dipendere da `check` la tirerebbe dentro quella catena.
+    """
+    nodi = {n.id: n for n in m.nodi}
+    vicini = grafo(m) if vicini is None else vicini
+    if not vicini:
+        return []
+
+    a_terra: set[int] = set()
+    for gruppo in _componenti(vicini):
+        # `min` sui soli nodi che un'asta tocca, e a parità di quota l'id più piccolo: un nodo
+        # isolato più in basso non è un piede, è un nodo da cui non si cammina da nessuna parte.
+        partenza = min(gruppo, key=lambda k: (nodi[k].z, k))
+        raggiunti, da_visitare = {partenza}, [partenza]
+        while da_visitare:
+            for altro, coricata in vicini.get(da_visitare.pop(), ()):
+                if coricata and altro not in raggiunti:
+                    raggiunti.add(altro)
+                    da_visitare.append(altro)
+        a_terra |= raggiunti
+    a_terra.update(
+        k for k, intorno in vicini.items()
+        if all(not coricata and nodi[altro].z > nodi[k].z for altro, coricata in intorno)
+    )
+    return sorted(a_terra)
+
+
+def numero_componenti(m: Modello, vicini: dict | None = None) -> int:
+    """Quante sottostrutture sconnesse vede `piedi`: un telaio sano ne ha una sola."""
+    return len(_componenti(grafo(m) if vicini is None else vicini))
+
+
+NOTA_TUTTI_AL_PIEDE = "tutti i nodi sarebbero al piede: nessuna proposta"
+
+
+def proposte_vincoli(m: Modello, piede: list[int] | None = None) -> list[dict]:
+    """Un incastro per ogni nodo al piede, da proporre e non da applicare: dove il pezzo
+    poggia è una lettura, non una misura del rilievo.
+
+    `piede`, se il chiamante l'ha già calcolato (`check.py` lo fa per il proprio verdetto),
+    evita di camminare due volte lo stesso grafo; se assente lo calcola qui.
+
+    Nessuna proposta quando **ogni** nodo cadrebbe al piede — un rilievo della sola trave di
+    fondazione: incastrare tutto è il modello che `check_model` rifiuta («non resta nulla da
+    calcolare»), e proporlo sarebbe proporre una risposta sbagliata invece di nessuna.
+    """
+    a_terra = piedi(m) if piede is None else piede
+    if not a_terra or len(a_terra) == len(m.nodi):
+        return []
+    incastro = {"ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True}
+    return [{"nodo": k, "vincolo": dict(incastro)} for k in a_terra]

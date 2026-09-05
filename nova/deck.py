@@ -16,7 +16,7 @@ from typing import NamedTuple
 import numpy as np
 
 from meshrec.core import armatura, opensees
-from nova import catalogo
+from nova import catalogo, modale
 from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati, senza_barre
 
 NOME_TCL = "13_telaio.tcl"
@@ -58,6 +58,7 @@ class Deck:
     vincolati: list[int]
     carico_totale: dict[str, tuple[float, float, float]]
     resoconto: dict
+    modi: int | None = None
 
 
 class _ArmaturaDuck(NamedTuple):
@@ -176,6 +177,13 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     return [Barra(x.z, x.y, x.diametro) for x in piano] if verticale else piano
 
 
+def _versore(e: Elemento, direzione: str) -> tuple[float, float, float]:
+    """Il versore globale della direzione che un carico distribuito dichiara sull'elemento `e`.
+    `locale_y` e `locale_z` sono gli assi della terna dell'asta, che il carico segue quando ruota."""
+    return {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0),
+            "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[direzione]
+
+
 def _massa_lineare(s: Sezione, barre: list[Barra], m: Modello) -> float:
     """t/mm: calcestruzzo (al netto delle riduzioni e delle barre) + acciaio."""
     r = s.riduzione
@@ -205,8 +213,77 @@ def _fattori(m: Modello, caso: str) -> dict[int, float]:
     raise ValueError(f"caso {caso!r} non dichiarato: i casi sono {casi_dichiarati(m)}")
 
 
-def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
+def _masse_da_azioni(m: Modello, elementi: list[Elemento], per_asta: dict[int, list[Elemento]],
+                     mappa_nodo: dict[int, int]) -> dict[int, float]:
+    """{tag nodo: massa [t]} dalle azioni che l'analisi modale dichiara come massa sismica.
+
+    Solo la componente **verticale** del carico diventa massa: NTC 2018 [2.5.7] combina i
+    carichi gravitazionali, e una spinta orizzontale di vento non è un peso. Quindi
+    `massa = coefficiente · |componente z| / g`, con `g = 9806,65 mm/s²`:
+
+    Le componenti verticali si sommano **con segno dentro l'azione**, e il modulo si prende
+    sul netto: due carichi opposti sullo stesso nodo o sullo stesso elemento si elidono,
+    invece di sommarsi in una massa doppia che nessuno ha appeso.
+
+    - carico nodale: `Fz` sul nodo che lo porta;
+    - carico distribuito: `q · versore_z` su ogni elemento dell'asta, dove il versore è
+      quello della direzione dichiarata (anche `locale_y` e `locale_z` passano di qui: la
+      direzione la decide l'asta, la componente utile è z);
+    - gravità: `fattore_z · massa_lineare · g` su ogni elemento — la massa c'è già, e infatti
+      il Check Model rifiuta di prendere il peso proprio generato.
+
+    Il netto per elemento diventa `|wz| · L / 2` su ciascuno dei due estremi.
+
+    Coefficiente zero, azione senza carichi, nessuna analisi modale: nessuna riga, e non uno
+    zero scritto. Una `mass` a zero e una massa mai chiesta si leggono uguali nel `.tcl`, ma
+    la prima dice «l'ho calcolata» di una cosa che nessuno ha calcolato.
+    """
+    modali = [a for a in m.analisi if a.tipo == "modale"]
+    if len(modali) > 1:
+        raise ValueError(f"una sola analisi modale per modello, e ne sono dichiarate {len(modali)}")
+    masse: dict[int, float] = {}
+
+    def aggiungi(tag: int, quanta: float) -> None:
+        if quanta:
+            masse[tag] = masse.get(tag, 0.0) + quanta
+
+    for voce in (modali[0].masse_da_azioni if modali else []):
+        if not voce.coefficiente:
+            continue
+        azione = m.azione(voce.azione)
+        if azione is None:  # riferimento rotto: il Check Model lo rifiuta, «forza» lo scavalca
+            continue
+        # prima si somma **con segno** dentro l'azione, il modulo viene alla fine: due carichi
+        # opposti sullo stesso posto si elidono, come fanno nella realtà, e non si sommano in
+        # una massa doppia che nessuno ha appeso
+        fz_nodo: dict[int, float] = {}       # forza verticale netta per nodo [N]
+        wz_elemento: dict[int, float] = {}   # carico verticale netto per elemento [N/mm]
+        for c in azione.carichi:
+            if c.tipo == "nodale":
+                tag = mappa_nodo[c.nodo]
+                fz_nodo[tag] = fz_nodo.get(tag, 0.0) + c.Fz
+            elif c.tipo == "distribuito":
+                for e in per_asta[c.asta]:
+                    wz_elemento[e.tag] = wz_elemento.get(e.tag, 0.0) + c.q * _versore(e, c.direzione)[2]
+            elif c.tipo == "gravita":
+                for e in elementi:
+                    wz_elemento[e.tag] = (wz_elemento.get(e.tag, 0.0)
+                                          + c.fattore_z * e.massa_lineare * GRAVITA)
+        for tag, fz in fz_nodo.items():
+            aggiungi(tag, voce.coefficiente * abs(fz) / GRAVITA)
+        for e in elementi:
+            wz = wz_elemento.get(e.tag, 0.0)
+            meta = voce.coefficiente * abs(wz) * e.L / 2 / GRAVITA
+            aggiungi(e.i, meta); aggiungi(e.j, meta)
+    return masse
+
+
+def scrivi(m: Modello, casi: list[str], cartella: Path, modi: int | None = None) -> Deck:
     """Scrive `13_telaio.tcl` nella cartella e rende quel che serve a leggerne le uscite.
+
+    `modi` intero aggiunge in coda il passo modale, dopo l'ultimo caso statico e il suo
+    `reset`: i registratori di `eigen` chiedono `record` e vogliono la cartella pulita dai
+    registratori statici, che ogni caso rimuove già da sé.
 
     I cedimenti finiscono in `sp` dentro il pattern del caso, anche su un dof che i vincoli
     dichiarati hanno già bloccato con `fix`: misurato il 05/09/2026 con OpenSees 3.8.0 e
@@ -286,8 +363,7 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
                         v[k] += coeff * comp
                 elif c.tipo == "distribuito":
                     for e in per_asta[c.asta]:
-                        d = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1),
-                             "locale_y": tuple(e.e1), "locale_z": tuple(e.e2)}[c.direzione]
+                        d = _versore(e, c.direzione)
                         e.w[caso] = tuple(float(w + coeff * c.q * dk) for w, dk in zip(e.w[caso], d))
                 elif c.tipo == "gravita":
                     for e in elementi:
@@ -307,19 +383,23 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
         carico_totale[caso] = tuple(float(x) for x in tot)
 
     # ---- il file
-    vincolati = [mappa_nodo[n.id] for n in m.nodi if n.vincolo and any(n.vincolo.gradi())]
+    vincolati = [mappa_nodo[n.id] for n in m.nodi if n.vincolato()]
     r = ["# Deck generato da NOVA (nova/deck.py). Unità: mm, N, MPa, t, s.",
          "# Si esegue con la cartella di lavoro sulla cartella di uscita.",
          "wipe", "model BasicBuilder -ndm 3 -ndf 6", "", "# --- nodi ---"]
     for tag, (x, y, z) in nodi_xyz.items():
         r.append(f"node {tag} {x:.10g} {y:.10g} {z:.10g}")
-    for n in m.nodi:
-        if n.massa_nodale:
-            r.append(f"mass {mappa_nodo[n.id]} {n.massa_nodale:.10g} {n.massa_nodale:.10g} "
-                     f"{n.massa_nodale:.10g} 0 0 0")
+    # la massa è scalare e uguale sulle tre traslazioni: la direzione la decide `eigen`
+    da_azioni = _masse_da_azioni(m, elementi, per_asta, mappa_nodo)
+    masse_nodo = {mappa_nodo[n.id]: float(n.massa_nodale) for n in m.nodi if n.massa_nodale}
+    for tag, quanta in da_azioni.items():
+        masse_nodo[tag] = masse_nodo.get(tag, 0.0) + quanta
+    for tag in sorted(masse_nodo):
+        massa = masse_nodo[tag]
+        r.append(f"mass {tag} {massa:.10g} {massa:.10g} {massa:.10g} 0 0 0")
     r += ["", "# --- vincoli dichiarati ---"]
     for n in m.nodi:
-        if n.vincolo and any(n.vincolo.gradi()):
+        if n.vincolato():
             r.append(f"fix {mappa_nodo[n.id]} " + " ".join(str(g) for g in n.vincolo.gradi()))
     r += ["", "# --- materiali elastici (T1) e sezioni a fibre ---"]
     sezioni_senza_barre: list[int] = []
@@ -382,6 +462,20 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
               # 05/09/2026 con OpenSees 3.8.0 sul telaio 2×1, il caso Z2 (sola spinta in testa) dopo
               # Z1 (solo distribuito) dà somma delle reazioni z = 0, cioè zero residuo del caso prima.
               "remove recorders", "wipeAnalysis", f"remove loadPattern {k}", "reset"]
+    if modi is None:
+        modi = modale.modi_dichiarati(m)
+    n_modi = min(modi, modale.gradi_liberi(m)) if modi else None
+    if n_modi:
+        blocco = opensees._passo_modale(n_modi, n_nodi)
+        # `-fullGenLapack` e non l'Arpack che `_passo_modale` scrive: con la massa lumped di
+        # `forceBeamColumn -mass` la matrice delle masse è singola sulle rotazioni, e l'Arnoldi
+        # si ferma molto prima dei gradi liberi. Misurato il 05/09/2026, OpenSees 3.8.0, telaio
+        # 2×1 (nove traslazioni libere): `eigen 5` esce con «Could not build an Arnoldi
+        # factorization», `eigen -fullGenLapack 9` rende nove modi. La scala di «auto» parte da
+        # tre e sale a sei: con Arpack il secondo giro non arriverebbe mai in fondo.
+        # `.index` e non una sostituzione a tentoni: se MeshRec cambia quella riga, si rompe qui.
+        blocco[blocco.index(f"eigen {n_modi}")] = f"eigen -fullGenLapack {n_modi}"
+        r += ["", *blocco]
     r += ["", "wipe", f'set _fine [open "{opensees.NOME_FINE}" w]', f'puts $_fine "{opensees.MARCA_FINE}"',
           "close $_fine", ""]
     cartella.mkdir(parents=True, exist_ok=True)  # dopo le validazioni: un rifiuto non lascia cartelle
@@ -389,7 +483,9 @@ def scrivi(m: Modello, casi: list[str], cartella: Path) -> Deck:
     percorso.write_text("\n".join(r), encoding="utf-8")
     resoconto = {"tcl": str(percorso), "nodi": n_nodi, "elementi": n_el, "casi": list(casi),
                  "vincolati": len(vincolati), "carico_totale": carico_totale,
-                 "sezioni_senza_barre": sezioni_senza_barre,
+                 "sezioni_senza_barre": sezioni_senza_barre, "modi": n_modi,
+                 "massa_da_azioni": sum(da_azioni.values()),
                  "mappa_nodo": {str(k): v for k, v in mappa_nodo.items()},
                  "mappa_asta": {str(k): v for k, v in mappa_asta.items()}}
-    return Deck(percorso, list(casi), nodi_xyz, mappa_nodo, mappa_asta, elementi, vincolati, carico_totale, resoconto)
+    return Deck(percorso, list(casi), nodi_xyz, mappa_nodo, mappa_asta, elementi, vincolati,
+                carico_totale, resoconto, n_modi)

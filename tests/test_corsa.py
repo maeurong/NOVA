@@ -6,6 +6,7 @@ import pytest
 from conftest import leggi_fixture
 from nova import corsa
 from nova import deck as _deck
+from nova import modale as _modale
 from nova import modello as _modello
 
 
@@ -103,3 +104,74 @@ def test_risultati_da_uscite_pretende_lhash_del_modello(tmp_path):
     m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
     with pytest.raises(TypeError):
         corsa.risultati_da_uscite(m, d, tmp_path, "")
+
+
+# --- T2: i due verdetti modali ---
+
+def test_nessun_modo_estratto_non_e_non_applicabile(tmp_path):
+    """Il passo modale c'è stato e non ha reso niente: è un rosso, non una terza cosa."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ("x", "z"))}
+    assert v["autovalori"]["esito"] == "non_passato"
+    assert v["massa_modale"]["esito"] == "non_passato"
+    assert "nessun modo estratto" in v["massa_modale"]["ragione"]
+
+
+def test_la_massa_modale_conta_solo_le_direzioni_con_massa(tmp_path):
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
+    assert v["massa_modale"]["esito"] == "passato"
+    assert v["massa_modale"]["valori"]["per_direzione"]["y"] is None
+    assert "x" in v["massa_modale"]["ragione"] and "z" in v["massa_modale"]["ragione"]
+    stretto = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "y", "z"))}
+    assert stretto["massa_modale"]["esito"] == "non_passato"
+
+
+def test_senza_direzioni_con_massa_i_verdetti_modali_non_si_applicano(tmp_path):
+    """Niente traslazioni libere con massa: la domanda «i modi bastano?» non ha senso qui,
+    e non ha senso nemmeno «le frequenze sono sane?». Terza cosa, non un rosso."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ())}
+    for controllo in ("autovalori", "massa_modale"):
+        assert v[controllo]["esito"] == "non_applicabile", controllo
+        assert v[controllo]["ragione"] == "nessuna traslazione libera con massa: niente da estrarre"
+
+
+def test_i_verdetti_modali_hanno_le_stesse_chiavi(tmp_path):
+    """Parità delle chiavi anche sul ramo vero di `_verdetti_modali`, non solo sul `non_applicabile`."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    for c3 in (corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z")),
+               corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ("x",)),
+               corsa.controlli(d, _caso({"1": [0.0] * 6}), "", [], ())):
+        assert c3
+        for v in c3:
+            assert set(v) == CHIAVI_VERDETTO, v["controllo"]
+
+
+def test_la_scala_dei_modi_si_ferma_al_cappello():
+    """Un modello molto suddiviso ha centinaia di gradi liberi, e l'ultimo giro li chiederebbe
+    tutti a un solutore denso (il costo va col cubo). Il cappello è l'ultimo gradino della
+    scala: sotto di esso il tetto chiude la scala come prima."""
+    dati = leggi_fixture("telaio_2x1.nova.json")
+    for a in dati["aste"]:
+        a["suddivisioni"] = 20
+    m = _modello.carica(dati)
+    an = _modello.AnalisiModale(tipo="modale", modi="auto")
+    assert _modale.gradi_liberi(m) > _modale.SCALA_MODI[-1]
+    assert corsa._tentativi(m, an) == [3, 6, 12, 24, 48]
+
+
+def test_sotto_il_cappello_la_scala_finisce_sul_tetto():
+    m = _modello.carica(leggi_fixture("telaio_2x1.nova.json"))
+    an = _modello.AnalisiModale(tipo="modale", modi="auto")
+    assert corsa._tentativi(m, an) == [3, 6, 9]
+
+
+def test_la_ragione_della_massa_modale_elenca_le_direzioni_in_prosa(tmp_path):
+    """`['x', 'z']` è il `repr` di una lista Python dentro una frase che legge un ingegnere."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
+    assert v["massa_modale"]["ragione"].endswith("sulle direzioni con massa x, z")

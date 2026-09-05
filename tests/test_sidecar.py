@@ -1027,12 +1027,50 @@ def test_la_sezione_senza_barre_e_un_non_applicabile_del_check(chiedi):
     assert "non lineare (T4)" in v["armatura_mancante"]["ragione"]
 
 
-def test_i_due_controlli_rinviati_non_sono_mai_passato(chiedi):
+def test_armatura_mancante_non_e_mai_passato(chiedi):
+    """Task 3 chiude `vincoli_dedotti`: resta un solo controllo rinviato (`armatura_mancante`, T4)."""
     (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
     v = {x["controllo"]: x for x in r[-1]["verdetti"]}
     assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] is None
-    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
-    assert "importatore (T2)" in v["vincoli_dedotti"]["ragione"]
+
+
+# --- Task 3: vincoli_dedotti -------------------------------------------------
+
+
+def test_vincoli_dedotti_passato_su_telaio_incastrato(chiedi):
+    """Regressione: `telaio_2x1` ha la base (nodi 1-3) incastrata, i soli piedi, già dichiarati."""
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": leggi_fixture("telaio_2x1.nova.json")})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "passato"
+
+
+def test_vincolo_esplicitamente_libero_al_piede_e_passato(chiedi):
+    """`{}` è una scelta dichiarata (nessun grado vincolato), non un piede dimenticato."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"][0]["vincolo"] = {}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "passato"
+
+
+def test_vincolo_null_al_piede_e_non_passato_con_le_proposte(chiedi):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    del m["nodi"][0]["vincolo"]
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "non_passato"
+    assert v["oggetto"] == [1]
+    assert v["valori"]["proposti"] == [{"nodo": 1, "vincolo": {"ux": True, "uy": True, "uz": True,
+                                                               "rx": True, "ry": True, "rz": True}}]
+    assert v["rimedio"] == "conferma i vincoli proposti al piede"
+
+
+def test_vincoli_dedotti_non_applicabile_senza_aste(chiedi):
+    m = {"schema_version": 1, "unita": "mm-N-MPa-t-s", "nodi": [{"id": 1, "x": 0, "y": 0, "z": 0}], "aste": []}
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = {x["controllo"]: x for x in r[-1]["verdetti"]}["vincoli_dedotti"]
+    assert v["esito"] == "non_applicabile"
+    assert "nessuna asta" in v["ragione"]
 
 
 def test_il_caso_con_a_capo_e_rifiutato_e_non_finisce_nel_tcl(chiedi, tmp_path):
@@ -1132,3 +1170,250 @@ def test_la_fila_sx_si_scavalca_anche_su_h_e_colloca_non_la_vede(chiedi, tmp_pat
                             "file": [{"lato": "sx", "n": 2, "diametro": 16}]})
     r = _deck(chiedi, tmp_path, m)
     assert r["esito"] == "errore" and "sovrappongono su h" in r["motivo"]
+
+
+# --- T2: il blocco modale del deck e le masse da azioni ---
+
+def _con_modale(m, **campi):
+    m["analisi"].append({"tipo": "modale", **campi})
+    return m
+
+
+def test_il_deck_modale_scrive_eigen_e_le_masse_da_azioni(chiedi, tmp_path):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=4,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": 0.3}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    tcl = _tcl(tmp_path)
+    assert "eigen -fullGenLapack 4" in tcl and "modalProperties -print -file massa_modale.out -unorm" in tcl
+    assert tcl.count('"eigen ') == 4  # un registratore di forma per modo
+    # 0,3 · 12,5 N/mm · 9000 mm / g, metà per nodo sui due estremi di ogni trave
+    massa_tot = 0.3 * 12.5 * 9000 / 9806.65
+    righe_mass = [x for x in tcl.splitlines() if x.startswith("mass ")]
+    assert sum(float(x.split()[3]) for x in righe_mass) == pytest.approx(massa_tot, rel=1e-9)
+
+
+def test_senza_modale_il_deck_non_ha_eigen(chiedi, tmp_path):
+    assert _deck(chiedi, tmp_path, leggi_fixture("telaio_2x1.nova.json"))["esito"] == "ok"
+    assert "eigen" not in _tcl(tmp_path)
+
+
+def test_i_modi_non_superano_i_gradi_liberi(chiedi, tmp_path):
+    """`eigen` oltre le traslazioni libere fa saltare OpenSees (segnale 11, misurato il
+    05/09/2026 con `-fullGenLapack 12` sul telaio 2×1, che ne ha nove)."""
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=200)
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "ok" and r["resoconto"]["modi"] == 9
+    assert "eigen -fullGenLapack 9" in _tcl(tmp_path)
+
+
+def test_zero_modi_e_un_rifiuto_del_modello(chiedi):
+    for modi in (0, -3):
+        (r,) = chiedi({"id": 1, "comando": "check",
+                       "modello": _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=modi)})
+        assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello", modi
+
+
+def test_due_analisi_modali_sono_un_rifiuto(chiedi, tmp_path):
+    m = _con_modale(_con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3), modi=4)
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and "una sola analisi modale" in r["motivo"]
+
+
+def test_il_coefficiente_zero_non_aggiunge_massa(chiedi, tmp_path):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": 0.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    assert not [x for x in _tcl(tmp_path).splitlines() if x.startswith("mass ")]
+
+
+def test_lazione_senza_carichi_non_aggiunge_massa(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 9, "nome": "vuota", "natura": "G2", "carichi": []})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 9, "coefficiente": 1.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    assert not [x for x in _tcl(tmp_path).splitlines() if x.startswith("mass ")]
+
+
+def test_la_massa_nodale_e_quella_da_azione_si_sommano(chiedi, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    next(n for n in m["nodi"] if n["id"] == 4)["massa_nodale"] = 2.0
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 1, "coefficiente": 1.0}])
+    assert _deck(chiedi, tmp_path, m)["esito"] == "ok"
+    riga = next(x for x in _tcl(tmp_path).splitlines() if x.startswith("mass 4 "))
+    # nodo 4: metà della trave 4 (5000 mm) più i due quintali dichiarati
+    assert float(riga.split()[2]) == pytest.approx(2.0 + 12.5 * 5000 / 2 / 9806.65, rel=1e-9)
+
+
+def test_massa_dal_peso_proprio_generato_e_rifiutata(chiedi):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 3, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "non_passato"
+    nota = "il peso proprio è già massa (densità): togli l'azione 3 da masse_da_azioni"
+    assert v["ragione"].startswith(nota) and v["rimedio"] == nota
+    assert v["oggetto"] == [{"analisi": "modale", "azione": 3}]
+
+
+def test_massa_dal_peso_proprio_scritto_a_mano_e_rifiutata(chiedi):
+    """La gravità lungo z è il peso proprio anche senza `generata`: la densità delle sezioni
+    l'ha già messa nel deck (`-mass`), e chiederla di nuovo in `masse_da_azioni` raddoppia la
+    massa — la prima frequenza scende di un fattore √2 (5,80 Hz → 4,10 sul telaio 2×1) e
+    nessun verdetto la contraddice."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 99, "nome": "gravita a mano", "natura": "G1",
+                        "carichi": [{"tipo": "gravita", "fattore_z": -1}]})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "rifiutato"
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    nota = "il peso proprio è già massa (densità): togli l'azione 99 da masse_da_azioni"
+    assert v["esito"] == "non_passato"
+    assert v["ragione"].startswith(nota) and v["rimedio"] == nota
+    assert v["oggetto"] == [{"analisi": "modale", "azione": 99}]
+
+
+def test_la_spinta_di_gravita_orizzontale_non_e_peso_proprio(chiedi):
+    """`gravita` con il solo `fattore_x` è una spinta (0,1 g del caso studio), non il peso:
+    quella massa il deck non ce l'ha già, e `masse_da_azioni` la deve poter chiedere."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["azioni"].append({"id": 99, "nome": "spinta 0,1 g", "natura": "Q", "categoria": "sisma",
+                        "carichi": [{"tipo": "gravita", "fattore_x": 0.1}]})
+    _con_modale(m, modi=3, masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "passato", v
+
+
+def test_il_check_cammina_il_grafo_una_volta_sola():
+    """`piedi` e `numero_componenti` costruivano due volte lo stesso grafo per riempire lo
+    stesso verdetto `vincoli_dedotti`."""
+    from nova import check as _check
+    from nova import modello as _m
+
+    conteggio = 0
+    vero = _m.grafo
+
+    def contato(m):
+        nonlocal conteggio
+        conteggio += 1
+        return vero(m)
+
+    _m.grafo = contato
+    try:
+        _check.check_model(_m.carica(leggi_fixture("telaio_2x1.nova.json")))
+    finally:
+        _m.grafo = vero
+    assert conteggio == 1
+
+
+def test_massa_da_unazione_inesistente_e_rifiutata(chiedi):
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 99, "coefficiente": 1.0}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    v = next(v for v in r[-1]["verdetti"] if v["controllo"] == "riferimenti")
+    assert v["esito"] == "non_passato" and v["oggetto"] == [{"analisi": "modale", "azione": 99}]
+
+
+def test_il_coefficiente_di_massa_negativo_e_un_rifiuto(chiedi):
+    """Una massa negativa non esiste: `ψ` di NTC [2.5.7] è una frazione, e OpenSees si berrebbe
+    la riga `mass` senza fiatare rendendo frequenze che nessun verdetto contraddice."""
+    m = _con_modale(leggi_fixture("telaio_2x1.nova.json"), modi=3,
+                    masse_da_azioni=[{"azione": 1, "coefficiente": -0.3}])
+    (r,) = chiedi({"id": 1, "comando": "check", "modello": m})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "modello"
+
+
+# --- comando `importa` (Task 2) ---------------------------------------------
+
+def _prior_sintetico() -> dict:
+    from conftest import FIXTURE
+    return json.loads((FIXTURE / "prior_sintetico" / "12_wall.json").read_text(encoding="utf-8"))
+
+
+def test_importa_con_il_prior_inline(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "importa", "prior": _prior_sintetico()})
+    fin = r[-1]
+    assert fin["esito"] == "ok"
+    assert len(fin["modello"]["aste"]) == 80 and fin["mancano"] == ["armature", "classe", "vincoli"]
+    assert fin["resoconto"]["nodi"] == 80 and fin["scartate"] == []
+    assert len(fin["proposte_vincoli"]) >= 2 and len(fin["giunzioni"]) == 4
+
+
+def test_importa_da_un_percorso(chiedi):
+    from conftest import FIXTURE
+
+    p = FIXTURE / "prior_vuoto" / "12_wall.json"
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    fin = r[-1]
+    assert fin["esito"] == "ok" and fin["modello"]["nodi"] == [] and len(fin["scartate"]) == 14
+    assert fin["resoconto"]["percorso"] == str(p.resolve())
+
+
+def test_importa_un_percorso_che_non_esiste_e_un_errore_di_fase_importa(chiedi, tmp_path):
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(tmp_path / "no.json")})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+
+
+def test_importa_una_cartella_non_e_un_traceback(chiedi, tmp_path):
+    (r, dopo) = chiedi({"id": 1, "comando": "importa", "percorso": str(tmp_path)},
+                       {"id": 2, "comando": "fine"})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+    assert "IsADirectoryError" not in r[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+
+
+def test_importa_un_file_che_non_e_json_e_un_errore_di_fase_importa(chiedi, tmp_path):
+    p = tmp_path / "roba.json"
+    p.write_text("non sono json", encoding="utf-8")
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+
+
+def test_importa_un_prior_senza_membrature_nomina_la_chiave(chiedi):
+    prior = _prior_sintetico()
+    del prior["membrature"]
+    (r,) = chiedi({"id": 1, "comando": "importa", "prior": prior})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "importa"
+    assert "membrature" in r[-1]["motivo"]
+
+
+def test_il_comando_sconosciuto_elenca_anche_importa(chiedi):
+    (r,) = chiedi({"id": 1, "comando": "boh"})
+    assert "importa" in r[-1]["motivo"]
+
+
+@pytest.mark.parametrize("chiave, rompi", [
+    ("riempimento", lambda p: p["membrature"][0].pop("riempimento")),
+    ("origine", lambda p: p["membrature"][0].pop("origine")),
+    ("cede", lambda p: p["giunzioni"][0].pop("cede")),
+])
+def test_importa_un_prior_mutilato_nomina_la_chiave_e_non_e_un_500(chiedi, chiave, rompi):
+    """Una chiave che manda in `KeyError` non è un difetto del sidecar: è un prior rotto, e
+    la risposta deve dire quale chiave manca invece di `fase: sidecar` (che il server passa
+    come 200)."""
+    prior = _prior_sintetico()
+    rompi(prior)
+    prima, dopo = chiedi({"id": 1, "comando": "importa", "prior": prior}, {"id": 2, "comando": "fine"})
+    assert prima[-1]["esito"] == "errore" and prima[-1]["fase"] == "importa"
+    assert chiave in prima[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+    # in prosa: «KeyError: 'riempimento'» è il gergo con cui Python parla a se stesso
+    assert "KeyError" not in prima[-1]["motivo"]
+    assert prima[-1]["motivo"].startswith("il prior non è leggibile: manca il campo")
+
+
+def test_importa_una_scartata_che_non_e_un_oggetto_resta_fase_importa(chiedi):
+    """`scartate: ["boh"]` dà `AttributeError` su `voce.get`, che il ramo dei prior mutilati
+    non prendeva: la risposta usciva con `fase: sidecar`, e il server la passa come 200."""
+    prior = {"terna": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "membrature": [], "scartate": ["boh"]}
+    prima, dopo = chiedi({"id": 1, "comando": "importa", "prior": prior}, {"id": 2, "comando": "fine"})
+    assert prima[-1]["esito"] == "errore" and prima[-1]["fase"] == "importa", prima[-1]
+    assert "KeyError" not in prima[-1]["motivo"] and dopo[-1]["esito"] == "ciao"
+
+
+def test_importa_scrive_nel_riferimento_il_nome_del_file_non_il_percorso(chiedi):
+    from conftest import FIXTURE
+
+    p = FIXTURE / "prior_sintetico" / "12_wall.json"
+    (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
+    assert r[-1]["modello"]["nodi"][0]["origine"]["riferimento"] == "12_wall.json"
+    assert r[-1]["resoconto"]["percorso"] == str(p.resolve())

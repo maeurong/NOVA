@@ -13,9 +13,10 @@ from pathlib import Path
 from nova import check as _check
 from nova import corsa as _corsa
 from nova import deck as _deck
+from nova import importa as _importa
 from nova import modello as _modello
 
-COMANDI = ("verifica", "check", "deck", "corsa", "fine")
+COMANDI = ("verifica", "check", "deck", "corsa", "importa", "fine")
 
 
 class _Rifiuto(Exception):
@@ -81,6 +82,46 @@ def comando_deck(req: dict) -> dict:
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
 
 
+def _motivo_prior(e: Exception) -> str:
+    """Il prior rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
+    parla a se stesso, e chi ha in mano un rilievo non sa che farsene."""
+    if isinstance(e, KeyError):
+        return f"il prior non è leggibile: manca il campo «{e.args[0]}»"
+    return f"il prior non è leggibile: un campo porta un valore inatteso ({e})"
+
+
+def comando_importa(req: dict) -> dict:
+    """Il prior di MeshRec, dal corpo della richiesta o da un file, come modello NOVA.
+
+    Il percorso si legge e basta: nessuna scrittura, e il file resta dov'è (`apri` fa lo
+    stesso, ed è l'utente locale che apre il proprio rilievo).
+    """
+    prior, percorso = req.get("prior"), req.get("percorso")
+    if prior is None:
+        if not percorso:
+            raise _Rifiuto("importa", "serve il prior: «prior» nella richiesta o «percorso» di un 12_wall.json")
+        try:
+            prior = json.loads(Path(percorso).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:  # cartella, file assente, JSON rotto: tutti «importa»
+            raise _Rifiuto("importa", f"{percorso}: {e}") from None
+    try:
+        imp = _importa.importa(prior, riferimento=percorso or "prior")
+    except ValueError as e:
+        raise _Rifiuto("importa", str(e)) from None
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # Un prior mutilato non è un difetto del sidecar: senza questo ramo la risposta
+        # uscirebbe con `fase: sidecar`, che il server passa come 200. `AttributeError` ci
+        # sta perché una voce che non è un oggetto (`scartate: ["boh"]`) muore su `.get`.
+        raise _Rifiuto("importa", _motivo_prior(e)) from None
+    resoconto = dict(imp.resoconto)
+    if percorso:
+        resoconto["percorso"] = str(Path(percorso).resolve())
+    return {"esito": "ok", "modello": imp.modello.model_dump(mode="json", exclude_none=True),
+            "scartate": imp.scartate, "giunzioni": imp.giunzioni,
+            "proposte_vincoli": imp.proposte_vincoli, "mancano": imp.mancano,
+            "resoconto": resoconto}
+
+
 def comando_verifica(req: dict) -> dict:
     return _corsa.verifica(req.get("solutore"))
 
@@ -114,6 +155,8 @@ def rispondi(req: dict, emetti) -> dict:
             return comando_check(req)
         if comando == "deck":
             return comando_deck(req)
+        if comando == "importa":
+            return comando_importa(req)
         if comando == "fine":
             return {"esito": "ciao"}
         return {"esito": "errore", "fase": "protocollo",

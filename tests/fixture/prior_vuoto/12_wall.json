@@ -1,0 +1,308 @@
+{
+ "centro": [
+  3002.5664830181645,
+  -316.5732732528179,
+  668.35267353167
+ ],
+ "chiusura_volume": {
+  "passato": true,
+  "passo": 2.3845464639549734,
+  "scarto_relativo": 0.0,
+  "soglia": 0.02,
+  "somma": 0.0,
+  "spiegazione": "somma dei volumi delle membrature contro volume della loro unione: se differiscono, alle giunzioni il volume è contato due volte, ed è un errore che nessuna metrica di qualità della mesh vedrebbe",
+  "unione": 0.0
+ },
+ "giunzioni": [],
+ "membrature": [],
+ "riscontri": {
+  "membrature_attese": 6,
+  "nota": "i riscontri sono dichiarati dall'operatore e assenti per definizione su un pezzo mai visto: dove c'è null, non c'è un'aspettativa, non c'è un valore mancante",
+  "scarto_membrature": -6,
+  "scarto_volume": -1.0,
+  "sezioni_nominali": [
+   [
+    700.0,
+    250.0
+   ],
+   [
+    250.0,
+    250.0
+   ],
+   [
+    172.0,
+    172.0
+   ],
+   [
+    140.0,
+    175.0
+   ]
+  ],
+  "volume_atteso": 477700000.0
+ },
+ "scartate": [
+  {
+   "controlli_falliti": [
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 1.1872108072168421
+    },
+    "parallelismo": {
+     "passato": true,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 2.2860500388706564
+    }
+   },
+   "punti": 4215879,
+   "regione": 0
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.571888514928814
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 10.292015161558485
+    }
+   },
+   "punti": 14811,
+   "regione": 1
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.7816086330594145
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 10.491170752115577
+    }
+   },
+   "punti": 8059,
+   "regione": 2
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.6079505000961108
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 5.073740240244783
+    }
+   },
+   "punti": 3772,
+   "regione": 3
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.24077203030072533
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 31.94726100382198
+    }
+   },
+   "punti": 3267,
+   "regione": 4
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.1965709542939606
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 36.13604651332743
+    }
+   },
+   "punti": 1351,
+   "regione": 5
+  },
+  {
+   "controlli_falliti": [
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.5717390280548832
+    },
+    "parallelismo": {
+     "passato": true,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 1.108533800849673
+    }
+   },
+   "punti": 2513,
+   "regione": 6
+  },
+  {
+   "controlli_falliti": [
+    "parallelismo",
+    "costanza_sezione"
+   ],
+   "esiti": {
+    "copertura_faccia": {
+     "passato": true,
+     "soglia": 0.5,
+     "spiegazione": "frazione delle celle della faccia viste dallo scanner: una faccia vista da pochi punti produce un piano finto, come già misurato su FACE_FRONT e FACE_BACK",
+     "unita": "frazione",
+     "valore": 1.0
+    },
+    "costanza_sezione": {
+     "passato": false,
+     "soglia": 0.1,
+     "spiegazione": "dispersione relativa della sezione lungo l'asse: oltre la soglia la regione non è un prisma",
+     "unita": "frazione",
+     "valore": 0.17308249283171248
+    },
+    "parallelismo": {
+     "passato": false,
+     "soglia": 5.0,
+     "spiegazione": "angolo fra le due facce opposte: oltre la soglia la regione non ha una sezione, e una sezione media sarebbe priva di senso",
+     "unita": "gradi",
+     "valore": 6.167698734040883
+    }
+   },
+   "punti": 380,
+   "regione": 7
+  }
+ ],
+ "terna": [
+  [
+   0.9999284766263035,
+   -0.008215340530738363,
+   0.008691939470789766
+  ],
+  [
+   0.008643157237354593,
+   -0.00595491245013024,
+   -0.9999449159082119
+  ],
+  [
+   0.008266647734736888,
+   0.9999485222738593,
+   -0.0058834800547361565
+  ]
+ ]
+}

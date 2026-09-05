@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from conftest import leggi_fixture
+from nova import corsa
 
 
 def _corsa(chiedi, nome, tmp_path, **extra):
@@ -138,4 +139,219 @@ def test_la_sezione_senza_barre_corre_e_resta_un_non_applicabile(chiedi, tmp_pat
     assert fin["esito"] == "ok", fin
     v = {x["controllo"]: x for x in fin["verdetti_check"]}
     assert v["armatura_mancante"]["esito"] == "non_applicabile" and v["armatura_mancante"]["oggetto"] == [1]
-    assert v["vincoli_dedotti"]["esito"] == "non_applicabile"
+    # Task 3: `vincoli_dedotti` non è più rinviato; su `telaio_2x1` la base è già incastrata.
+    assert v["vincoli_dedotti"]["esito"] == "passato"
+
+
+# --- T2: la corsa modale sul binario vero ---
+
+def _modale(m, **campi):
+    m["analisi"].append({"tipo": "modale", **campi})
+    return m
+
+
+def test_la_modale_porta_i_modi_e_i_verdetti(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=3)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    modi = fin["risultati"]["modi"]
+    assert len(modi) == 3 and modi[0]["f"] < modi[1]["f"] < modi[2]["f"]
+    assert set(modi[0]["forma"]) == {"1", "2", "3", "4", "5", "6"}
+    assert fin["risultati"]["run"]["modi_richiesti"] == 3
+    assert fin["risultati"]["run"]["modi_estratti"] == 3
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["autovalori"] == "passato"
+    assert esiti["massa_modale"] in ("passato", "non_passato")  # 3 modi: il verdetto dice se bastano
+
+
+def test_modi_auto_cresce_fino_all_85_per_cento(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi="auto")
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    provati = fin["risultati"]["run"]["modi_provati"]
+    assert provati == sorted(provati) and provati[0] == 3
+    ultimo = fin["risultati"]["modi"][-1]["cumulata"]
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    if esiti["massa_modale"] == "passato":
+        assert ultimo["x"] >= 0.85 and ultimo["z"] >= 0.85
+    fasi = [x["nome"] for x in r if x.get("evento") == "fase"]
+    assert sum("modale" in f for f in fasi) == len(provati)
+
+
+def test_lultimo_tentativo_di_auto_e_il_tetto_dei_gradi_liberi(chiedi, binario_opensees, tmp_path):
+    """Misura del 05/09/2026: a sei modi il telaio 2×1 cattura 75,15 % in z, a nove il 100 %.
+    La scala salta da sei a dodici, che è oltre le nove traslazioni libere: l'ultimo tentativo
+    è il tetto, e con il tetto i modi bastano sempre quando la struttura li ha."""
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi="auto")
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3, 6, 9]
+    massa = next(v for v in fin["risultati"]["verdetti"] if v["controllo"] == "massa_modale")
+    assert massa["esito"] == "passato"
+    assert min(massa["valori"]["per_direzione"].values()) >= 0.85
+
+
+def test_modi_auto_si_ferma_al_primo_tentativo_che_basta(chiedi, binario_opensees, tmp_path):
+    """Con `uz` bloccato in testa restano x e y, e tre modi le coprono già: un solo giro."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        if n["id"] in (4, 5, 6):
+            n["vincolo"] = {"uz": True}
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(m, modi="auto"),
+                   "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3]
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["massa_modale"] == "passato"
+
+
+def test_i_modi_chiesti_di_troppo_dicono_quanti_ne_ha_estratti(chiedi, binario_opensees, tmp_path):
+    m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=200)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_richiesti"] == 200
+    assert fin["risultati"]["run"]["modi_estratti"] == 9  # le traslazioni libere del telaio
+
+
+def test_il_nodo_libero_forzato_non_e_verde_sulla_massa_modale(chiedi, binario_opensees, tmp_path):
+    """Il meccanismo non lo vede `autovalori` (il rapporto f1/f2 resta sopra 0,2: misurato
+    il 05/09/2026, 14,695 e 20,2161 Hz), lo vede la massa che i modi non catturano."""
+    m = _modale(leggi_fixture("nodo_libero.nova.json"), modi=3)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(tmp_path), "forza": True})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"]}
+    assert esiti["massa_modale"] == "non_passato"
+
+
+def test_la_modale_scrive_le_masse_da_azioni_e_abbassa_le_frequenze(chiedi, binario_opensees, tmp_path):
+    """La massa aggiunta è massa vera: la prima frequenza cala rispetto alla stessa corsa senza."""
+    def prima(masse, cartella):
+        m = _modale(leggi_fixture("telaio_2x1.nova.json"), modi=3, masse_da_azioni=masse)
+        (r,) = chiedi({"id": 1, "comando": "corsa", "modello": m, "cartella": str(cartella)})
+        assert r[-1]["esito"] == "ok", r[-1]
+        return r[-1]["risultati"]["modi"][0]["f"]
+
+    assert prima([{"azione": 1, "coefficiente": 1.0}], tmp_path / "con") < prima([], tmp_path / "senza")
+
+
+
+def _senza_traslazioni_libere():
+    """Telaio 2×1 con le tre teste libere di ruotare ma non di traslare: la statica gira,
+    e la massa lumped di `forceBeamColumn -mass` sta sulle sole traslazioni, quindi di modi
+    non ce n'è nessuno da estrarre."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    for n in m["nodi"]:
+        if n["id"] in (4, 5, 6):
+            n["vincolo"] = {"ux": True, "uy": True, "uz": True}
+    return m
+
+
+@pytest.mark.parametrize("modi", [3, "auto"])
+def test_senza_traslazioni_libere_non_ce_niente_da_estrarre(chiedi, binario_opensees, tmp_path, modi):
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(_senza_traslazioni_libere(), modi=modi),
+                   "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["modi"] == []
+    assert fin["risultati"]["run"]["modi_richiesti"] == modi
+    assert fin["risultati"]["run"]["modi_estratti"] == 0
+    assert fin["risultati"]["run"]["modi_provati"] == []
+    assert "eigen" not in (tmp_path / "13_telaio.tcl").read_text()
+    for controllo in ("autovalori", "massa_modale"):
+        v = next(x for x in fin["risultati"]["verdetti"] if x["controllo"] == controllo)
+        assert v["esito"] == "non_applicabile", v
+        assert v["ragione"] == "nessuna traslazione libera con massa: niente da estrarre"
+
+
+def test_il_gradino_che_non_regge_torna_allultimo_buono(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Sei modi rifiutati dal solutore: la corsa non muore, torna a tre e rilancia — così il
+    deck, i `.out` e `risultati.nova.risultati.json` sulla cartella sono dello stesso giro."""
+    vero = corsa._lancia
+
+    def finto(m, casi, cartella, n_modi, stato, t0):
+        if n_modi == 6:
+            return None, "", corsa._errore_solutore("finto: sei modi non si estraggono", "", cartella, t0)
+        return vero(m, casi, cartella, n_modi, stato, t0)
+
+    monkeypatch.setattr(corsa, "_lancia", finto)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3]
+    assert fin["risultati"]["run"]["modi_falliti"] == [6]
+    assert fin["risultati"]["run"]["modi_estratti"] == 3
+    assert len(fin["risultati"]["modi"]) == 3
+    assert "eigen -fullGenLapack 3" in (tmp_path / "13_telaio.tcl").read_text()
+
+
+def _finto_che_fallisce(vero, cadute: set[int]):
+    """`_lancia` che boccia sempre i sei modi, e boccia i tre modi alle chiamate elencate in
+    `cadute` (numerate da 1). La prima chiamata a tre modi è il primo gradino della scala; le
+    successive sono il rilancio dell'ultimo gradino buono, dove cade l'intermittenza
+    misurata del solutore (stesso deck, uscita −5/−11 a giri alterni)."""
+    giri = {"tre": 0}
+
+    def finto(m, casi, cartella, n_modi, stato, t0):
+        if n_modi == 6:
+            return None, "", corsa._errore_solutore("finto: sei modi non si estraggono", "", cartella, t0)
+        if n_modi == 3:
+            giri["tre"] += 1
+            if giri["tre"] in cadute:
+                return None, "", corsa._errore_solutore("finto: intermittente", "", cartella, t0)
+        return vero(m, casi, cartella, n_modi, stato, t0)
+    return finto
+
+
+def test_il_rilancio_dellultimo_buono_ha_un_secondo_colpo(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Il gradino buono era appena passato: se il suo rilancio cade una volta è
+    l'intermittenza del solutore, non il modello. Si riprova una volta sola."""
+    monkeypatch.setattr(corsa, "_lancia", _finto_che_fallisce(corsa._lancia, {2}))
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["run"]["modi_provati"] == [3]
+    assert fin["risultati"]["run"]["modi_falliti"] == [6]
+    assert len(fin["risultati"]["modi"]) == 3
+
+
+def test_il_rilancio_che_cade_due_volte_e_un_errore(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Due cadute di fila sullo stesso gradino non sono intermittenza: è un errore, e la corsa
+    lo dice invece di rilanciare all'infinito."""
+    monkeypatch.setattr(corsa, "_lancia", _finto_che_fallisce(corsa._lancia, {2, 3}))
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "solutore"
+
+
+def test_se_il_primo_gradino_non_regge_la_corsa_e_un_errore(chiedi, binario_opensees, tmp_path, monkeypatch):
+    """Nessun gradino buono alle spalle: non c'è niente a cui tornare, e l'errore è l'errore."""
+    monkeypatch.setattr(corsa, "_lancia",
+                        lambda m, casi, cartella, n, stato, t0:
+                        (None, "", corsa._errore_solutore("finto: niente si estrae", "", cartella, t0)))
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": _modale(leggi_fixture("telaio_2x1.nova.json"),
+                                                                   modi="auto"), "cartella": str(tmp_path)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "solutore"
+
+
+def test_il_rilievo_importato_gira_in_elastico(chiedi, binario_opensees, tmp_path):
+    """Story 53: il rilievo, con i soli vincoli proposti, è subito calcolabile in elastico."""
+    from conftest import FIXTURE
+    from nova import importa
+
+    imp = importa.importa(json.loads((FIXTURE / "prior_sintetico" / "12_wall.json").read_text(encoding="utf-8")))
+    dati = json.loads(imp.modello.model_dump_json(exclude_none=True))
+    for p in imp.proposte_vincoli:
+        next(n for n in dati["nodi"] if n["id"] == p["nodo"])["vincolo"] = p["vincolo"]
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": dati, "cartella": str(tmp_path)})
+    fin = r[-1]
+    assert fin["esito"] == "ok", fin
+    esiti = {v["controllo"]: v["esito"] for v in fin["risultati"]["verdetti"] if v["caso"]}
+    assert esiti["reazioni"] == "passato"

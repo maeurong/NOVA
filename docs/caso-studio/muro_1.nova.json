@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "unita": "mm-N-MPa-t-s",
+  "contatori": {
+    "nodo": 4,
+    "asta": 4,
+    "sezione": 3,
+    "materiale": 2,
+    "azione": 3,
+    "combinazione": 3
+  },
+  "materiali": [
+    {
+      "id": 1,
+      "nome": "C25/30",
+      "tipo": "calcestruzzo",
+      "classe": "C25/30",
+      "personalizzato": true,
+      "valori": {
+        "E": 31500,
+        "nu": 0.2,
+        "densita": 2.5493e-09
+      },
+      "origine": {
+        "sorgente": "utente",
+        "nota": "assunta: la tavola non dichiara la classe; E, ν, ρ dal deck di MeshRec"
+      }
+    },
+    {
+      "id": 2,
+      "nome": "B450C",
+      "tipo": "acciaio",
+      "classe": "B450C",
+      "origine": {
+        "sorgente": "utente",
+        "nota": "assunto"
+      }
+    }
+  ],
+  "sezioni": [
+    {
+      "id": 1,
+      "nome": "columna 172×172",
+      "b": 172,
+      "h": 172,
+      "calcestruzzo": 1,
+      "acciaio": 2,
+      "copriferro": 20,
+      "file": [
+        {
+          "lato": "inf",
+          "n": 2,
+          "diametro": 12
+        },
+        {
+          "lato": "sup",
+          "n": 2,
+          "diametro": 12
+        }
+      ],
+      "staffe": {
+        "diametro": 4,
+        "passo": 35,
+        "bracci": 2
+      }
+    },
+    {
+      "id": 2,
+      "nome": "viga superior 140×175",
+      "b": 140,
+      "h": 175,
+      "calcestruzzo": 1,
+      "acciaio": 2,
+      "copriferro": 20,
+      "file": [
+        {
+          "lato": "sup",
+          "n": 2,
+          "diametro": 10
+        },
+        {
+          "lato": "inf",
+          "n": 2,
+          "diametro": 8
+        }
+      ],
+      "staffe": {
+        "diametro": 4,
+        "passo": 40,
+        "bracci": 2
+      }
+    },
+    {
+      "id": 3,
+      "nome": "viga inferior 250×250",
+      "b": 250,
+      "h": 250,
+      "calcestruzzo": 1,
+      "acciaio": 2,
+      "copriferro": 25,
+      "file": [
+        {
+          "lato": "inf",
+          "n": 3,
+          "diametro": 16
+        },
+        {
+          "lato": "sup",
+          "n": 3,
+          "diametro": 16
+        }
+      ],
+      "staffe": {
+        "diametro": 8,
+        "passo": 100,
+        "bracci": 2
+      }
+    }
+  ],
+  "nodi": [
+    {
+      "id": 1,
+      "nome": "piede sx",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "vincolo": {
+        "ux": true,
+        "uy": true,
+        "uz": true,
+        "rx": true,
+        "ry": true,
+        "rz": true
+      },
+      "origine": {
+        "sorgente": "utente",
+        "riferimento": "muro_1.pdf",
+        "nota": "interasse dall'alzado (2262); la pianta dice 2000, da confermare con Mario"
+      }
+    },
+    {
+      "id": 2,
+      "nome": "piede dx",
+      "x": 2262,
+      "y": 0,
+      "z": 0,
+      "vincolo": {
+        "ux": true,
+        "uy": true,
+        "uz": true,
+        "rx": true,
+        "ry": true,
+        "rz": true
+      },
+      "origine": {
+        "sorgente": "utente",
+        "riferimento": "muro_1.pdf",
+        "nota": "interasse dall'alzado (2262); la pianta dice 2000, da confermare con Mario"
+      }
+    },
+    {
+      "id": 3,
+      "nome": "sommità sx",
+      "x": 0,
+      "y": 0,
+      "z": 1607.5
+    },
+    {
+      "id": 4,
+      "nome": "sommità dx",
+      "x": 2262,
+      "y": 0,
+      "z": 1607.5
+    }
+  ],
+  "aste": [
+    {
+      "id": 1,
+      "nome": "viga inferior",
+      "nodo_i": 1,
+      "nodo_j": 2,
+      "sezione": 3,
+      "suddivisioni": 4
+    },
+    {
+      "id": 2,
+      "nome": "columna sx",
+      "nodo_i": 1,
+      "nodo_j": 3,
+      "sezione": 1,
+      "suddivisioni": 4
+    },
+    {
+      "id": 3,
+      "nome": "columna dx",
+      "nodo_i": 2,
+      "nodo_j": 4,
+      "sezione": 1,
+      "suddivisioni": 4
+    },
+    {
+      "id": 4,
+      "nome": "viga superior",
+      "nodo_i": 3,
+      "nodo_j": 4,
+      "sezione": 2,
+      "suddivisioni": 4
+    }
+  ],
+  "azioni": [
+    {
+      "id": 1,
+      "nome": "peso proprio",
+      "natura": "G1",
+      "generata": true,
+      "carichi": [
+        {
+          "tipo": "gravita",
+          "fattore_z": -1
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "nome": "spinta 0,1 g",
+      "natura": "Q",
+      "categoria": "spinta orizzontale",
+      "carichi": [
+        {
+          "tipo": "gravita",
+          "fattore_x": 0.1
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "nome": "carico in sommità",
+      "natura": "Q",
+      "categoria": "prova",
+      "carichi": [
+        {
+          "tipo": "distribuito",
+          "asta": 4,
+          "direzione": "z",
+          "q": -0.5305039787798409
+        }
+      ]
+    }
+  ],
+  "combinazioni": [
+    {
+      "id": 1,
+      "nome": "GRAVITA",
+      "termini": [
+        {
+          "azione": 1,
+          "coefficiente": 1.0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "nome": "SPINTA_ORIZZONTALE",
+      "termini": [
+        {
+          "azione": 1,
+          "coefficiente": 1.0
+        },
+        {
+          "azione": 2,
+          "coefficiente": 1.0
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "nome": "CARICO_TOP",
+      "termini": [
+        {
+          "azione": 1,
+          "coefficiente": 1.0
+        },
+        {
+          "azione": 3,
+          "coefficiente": 1.0
+        }
+      ]
+    }
+  ],
+  "analisi": [
+    {
+      "tipo": "statica",
+      "casi": [
+        "C1",
+        "C2",
+        "C3"
+      ]
+    },
+    {
+      "tipo": "modale",
+      "modi": "auto"
+    }
+  ]
+}
