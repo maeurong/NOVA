@@ -707,3 +707,61 @@ def test_la_pushover_senza_una_statica_a_fibre_e_un_rosso_che_non_sporca_i_rifer
     assert v["esito"] == "non_passato"
     assert "la pushover richiede sezioni a fibre" in v["ragione"]
     assert _c1(m, "riferimenti")["esito"] == "passato"
+
+
+# --- review di Task 4 e di branch: I1/I7, N1, N4, W1 ---------------------------------------
+
+def _due_spinte():
+    """Due `AnalisiPushover` nello stesso modello: il formato le ammette, il deck no."""
+    dati = leggi_fixture("telaio_2x1.nova.json")
+    spinta = {"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 4,
+              "dof": "ux", "incremento": 1.0, "spostamento_max": 60.0}
+    dati["analisi"] = [{"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4},
+                       spinta, dict(spinta) | {"dof": "uy"}]
+    return _modello.assicura_peso_proprio(_modello.carica(dati))
+
+
+def test_due_pushover_nello_stesso_modello_sono_un_rosso_del_controllo(tmp_path):
+    """I1: `deck.scrivi` solleva, ma la fase deck non ha un verdetto — il Check Model restava
+    verde e l'errore arrivava dopo, come un guasto invece che come un modello mal posto."""
+    m = _due_spinte()
+    v = _c1(m)
+    assert v["esito"] == "non_passato"
+    assert {"analisi": "pushover", "dichiarate": 2} in v["oggetto"]
+    assert "una sola pushover per modello" in v["ragione"] and v["rimedio"]
+    with pytest.raises(ValueError, match="una sola pushover"):
+        _deck.scrivi(m, ["Z1"], tmp_path)
+
+
+def test_una_sola_pushover_non_dice_niente_sul_numero():
+    """La riga nuova non deve parlare quando non ha niente da dire: con una spinta sola il
+    controllo resta quello di prima, verde e senza la frase sul conto."""
+    v = _c1(_con_pushover(caso_gravita="Z3"))
+    assert v["esito"] == "passato" and "una sola pushover" not in v["ragione"]
+
+
+def test_il_dof_di_controllo_vincolato_e_un_rifiuto_del_deck_che_nomina_nodo_e_dof(tmp_path):
+    """N4: con `forza` il Check Model si scavalca e la spinta arriva al deck.
+    `DisplacementControl` su un dof bloccato da `fix` rende 0 passi e una caduta
+    «non_convergenza», cioè racconta un modello mal posto come un problema di convergenza."""
+    with pytest.raises(ValueError, match="nodo di controllo 1 è vincolato in ux"):
+        _deck.scrivi(_con_pushover(nodo_controllo=1), ["Z1"], tmp_path)
+
+
+def test_il_while_della_statica_a_passi_usa_la_costante_di_arrivo(tmp_path):
+    """N1: `0.9999999` stava scritto a mano nel `while` con la costante accanto."""
+    testo = _testo(_carica("telaio_2x1.nova.json", **{"analisi": [
+        {"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4}]}), ["Z1"], tmp_path)
+    assert f"while {{$fatto < {_deck.TOLLERANZA_ARRIVO:.10g}}}" in testo
+
+
+def test_la_gravita_della_spinta_marca_i_suoi_passi_con_un_nome_suo(tmp_path):
+    """W1/§2: il blocco di gravità della pushover riusa `_blocco_statico` con lo stesso nome
+    di caso della statica a fibre, e `corsa._verdetto_convergenza` contava i passi delle due
+    insieme («20 passi su 10 dichiarati» sul modello pubblicato). Il prefisso separa i due
+    racconti nel registro, che è il solo posto dove si distinguono."""
+    testo = _testo(_con_pushover(caso_gravita="Z1"), ["Z1"], tmp_path)
+    assert f"{_deck.MARCA_PASSO}: caso pushover/Z1 passo" in testo
+    assert testo.count(f"{_deck.MARCA_PASSO}: caso Z1 passo") == 1
+    # anche il marcatore di fine mancata porta il nome prefissato: dice **quale** blocco
+    assert "il caso pushover/Z1" in testo

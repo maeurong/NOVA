@@ -414,6 +414,13 @@ def test_il_legame_di_default_e_confinato_secondo_ntc():
 @pytest.mark.parametrize("campo,valore", [
     ("Es", 0.0), ("epsU_copriferro", 0.0), ("R0", 0.0), ("fpcu_su_fpc", -0.1),
     ("epsU_nucleo", 0.0), ("b", -1.0), ("lambda", 1.5), ("lambda", -0.1),
+    # I tetti fisici: senza, un numero enorme non è un rifiuto ma un `inf` dentro la riga
+    # `uniaxialMaterial`, che l'interprete manda giù. `fpcu/fpc` è un rapporto di resistenze
+    # (residua ≤ di picco), `epsU` una deformazione (10 % è già assurdo), `E_s` un modulo,
+    # `b` il rapporto fra due pendenze, `R0` il parametro di transizione di Steel02 (18 di
+    # prassi, la doc OpenSees consiglia 10÷20).
+    ("fpcu_su_fpc", 1e307), ("fpcu_su_fpc", 1.5), ("Es", 1e307), ("epsU_copriferro", 1.0),
+    ("epsU_nucleo", 1.0), ("R0", 1e307), ("b", 2.0),
 ])
 def test_il_legame_rifiuta_i_numeri_che_non_stanno_in_piedi(campo, valore):
     """`Es` = 0 dà una divisione per zero in `b`, `epsU` = 0 un materiale senza ramo,
@@ -423,3 +430,74 @@ def test_il_legame_rifiuta_i_numeri_che_non_stanno_in_piedi(campo, valore):
         modello.carica({"unita": "mm-N-MPa-t-s", "materiali": [
             {"id": 1, "nome": "C25/30", "tipo": "calcestruzzo", "classe": "C25/30",
              "legame": {campo: valore}}]})
+
+
+# --- §4 (sicurezza): quel che `Materiale.valori` personalizzato può ancora far passare ---
+
+def _personalizzato(id_materiale: int, **valori):
+    """La stessa fixture con un materiale a valori scritti a mano: `catalogo.valori` li lascia
+    passare per costruzione (è la via per un calcestruzzo misurato in opera), e i tetti del
+    `Legame` non li vedono — sono l'ultimo ingresso libero che arriva fino alla riga Tcl."""
+    dati = leggi_fixture("pilastro_30x50.nova.json")
+    for mat in dati["materiali"]:
+        if mat["id"] == id_materiale:
+            mat["personalizzato"], mat["valori"] = True, dict(valori)
+    return modello.carica(dati)
+
+
+def test_righe_tcl_rifiuta_un_parametro_non_finito_e_lo_nomina():
+    """`fcm: 1e308` fa traboccare `epsc0 = 2 f_c/E_cm` a `-inf` e `Ec` a `nan`: senza guardia
+    la riga porta `-inf` nel `.tcl`, e `nan >= 0` è `False`, quindi il controllo dei segni la
+    lascia passare. Il rifiuto nomina il parametro, come fa `passi._matrice` con i recorder."""
+    m = _personalizzato(1, fcm=1e308)
+    c = legami.calcestruzzo(m.materiale(1), "media", m.sezione(1))["copriferro"]
+    assert not math.isfinite(c["epsc0"]) and not math.isfinite(c["Ec"])
+    with pytest.raises(ValueError, match="epsc0 = -inf non è un numero finito"):
+        legami.righe_tcl(3, c)
+
+
+def test_righe_tcl_non_scrive_mai_inf_o_nan_nella_riga():
+    """L'oracolo del brief §4: mai `inf` nel `.tcl`. Vale su tutti i parametri, non sui soli
+    quattro di compressione — `Ets`, `ft`, `Ec` e i sei di `Steel02` non erano guardati."""
+    m = _personalizzato(1, fctm=1e308)  # `Ets` = f_ct/ε_c2 trabocca, i segni restano buoni
+    c = legami.calcestruzzo(m.materiale(1), "media", m.sezione(1))["copriferro"]
+    assert not math.isfinite(c["Ets"])
+    with pytest.raises(ValueError, match="Ets = inf non è un numero finito"):
+        legami.righe_tcl(3, c)
+
+
+# --- §6/W2: il ramo incrudente di `Steel02` non può scendere ---
+
+def test_acciaio_rifiuta_una_deformazione_ultima_dentro_lo_snervamento():
+    """`b` è la pendenza della retta da (ε_y, f_y) a (ε_ud, k f_y): con `ε_ud ≤ f_y/E_s` il
+    denominatore è negativo (o nullo) e ne esce un `b` **negativo** — `Steel02` che perde
+    resistenza dopo lo snervamento. Misurato dal reviewer: `epsuk 0.002` → −0,75 nel `.tcl`."""
+    m = _personalizzato(2, epsuk=0.002)  # ε_ud = 0,0018 < f_y/E_s = 0,00225
+    with pytest.raises(ValueError, match="B450C"):
+        legami.acciaio(m.materiale(2), "media")
+
+
+def test_acciaio_col_denominatore_esatto_non_divide_per_zero():
+    """`ε_ud = f_y/E_s` **esatto** era una `ZeroDivisionError` nuda, non un rifiuto: la
+    guardia è `<=` e non `<` proprio per questo. `f_ym` si prende dall'uguaglianza, che in
+    virgola mobile chiude (`(ε_ud·E_s)/E_s == ε_ud`)."""
+    base = legami.acciaio(_pilastro().materiale(2), "media")
+    m = _con_legame(_pilastro(), 2, fym=base["eps_ud"] * base["E"])
+    with pytest.raises(ValueError, match="oltre lo snervamento"):
+        legami.acciaio(m.materiale(2), "media")
+
+
+def test_acciaio_col_fym_oltre_lo_snervamento_nomina_il_materiale():
+    """Ingresso degenere: `fym` dichiarato tale che `fym/E_s ≥ ε_ud`. Il rifiuto nomina il
+    materiale — non è la classe a essere sbagliata, è la deroga scritta accanto."""
+    m = _con_legame(_pilastro(), 2, fym=20000.0)  # 20000/200000 = 0,1 > ε_ud = 0,0675
+    with pytest.raises(ValueError, match="B450C"):
+        legami.acciaio(m.materiale(2), "media")
+
+
+def test_righe_tcl_rifiuta_un_ramo_incrudente_calante():
+    """Ultima rete, per un dizionario costruito a mano: `b < 0` non è un materiale."""
+    m = _pilastro()
+    a = dict(legami.acciaio(m.materiale(2), "media")) | {"b": -0.75}
+    with pytest.raises(ValueError, match="b = -0.75"):
+        legami.righe_tcl(3, a)

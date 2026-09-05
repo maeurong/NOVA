@@ -52,6 +52,12 @@ ITERAZIONI_FIBRE = 50
 GIRI_PER_PASSO = 20
 # Il registro del passo convergente, che `corsa` rilegge per il verdetto `convergenza`.
 MARCA_PASSO = "NOVA_PASSO"
+# «Ci siamo arrivati»: la stessa tolleranza relativa per il `while` della statica a passi
+# (`$fatto`, che deve chiudere a 1) e per quello della pushover (lo spostamento letto, che deve
+# chiudere a `spostamento_max`). Dieci incrementi da 0,3 non fanno 3,0 esatti in virgola mobile,
+# e senza tolleranza il ciclo faceva un undicesimo passo (misurato: 11 passi fino a 3,3 invece
+# di 10 fino a 3,0) — o, con `passi_max` a 10, dichiarava una caduta su una spinta arrivata.
+TOLLERANZA_ARRIVO = 0.9999999
 
 # --- la pushover (T4, Task 3) ---
 # Il passo convergente della pushover porta lo **spostamento** e non il fattore λ: in controllo
@@ -66,11 +72,6 @@ MARCA_U0 = "NOVA_PUSHOVER_U0"
 # Otto e non sei come nella statica: qui il passo è uno spostamento imposto, e vicino al picco
 # della curva un solo dimezzamento non basta — si scende da 1 mm a 4 µm prima di dichiarare.
 DIMEZZAMENTI_PUSHOVER = 8
-# La stessa tolleranza relativa del `while` della statica a passi (`$fatto < 0.9999999`): dieci
-# incrementi da 0,3 non fanno 3,0 esatti in virgola mobile, e senza tolleranza il ciclo faceva
-# un undicesimo passo (misurato: 11 passi fino a 3,3 invece di 10 fino a 3,0) — o, con
-# `passi_max` a 10, dichiarava una caduta su una spinta arrivata.
-TOLLERANZA_ARRIVO = 0.9999999
 PREFISSO_PUSHOVER = "push"
 # OpenSees conta i gradi di libertà da 1: il `+1` sull'offset di colonna, esplicito e
 # in un punto solo (`modello.DOF_COLONNA` è la base zero, che usano `Nodo.libero` e i recorder).
@@ -731,7 +732,7 @@ def _blocco_statico(caso: str, legami_: str, passi: int) -> list[str]:
         f"set dt [expr {{1.0/{passi}}}]",
         "integrator LoadControl $dt", "algorithm Newton", "analysis Static",
         "set fatto 0.0", "set passo 0",
-        "while {$fatto < 0.9999999} {",
+        f"while {{$fatto < {TOLLERANZA_ARRIVO:.10g}}} {{",
         "    incr passo",
         f"    if {{$passo > {GIRI_PER_PASSO * passi}}} {{",
         f'        puts "{opensees.MARCA_FINE}_MANCA: il caso {caso} non converge, '
@@ -881,12 +882,22 @@ def _blocco_pushover(m: Modello, an: AnalisiPushover, g: Geometria, c: Carichi, 
     if an.nodo_controllo not in g.mappa_nodo:
         raise ValueError(f"pushover: il nodo di controllo {an.nodo_controllo} non esiste "
                          f"(i nodi sono {sorted(g.mappa_nodo)})")
+    # `check._pushover` ha già il predicato, ma `forza` scavalca il Check Model e la spinta
+    # arriva fin qui: `DisplacementControl` su un dof bloccato da `fix` rende 0 passi e una
+    # caduta «non_convergenza», cioè racconta un modello mal posto come un problema numerico.
+    if not next(n for n in m.nodi if n.id == an.nodo_controllo).libero(DOF_COLONNA[an.dof]):
+        raise ValueError(f"pushover: il nodo di controllo {an.nodo_controllo} è vincolato in "
+                         f"{an.dof}, e in controllo di spostamento non si muove")
     nodo, dof = g.mappa_nodo[an.nodo_controllo], DOF_TCL[an.dof]
     r = ["", "# ===== pushover in controllo di spostamento ====="]
     if an.caso_gravita:
         r += [f"timeSeries Linear {serie}", f"pattern Plain {serie} {serie} {{",
               *_righe_carico(g, c, an.caso_gravita), "}"]
-        r += _blocco_statico(an.caso_gravita, legami_, passi)
+        # il nome prefissato è **solo** per il registro: `_blocco_statico` scrive `caso` nei
+        # suoi `puts` e in nient'altro. Senza, i passi della gravità della spinta finiscono
+        # nel mucchio del caso statico omonimo e `corsa._verdetto_convergenza` conta il doppio
+        # («20 passi su 10 dichiarati», misurato sul modello pubblicato).
+        r += _blocco_statico(f"pushover/{an.caso_gravita}", legami_, passi)
         # `loadConst` toglie il carico verticale dall'incremento e riazzera il tempo: da qui
         # in poi il solo `pattern` che cresce è quello della spinta.
         r += ["loadConst -time 0.0", "wipeAnalysis"]

@@ -231,7 +231,7 @@ def spinta_muro_1(tmp_path_factory, binario_opensees):
 
 
 def test_pushover_muro_1(spinta_muro_1):
-    """Misurato il 05/09/2026, OpenSees 3.8.0, 1,7 s: 120 passi da 0,5 mm fino a 60,000 mm,
+    """Misurato il 05/09/2026, OpenSees 3.8.0, ≈ 2 s: 120 passi da 0,5 mm fino a 60,000 mm,
     **nessuna caduta**, taglio alla base massimo 72 115,2 N al passo 109 (54,5 mm) e 70 932,9 N
     all'ultimo. Scala di algoritmi ai passi 18, 36, 89, 113 (`KrylovNewton`).
 

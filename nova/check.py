@@ -203,8 +203,15 @@ def check_model(m: Modello) -> list[dict]:
                 note[0] if note else ("correggi il riferimento" if riferimenti else None)))
 
     spinte = [an for an in m.analisi if an.tipo == "pushover"]
-    rossi: list = []
+    rossi: list[dict] = []
     note_push: list[str] = []
+    # `deck.scrivi` solleva su due spinte, ma la fase deck non ha un verdetto: senza questa
+    # riga il Check Model resta verde e l'errore arriva dopo, come un guasto invece che come
+    # un modello mal posto. Prima delle altre: il conto non dipende da com'è fatta ciascuna.
+    if len(spinte) > 1:
+        rossi.append({"analisi": "pushover", "dichiarate": len(spinte)})
+        note_push.append(f"una sola pushover per modello, dichiarate {len(spinte)}: "
+                         "tienine una e togli le altre")
     for an in spinte:
         _pushover(m, an, nodi, dichiarati, rossi, note_push)
     if not spinte:

@@ -31,7 +31,7 @@ from nova import modello as _modello
 SCALA_CALCESTRUZZO = ("elastica", "fessurata", "schiacciata")
 SCALA_ACCIAIO = ("elastica", "snervata", "rotta")
 
-_RIGA_PASSO = re.compile(
+_RIGA_PASSO_SPINTA = re.compile(
     re.escape(_deck.MARCA_PASSO_PUSHOVER)
     + r": passo (\d+) algoritmo (\S+) incremento (\S+) spostamento (\S+)")
 _RIGA_CADUTA = re.compile(
@@ -205,7 +205,7 @@ def leggi(cartella: Path, d: _deck.Deck, registro: str | None = None) -> dict:
         return {"passi": [], "caduta": None, "u0": None}
     if registro is None:
         registro = (cartella / opensees.NOME_REGISTRO).read_text(encoding="utf-8", errors="replace")
-    dichiarati = [(int(k), alg, float(inc), float(u)) for k, alg, inc, u in _RIGA_PASSO.findall(registro)]
+    dichiarati = [(int(k), alg, float(inc), float(u)) for k, alg, inc, u in _RIGA_PASSO_SPINTA.findall(registro)]
     caduta = None
     trovata = _RIGA_CADUTA.findall(registro)
     if trovata:

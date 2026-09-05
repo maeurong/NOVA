@@ -162,15 +162,22 @@ class Legame(_Base):
 
     # Il materiale non dichiara il proprio `uniaxialMaterial`: lo decide `confinamento` per il
     # calcestruzzo (`Concrete02` di norma, `Concrete04` con Mander) e la famiglia per l'acciaio.
+    # I tetti sono limiti **fisici**, non una convenzione: senza, un numero enorme non è un
+    # rifiuto ma un `inf` dentro la riga `uniaxialMaterial` (misurato: `fpcu_su_fpc: 1e307` →
+    # `fpcu = -inf` nel `.tcl`, che l'interprete manda giù).
     confinamento: Literal["nessuno", "ntc", "mander"] = "ntc"
-    epsU_copriferro: float = Field(0.0035, gt=0)
-    epsU_nucleo: float | None = Field(None, gt=0)  # None → ε_cu2,c dalla [4.1.11]
+    epsU_copriferro: float = Field(0.0035, gt=0, le=0.1)  # 10 % è già oltre ogni calcestruzzo
+    epsU_nucleo: float | None = Field(None, gt=0, le=0.1)  # None → ε_cu2,c dalla [4.1.11]
     lambda_: float = Field(0.1, ge=0, le=1, alias="lambda")  # è un rapporto fra pendenze
-    fpcu_su_fpc: float = Field(0.2, ge=0)  # 0 = copriferro che si sbriciola (RCFrameGravity)
-    Es: float = Field(200000.0, gt=0)
+    # rapporto fra la resistenza residua e quella di picco: 0 = copriferro che si sbriciola
+    # (RCFrameGravity), 1 = nessuna caduta. Sopra 1 il ramo non è più di scarico.
+    fpcu_su_fpc: float = Field(0.2, ge=0, le=1)
+    Es: float = Field(200000.0, gt=0, le=1e6)  # acciaio da c.a.: 200 000, cinque volte è già tanto
     fym: float | None = None  # None → f_yk della classe (450 per B450C): f_ym non ha fonte
-    b: float | None = Field(None, ge=0)  # None → da k e ε_ud della classe; 0 = elastico-perfetto
-    R0: float = Field(18, gt=0)
+    # rapporto fra la pendenza incrudente e quella elastica: 0 = elastico-perfetto, 1 = nessun
+    # ginocchio. None → da k e ε_ud della classe.
+    b: float | None = Field(None, ge=0, le=1)
+    R0: float = Field(18, gt=0, le=50)  # transizione di Steel02: la doc OpenSees consiglia 10÷20
     cR1: float = 0.925
     cR2: float = 0.15
 

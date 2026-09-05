@@ -309,6 +309,13 @@ def acciaio(materiale: Materiale, veste: str) -> dict:
     Con `f_y` = 450, `k` = 1,15 e `ε_ud` = 0,9·`ε_uk` = 0,0675 vale 0,0052 (con `f_yd` sarebbe
     0,0045, il numero del doc). `Steel02` non ha tetto a `ε_ud`: il ramo è indefinito e la
     deformazione limite si controlla sulle fibre, non qui.
+
+    Quella retta esiste solo se `ε_ud` sta **oltre** lo snervamento: con `ε_ud ≤ f_y/E_s` il
+    denominatore è nullo (`ZeroDivisionError` nuda) o negativo, e ne esce un `b` negativo —
+    un acciaio che perde resistenza dopo lo snervamento, che l'interprete manda giù senza
+    dire niente (misurato: `epsuk` 0,002 → `b` = −0,75 nel `.tcl`). Ci si arriva da due
+    ingressi liberi: `epsuk` fra i `valori` di un materiale personalizzato, e `fym` dichiarato
+    nel legame.
     """
     if materiale.tipo != "acciaio":
         raise ValueError(f"materiale «{materiale.nome}» ({materiale.classe}) è di tipo "
@@ -318,6 +325,10 @@ def acciaio(materiale: Materiale, veste: str) -> dict:
     eps_ud = 0.9 * v["epsuk"]
     k = v["ftk"] / v["fyk"]
     fy = lg.fym if lg.fym is not None else v["fy"]
+    if eps_ud <= fy / lg.Es:
+        raise ValueError(f"materiale «{materiale.nome}» ({materiale.classe}): la deformazione "
+                         f"ultima deve stare oltre lo snervamento, e ε_ud = {eps_ud:g} non "
+                         f"supera f_y/E_s = {fy / lg.Es:g}")
     b = lg.b if lg.b is not None else (k - 1.0) * fy / ((eps_ud - fy / lg.Es) * lg.Es)
     return {"tipo": "steel02", "Fy": fy, "E": lg.Es,
             "b": b, "R0": lg.R0, "cR1": lg.cR1, "cR2": lg.cR2, "eps_ud": eps_ud, "k": k,
@@ -352,8 +363,21 @@ def righe_tcl(tag: int, parametri: dict) -> list[str]:
     che si rompe a trazione e regge a compressione senza dirlo. Tutti e quattro i parametri di
     compressione vanno negativi, non il solo `fpc`, e la deformazione ultima deve stare **oltre**
     quella di picco — `|epsU| ≤ |epsc0|` è una curva che si schiaccia prima di arrivare in cima.
+
+    Prima dei segni viene la finitezza, e su **ogni** valore numerico: `nan >= 0` è `False` e
+    scivolerebbe attraverso il controllo dei segni, mentre `Ec`, `Ets`, `ft`, `et` e i sei di
+    `Steel02` non ne avevano nessuno. `Materiale.valori` con `personalizzato` è libero per
+    costruzione — è la via per un calcestruzzo misurato in opera — e da lì un `f_cm` enorme
+    arriva a `epsc0 = -inf` dentro la riga `uniaxialMaterial`. Stessa forma di
+    `passi._matrice`: il rifiuto nomina il parametro guasto.
     """
     nome = _NOMI_TCL[parametri["tipo"]]
+    for k, x in parametri.items():
+        if isinstance(x, (int, float)) and not isinstance(x, bool) and not math.isfinite(x):
+            raise ValueError(f"{nome}: {k} = {x:g} non è un numero finito")
+    if parametri["tipo"] == "steel02" and parametri["b"] < 0:
+        raise ValueError(f"{nome}: b = {parametri['b']:g} è un ramo incrudente calante, "
+                         "l'acciaio perderebbe resistenza dopo lo snervamento")
     for k in ("fpc", "epsc0", "fpcu", "epsU"):
         if k in parametri and parametri[k] >= 0:
             raise ValueError(f"{nome} vuole compressioni negative: {k} = {parametri[k]:g}")

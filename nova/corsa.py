@@ -51,7 +51,7 @@ SOGLIA_AVVISO_SCALA = 1 / 50
 # La riga che il ciclo Tcl della statica a fibre scrive a ogni passo convergente
 # (`deck._blocco_statico`). È il solo racconto di **come** l'analisi è arrivata in fondo:
 # i recorder rendono l'ultimo stato e non dicono quanti algoritmi ci sono voluti.
-_RIGA_PASSO = re.compile(
+_RIGA_PASSO_STATICO = re.compile(
     re.escape(_deck.MARCA_PASSO) + r": caso (\S+) passo (\d+) algoritmo (\S+) fattore (\S+)")
 
 
@@ -354,49 +354,70 @@ def non_applicabile(controllo: str, ragione: str, caso: str | None = None) -> di
             "valori": {}, "rimedio": None}
 
 
-def _luce_minima(d: _deck.Deck, tag_nodo: int) -> float | None:
-    """La più corta delle aste che toccano il nodo, sommando gli elementi di ciascuna.
+def _luci(d: _deck.Deck) -> dict[int, float]:
+    """`{tag del nodo: luce dell'asta più corta che lo tocca}`, calcolato una volta sola.
 
     L'asta e non l'elemento: `suddivisioni: 4` non accorcia la campata, e prendere la
     lunghezza dell'elemento renderebbe la soglia quattro volte più severa su un modello
     suddiviso e quattro volte più lasca su uno che non lo è, per la stessa struttura.
-    `None` quando al nodo non arriva nessuna asta: non c'è una luce con cui confrontarsi.
+    I nodi che nessuna asta tocca non compaiono: non hanno una luce con cui confrontarsi.
     """
     per_asta: dict[int, float] = {}
     for e in d.elementi:
         per_asta[e.asta] = per_asta.get(e.asta, 0.0) + e.L
-    aste = {e.asta for e in d.elementi if tag_nodo in (e.i, e.j)}
-    return min((per_asta[a] for a in aste), default=None)
+    luci: dict[int, float] = {}
+    for e in d.elementi:
+        L = per_asta[e.asta]
+        for tag in (e.i, e.j):
+            if L < luci.get(tag, math.inf):
+                luci[tag] = L
+    return luci
 
 
 def _verdetto_spostamenti(d: _deck.Deck, spostamenti: dict, dimensione: float,
                           caso: str) -> dict:
     """Lo spostamento massimo contro la diagonale (T1) **e** contro la luce del nodo (#26).
 
+    Il rapporto u/L è un massimo su **tutti** i nodi con aste, non il rapporto del nodo più
+    spostato: le due cose divergono appena il modello ha luci diverse, e il nodo peggiore può
+    non essere quello di `u_max` (misurato dal reviewer: `u_max` in mezzeria a 1/12 della sua
+    campata, verdetto verde, mentre la punta di un moncone da 200 mm stava a 2,5 volte la
+    soglia). `u_max`, `dimensione` e `rapporto_diagonale` restano quelli di T1; `nodo`, `u` e
+    `luce_minima` sono del nodo peggiore, cioè quelli con cui si rifà il conto di `rapporto`.
+
     Funzione pura sul dizionario degli spostamenti: la stessa che serve un caso statico
     serve l'ultimo passo della pushover, dove `passi[-1].spostamenti` ha la stessa forma.
     """
-    nodo, u_max = None, None
+    luci = _luci(d)
+    u_max = None
+    peggiore, u_peggiore, luce, rapporto = None, None, None, None
     for id_nodo, x in spostamenti.items():
         u = float(np.linalg.norm([_reale(y) for y in x[:3]]))
         if u_max is None or u > u_max:
-            nodo, u_max = id_nodo, u
+            u_max = u
+        L = luci.get(d.mappa_nodo[int(id_nodo)])
+        if not math.isfinite(u) or L is None or L <= 0.0:
+            continue
+        r = abs(u) / L
+        if rapporto is None or r > rapporto:
+            peggiore, u_peggiore, luce, rapporto = id_nodo, u, L, r
     c = solve.controlla_spostamenti(u_max, dimensione)
-    # il `rapporto` di `solve` è u/diagonale e resta, col suo nome per esteso: `rapporto`
-    # nudo è quello con la luce, che è quello che decide l'esito da qui in avanti
-    c["rapporto_diagonale"] = c.pop("rapporto")
-    luce = _luce_minima(d, d.mappa_nodo[int(nodo)]) if nodo is not None else None
-    fuori = u_max is None or not math.isfinite(u_max) or luce is None or luce <= 0.0
-    rapporto = None if fuori else abs(u_max) / luce
-    c |= {"nodo": None if nodo is None else int(nodo), "luce_minima": luce, "rapporto": rapporto}
+    # il `rapporto` di `solve` è u/diagonale e resta, col suo nome per esteso — e così la sua
+    # soglia: `rapporto` nudo è quello con la luce, che è quello che decide l'esito da qui in
+    # avanti, e le due soglie omonime rendevano illeggibile quale numero aveva deciso
+    c["rapporto_diagonale"], c["soglia_diagonale"] = c.pop("rapporto"), c.pop("soglia")
+    avviso = rapporto is not None and SOGLIA_AVVISO_SCALA < rapporto <= SOGLIA_FUORI_SCALA
+    c |= {"nodo": None if peggiore is None else int(peggiore), "u": u_peggiore,
+          "luce_minima": luce, "rapporto": rapporto, "soglia_luce": SOGLIA_FUORI_SCALA,
+          "soglia_avviso_luce": SOGLIA_AVVISO_SCALA, "avviso": avviso}
     ragione = (f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
                f"su {dimensione:.6g} mm")
     if rapporto is not None and rapporto > SOGLIA_FUORI_SCALA:
         c["passato"] = False
-        ragione += (f"; spostamento fuori scala: u/L = {rapporto:.4g} al nodo {nodo} "
+        ragione += (f"; spostamento fuori scala: u/L = {rapporto:.4g} al nodo {peggiore} "
                     f"(luce minima {luce:.6g} mm), il modello non descrive più la struttura")
-    elif rapporto is not None and rapporto > SOGLIA_AVVISO_SCALA:
-        ragione += (f"; avviso: u/L = {rapporto:.4g} al nodo {nodo} (luce minima "
+    elif avviso:
+        ragione += (f"; avviso: u/L = {rapporto:.4g} al nodo {peggiore} (luce minima "
                     f"{luce:.6g} mm), oltre 1/50 — guarda la deformata prima dei numeri")
     return verdetto("spostamenti", c, caso, ragione)
 
@@ -412,7 +433,7 @@ def _verdetto_convergenza(d: _deck.Deck, caso: str, registro: str) -> dict:
     if d.legami != "fibre":
         return non_applicabile("convergenza", "corsa elastica: il carico si applica in un passo "
                                "solo, senza passi né scala di algoritmi", caso)
-    passi = [(int(k), alg, float(lam)) for c, k, alg, lam in _RIGA_PASSO.findall(registro) if c == caso]
+    passi = [(int(k), alg, float(lam)) for c, k, alg, lam in _RIGA_PASSO_STATICO.findall(registro) if c == caso]
     fattore = passi[-1][2] if passi else 0.0
     c = {"passato": bool(passi) and fattore >= 1.0 - 1e-6,
          "passi": len(passi), "passi_dichiarati": d.passi, "fattore": fattore,
