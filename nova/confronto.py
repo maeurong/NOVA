@@ -59,7 +59,9 @@ _SOGLIA_MASSA_ASSE = 0.05
 # Sotto queste soglie un valore è rumore numerico della corsa, non una misura: −5e−16 mm e
 # −0,00116 mm sono due modi di scrivere «zero», e lo scarto fra i due (2,3e14 %) è un numero
 # senza contenuto. Un'unità che non sta qui non ha pavimento e si confronta come prima.
-_PAVIMENTO = {"mm": 1e-3, "N": 1e-2, "t": 1e-6, "Hz": 1e-3, "%": 1e-2}
+# `mm` a 1e-4, non 1e-3 (F2): 1e-3 stava dentro la banda di uno spostamento vero — misurato,
+# `u_sommita_z` a −0,0019 mm sopravviveva solo per 1,9×.
+_PAVIMENTO = {"mm": 1e-4, "N": 1e-2, "t": 1e-6, "Hz": 1e-3, "%": 1e-2}
 
 # Le chiavi di `mappa_casi` che non sono un caso del telaio. Tutte le altre devono avere la
 # forma di un caso (`Z<n>`/`C<n>`): il `telaio.json` arriva da un percorso, non da pydantic.
@@ -106,16 +108,31 @@ def classe(scarto: float | None) -> str:
 def _scarto_classe(telaio_val: float | None, altro_val: float | None,
                    unita: str) -> tuple[float | None, str, str | None]:
     """Lo scarto sul **riferimento**, che è l'altro (solido o Abaqus): il telaio è la cosa
-    da verificare, non il metro. `None` (e quindi `non_confrontabile`) se uno dei due manca,
-    se uno dei due è zero (guardia simmetrica: zero come riferimento divide per zero, zero
-    come confronto lascia uno scarto senza appoggio) o se uno dei due sta sotto il pavimento
-    di rumore della sua unità; in quest'ultimo caso rende anche la ragione."""
-    if telaio_val is None or altro_val is None or telaio_val == 0 or altro_val == 0:
+    da verificare, non il metro. `None` (e quindi `non_confrontabile`) se uno dei due manca
+    (nessuna ragione: quel ramo esiste già altrove), se uno dei due sta sotto il pavimento di
+    rumore della sua unità (F1: zero è sotto qualunque pavimento positivo, quindi passa di
+    qui anche quando prima finiva nella guardia dello zero) o, per le unità senza pavimento
+    dichiarato, se uno dei due è zero esatto — in questi ultimi due casi rende sempre una
+    ragione, mai `None`, perché una riga `non_confrontabile` senza ragione è un difetto."""
+    if telaio_val is None or altro_val is None:
         return None, classe(None), None
     pavimento = _PAVIMENTO.get(unita)
-    if pavimento is not None and min(abs(telaio_val), abs(altro_val)) < pavimento:
-        return None, classe(None), (f"valori sotto il pavimento di rumore per «{unita}» "
-                                    f"(< {pavimento:g})")
+    if pavimento is not None:
+        telaio_sotto = abs(telaio_val) < pavimento
+        altro_sotto = abs(altro_val) < pavimento
+        if telaio_sotto and altro_sotto:
+            return None, classe(None), (f"entrambi i valori sotto il pavimento di rumore per "
+                                        f"«{unita}» (< {pavimento:g})")
+        if telaio_sotto or altro_sotto:
+            # un solo lato sotto: non è rumore reciproco, è un lato che non riporta la
+            # grandezza — la percentuale non ha senso, ma i due valori restano leggibili
+            chi_sotto, val_sotto = ("il telaio", telaio_val) if telaio_sotto else ("il riferimento", altro_val)
+            chi_sopra, val_sopra = ("il riferimento", altro_val) if telaio_sotto else ("il telaio", telaio_val)
+            return None, classe(None), (f"{chi_sotto} vale {_it(val_sotto)} {unita}, sotto il "
+                                        f"pavimento (< {pavimento:g}); {chi_sopra} {_it(val_sopra)}: "
+                                        "i due non concordano, la percentuale non è un numero utile")
+    elif telaio_val == 0 or altro_val == 0:
+        return None, classe(None), "valore zero esatto: nessuno scarto"
     scarto = abs(altro_val - telaio_val) / abs(altro_val)
     return scarto * 100.0, classe(scarto), None
 
@@ -186,6 +203,12 @@ def _valida_assi(assi) -> None:
         if telaio_asse not in _LETTERE_ASSE or solido_asse not in _LETTERE_ASSE:
             raise ValueError(f"mappa_casi[«assi»] nomina «{telaio_asse}»: «{solido_asse}», e gli "
                              f"assi sono {', '.join(_LETTERE_ASSE)}")
+    # F7: due lettere del telaio sulla stessa lettera del solido appaierebbero un modo due
+    # volte e ne lascerebbero un altro senza, in silenzio
+    valori = list(assi.values())
+    if len(set(valori)) != len(valori):
+        raise ValueError(f"mappa_casi[«assi»] non è iniettivo: {assi!r} appaia più di una "
+                         "lettera del telaio sullo stesso asse del solido")
 
 
 def _valida(telaio: dict, solido: dict | None, mappa_casi: dict) -> None:

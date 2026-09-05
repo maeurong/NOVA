@@ -74,6 +74,8 @@ class Inp:
     nodi: dict[int, tuple[float, float, float]]
     elementi: list[tuple[int, ...]]
     n_materiali: int = 0
+    # F3: c'era un `*BOUNDARY`, ma solo dentro uno `*STEP` (mai come vincolo globale)
+    boundary_nel_passo: bool = False
 
     @property
     def vincolati(self) -> list[int]:
@@ -128,7 +130,14 @@ class Inp:
         «RF gives you the sum of the reaction forces and the loading forces»), e senza
         toglierla dal peso atteso il controllo di equilibrio è falso: sulla fixture piccola
         vale il 2,5 % del peso, sul deck vero il 22 % (3 743 nodi vincolati su 14 116).
+
+        `None` (non 0,0) se `vincoli` è vuoto e il deck portava un `*BOUNDARY` solo dentro
+        uno `*STEP` (F3): zero nodi vincolati sarebbe un fatto del modello, letto invece da
+        una carta che C11 esclude apposta dai vincoli globali — un peso atteso sbagliato per
+        difetto, non un numero vero.
         """
+        if not self.vincoli and self.boundary_nel_passo:
+            return None
         v = self._volumi()
         if v is None or self.densita is None:
             return None
@@ -172,6 +181,7 @@ def leggi(percorso: str | Path) -> Inp:
     elementi: list[tuple[int, ...]] = []
     set_nodi: dict[str, list[int]] = {}
     vincoli: list[tuple[str, int, int]] = []
+    boundary_nel_passo = False
     passi: list[Passo] = []
     tipi: set[str] = set()
     n_materiali = 0
@@ -212,6 +222,11 @@ def leggi(percorso: str | Path) -> Inp:
                 tipi.add(parametri.get("TYPE", "").upper())
             elif sezione == "NSET":
                 set_nodi.setdefault(parametri.get("NSET", "").upper(), [])
+            elif aperto is not None and sezione == "BOUNDARY":
+                # F3: un `*BOUNDARY` visto solo qui (mai fuori da uno *STEP) lascia `vincoli`
+                # vuoto — senza questo segnale `quota_vincolati` letta più sotto vedrebbe zero
+                # nodi vincolati come un fatto del modello, non come «non l'ho mai saputo»
+                boundary_nel_passo = True
             continue
         campi = [x.strip() for x in pulita.split(",")]
         try:
@@ -278,4 +293,4 @@ def leggi(percorso: str | Path) -> Inp:
     return Inp(passi=passi, set_nodi=set_nodi, vincoli=vincoli,
                densita=densita if n_materiali <= 1 else None, elastico=elastico,
                g=g, tipo_elemento="+".join(sorted(tipi)) or None, nodi=nodi, elementi=elementi,
-               n_materiali=n_materiali)
+               n_materiali=n_materiali, boundary_nel_passo=boundary_nel_passo)

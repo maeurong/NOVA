@@ -333,3 +333,33 @@ def test_boundary_dentro_un_passo_non_conta_fra_i_vincoli_globali(tmp_path):
     atteso = _inp.leggi(TRAVE)
     assert d.vincoli == atteso.vincoli
     assert d.quota_vincolati == pytest.approx(atteso.quota_vincolati, rel=1e-12)
+
+
+# --- fix round C -------------------------------------------------------------
+
+_BASE_UN_TETRAEDRO = (
+    "*NODE\n1, 0.0, 0.0, 0.0\n2, 1.0, 0.0, 0.0\n3, 0.0, 1.0, 0.0\n4, 0.0, 0.0, 1.0\n"
+    "*ELEMENT, TYPE=C3D4, ELSET=A\n1, 1, 2, 3, 4\n"
+    "*MATERIAL, NAME=CLS\n*DENSITY\n2.5e-09\n"
+)
+
+
+def test_boundary_solo_nel_passo_lascia_la_quota_non_calcolabile(tmp_path):
+    """F3: `*BOUNDARY` visto solo dentro `*STEP` (mai come vincolo globale, C11) lascia
+    `vincoli` vuoto: 0,0 sarebbe un peso atteso sbagliato per difetto (il verdetto reazioni
+    fallirebbe per un motivo che non è del modello), non un numero vero."""
+    p = _scrivi(tmp_path, "boundary_solo_nel_passo.inp", _BASE_UN_TETRAEDRO +
+                "*STEP\n*STATIC\n*BOUNDARY\nTOP, 1, 3\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.vincoli == [] and d.massa is not None
+    assert d.quota_vincolati is None
+
+
+def test_deck_senza_alcun_boundary_resta_come_prima(tmp_path):
+    """Riga degenere di F3: senza `*BOUNDARY` da nessuna parte (né globale né nei passi) la
+    quota resta 0,0 come sempre — la nuova regola scatta solo se un passo lo portava."""
+    p = _scrivi(tmp_path, "senza_boundary.inp", _BASE_UN_TETRAEDRO +
+                "*STEP\n*STATIC\n*END STEP\n")
+    d = _inp.leggi(p)
+    assert d.vincoli == [] and not d.boundary_nel_passo
+    assert d.quota_vincolati == 0.0

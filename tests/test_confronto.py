@@ -604,6 +604,61 @@ def test_unita_senza_pavimento_dichiarato_si_confronta_come_prima():
     assert pct is not None and classe == "lontano" and ragione is None
 
 
+# --- fix round C: F1 (due ragioni distinte), F2 (pavimento mm) ---------------
+
+def test_pavimento_con_entrambi_i_lati_sotto_non_nomina_i_valori():
+    """F1, ramo «entrambi sotto»: nessuno dei due regge, e la percentuale non avrebbe
+    comunque senso — la ragione dice solo il pavimento, non i valori."""
+    pct, classe, ragione = _confronto._scarto_classe(1e-6, -2e-6, "N")
+    assert pct is None and classe == "non_confrontabile"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
+
+
+def test_pavimento_con_un_solo_lato_sotto_nomina_i_due_valori():
+    """F1, ramo «uno solo sotto»: il caso reale del deck vero — il telaio regge (−754,5 N),
+    il solido non riporta taglio (−1,48e−5 N). Non è rumore reciproco: è il solido che
+    manca, e la ragione lo dice nominando entrambi i valori, non un generico «sotto»."""
+    pct, classe, ragione = _confronto._scarto_classe(-754.5, -1.48e-5, "N")
+    assert pct is None and classe == "non_confrontabile"
+    assert ragione is not None and "non concordano" in ragione
+    assert "754,5" in ragione and "sotto il pavimento" in ragione
+
+
+def test_zero_esatto_su_entrambi_eredita_la_ragione_del_pavimento():
+    """Aggiunta craft-reviewer: `reazione_x` C1/C3 del deck vero ha il telaio a 0 esatto
+    contro un solido non nullo ma sotto il pavimento — deve uscire con la ragione del
+    pavimento (0 è sotto qualunque pavimento positivo), non con `ragione: None`."""
+    pct, classe, ragione = _confronto._scarto_classe(0.0, 1.7e-5, "N")
+    assert pct is None and classe == "non_confrontabile"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
+
+
+def test_zero_esatto_senza_pavimento_dichiarato_ha_comunque_una_ragione():
+    """Nessuna riga `non_confrontabile` deve avere `ragione` vuota (craft-reviewer): per
+    un'unità senza pavimento lo zero esatto resta il vecchio caso «nessuno scarto», ma
+    con una ragione invece del `None` di prima."""
+    pct, classe, ragione = _confronto._scarto_classe(0.0, 5.0, "kN")
+    assert pct is None and classe == "non_confrontabile"
+    assert ragione == "valore zero esatto: nessuno scarto"
+
+
+def test_valore_none_resta_manca_non_pavimento():
+    """Ingresso degenere: un valore `None` prende il ramo già esistente («manca»), la
+    guardia del pavimento non lo vede nemmeno."""
+    pct, classe, ragione = _confronto._scarto_classe(None, -1.48e-5, "N")
+    assert pct is None and classe == "non_confrontabile" and ragione is None
+
+
+def test_pavimento_mm_piu_stretto_non_marca_rumore_un_valore_reale():
+    """F2: `_PAVIMENTO["mm"]` passa da 1e-3 a 1e-4 — 1e-3 stava dentro la banda di uno
+    spostamento vero (misurato: `u_sommita_z` a −0,0019 mm sopravviveva solo per 1,9×). Un
+    valore di 5e-4 mm (sotto il vecchio pavimento, sopra il nuovo) deve confrontarsi come un
+    numero vero."""
+    assert _confronto._PAVIMENTO["mm"] == 1e-4
+    pct, classe, ragione = _confronto._scarto_classe(5e-4, 5e-4, "mm")
+    assert ragione is None and classe != "non_confrontabile"
+
+
 def _modi_telaio_x_e_y():
     return [
         {"n": 1, "f": 5.0, "T": 0.2, "forma": {"4": [1.0, 0.0, 0.0]},
@@ -662,6 +717,16 @@ def test_assi_con_una_lettera_fuori_da_xyz_e_errore_di_validazione(assi):
     `KeyError` in loop»."""
     with pytest.raises(ValueError) as e:
         _confronto.confronta(_telaio(), _solido(), None, {**MAPPA, "assi": assi})
+    assert "assi" in str(e.value)
+
+
+def test_assi_non_iniettivo_e_errore_di_validazione():
+    """F7: `{"x": "y", "y": "y"}` manda due lettere del telaio sulla stessa lettera del
+    solido — un modo solido appaiato due volte, l'altro mai. Deve fermarsi come le lettere
+    fuori da x/y/z, non passare in silenzio."""
+    with pytest.raises(ValueError) as e:
+        _confronto.confronta(_telaio(), _solido(), None,
+                             {**MAPPA, "assi": {"x": "y", "y": "y"}})
     assert "assi" in str(e.value)
 
 

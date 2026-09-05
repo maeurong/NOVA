@@ -217,11 +217,13 @@ def _verdetto_reazioni(passo: _inp.Passo, reazioni: dict, deck: _inp.Inp) -> dic
     if not passo.gravita:
         return non_applicabile("reazioni", "carichi del deck non ricostruiti: fuori dal passo "
                                "gravitazionale il peso atteso non si conosce", passo.nome)
-    if deck.massa is None or passo.g is None:
+    if deck.massa is None or passo.g is None or deck.quota_vincolati is None:
         manca = ("due materiali, la massa non è ρ·V" if deck.n_materiali > 1 else
                  "il deck non dichiara *DENSITY" if deck.densita is None else
                  f"elemento {deck.tipo_elemento}: volume e quota tributaria sono esatti solo "
-                 f"su {_inp.TIPO_ESATTO}")
+                 f"su {_inp.TIPO_ESATTO}" if deck.massa is None else
+                 "*BOUNDARY solo dentro *STEP: nessun vincolo globale, la quota tributaria "
+                 "non si calcola")
         return non_applicabile("reazioni", f"{manca}: il peso atteso non si calcola", passo.nome)
     # la reazione è opposta al carico, e `Passo.gravita` ha già preteso che la gravità
     # del passo vada esattamente lungo −z: il peso atteso in reazione è quindi +z

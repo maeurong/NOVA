@@ -143,9 +143,11 @@ class CcxReq(_CorpoBase):
 
 
 class ConfrontoReq(_CorpoBase):
-    telaio: str
-    solido: str | None = None
-    abaqus: str | None = None
+    # F5: `Path("").resolve()` è la cwd, non un errore — senza `min_length` una stringa
+    # vuota arriverebbe fino al sidecar e uscirebbe 400 con «Is a directory» sulla radice
+    telaio: str = Field(min_length=1)
+    solido: str | None = Field(default=None, min_length=1)
+    abaqus: str | None = Field(default=None, min_length=1)
     mappa_casi: dict = Field(default_factory=dict)
 
 

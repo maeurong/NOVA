@@ -592,6 +592,13 @@ def test_confronto_risolve_i_tre_percorsi_relativi(cliente, tmp_path, monkeypatc
     assert str(tmp_path.resolve() / "manca.json") in r.json()["motivo"]
 
 
+def test_confronto_con_telaio_vuoto_e_422_non_400(cliente):
+    """F5: `Path("").resolve()` è la cwd, non un errore: `""` deve fermarsi a pydantic
+    (422) prima del sidecar, mai arrivare a un 400 con «Is a directory» sulla radice."""
+    r = cliente.post("/api/confronto", json={"telaio": ""})
+    assert r.status_code == 422, r.text
+
+
 def test_ccx_con_un_deck_rifiutato_e_400_non_200(cliente, tmp_path):
     """C6: `fase: deck` è un errore di chi ha scritto il deck, come `modello` e `importa`:
     200 lo faceva sembrare una corsa andata a buon fine."""

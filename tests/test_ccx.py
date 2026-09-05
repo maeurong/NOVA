@@ -281,6 +281,24 @@ def test_due_materiali_il_verdetto_dice_che_la_massa_non_e_rho_per_v(tmp_path, u
     assert v["esito"] == "non_applicabile" and "due materiali" in v["ragione"]
 
 
+def test_boundary_solo_nel_passo_il_verdetto_non_si_applica(tmp_path, uscite_vere):
+    """F3: `*BOUNDARY` spostato dal vincolo globale dentro il primo `*STEP` (C11: non conta
+    più fra i vincolati) lascia `quota_vincolati` a `None`: senza il fix il verdetto reazioni
+    userebbe 0,0 come quota e fallirebbe per un motivo che non è del modello."""
+    def sposta_boundary_nel_passo(t: str) -> str:
+        t = t.replace("*BOUNDARY\nBASE, 1, 3\n", "", 1)
+        return t.replace("*STEP\n*STATIC\n", "*STEP\n*STATIC\n*BOUNDARY\nBASE, 1, 3\n", 1)
+
+    p = _variante(tmp_path, "boundary_nel_passo.inp", sposta_boundary_nel_passo)
+    finto = _finto_ccx(tmp_path, f'cp "{uscite_vere}"/solido.dat "{uscite_vere}"/solido.frd . '
+                                 f'&& echo "Job finished"\n')
+    r = _ccx.esegui(p, tmp_path / "corsa", percorso_solutore=finto)
+    assert r["esito"] == "ok", r
+    assert r["risultati"]["run"]["quota_vincolati"] is None
+    v = _verdetto(r["risultati"], "reazioni", "GRAVITA")
+    assert v["esito"] == "non_applicabile" and "BOUNDARY" in v["ragione"]
+
+
 # --- deck senza le carte che il lettore si aspetta ---------------------------
 
 def test_un_deck_senza_passo_modale_non_ha_modi(tmp_path, binario_ccx):
