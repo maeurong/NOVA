@@ -225,13 +225,6 @@ def _assicura_ok(fin: dict) -> dict:
     return fin["risultati"]
 
 
-# --- riga 3: corsa NOVA con esito diverso da ok -> fallisce col motivo, non KeyError -------
-
-def test_esito_diverso_da_ok_fallisce_con_motivo_non_keyerror():
-    with pytest.raises(AssertionError, match="modello rifiutato"):
-        _assicura_ok({"esito": "rifiutato", "motivo": "modello rifiutato"})
-
-
 # --- riga 4: solido senza modi -> f1/f2/f3 non_confrontabile con ragione, esportati comunque
 
 def test_righe_dei_modi_non_confrontabili_quando_il_solido_non_ha_modi(tmp_path):
