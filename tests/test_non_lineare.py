@@ -749,10 +749,13 @@ def test_il_dof_di_controllo_vincolato_e_un_rifiuto_del_deck_che_nomina_nodo_e_d
 
 
 def test_il_while_della_statica_a_passi_usa_la_costante_di_arrivo(tmp_path):
-    """N1: `0.9999999` stava scritto a mano nel `while` con la costante accanto."""
+    """N1: `0.9999999` stava scritto a mano nel `while` con la costante accanto. Il letterale
+    si pinza **a mano** e la costante a parte: formattare l'atteso dalla costante renderebbe il
+    test vero per qualunque valore, cioè cieco proprio al cambio che deve sorvegliare."""
     testo = _testo(_carica("telaio_2x1.nova.json", **{"analisi": [
         {"tipo": "statica", "casi": ["Z1"], "legami": "fibre", "passi": 4}]}), ["Z1"], tmp_path)
-    assert f"while {{$fatto < {_deck.TOLLERANZA_ARRIVO:.10g}}}" in testo
+    assert "while {$fatto < 0.9999999} {" in testo
+    assert _deck.TOLLERANZA_ARRIVO == 0.9999999
 
 
 def test_la_gravita_della_spinta_marca_i_suoi_passi_con_un_nome_suo(tmp_path):

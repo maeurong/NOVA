@@ -91,6 +91,68 @@ def test_un_campo_nuovo_con_default_non_cambia_limpronta_e_un_valore_diverso_si(
     assert impronta(Prima(b="altro")) != impronta(Prima())
 
 
+def test_cambiare_il_valore_della_versione_cambia_ogni_impronta():
+    """Round 2: `exclude_defaults` è cieco al **cambio di valore** di un default. Spostare
+    `Legame.epsU_copriferro` da 0,0035 a 0,004 cambia il `.tcl` di ogni modello che non lo
+    dichiara, e l'impronta resterebbe la stessa: i risultati vecchi non si direbbero stantii.
+    `VERSIONE_IMPRONTA` entra nel canonico e si bumpa a mano quando succede."""
+    from nova import modello as _m
+    m = _m.carica(leggi_fixture("pilastro_30x50.nova.json"))
+    prima = _m.impronta(m)
+    try:
+        _m.VERSIONE_IMPRONTA += 1
+        assert _m.impronta(m) != prima
+    finally:
+        _m.VERSIONE_IMPRONTA -= 1
+    assert _m.impronta(m) == prima
+
+
+def test_un_modello_senza_campi_opzionali_cambia_solo_per_la_versione():
+    """Ingresso degenere: un modello che non dichiara nessun campo opzionale. Il canonico è
+    ridotto ai soli campi obbligatori più la versione, quindi la versione è l'unica cosa che
+    può muoverlo — e deve muoverlo, altrimenti su questo modello non morde niente."""
+    from nova import modello as _m
+    nudo = _m.Modello(unita=_m.UNITA)
+    assert nudo.model_dump(mode="json", exclude_defaults=True) == {"unita": _m.UNITA}
+    prima = _m.impronta(nudo)
+    try:
+        _m.VERSIONE_IMPRONTA += 1
+        assert _m.impronta(nudo) != prima
+    finally:
+        _m.VERSIONE_IMPRONTA -= 1
+
+
+# Lo snapshot dei default che finiscono nel `.tcl`. Non è un test di comportamento: è la rete
+# che fa **fallire di proposito** chi cambia uno di questi numeri senza bumpare la versione,
+# perché `exclude_defaults` non se ne accorgerebbe mai.
+DEFAULT_NEL_DECK = {
+    "Legame": {"confinamento": "ntc", "epsU_copriferro": 0.0035, "epsU_nucleo": None,
+               "lambda": 0.1, "fpcu_su_fpc": 0.2, "Es": 200000.0, "fym": None, "b": None,
+               "R0": 18, "cR1": 0.925, "cR2": 0.15},
+    "AnalisiStatica": {"legami": "elastico", "passi": 10},
+    "AnalisiPushover": {"passi_max": 2000},
+    "ImpostazioniAnalisi": {"fibre": 10, "veste": "media"},
+}
+
+
+def test_lo_snapshot_dei_default_che_entrano_nel_deck():
+    from nova.modello import (AnalisiPushover, AnalisiStatica, ImpostazioniAnalisi, Legame)
+    statica = AnalisiStatica(tipo="statica", casi=["Z1"])
+    spinta = AnalisiPushover(tipo="pushover", distribuzione="uniforme", nodo_controllo=1,
+                             dof="ux", incremento=1.0, spostamento_max=1.0)
+    impostazioni = ImpostazioniAnalisi()
+    visto = {
+        "Legame": Legame().model_dump(by_alias=True),
+        "AnalisiStatica": {"legami": statica.legami, "passi": statica.passi},
+        "AnalisiPushover": {"passi_max": spinta.passi_max},
+        "ImpostazioniAnalisi": {"fibre": impostazioni.fibre, "veste": impostazioni.veste},
+    }
+    assert visto == DEFAULT_NEL_DECK, (
+        "hai cambiato un default che entra nel deck: bumpa VERSIONE_IMPRONTA in nova/modello.py "
+        "e aggiorna questo snapshot. `impronta` esclude i default, quindi da sola non vedrebbe "
+        "il cambio e ogni risultato vecchio si leggerebbe fresco su un `.tcl` diverso")
+
+
 def test_il_peso_proprio_e_generato_una_volta_sola():
     from nova.modello import assicura_peso_proprio, carica
     m = carica(leggi_fixture("telaio_2x1.nova.json"))

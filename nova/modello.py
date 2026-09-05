@@ -13,6 +13,10 @@ from meshrec.core import materiali as _materiali
 
 UNITA = "mm-N-MPa-t-s"
 VERSIONE_SCHEMA = 1
+# La versione dei **default**, che è cosa diversa da `VERSIONE_SCHEMA` (il formato del file, con
+# le sue `MIGRAZIONI`): entra nel canonico di `impronta` e si bumpa **a mano** quando cambia il
+# valore di un default che finisce nel `.tcl`. Vale 2 perché 1 era l'impronta senza versione.
+VERSIONE_IMPRONTA = 2
 
 # La forma di un caso di carico, in **un** punto solo: `AnalisiStatica` la dà a pydantic,
 # `deck.py` e `server.py` la rileggono da qui. Chi la usa in Python passa da `caso_valido`
@@ -454,8 +458,16 @@ def impronta(m: Modello) -> str:
     `AnalisiPushover`, e `muro_1.nova.json` intatto è passato da `a0768dcb…` a `2bf56c67…`,
     rendendo stantii risultati che nessuno aveva toccato. Un campo scritto al proprio valore
     di default e un campo assente sono lo stesso modello, e ora hanno la stessa impronta.
+
+    Il prezzo è che l'impronta diventa cieca al **cambio di valore** di un default: spostare
+    `Legame.epsU_copriferro` da 0,0035 a 0,004 cambia il `.tcl` di ogni modello che non lo
+    dichiara, e senza `VERSIONE_IMPRONTA` nel canonico i risultati vecchi non si direbbero
+    stantii. Quella costante si bumpa **a mano** quando succede, e
+    `tests/test_sidecar.py::test_lo_snapshot_dei_default_che_entrano_nel_deck` fallisce apposta
+    per ricordarlo.
     """
-    canonico = json.dumps(m.model_dump(mode="json", exclude_defaults=True),
+    canonico = json.dumps({"schema": VERSIONE_IMPRONTA,
+                           "dati": m.model_dump(mode="json", exclude_defaults=True)},
                           sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonico.encode("utf-8")).hexdigest()
 
