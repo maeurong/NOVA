@@ -1417,3 +1417,38 @@ def test_importa_scrive_nel_riferimento_il_nome_del_file_non_il_percorso(chiedi)
     (r,) = chiedi({"id": 1, "comando": "importa", "percorso": str(p)})
     assert r[-1]["modello"]["nodi"][0]["origine"]["riferimento"] == "12_wall.json"
     assert r[-1]["resoconto"]["percorso"] == str(p.resolve())
+
+
+# --- comando `ccx` (Task 1 di T3) -------------------------------------------
+
+def test_ccx_senza_inp_e_un_rifiuto_di_deck(chiedi):
+    (risposte,) = chiedi({"id": 1, "comando": "ccx"})
+    assert risposte[-1]["esito"] == "errore" and risposte[-1]["fase"] == "deck"
+    assert "inp" in risposte[-1]["motivo"]
+
+
+def test_ccx_fa_il_giro_sul_protocollo(chiedi, tmp_path, binario_ccx):
+    from conftest import FIXTURE
+    trave = FIXTURE / "solido_piccolo" / "trave.inp"
+    (risposte,) = chiedi({"id": 1, "comando": "ccx", "inp": str(trave), "cartella": str(tmp_path)})
+    assert [x["nome"] for x in risposte if x.get("evento") == "fase"] == [
+        "copio il deck", "lancio ccx", "leggo .dat e .frd"]
+    fin = risposte[-1]
+    assert fin["esito"] == "ok", fin
+    assert fin["risultati"]["massa"] == pytest.approx(2.5493e-09 * 2.0e7, rel=1e-9)
+    assert (tmp_path / "risultati_solido.json").is_file()
+
+
+def test_ccx_che_muore_leggendo_le_uscite_resta_fase_deck(monkeypatch):
+    """C4: `_componi` legge `.dat` e `.frd` e può sollevare `KeyError`/`IndexError` su
+    un'uscita mutilata. Senza il ramo la risposta usciva `fase: sidecar`, che il server
+    passa come 200 con dentro il gergo di Python."""
+    from nova import sidecar
+
+    def muore(*a, **k):
+        raise KeyError("disponibile")
+
+    monkeypatch.setattr(sidecar._ccx, "esegui", muore)
+    r = sidecar.rispondi({"comando": "ccx", "inp": "qualunque.inp"}, lambda ev: None)
+    assert r["esito"] == "errore" and r["fase"] == "deck", r
+    assert "disponibile" in r["motivo"] and "KeyError" not in r["motivo"]

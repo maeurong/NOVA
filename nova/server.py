@@ -23,12 +23,22 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 import nova
+from nova import ccx as _ccx
 from nova import corsa as _corsa
 from nova import modello as _modello
 from nova import sidecar as _sidecar
 
 STATICI = Path(__file__).resolve().parent.parent / "static"
 _RUN_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+
+# `--solutore` di `python -m nova` è il binario di OpenSees: dichiararlo a `ccx` gli farebbe
+# lanciare quello (`solve._trova` prende il percorso dichiarato e **non** ripiega sul PATH).
+# CalculiX si cerca nel PATH, che è come `DOVE_PRENDERLO` dice di installarlo.
+_COMANDI_SENZA_SOLUTORE = ("ccx",)
+
+# I due nomi che una cartella di corsa può portare: il telaio e il solido. `/api/risultati`
+# li prova tutti e due, o il `run_id` che `/api/ccx` ha appena reso non si rileggerebbe.
+_NOMI_RISULTATI = (_corsa.NOME_RISULTATI, _ccx.NOME_RISULTATI)
 
 
 class SidecarInProcesso:
@@ -38,7 +48,7 @@ class SidecarInProcesso:
         self.solutore = solutore
 
     def chiedi(self, req: dict) -> list[dict]:
-        if self.solutore:
+        if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
             req = {**req, "solutore": self.solutore}
         righe: list[dict] = []
         risposta = _sidecar.rispondi(req, righe.append)
@@ -62,11 +72,16 @@ class SidecarProcesso:
         self._lock = threading.Lock()
 
     def chiedi(self, req: dict) -> list[dict]:
-        with self._lock:
+        # senza `blocking=False` la seconda richiesta resta appesa qui finché la prima non
+        # finisce: una corsa di ccx può tenere il sidecar fino al suo timeout di mezz'ora
+        if not self._lock.acquire(blocking=False):
+            raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
+                                             "motivo": "il sidecar è occupato da un'altra corsa"})
+        try:
             self.n += 1
             rid = self.n
             corpo = {**req, "id": rid}
-            if self.solutore:
+            if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
                 corpo["solutore"] = self.solutore
             try:
                 self.p.stdin.write(json.dumps(corpo) + "\n")
@@ -88,6 +103,8 @@ class SidecarProcesso:
                         return righe
             except Exception as e:  # pipe chiusa, riga non JSON: un errore di dominio, non un 500 muto
                 return [{"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}]
+        finally:
+            self._lock.release()
 
 
 def _finale(righe: list[dict]) -> dict:
@@ -121,6 +138,19 @@ class CorsaReq(_CorpoBase):
     casi: list[Annotated[str, Field(pattern=_modello.FORMA_CASO)]] | None = None
 
 
+class CcxReq(_CorpoBase):
+    inp: str
+
+
+class ConfrontoReq(_CorpoBase):
+    # F5: `Path("").resolve()` è la cwd, non un errore — senza `min_length` una stringa
+    # vuota arriverebbe fino al sidecar e uscirebbe 400 con «Is a directory» sulla radice
+    telaio: str = Field(min_length=1)
+    solido: str | None = Field(default=None, min_length=1)
+    abaqus: str | None = Field(default=None, min_length=1)
+    mappa_casi: dict = Field(default_factory=dict)
+
+
 def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
@@ -143,7 +173,10 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         return await call_next(request)
 
     def _o_400(fin: dict) -> dict:
-        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa"):
+        # `deck` come `modello`/`importa`/`confronto`: è un errore di chi ha scritto il
+        # deck, non del server. `solutore` e `assente` restano 200: là la richiesta era
+        # buona, è la macchina a non avere il solutore.
+        if fin.get("esito") == "errore" and fin.get("fase") in ("modello", "importa", "confronto", "deck"):
             raise HTTPException(400, detail=fin)
         return fin
 
@@ -170,19 +203,50 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         fin = _o_400(_finale(righe))
         return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
 
+    @app.post("/api/ccx")
+    def ccx(corpo: CcxReq):
+        """Il deck del solido, dal disco dell'utente locale: `..` è lecito, il file si legge
+        e basta, e la copia nella cartella della corsa si chiama sempre `solido.inp`."""
+        run_id = secrets.token_hex(6)
+        righe = sidecar.chiedi({"comando": "ccx", "inp": str(Path(corpo.inp).resolve()),
+                                "cartella": str(cartella_corse / run_id)})
+        fin = _o_400(_finale(righe))
+        return {"run_id": run_id, "cartella": str(cartella_corse / run_id),
+                "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+
+    @app.post("/api/confronto")
+    def confronto(corpo: ConfrontoReq):
+        """`telaio`/`solido`/`abaqus` sono percorsi dell'utente locale, letti e basta; la
+        cartella d'export è sempre quella che il server genera, come `corsa` e `ccx`.
+
+        I relativi si risolvono **qui**, come in `importa`: il sidecar può girare in un
+        altro processo, con la cwd sulla radice del pacchetto, e là «telaio.json» sarebbe
+        un altro file."""
+        run_id = secrets.token_hex(6)
+        righe = sidecar.chiedi({"comando": "confronto",
+                                "telaio": str(Path(corpo.telaio).resolve()),
+                                "solido": str(Path(corpo.solido).resolve()) if corpo.solido else None,
+                                "abaqus": str(Path(corpo.abaqus).resolve()) if corpo.abaqus else None,
+                                "mappa_casi": corpo.mappa_casi,
+                                "cartella": str(cartella_corse / run_id)})
+        fin = _o_400(_finale(righe))
+        return {"run_id": run_id, "cartella": str(cartella_corse / run_id), **fin}
+
     @app.get("/api/risultati/{run_id}")
     def risultati(run_id: str):
         rifiuta = HTTPException(404, detail={"motivo": f"nessuna corsa {run_id}"})
         if not _RUN_ID_RE.fullmatch(run_id):
             raise rifiuta
         radice = cartella_corse.resolve()
-        p = (cartella_corse / run_id / _corsa.NOME_RISULTATI).resolve()
-        if radice not in p.parents or not p.is_file():
-            raise rifiuta
-        try:  # una corsa interrotta lascia un file troncato: è una corsa che non c'è, non un 500
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (ValueError, OSError) as e:
-            raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
+        for nome in _NOMI_RISULTATI:
+            p = (cartella_corse / run_id / nome).resolve()
+            if radice not in p.parents or not p.is_file():
+                continue
+            try:  # una corsa interrotta lascia un file troncato: è una corsa che non c'è, non un 500
+                return json.loads(p.read_text(encoding="utf-8"))
+            except (ValueError, OSError) as e:
+                raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
+        raise rifiuta
 
     @app.post("/api/modello/apri")
     def apri(corpo: ApriReq):

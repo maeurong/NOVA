@@ -182,11 +182,11 @@ def _lancia(m: Modello, casi: list[str], cartella: Path, n_modi: int | None, sta
                                   capture_output=True, timeout=_TIMEOUT_S)
     except subprocess.TimeoutExpired as e:
         return None, "", _errore_solutore(f"OpenSees non è finito entro il timeout di {_TIMEOUT_S:g} s",
-                                          _testo(e.stdout) + _testo(e.stderr), cartella, t0)
+                                          testo(e.stdout) + testo(e.stderr), cartella, t0)
     except (OSError, subprocess.SubprocessError) as e:
         # esiste ma non parte: permessi, architettura sbagliata, script senza shebang
         return None, "", _errore_solutore(f"«{stato['percorso']}» non è eseguibile: {e}", "", cartella, t0)
-    registro = _testo(processo.stdout) + _testo(processo.stderr)
+    registro = testo(processo.stdout) + testo(processo.stderr)
     (cartella / opensees.NOME_REGISTRO).write_text(registro, encoding="utf-8")
     fine = cartella / opensees.NOME_FINE
     if not (fine.is_file() and opensees.MARCA_FINE in fine.read_text(encoding="ascii", errors="ignore")):
@@ -197,8 +197,10 @@ def _lancia(m: Modello, casi: list[str], cartella: Path, n_modi: int | None, sta
     return d, registro, None
 
 
-def _testo(grezzo: bytes | None) -> str:
-    """`replace` e non `ignore`: qui non si contano campi, si mostra il registro a una persona."""
+def testo(grezzo: bytes | None) -> str:
+    """Pubblica, come `verdetto` e `non_applicabile`: le usa anche `nova/ccx.py`.
+
+    `replace` e non `ignore`: qui non si contano campi, si mostra il registro a una persona."""
     return "" if grezzo is None else grezzo.decode("utf-8", errors="replace")
 
 
@@ -291,7 +293,7 @@ def _esito(c: dict) -> str:
     return "passato" if c.get("passato") else "non_passato"
 
 
-def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | None = None) -> dict:
+def verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | None = None) -> dict:
     """Stessa forma dei verdetti C1 (`check._v`): le nove chiavi ci sono sempre."""
     valori = {k: _pulito(v) for k, v in c.items()
               if k not in ("passato", "applicabile", "motivo", "controllo", "modello")}
@@ -300,10 +302,10 @@ def _verdetto(controllo: str, c: dict, caso: str | None = None, ragione: str | N
             "articolo": None, "valori": valori, "rimedio": None}
 
 
-def _non_applicabile(controllo: str, ragione: str) -> dict:
+def non_applicabile(controllo: str, ragione: str, caso: str | None = None) -> dict:
     """Il verdetto a tre valori dove `solve.esito_non_applicabile` non ha una riga in tabella:
     stessa forma, `non_applicabile`, e la ragione la dà chi sa perché."""
-    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": None,
+    return {"controllo": controllo, "oggetto": None, "stazione": None, "caso": caso,
             "esito": "non_applicabile", "ragione": ragione, "articolo": None,
             "valori": {}, "rimedio": None}
 
@@ -321,11 +323,11 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
     in cui è incastrato ovunque.
     """
     if not direzioni:
-        return [_non_applicabile(x, "nessuna traslazione libera con massa: niente da estrarre")
+        return [non_applicabile(x, "nessuna traslazione libera con massa: niente da estrarre")
                 for x in ("autovalori", "massa_modale")]
     autovalori = solve.controlla_autovalori([x["f"] for x in modi])
     prima = autovalori.get("prima_frequenza_hz")
-    v = [_verdetto("autovalori", autovalori, ragione=(
+    v = [verdetto("autovalori", autovalori, ragione=(
         f"prima frequenza {'assente' if prima is None else format(prima, '.6g') + ' Hz'} "
         f"su {len(modi)} modi estratti"))]
     if modi:
@@ -336,7 +338,7 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
                    + f" sulle direzioni con massa {', '.join(direzioni)}")
     else:
         masse, ragione = None, "nessun modo estratto: la massa partecipante non è verificata"
-    v.append(_verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),
+    v.append(verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),
                        ragione=ragione))
     return v
 
@@ -356,17 +358,17 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
         reazioni = {int(k): tuple(_reale(y) for y in x[:3]) for k, x in dati["reazioni"].items()}
         atteso = tuple(-x for x in d.carico_totale[caso])
         c = solve.controlla_reazioni(reazioni, atteso, solve._TOLLERANZA_REAZIONI)
-        v.append(_verdetto("reazioni", c, caso,
+        v.append(verdetto("reazioni", c, caso,
                            f"Σ reazioni {c['somma']} contro Σ carichi {atteso}, scarto {c['scarto_relativo']}"))
         # nessuno spostamento non è uno spostamento nullo: `None` dichiara «non verificato»
         u_max = max((float(np.linalg.norm([_reale(y) for y in x[:3]]))
                      for x in dati["spostamenti"].values()), default=None)
         c = solve.controlla_spostamenti(u_max, dimensione)
-        v.append(_verdetto("spostamenti", c, caso,
+        v.append(verdetto("spostamenti", c, caso,
                            f"u_max = {'assente' if u_max is None else format(u_max, '.6g')} mm "
                            f"su {dimensione:.6g} mm"))
     n = opensees.conta_avvisi(registro)
-    v.append(_verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
+    v.append(verdetto("avvisi", solve.controlla_avvisi(n), None, f"{n} WARNING nel registro"))
     # `esito_non_applicabile` rende `None` dove il controllo **varrebbe** sul telaio (autovalori e
     # massa modale): senza analisi modale in questa corsa, il verdetto lo dice qui.
     if modi is None:
@@ -379,5 +381,5 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
                                ("picco", "non calcolato in una corsa statica"),
                                ("vincolo_in_pianta", "non calcolato in una corsa statica")):
         c = solve.esito_non_applicabile(controllo, "telaio")
-        v.append(_verdetto(controllo, c) if c else _non_applicabile(controllo, ragione))
+        v.append(verdetto(controllo, c) if c else non_applicabile(controllo, ragione))
     return v

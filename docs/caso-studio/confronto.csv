@@ -1,0 +1,23 @@
+# unita: mm N t Hz %; separatore ;
+# avvertenza: verifica del codice, non validazione
+grandezza;caso;unita;telaio;solido;abaqus;scarto_solido_pct;scarto_abaqus_pct;classe_solido;classe_abaqus;bias_atteso;ragione
+massa;;t;0.76942;0.555056;;38.6204;;lontano;non_confrontabile;massa: zapatas e tamponatura fuori dal telaio;
+reazione_x;C1;N;0;1.705e-05;;;;non_confrontabile;non_confrontabile;;entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)
+reazione_z;C1;N;7545.44;4248.58;;77.599;;lontano;non_confrontabile;;
+u_sommita_x;C1;mm;-5.00007e-16;-0.00116087;;;;non_confrontabile;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";"il telaio vale -0,0000000000000005000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001161: i due non concordano, la percentuale non è un numero utile"
+u_sommita_z;C1;mm;-0.00189659;-0.0210103;;90.973;;lontano;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+reazione_x;C2;N;-754.544;-1.48e-05;;;;non_confrontabile;non_confrontabile;;"il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile"
+reazione_z;C2;N;7545.44;4248.58;;77.599;;lontano;non_confrontabile;;
+u_sommita_x;C2;mm;0.0278957;-0.000927836;;3106.53;;lontano;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+u_sommita_z;C2;mm;-0.00189659;-0.0212155;;91.0603;;lontano;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+reazione_x;C3;N;0;-1.648e-05;;;;non_confrontabile;non_confrontabile;;entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)
+reazione_z;C3;N;8745.44;5448.58;;60.5085;;lontano;non_confrontabile;;
+u_sommita_x;C3;mm;-1.00001e-15;-0.00151481;;;;non_confrontabile;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";"il telaio vale -0,000000000000001000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001515: i due non concordano, la percentuale non è un numero utile"
+u_sommita_z;C3;mm;-0.00283999;-0.0329097;;91.3704;;lontano;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+taglio_base;C2;N;-754.544;-1.48e-05;;;;non_confrontabile;non_confrontabile;;"il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile"
+f1;;Hz;31.8468;34.0106;;6.36208;;vicino;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+f2;;Hz;20.4538;21.0069;;2.63318;;concorde;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+f3;;Hz;87.0745;90.3203;;3.59369;;concorde;non_confrontabile;"tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile";
+massa_partecipante_x;;%;100;95.6592;;4.53779;;concorde;non_confrontabile;;
+massa_partecipante_y;;%;100;96.1431;;4.01157;;concorde;non_confrontabile;;
+massa_partecipante_z;;%;100;93.9427;;6.44781;;vicino;non_confrontabile;;

@@ -520,3 +520,107 @@ def test_importa_un_percorso_relativo_e_risolto_dal_server(cliente, tmp_path, mo
     assert r.status_code == 200
     percorso = Path(r.json()["resoconto"]["percorso"])
     assert percorso.is_absolute() and percorso == (tmp_path / "12_wall.json").resolve()
+
+
+# --- POST /api/ccx (Task 1 di T3) -------------------------------------------
+
+def _trave() -> Path:
+    from conftest import FIXTURE
+    return FIXTURE / "solido_piccolo" / "trave.inp"
+
+
+def test_ccx_gira_nella_cartella_della_corsa(cliente, tmp_path, binario_ccx):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["esito"] == "ok" and corpo["fasi"] == ["copio il deck", "lancio ccx", "leggo .dat e .frd"]
+    cartella = tmp_path / "corse" / corpo["run_id"]
+    assert (cartella / "solido.inp").is_file() and (cartella / "risultati_solido.json").is_file()
+    assert corpo["risultati"]["run"]["deck"] == str(cartella / "solido.inp")
+
+
+def test_ccx_accetta_un_percorso_con_puntini_e_lo_copia_come_solido(cliente, tmp_path, binario_ccx):
+    """Percorso dell'utente locale: `..` è lecito. Quello che non deve succedere è che un
+    suo pezzo entri nel comando: il file copiato si chiama sempre `solido.inp`."""
+    dentro = tmp_path / "giu"
+    dentro.mkdir()
+    (dentro / "mio.inp").write_bytes(_trave().read_bytes())
+    r = cliente.post("/api/ccx", json={"inp": f"{dentro}/../giu/mio.inp"})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["esito"] == "ok"
+    assert Path(corpo["risultati"]["run"]["deck"]).name == "solido.inp"
+
+
+def test_ccx_con_un_inp_che_non_esiste(cliente, tmp_path):
+    r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
+    assert r.status_code == 400 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
+
+
+def test_ccx_rifiuta_la_cartella_dal_corpo(cliente):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave()), "cartella": "/tmp"})
+    assert r.status_code == 422 and "cartella" in r.json()["motivo"]
+
+
+def test_il_solutore_di_opensees_non_finisce_dentro_ccx(tmp_path, binario_ccx):
+    """`--solutore` di `python -m nova` è il binario di OpenSees: passarlo a `ccx` come
+    percorso dichiarato farebbe lanciare quello. Qui il «solutore» non è nemmeno
+    eseguibile, e la corsa deve riuscire lo stesso perché ccx si cerca nel PATH."""
+    cliente = _app_con_solutore(tmp_path, str(_trave()))
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200 and r.json()["esito"] == "ok", r.text
+
+
+def test_i_risultati_del_solido_si_rileggono_dal_run_id(cliente, tmp_path, binario_ccx):
+    r = cliente.post("/api/ccx", json={"inp": str(_trave())})
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["cartella"] == str(tmp_path / "corse" / corpo["run_id"])
+    riletti = cliente.get(f"/api/risultati/{corpo['run_id']}")
+    assert riletti.status_code == 200, riletti.text
+    assert riletti.json()["massa"] == corpo["risultati"]["massa"]
+
+
+# --- ondata finale: percorsi risolti, deck = 400, sidecar occupato = 409 -----------
+
+def test_confronto_risolve_i_tre_percorsi_relativi(cliente, tmp_path, monkeypatch):
+    """C5: `/api/importa` risolve il relativo perché il sidecar può girare in un altro
+    processo con un'altra cwd; `/api/confronto` no, e «telaio.json» era un altro file."""
+    monkeypatch.chdir(tmp_path)
+    r = cliente.post("/api/confronto", json={"telaio": "manca.json"})
+    assert r.status_code == 400, r.text
+    assert str(tmp_path.resolve() / "manca.json") in r.json()["motivo"]
+
+
+def test_confronto_con_telaio_vuoto_e_422_non_400(cliente):
+    """F5: `Path("").resolve()` è la cwd, non un errore: `""` deve fermarsi a pydantic
+    (422) prima del sidecar, mai arrivare a un 400 con «Is a directory» sulla radice."""
+    r = cliente.post("/api/confronto", json={"telaio": ""})
+    assert r.status_code == 422, r.text
+
+
+def test_ccx_con_un_deck_rifiutato_e_400_non_200(cliente, tmp_path):
+    """C6: `fase: deck` è un errore di chi ha scritto il deck, come `modello` e `importa`:
+    200 lo faceva sembrare una corsa andata a buon fine."""
+    r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
+    assert r.status_code == 400 and r.json()["fase"] == "deck"
+
+
+def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
+    """C7: una corsa di ccx può tenere il sidecar per mezz'ora, e la seconda richiesta
+    restava appesa sul lock senza che nessuno lo sapesse. Ora è un 409 immediato, e la
+    richiesta rifiutata non tocca il lock di chi sta lavorando."""
+    from nova.server import SidecarProcesso, create_app
+
+    class _FintoProcesso:
+        stdin = stdout = None
+
+    sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
+    assert sp._lock.acquire(blocking=False)
+    cliente = TestClient(create_app(sp, tmp_path / "corse"), raise_server_exceptions=False,
+                         base_url="http://127.0.0.1")
+    r = cliente.get("/api/salute")
+    assert r.status_code == 409, r.text
+    assert r.json()["fase"] == "sidecar" and "occupato" in r.json()["motivo"]
+    assert sp._lock.locked()   # il lock resta di chi lo ha preso
+    sp._lock.release()

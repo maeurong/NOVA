@@ -14,10 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from nova import check, modale as _modale, modello as _modello
+from nova import ccx as _ccx, check, confronto as _confronto, modale as _modale, modello as _modello
 from nova.deck import GRAVITA
 
 FILE_MODELLO = Path(__file__).parents[1] / "docs" / "caso-studio" / "muro_1.nova.json"
+DECK_VERO = Path(__file__).resolve().parents[1] / "lab_telaio_v2" / "wall_model.inp"
 
 
 def _leggi_muro_1() -> dict:
@@ -206,3 +207,86 @@ def test_server_apri_muro_1_stessa_impronta_di_carica(tmp_path):
 
     impronta_attesa = _modello.impronta(_modello.carica(_leggi_muro_1()))
     assert impronta_server == impronta_attesa
+
+
+# --- Task 3: tabella di confronto sul deck vero -------------------------------------------
+# Ogni test è ancorato a una riga di «Ingressi degeneri» del brief Task 3; la mappa
+# riga -> test sta nel report.
+
+# `assi`: la x del telaio (nel piano del muro) è la y del deck solido, che ha il muro sul
+# piano y-z. Senza la dichiarazione f1 leggerebbe il modo fuori piano del solido.
+MAPPA_CASI_MURO_1 = {"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP",
+                     "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}
+
+
+def _assicura_ok(fin: dict) -> dict:
+    """Il motivo nel messaggio d'errore su un esito diverso da `ok`, mai un `KeyError`."""
+    assert fin.get("esito") == "ok", fin.get("motivo") or fin
+    return fin["risultati"]
+
+
+# --- riga 4: solido senza modi -> f1/f2/f3 non_confrontabile con ragione, esportati comunque
+
+def test_righe_dei_modi_non_confrontabili_quando_il_solido_non_ha_modi(tmp_path):
+    telaio = {
+        "run": {"casi": [], "carico_totale": {}, "mappa_tag": {"nodo": {"3": 3, "4": 4}}},
+        "per_caso": {},
+        "modi": [
+            {"f": 10.0, "forma": {"3": [1.0, 0.0, 0.0], "4": [1.0, 0.0, 0.0]},
+             "massa_partecipante": {"x": 0.7, "y": 0.0, "z": 0.0},
+             "cumulata": {"x": 0.7, "y": 0.0, "z": 0.0}},
+            {"f": 15.0, "forma": {"3": [0.0, 1.0, 0.0], "4": [0.0, 1.0, 0.0]},
+             "massa_partecipante": {"x": 0.0, "y": 0.7, "z": 0.0},
+             "cumulata": {"x": 0.7, "y": 0.7, "z": 0.0}},
+            {"f": 22.0, "forma": {"3": [0.0, 0.0, 1.0], "4": [0.0, 0.0, 1.0]},
+             "massa_partecipante": {"x": 0.0, "y": 0.0, "z": 0.7},
+             "cumulata": {"x": 0.7, "y": 0.7, "z": 0.7}},
+        ],
+    }
+    solido = {"massa": None, "passi": {}, "modi": []}  # deck senza *FREQUENCY
+    tabella = _confronto.confronta(telaio, solido, None, {"nodi_sommita": [3, 4]})
+    righe_f = {r.grandezza: r for r in tabella.righe if r.grandezza in ("f1", "f2", "f3")}
+    for etichetta in ("f1", "f2", "f3"):
+        assert righe_f[etichetta].classe_solido == "non_confrontabile"
+        assert righe_f[etichetta].ragione, etichetta
+
+    file = _confronto.esporta(tabella, tmp_path)
+    csv_testo = file["csv"].read_text(encoding="utf-8")
+    for etichetta in ("f1", "f2", "f3"):
+        assert etichetta in csv_testo  # il .md le riporta comunque: l'export non le filtra
+
+
+# --- righe 1 e 2: deck o binari assenti -> il test salta, non fallisce; il caso studio vero:
+# NOVA (Task 2) contro il solido ccx (Task 1) sul deck vero -------------------------------
+
+def test_confronto_sul_deck_vero(chiedi, tmp_path, binario_opensees, binario_ccx):
+    if not DECK_VERO.is_file():
+        pytest.skip(f"{DECK_VERO} non c'è (2,5 MB, non versionato)")
+
+    # "Z1" oltre a C1-C3: la massa del telaio (prima riga) viene dal carico_totale di
+    # un'azione di solo peso proprio (`_caso_gravita`), non da una combinazione C<id>.
+    fin = _corsa(chiedi, tmp_path / "nova", casi=["Z1", "C1", "C2", "C3"])
+    telaio = _assicura_ok(fin)
+
+    esito_ccx = _ccx.esegui(DECK_VERO, tmp_path / "ccx")
+    solido = _assicura_ok(esito_ccx)
+
+    tabella = _confronto.confronta(telaio, solido, None, MAPPA_CASI_MURO_1)
+
+    assert tabella.righe[0].grandezza == "massa"
+    scarto_massa = tabella.righe[0].scarto_solido_pct
+    assert scarto_massa is not None
+    # Misurato il 05/09/2026: 38,6 % (denominatore = massa del solido, il riferimento).
+    # Atteso, non un difetto: la trave di fondazione e la trave superiore stanno
+    # sull'interasse nel telaio, zapatas e tamponatura fuori dal solido.
+    assert 37.6 < scarto_massa < 39.6, scarto_massa
+
+    per_grandezza = {r.grandezza: r for r in tabella.righe if r.grandezza in ("f1", "f2", "f3")}
+    for etichetta in ("f1", "f2", "f3"):
+        assert per_grandezza[etichetta].classe_solido != "non_confrontabile", per_grandezza[etichetta]
+
+    file = _confronto.esporta(tabella, tmp_path / "export")
+    tex_testo = file["tex"].read_text(encoding="utf-8")
+    csv_testo = file["csv"].read_text(encoding="utf-8")
+    assert _confronto.AVVERTENZA in tex_testo
+    assert _confronto.AVVERTENZA in csv_testo

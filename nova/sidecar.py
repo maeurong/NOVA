@@ -5,18 +5,21 @@ ogni eccezione diventa `esito: errore` con `fase` e `motivo` (spec: «Protocollo
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import time
 from pathlib import Path
 
+from nova import ccx as _ccx
 from nova import check as _check
+from nova import confronto as _confronto
 from nova import corsa as _corsa
 from nova import deck as _deck
 from nova import importa as _importa
 from nova import modello as _modello
 
-COMANDI = ("verifica", "check", "deck", "corsa", "importa", "fine")
+COMANDI = ("verifica", "check", "deck", "corsa", "ccx", "confronto", "importa", "fine")
 
 
 class _Rifiuto(Exception):
@@ -82,12 +85,12 @@ def comando_deck(req: dict) -> dict:
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
 
 
-def _motivo_prior(e: Exception) -> str:
-    """Il prior rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
+def _motivo_campi(e: Exception, testa: str) -> str:
+    """Il file rotto detto a chi legge: «KeyError: 'riempimento'» è il gergo con cui Python
     parla a se stesso, e chi ha in mano un rilievo non sa che farsene."""
     if isinstance(e, KeyError):
-        return f"il prior non è leggibile: manca il campo «{e.args[0]}»"
-    return f"il prior non è leggibile: un campo porta un valore inatteso ({e})"
+        return f"{testa}: manca il campo «{e.args[0]}»"
+    return f"{testa}: un campo porta un valore inatteso ({e})"
 
 
 def comando_importa(req: dict) -> dict:
@@ -112,7 +115,7 @@ def comando_importa(req: dict) -> dict:
         # Un prior mutilato non è un difetto del sidecar: senza questo ramo la risposta
         # uscirebbe con `fase: sidecar`, che il server passa come 200. `AttributeError` ci
         # sta perché una voce che non è un oggetto (`scartate: ["boh"]`) muore su `.get`.
-        raise _Rifiuto("importa", _motivo_prior(e)) from None
+        raise _Rifiuto("importa", _motivo_campi(e, "il prior non è leggibile")) from None
     resoconto = dict(imp.resoconto)
     if percorso:
         resoconto["percorso"] = str(Path(percorso).resolve())
@@ -144,6 +147,67 @@ def comando_corsa(req: dict, emetti) -> dict:
     return esito
 
 
+def comando_ccx(req: dict, emetti) -> dict:
+    """La corsa del solido: il deck `.inp` è già scritto (lo fa MeshRec), qui si copia e si lancia.
+
+    Nessun Check Model davanti: quello vale sul modello NOVA del telaio, e un deck di
+    CalculiX non è un modello NOVA.
+    """
+    percorso = req.get("inp")
+    if not percorso:
+        raise _Rifiuto("deck", "serve il deck: «inp» con il percorso di un file .inp")
+    try:
+        return _ccx.esegui(Path(percorso), Path(req.get("cartella") or "corsa"),
+                           req.get("solutore"), emetti)
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # un `.dat` o un `.frd` mutilati muoiono dentro `_componi`: senza questo ramo la
+        # risposta esce con `fase: sidecar`, che il server passa come 200
+        raise _Rifiuto("deck", _motivo_campi(e, "le uscite di ccx non sono leggibili")) from None
+
+
+def _leggi_json(percorso: str, che_cosa: str) -> dict:
+    try:
+        letto = json.loads(Path(percorso).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise _Rifiuto("confronto", f"{che_cosa} illeggibile ({percorso}): {e}") from None
+    if not isinstance(letto, dict):
+        raise _Rifiuto("confronto", f"{che_cosa} non è un oggetto JSON ({percorso}): "
+                       f"trovato {type(letto).__name__}")
+    return letto
+
+
+def comando_confronto(req: dict) -> dict:
+    """Il telaio e i due opzionali si leggono e basta: nessuna scrittura prima dell'export."""
+    percorso_telaio = req.get("telaio")
+    if not percorso_telaio:
+        raise _Rifiuto("confronto", "serve il telaio: «telaio» con il percorso di un "
+                       "risultati.nova.risultati.json")
+    telaio = _leggi_json(percorso_telaio, "il telaio")
+    solido = _leggi_json(req["solido"], "il solido") if req.get("solido") else None
+    abaqus = None
+    if req.get("abaqus"):
+        try:
+            abaqus = _confronto.leggi_csv(Path(req["abaqus"]))
+        except (OSError, ValueError) as e:
+            raise _Rifiuto("confronto", str(e)) from None
+    try:
+        tabella = _confronto.confronta(telaio, solido, abaqus, req.get("mappa_casi") or {})
+    except ValueError as e:
+        raise _Rifiuto("confronto", str(e)) from None
+    except (KeyError, TypeError, IndexError, AttributeError) as e:
+        # risultati mutilati (un campo che manca, una lista dove serviva un oggetto): sono
+        # dell'utente, non del sidecar, e devono uscire con la loro fase
+        raise _Rifiuto("confronto", _motivo_campi(e, "i risultati non sono leggibili")) from None
+    file: dict = {}
+    if req.get("cartella"):
+        try:
+            file = _confronto.esporta(tabella, Path(req["cartella"]))
+        except OSError as e:
+            raise _Rifiuto("confronto", str(e)) from None
+    return {"esito": "ok", "tabella": dataclasses.asdict(tabella),
+            "file": {k: str(v) for k, v in file.items()}}
+
+
 def rispondi(req: dict, emetti) -> dict:
     comando = req.get("comando")
     try:
@@ -151,6 +215,10 @@ def rispondi(req: dict, emetti) -> dict:
             return comando_verifica(req)
         if comando == "corsa":
             return comando_corsa(req, emetti)
+        if comando == "ccx":
+            return comando_ccx(req, emetti)
+        if comando == "confronto":
+            return comando_confronto(req)
         if comando == "check":
             return comando_check(req)
         if comando == "deck":
