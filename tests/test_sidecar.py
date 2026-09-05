@@ -776,3 +776,107 @@ def test_il_carico_per_elemento_e_di_float_puri(tmp_path):
     m = modello.assicura_peso_proprio(modello.carica(dati))
     d = _d.scrivi(m, ["Z1", "Z3"], tmp_path)
     assert all(type(x) is float for e in d.elementi for w in e.w.values() for x in w)
+
+
+# --- corsa con un solutore finto: la fase «solutore» senza binario vero ---------------------------
+
+def _finto(tmp_path, corpo: str) -> str:
+    """Un «OpenSees» di due righe: serve a provare le diagnosi, non la meccanica."""
+    p = tmp_path / "OpenSees"
+    p.write_text("#!/bin/sh\n" + corpo)
+    p.chmod(0o755)
+    return str(p)
+
+
+def _corsa(chiedi, tmp_path, fixture="trave_appoggiata.nova.json", **extra):
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": leggi_fixture(fixture),
+                   "cartella": str(tmp_path / "c"), "casi": ["Z1"], **extra})
+    return r[-1]
+
+
+def test_solutore_che_non_scrive_il_marcatore_e_un_errore_di_fase_solutore(chiedi, tmp_path):
+    finto = tmp_path / "OpenSees"
+    finto.write_text("#!/bin/sh\necho 'OpenSees -- Open System For Earthquake Engineering Simulation'\n"
+                     "echo 'Version 3.8.0'\necho WARNING finto\nexit 0\n")
+    finto.chmod(0o755)
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": leggi_fixture("telaio_2x1.nova.json"),
+                   "cartella": str(tmp_path / "c"), "solutore": str(finto)})
+    assert r[-1]["esito"] == "errore" and r[-1]["fase"] == "solutore"
+    assert "marcatore" in r[-1]["motivo"] and "WARNING finto" in r[-1]["coda_log"]
+
+
+def test_solutore_assente_non_e_un_errore(chiedi, tmp_path):
+    (r,) = chiedi({"id": 1, "comando": "corsa", "modello": leggi_fixture("telaio_2x1.nova.json"),
+                   "cartella": str(tmp_path), "solutore": str(tmp_path / "non_esiste")})
+    assert r[-1]["esito"] == "assente" and r[-1]["dove_prenderlo"]
+    assert "non_esiste" in r[-1]["motivo"]
+
+
+def test_verifica_di_un_solutore_dichiarato_e_inesistente_e_assente(chiedi, tmp_path):
+    (r,) = chiedi({"id": 1, "comando": "verifica", "solutore": str(tmp_path / "non_esiste")})
+    assert r[-1]["esito"] == "assente" and r[-1]["dove_prenderlo"]
+    assert "non_esiste" in r[-1]["motivo"]
+
+
+def test_il_marcatore_e_il_testo_non_il_file(chiedi, tmp_path):
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo NIENTE > fine.out\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore" and "marcatore" in fin["motivo"]
+
+
+def test_analyze_fallito_nomina_il_caso_nella_coda_del_log(chiedi, tmp_path):
+    corpo = "echo 'MESHREC_FINE_MANCA: il caso Z1 non è arrivato a convergenza'\nexit 1\n"
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, corpo))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert "il caso Z1" in fin["coda_log"]
+
+
+@pytest.mark.parametrize("scrittura", [": > Z1_spostamenti.out", "echo '1.0 2.0' > Z1_spostamenti.out"],
+                         ids=["vuoto", "troncato"])
+def test_recorder_illeggibile_e_un_errore_di_fase_solutore_col_nome_del_file(chiedi, tmp_path, scrittura):
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, f"{scrittura}\necho MESHREC_FINE > fine.out\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert "Z1_spostamenti.out" in fin["motivo"]
+
+
+def test_recorder_mancante_dopo_il_marcatore_e_di_fase_solutore(chiedi, tmp_path):
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo MESHREC_FINE > fine.out\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert "Z1_spostamenti.out" in fin["motivo"]
+
+
+def test_gli_out_di_una_corsa_precedente_sono_cancellati(chiedi, tmp_path):
+    """Il file stantio è **ben formato** (3 nodi × 6 dof): se non venisse cancellato la lettura
+    riuscirebbe e l'errore nominerebbe il file dopo, `Z1_reazioni.out`."""
+    vecchia = tmp_path / "c"
+    vecchia.mkdir()
+    (vecchia / "Z1_spostamenti.out").write_text(" ".join(["1.0"] * 18) + "\n")
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo MESHREC_FINE > fine.out\n"))
+    assert fin["esito"] == "errore" and "Z1_spostamenti.out" in fin["motivo"]
+
+
+def test_il_registro_con_byte_non_utf8_resta_leggibile(chiedi, tmp_path):
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "printf 'strano \\377\\376 qui\\n'\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert "strano" in fin["coda_log"] and "qui" in fin["coda_log"]
+
+
+def test_la_corsa_oltre_il_timeout_e_un_errore_di_fase_solutore(chiedi, tmp_path, monkeypatch):
+    from nova import corsa as _c
+    monkeypatch.setattr(_c, "_TIMEOUT_S", 0.5)
+    fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "sleep 5\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore" and "timeout" in fin["motivo"]
+
+
+def test_forza_fa_partire_la_corsa_e_tiene_il_rifiuto_del_check(chiedi, tmp_path):
+    fin = _corsa(chiedi, tmp_path, fixture="nodo_libero.nova.json", casi=None, forza=True,
+                 solutore=_finto(tmp_path, "exit 0\n"))
+    assert fin["esito"] == "errore" and fin["fase"] == "solutore"
+    assert any(v["esito"] == "non_passato" for v in fin["verdetti_check"])
+    assert (tmp_path / "c" / "13_telaio.tcl").is_file()
+
+
+def test_il_solutore_fuori_dal_path_e_assente_non_un_errore(chiedi, tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path / "vuoto"))  # nessun OpenSees da nessuna parte
+    fin = _corsa(chiedi, tmp_path)
+    assert fin["esito"] == "assente" and fin["dove_prenderlo"]
+    assert "non è nel PATH" in fin["motivo"]

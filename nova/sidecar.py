@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 from nova import check as _check
+from nova import corsa as _corsa
 from nova import deck as _deck
 from nova import modello as _modello
 
@@ -68,9 +70,35 @@ def comando_deck(req: dict) -> dict:
     return {"esito": "ok", "tcl": str(d.percorso), "resoconto": d.resoconto}
 
 
+def comando_verifica(req: dict) -> dict:
+    return _corsa.verifica(req.get("solutore"))
+
+
+def comando_corsa(req: dict, emetti) -> dict:
+    """Check Model, poi la corsa: `forza` scavalca il rifiuto e se lo porta dietro nei verdetti."""
+    m, imp = _carica(req)
+    t0 = time.perf_counter()
+    emetti({"evento": "fase", "nome": "check model"})
+    verdetti = _check.check_model(m)
+    if _check.rifiutato(verdetti) and not req.get("forza"):
+        return {"esito": "rifiutato", "verdetti_check": verdetti, "secondi": time.perf_counter() - t0}
+    try:
+        esito = _corsa.esegui(m, req.get("casi") or _casi_delle_analisi(m),
+                              Path(req.get("cartella") or "corsa"), req.get("solutore"), emetti, imp)
+    except (ValueError, OSError) as e:
+        return {"esito": "errore", "fase": "deck", "motivo": str(e), "verdetti_check": verdetti,
+                "secondi": time.perf_counter() - t0}
+    esito["verdetti_check"] = verdetti
+    return esito
+
+
 def rispondi(req: dict, emetti) -> dict:
     comando = req.get("comando")
     try:
+        if comando == "verifica":
+            return comando_verifica(req)
+        if comando == "corsa":
+            return comando_corsa(req, emetti)
         if comando == "check":
             return comando_check(req)
         if comando == "deck":
