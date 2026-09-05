@@ -145,7 +145,8 @@ discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio
 
 Tabella completa telaio NOVA ↔ solido CalculiX sul deck vero: [`confronto-2026-09-05.md`](confronto-2026-09-05.md)
 (`confronto.json`/`.csv`/`.tex` nella stessa cartella, rigenerati da `nova.confronto.confronta`/`esporta`
-dopo l'ondata finale di fix, mai a mano; `tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
+dopo il fix round C del pavimento (commit `cb5c006`), mai a mano;
+`tests/test_caso_studio.py::test_confronto_sul_deck_vero`).
 `confronto.tex` richiede `\usepackage{booktabs}` nel documento che lo include (i comandi
 `\toprule`/`\midrule`/`\bottomrule` vengono da lì).
 

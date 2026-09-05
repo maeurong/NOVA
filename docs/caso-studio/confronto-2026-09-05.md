@@ -1,6 +1,6 @@
 # Confronto telaio NOVA (OpenSees) — solido CalculiX, MURO 1
 
-Generato il 05/09/2026, rigenerato dopo l'ondata finale di fix (branch `feat/confronto-calculix`,
+Generato il 05/09/2026, rigenerato dopo il fix round C del pavimento (branch `feat/confronto-calculix`,
 `.superpowers/sdd/2026-09-06-t3-confronto-calculix/`). Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json)
 (T2, Task 4), corsa `ccx` sul deck vero `lab_telaio_v2/wall_model.inp` (non versionato, 2,5 MB).
 Tabella prodotta da `nova.confronto.confronta` e `nova.confronto.esporta`: [`confronto.json`](confronto.json),
@@ -11,14 +11,14 @@ rigenerati da questi file, mai scritti a mano.
 
 | voce | valore |
 |---|---|
-| commit NOVA (codice che ha prodotto questi export) | `a188ac9` |
-| run telaio | `6e46946c1f78` |
-| run solido | `bb6466716691` |
+| commit NOVA (codice che ha prodotto questi export) | `cb5c006` |
+| run telaio | `0f1282221ffe` |
+| run solido | `19bc6cd50faf` |
 | hash modello telaio | `a0768dcb8a9a00c7bdc55bfe906a324f55884608cb66a6cb22025e488f267c9c` |
 | sha256 deck | `c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126` |
 | OpenSees | Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4) |
 | CalculiX | CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt |
-| data corsa | 2026-09-05T10:27:51 |
+| data corsa | 2026-09-05T11:19:06 |
 | `mappa_casi` | `{"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP", "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}` |
 
 **AVVERTENZA: verifica del codice, non validazione — non è una prova di carico.**
@@ -42,34 +42,47 @@ le zapatas (700×700, 2 pezzi) né la tamponatura — è più leggero del volume
 
 | grandezza | caso | telaio | solido | scarto | classe | ragione (se non_confrontabile) |
 |---|---|---|---|---|---|---|
-| reazione_x [N] | C1 | 0 | 0,00001705 | — | non_confrontabile | telaio zero esatto (guardia simmetrica dello scarto) |
+| reazione_x [N] | C1 | 0 | 0,00001705 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0.01) |
 | reazione_z [N] | C1 | 7545 | 4249 | 77,60 % | lontano | — |
-| u_sommita_x [mm] | C1 | ≈ 0 [^zero] | −0,001161 | — | non_confrontabile | valori sotto il pavimento di rumore per «mm» (< 0,001) |
+| u_sommita_x [mm] | C1 | ≈ 0 [^zero] | −0,001161 | — | non_confrontabile | il telaio vale -0,0000000000000005000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001161: i due non concordano, la percentuale non è un numero utile |
 | u_sommita_z [mm] | C1 | −0,001897 | −0,02101 | 90,97 % | lontano | — |
-| reazione_x [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | valori sotto il pavimento di rumore per «N» (< 0,01) |
+| reazione_x [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile |
 | reazione_z [N] | C2 | 7545 | 4249 | 77,60 % | lontano | — |
-| u_sommita_x [mm] | C2 | 0,02790 | −0,0009278 | — | non_confrontabile | valori sotto il pavimento di rumore per «mm» (< 0,001) |
+| u_sommita_x [mm] | C2 | 0,02790 | −0,0009278 | 3107 % | lontano | — |
 | u_sommita_z [mm] | C2 | −0,001897 | −0,02122 | 91,06 % | lontano | — |
-| reazione_x [N] | C3 | 0 | −0,00001648 | — | non_confrontabile | telaio zero esatto (guardia simmetrica dello scarto) |
+| reazione_x [N] | C3 | 0 | −0,00001648 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0.01) |
 | reazione_z [N] | C3 | 8745 | 5449 | 60,51 % | lontano | — |
-| u_sommita_x [mm] | C3 | ≈ 0 [^zero] | −0,001515 | — | non_confrontabile | valori sotto il pavimento di rumore per «mm» (< 0,001) |
+| u_sommita_x [mm] | C3 | ≈ 0 [^zero] | −0,001515 | — | non_confrontabile | il telaio vale -0,000000000000001000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001515: i due non concordano, la percentuale non è un numero utile |
 | u_sommita_z [mm] | C3 | −0,002840 | −0,03291 | 91,37 % | lontano | — |
-| taglio_base [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | valori sotto il pavimento di rumore per «N» (< 0,01) |
+| taglio_base [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile |
 
 [^zero]: `u_sommita_x` del telaio a C1 e C3 è rumore in virgola mobile (≈ 5·10⁻¹⁶ mm, non zero
 esatto): i due casi non hanno spinta orizzontale, il telaio è simmetrico e lo spostamento atteso
-è esattamente zero. Con C8 (pavimento di rumore per unità) questa riga non finisce più in una
-divisione con uno scarto assurdo: il codice la marca `non_confrontabile` con la ragione in
-tabella («sotto il pavimento di rumore per «mm»»), non solo in questa nota.
+è esattamente zero. Il pavimento di rumore per unità (`mm` sotto 0,0001, fix round C, `nova/confronto.py:64`) marca queste
+righe `non_confrontabile` con una di due ragioni distinte, mai «entrambi sotto» qui: il telaio è
+sotto il pavimento ma il solido (−0,001161 mm a C1, −0,001515 mm a C3) è un valore vero, sopra
+soglia — la ragione lo dice esplicitamente («il telaio vale …, sotto il pavimento […]; il
+riferimento …: i due non concordano»), non un «entrambi sotto» generico.
 
 `reazione_z`, `u_sommita_z`, `taglio_base` sono `lontano` sui casi dove il confronto ha un
 riferimento (il denominatore è ora il solido, per il fix di §5: prima del fix era il telaio, e
 gli scarti su queste stesse righe erano numeri diversi, non confrontabili con quelli qui). Bias
 atteso: tetraedri lineari più rigidi → solido più deformabile in proporzione, ma qui il telaio è
 comunque molto più deformabile in assoluto — coerente con l'assenza di zapatas/fondazioni
-deformabili sul lato telaio e con la massa maggiore del telaio. `reazione_x`/`u_sommita_x`/`taglio_base`
-sono `non_confrontabile`: o il telaio dà zero esatto (guardia simmetrica), o uno dei due valori
-sta sotto il pavimento di rumore della sua unità — mai una divisione per un numero senza contenuto.
+deformabili sul lato telaio e con la massa maggiore del telaio.
+
+`u_sommita_x` C2 non è più `non_confrontabile`: col pavimento a 0,0001 mm (fix round C, `nova/confronto.py:64`; prima era
+0,001) né il telaio (0,02790 mm) né il solido (−0,0009278 mm) restano sotto soglia, ed esce
+`lontano` con uno scarto vero (3107 %, denominatore il solido) — un segnale, non rumore: col vecchio
+pavimento il lato solido sarebbe finito sotto soglia e la riga sarebbe stata scartata come
+`non_confrontabile` per un valore che non era rumore.
+
+`reazione_x` e `taglio_base` a C2 restano `non_confrontabile`, ma non per rumore reciproco: il
+telaio riporta una spinta orizzontale vera (−754,5 N, 0,1 g della massa), il solido ccx sotto lo
+stesso passo di spinta orizzontale **non la riporta** (−0,00001480 N, sotto il pavimento di rumore
+per «N»). È un fatto del deck ccx da guardare — la corsa non estrae una reazione orizzontale
+misurabile sotto spinta — non un difetto del confronto: la ragione lo dice nominando i due valori,
+non chiamandolo genericamente «rumore».
 
 ## Modi
 
@@ -87,10 +100,10 @@ sta sotto il pavimento di rumore della sua unità — mai una divisione per un n
 | massa_partecipante_y | 100,0 % | 96,14 % | 4,012 % | concorde |
 | massa_partecipante_z | 100,0 % | 93,94 % | 6,448 % | vicino |
 
-La massa partecipante è la **cumulata** dell'ultimo modo (C1 dell'ondata finale), non la quota
-del solo ultimo modo: sul telaio arriva al 100 % (42 modi, il tetto dei gradi liberi traslazionali
-del deck — `README.md` §Modale), sul solido al 94-96 % (40 modi, `corsa-ccx-2026-09-05.md`
-§Modale: «95 % / 96 % / 94 %», stesso ordine di grandezza dei numeri qui sopra).
+La massa partecipante è la **cumulata** dell'ultimo modo, non la quota del solo ultimo modo: sul
+telaio arriva al 100 % (42 modi, il tetto dei gradi liberi traslazionali del deck — `README.md`
+§Modale), sul solido al 94-96 % (40 modi, `corsa-ccx-2026-09-05.md` §Modale: «95 % / 96 % / 94 %»,
+stesso ordine di grandezza dei numeri qui sopra).
 
 ### Lettura dei modi
 

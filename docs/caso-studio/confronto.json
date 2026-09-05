@@ -26,7 +26,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "",
-   "ragione": null
+   "ragione": "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
   },
   {
    "grandezza": "reazione_z",
@@ -54,7 +54,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile",
-   "ragione": "valori sotto il pavimento di rumore per «mm» (< 0.001)"
+   "ragione": "il telaio vale -0,0000000000000005000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001161: i due non concordano, la percentuale non è un numero utile"
   },
   {
    "grandezza": "u_sommita_z",
@@ -82,7 +82,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "",
-   "ragione": "valori sotto il pavimento di rumore per «N» (< 0.01)"
+   "ragione": "il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile"
   },
   {
    "grandezza": "reazione_z",
@@ -105,12 +105,12 @@
    "telaio": 0.0278957001693,
    "solido": -0.0009278359396039626,
    "abaqus": null,
-   "scarto_solido_pct": null,
+   "scarto_solido_pct": 3106.5336961625994,
    "scarto_abaqus_pct": null,
-   "classe_solido": "non_confrontabile",
+   "classe_solido": "lontano",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile",
-   "ragione": "valori sotto il pavimento di rumore per «mm» (< 0.001)"
+   "ragione": null
   },
   {
    "grandezza": "u_sommita_z",
@@ -138,7 +138,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "",
-   "ragione": null
+   "ragione": "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
   },
   {
    "grandezza": "reazione_z",
@@ -166,7 +166,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "tetraedri lineari più rigidi → spostamenti e periodi del solido più piccoli; telaio senza nodo rigido né fondazioni deformabili → telaio più deformabile",
-   "ragione": "valori sotto il pavimento di rumore per «mm» (< 0.001)"
+   "ragione": "il telaio vale -0,000000000000001000 mm, sotto il pavimento (< 0.0001); il riferimento -0,001515: i due non concordano, la percentuale non è un numero utile"
   },
   {
    "grandezza": "u_sommita_z",
@@ -194,7 +194,7 @@
    "classe_solido": "non_confrontabile",
    "classe_abaqus": "non_confrontabile",
    "bias_atteso": "",
-   "ragione": "valori sotto il pavimento di rumore per «N» (< 0.01)"
+   "ragione": "il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile"
   },
   {
    "grandezza": "f1",
@@ -282,14 +282,14 @@
   }
  ],
  "provenienza": {
-  "commit_nova": "a188ac9",
-  "run_id_telaio": "6e46946c1f78",
+  "commit_nova": "cb5c006",
+  "run_id_telaio": "0f1282221ffe",
   "hash_modello": "a0768dcb8a9a00c7bdc55bfe906a324f55884608cb66a6cb22025e488f267c9c",
-  "run_id_solido": "bb6466716691",
+  "run_id_solido": "19bc6cd50faf",
   "sha256_deck_solido": "c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126",
   "versione_opensees": "Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4)",
   "versione_calculix": "CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt",
-  "data": "2026-09-05T10:27:51"
+  "data": "2026-09-05T11:19:06"
  },
  "avvertenza": "verifica del codice, non validazione"
 }
