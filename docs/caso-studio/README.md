@@ -97,14 +97,15 @@ File: [`muro_1.nova.json`](muro_1.nova.json). Corsa vera su OpenSees 3.8.0 (`chi
 | voce | valore |
 |---|---|
 | massa telaio NOVA (Σ Rz del caso C1 / g) | **0,7694 t** |
-| massa solido ccx (mesh del solutore, `corsa-ccx-2026-09-05.md`) | 0,4331 t |
-| scarto relativo | **+77,65 %** |
+| massa solido ccx (ρ · V della mesh, `corsa-ccx-2026-09-05.md`, corretta il 06/09) | 0,5551 t |
+| scarto relativo | **+38,6 %** |
 
 Atteso e non un difetto: il telaio NOVA porta l'intera trave di fondazione sull'interasse (2262,
 non i 1300 mm «fra le zapatas») e la trave superiore sull'interasse (non la luce netta 2090),
-mentre il solido ccx è già più piccolo del volume nominale della tavola (0,4777 m³ con le
-zapatas) — lo scarto fra 0,4331 t e i 0,555 t/0,218 m³ della spec è già segnalato, non risolto,
-in `corsa-ccx-2026-09-05.md`. Nessuna riconciliazione qui: verifica del codice, non validazione.
+mentre il solido ccx (0,2177 m³) è più piccolo del volume nominale della tavola (0,4777 m³ con le
+zapatas). Il numero 0,4331 t che circolava era Σ Rz / g, cioè la massa **meno** la quota tributaria
+dei nodi di `BASE` (vedi `corsa-ccx-2026-09-05.md`, corretto il 06/09/2026). Verifica del codice,
+non validazione.
 
 ### Reazioni per caso (Σ sui nodi vincolati 1 e 2)
 
