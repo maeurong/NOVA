@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,8 +51,10 @@ class SidecarProcesso:
     coda finché la UI è una sola — ponytail, si aggiunge quando servirà davvero)."""
 
     def __init__(self, solutore: str | None = None, avvia: Callable[[], subprocess.Popen] | None = None):
+        # `cwd` esplicito: il sottoprocesso deve trovare `nova.sidecar` a partire dalla
+        # radice del pacchetto, non dalla cwd di chi ha lanciato `python -m nova`.
         avvia = avvia or (lambda: subprocess.Popen(
-            [sys.executable, "-m", "nova.sidecar"],
+            [sys.executable, "-m", "nova.sidecar"], cwd=str(STATICI.parent),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1))
         self.p = avvia()
         self.solutore = solutore
@@ -66,21 +68,26 @@ class SidecarProcesso:
             corpo = {**req, "id": rid}
             if self.solutore:
                 corpo["solutore"] = self.solutore
-            self.p.stdin.write(json.dumps(corpo) + "\n")
-            self.p.stdin.flush()
-            righe: list[dict] = []
-            while True:
-                riga = self.p.stdout.readline()
-                if not riga:
-                    righe.append({"esito": "errore", "fase": "sidecar",
-                                  "motivo": "il sidecar ha chiuso lo stdout"})
-                    return righe
-                d = json.loads(riga)
-                if d.get("id") != rid:
-                    continue
-                righe.append(d)
-                if "evento" not in d:
-                    return righe
+            try:
+                self.p.stdin.write(json.dumps(corpo) + "\n")
+                self.p.stdin.flush()
+                righe: list[dict] = []
+                while True:
+                    riga = self.p.stdout.readline()
+                    if not riga:
+                        righe.append({"esito": "errore", "fase": "sidecar",
+                                      "motivo": "il sidecar ha chiuso lo stdout"})
+                        return righe
+                    grezza = json.loads(riga)
+                    if grezza.get("id") != rid:
+                        continue
+                    # `id` è solo correlazione del protocollo: non esce mai nel corpo HTTP.
+                    d = {k: v for k, v in grezza.items() if k != "id"}
+                    righe.append(d)
+                    if "evento" not in d:
+                        return righe
+            except Exception as e:  # pipe chiusa, riga non JSON: un errore di dominio, non un 500 muto
+                return [{"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}]
 
 
 def _finale(righe: list[dict]) -> dict:
@@ -109,10 +116,26 @@ class CorsaReq(_CorpoBase):
     casi: list[str] | None = None
 
 
-def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI) -> FastAPI:
+def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
     cartella_corse.mkdir(parents=True, exist_ok=True)
+
+    # DNS rebinding: un sito che risolve un nome verso 127.0.0.1 potrebbe far leggere/scrivere
+    # modelli al browser di chi ci naviga sopra. Solo l'`Host` locale (con la porta vera, se
+    # nota) è ammesso; l'`Origin`, quando c'è, deve essere lo stesso. Il bind resta 127.0.0.1.
+    host_ammessi = {"127.0.0.1", "localhost"} | ({f"127.0.0.1:{porta}", f"localhost:{porta}"} if porta else set())
+    origin_ammessi = {f"http://127.0.0.1:{porta}", f"http://localhost:{porta}"} if porta else set()
+
+    @app.middleware("http")
+    async def _blocca_host_estraneo(request: Request, call_next):
+        host = request.headers.get("host", "")
+        if host not in host_ammessi:
+            return JSONResponse(status_code=403, content={"motivo": f"host non ammesso: {host}"})
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in (origin_ammessi or {f"http://{host}"}):
+            return JSONResponse(status_code=403, content={"motivo": f"origin non ammesso: {origin}"})
+        return await call_next(request)
 
     def _o_400(fin: dict) -> dict:
         if fin.get("esito") == "errore" and fin.get("fase") == "modello":
@@ -153,7 +176,7 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI) -> FastAP
             raise HTTPException(404, detail={"motivo": f"{p} non esiste"})
         try:
             m = _modello.carica(json.loads(p.read_text(encoding="utf-8")))
-        except (ValueError, json.JSONDecodeError) as e:
+        except ValueError as e:  # json.JSONDecodeError è già un ValueError
             raise HTTPException(400, detail={"motivo": str(e)})
         return {"modello": m.model_dump(mode="json", exclude_none=True), "impronta": _modello.impronta(m)}
 

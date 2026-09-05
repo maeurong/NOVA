@@ -107,7 +107,8 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     perpendicolari ad `h` (distese lungo `b`), `sx`/`dx` quelle alle facce perpendicolari a `b`
     (distese lungo `h`). `colloca` riceve sempre la sezione nominale `(b, h)` e le coordinate si
     portano sugli assi locali dopo, con la stessa rotazione della `patch rect`: un pilastro 300×600
-    con `inf` tiene le barre a −260 dal baricentro lungo `h`, non spalmate sui 600.
+    con `inf` tiene le barre a −252 dal baricentro lungo `h` (300 − copriferro 30 − staffa 8 −
+    diametro/2 10), non spalmate sui 600.
 
     `inf`/`sup` passano da `armatura.colloca` (verificata in MeshRec); `sx`/`dx` a filo dei lati,
     equidistanti fra i due strati (ponytail: una fila per lato, senza interferro verificato).

@@ -80,6 +80,47 @@ def test_catalogo_personalizzato_vince_sulla_classe():
     assert v["E"] == 20000.0 and v["fck"] == 25.0
 
 
+# --- Fix wave: messaggi di carica() in italiano -----------------------------
+
+def test_carica_senza_unita_dice_campo_obbligatorio_in_italiano():
+    from nova.modello import carica
+    d = leggi_fixture("telaio_2x1.nova.json")
+    del d["unita"]
+    with pytest.raises(ValueError, match=r"unita: campo obbligatorio"):
+        carica(d)
+
+
+def test_carica_con_campo_sconosciuto_dice_campo_non_previsto_in_italiano():
+    from nova.modello import carica
+    d = leggi_fixture("telaio_2x1.nova.json")
+    d["nodi"][0]["colore"] = "rosso"
+    with pytest.raises(ValueError, match=r"nodi\.0\.colore: campo non previsto"):
+        carica(d)
+
+
+# --- Fix wave: la Tcl injection sulla `classe` del materiale ----------------
+# nova/deck.py scrive `m.materiale(...).classe` in un commento Tcl (`;# {classe}`):
+# una `classe` libera con `\n` o `{` è un comando Tcl che il rifiuto qui a monte
+# non lascia mai arrivare al deck, neanche con `personalizzato: true`.
+
+def test_classe_con_a_capo_e_rifiutata_anche_personalizzata():
+    from nova.modello import carica
+    d = leggi_fixture("telaio_2x1.nova.json")
+    d["materiali"][0]["personalizzato"] = True
+    d["materiali"][0]["classe"] = "C25/30\nexec rm -rf /"
+    with pytest.raises(ValueError, match=r"materiali\.0\.classe"):
+        carica(d)
+
+
+def test_classe_con_parentesi_graffa_e_rifiutata():
+    from nova.modello import carica
+    d = leggi_fixture("telaio_2x1.nova.json")
+    d["materiali"][0]["personalizzato"] = True
+    d["materiali"][0]["classe"] = "C25/30 {puts pwned}"
+    with pytest.raises(ValueError):
+        carica(d)
+
+
 # --- Ingressi degeneri non coperti dai test sopra --------------------------
 
 

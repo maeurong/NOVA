@@ -18,13 +18,14 @@ from conftest import leggi_fixture
 @pytest.fixture
 def cliente(tmp_path):
     from nova.server import SidecarInProcesso, create_app
-    return TestClient(create_app(SidecarInProcesso(), tmp_path / "corse"), raise_server_exceptions=False)
+    return TestClient(create_app(SidecarInProcesso(), tmp_path / "corse"), raise_server_exceptions=False,
+                       base_url="http://127.0.0.1")
 
 
 def _app_con_solutore(tmp_path, percorso_solutore):
     from nova.server import SidecarInProcesso, create_app
     return TestClient(create_app(SidecarInProcesso(solutore=percorso_solutore), tmp_path / "corse"),
-                       raise_server_exceptions=False)
+                       raise_server_exceptions=False, base_url="http://127.0.0.1")
 
 
 # --- Step 1 del brief (baseline) --------------------------------------------
@@ -209,21 +210,19 @@ def test_risultati_run_id_inesistente_e_404(cliente):
     assert r.status_code == 404
 
 
-def test_risultati_run_id_con_punti_e_404(cliente):
+def test_risultati_run_id_con_punti_non_legge_fuori_da_cartella_corse(cliente, tmp_path):
+    # un file col nome giusto ma un livello sopra cartella_corse: se ".." risalisse
+    # davvero, lo troverebbe. Deve restare 404 e il segreto non deve comparire.
+    from nova.corsa import NOME_RISULTATI
+    segreto = tmp_path / NOME_RISULTATI
+    segreto.write_text('{"top": "secret"}', encoding="utf-8")
     r = cliente.get(f"/api/risultati/{quote('..', safe='')}")
     assert r.status_code == 404
+    assert "secret" not in r.text
 
 
 def test_risultati_run_id_con_slash_percent_encoded_e_404(cliente):
     r = cliente.get(f"/api/risultati/{quote('../../../etc/passwd', safe='')}")
-    assert r.status_code == 404
-
-
-def test_risultati_non_legge_fuori_da_cartella_corse(cliente, tmp_path):
-    # un segreto fuori da cartella_corse: nessun run_id valido può raggiungerlo
-    segreto = tmp_path / "segreto.json"
-    segreto.write_text('{"top": "secret"}', encoding="utf-8")
-    r = cliente.get("/api/risultati/000000000000")
     assert r.status_code == 404
 
 
@@ -272,7 +271,7 @@ def test_sidecarprocesso_ignora_righe_di_unaltra_richiesta():
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
-    assert righe == [{"id": 1, "esito": "ok"}]
+    assert righe == [{"esito": "ok"}]  # l'`id` di correlazione non esce mai (fix wave, finding 1)
 
 
 # riga 16: GET / -> 200 con static/index.html (già test_la_radice_serve_la_pagina); static assente -> errore a create_app
@@ -283,18 +282,24 @@ def test_create_app_fallisce_allavvio_se_static_manca(tmp_path):
 
 
 # riga 17: python -m nova con porta occupata -> messaggio che nomina la porta, non traceback di uvicorn
-def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys):
+def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_path):
     import nova.__main__ as m
+
+    monkeypatch.chdir(tmp_path)  # altrimenti main() crea "corse/" nella cwd di pytest
 
     def _bind_occupato(*a, **k):
         raise OSError(48, "Address already in use")
 
+    terminato = []
+    finto_sidecar = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
+
     monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(_bind_occupato)}))
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: object())
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto_sidecar)
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
     with pytest.raises(SystemExit) as exc:
         m.main(["--porta", "8765"])
     assert "8765" in str(exc.value)
+    assert terminato == [True]  # il sottoprocesso del sidecar non resta orfano
 
 
 # riga 18: corpo di /api/corsa con solutore o cartella -> ignorati (extra="forbid" -> 422), mai inoltrati
@@ -308,3 +313,89 @@ def test_corsa_con_cartella_nel_corpo_e_422(cliente):
     r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json"),
                                          "cartella": "/tmp/altrove"})
     assert r.status_code == 422
+
+
+# --- Fix wave (finding 1, critical): SidecarProcesso non deve far uscire l'`id`
+# di correlazione del protocollo nel corpo HTTP. Sul sottoprocesso vero, non su
+# SidecarInProcesso (che non ha mai avuto `id`: da qui il buco era invisibile).
+
+@pytest.fixture
+def cliente_sottoprocesso(tmp_path):
+    from nova.server import SidecarProcesso, create_app
+    sp = SidecarProcesso()
+    cliente = TestClient(create_app(sp, tmp_path / "corse"), raise_server_exceptions=False,
+                         base_url="http://127.0.0.1")
+    yield cliente
+    sp.p.terminate()
+
+
+def test_sidecarprocesso_reale_non_espone_id_nel_corpo(cliente_sottoprocesso):
+    r = cliente_sottoprocesso.get("/api/salute")
+    assert r.status_code == 200 and "id" not in r.json()
+
+
+def test_sidecarprocesso_reale_check_non_espone_id_nel_corpo(cliente_sottoprocesso):
+    r = cliente_sottoprocesso.post("/api/check", json={"modello": leggi_fixture("nodo_libero.nova.json")})
+    assert r.status_code == 200 and "id" not in r.json()
+
+
+# --- Fix wave (finding 3, important): DNS rebinding — Host/Origin estranei -> 403
+
+def test_host_estraneo_e_403(cliente):
+    r = cliente.get("/api/salute", headers={"Host": "evil.example"})
+    assert r.status_code == 403 and "motivo" in r.json()
+
+
+def test_origin_estraneo_e_403(cliente):
+    r = cliente.get("/api/salute", headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403 and "motivo" in r.json()
+
+
+def test_host_con_porta_configurata_e_ammesso(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    app = create_app(SidecarInProcesso(), tmp_path / "corse", porta=8765)
+    cliente = TestClient(app, raise_server_exceptions=False, base_url="http://127.0.0.1:8765")
+    r = cliente.get("/api/salute")
+    assert r.status_code == 200
+
+
+# --- Fix wave (finding 4, important): SidecarProcesso.chiedi senza `except` —
+# pipe chiusa o riga corrotta diventano 500 col traceback invece di un errore di dominio
+
+def test_sidecarprocesso_pipe_chiusa_diventa_errore_fase_sidecar():
+    from nova.server import SidecarProcesso
+
+    class _FintoStdin:
+        def write(self, s):
+            raise BrokenPipeError("il sidecar ha già chiuso stdin")
+        def flush(self): pass
+
+    class _FintoProcesso:
+        stdin = _FintoStdin()
+        stdout = None
+
+    sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
+    righe = sp.chiedi({"comando": "verifica"})
+    assert righe[-1]["esito"] == "errore" and righe[-1]["fase"] == "sidecar"
+
+
+def test_sidecarprocesso_riga_corrotta_diventa_errore_fase_sidecar():
+    from nova.server import SidecarProcesso
+
+    class _FintoStdin:
+        def write(self, s): pass
+        def flush(self): pass
+
+    class _FintoStdout:
+        def __init__(self):
+            self._righe = iter(["questa non è una riga JSON\n"])
+        def readline(self):
+            return next(self._righe, "")
+
+    class _FintoProcesso:
+        stdin = _FintoStdin()
+        stdout = _FintoStdout()
+
+    sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
+    righe = sp.chiedi({"comando": "verifica"})
+    assert righe[-1]["esito"] == "errore" and righe[-1]["fase"] == "sidecar"

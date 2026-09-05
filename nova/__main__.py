@@ -28,12 +28,15 @@ def _argomenti(argv: list[str] | None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = _argomenti(argv)
     porta = args.porta or int(os.environ.get("NOVA_PORTA", PORTA_DEFAULT))
-    app = create_app(SidecarProcesso(solutore=args.solutore), Path("corse"))
+    sidecar = SidecarProcesso(solutore=args.solutore)
+    app = create_app(sidecar, Path("corse"), porta=porta)
     threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{porta}/")).start()
     try:
         uvicorn.run(app, host="127.0.0.1", port=porta, log_level="warning")
     except OSError as e:
         sys.exit(f"impossibile avviare NOVA sulla porta {porta}: {e}")
+    finally:
+        sidecar.p.terminate()  # niente sottoprocesso orfano, né sull'errore né all'uscita normale
 
 
 if __name__ == "__main__":

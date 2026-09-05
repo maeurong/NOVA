@@ -104,7 +104,10 @@ class Materiale(_Base):
     id: int
     nome: str
     tipo: Literal["calcestruzzo", "acciaio"]
-    classe: str
+    # `deck.py` scrive questo campo in un commento Tcl (`;# {classe}`): il set di
+    # caratteri chiude la Tcl injection (`\n`/`{`/`}` = un comando) SEMPRE, anche
+    # con `personalizzato: true` — non solo quando la classe deve esistere a catalogo.
+    classe: str = Field(pattern=r"^[A-Za-z0-9 /_.-]+$")
     valori: dict[str, float] = {}
     personalizzato: bool = False
 
@@ -265,6 +268,20 @@ class Modello(_Base):
 MIGRAZIONI: dict[int, callable] = {}  # {da_versione: fn(dati) -> dati}; vuoto finché lo schema è 1
 
 
+# I `type` di pydantic più comuni, tradotti; gli altri passano col `msg` inglese di pydantic
+# com'è (meglio un inglese leggibile che un buco nella traduzione).
+_FRASI_ERRORE: dict[str, str] = {
+    "missing": "campo obbligatorio",
+    "extra_forbidden": "campo non previsto",
+    "int_parsing": "deve essere un numero intero",
+    "float_parsing": "deve essere un numero",
+    "literal_error": "valore non ammesso",
+    "string_pattern_mismatch": "non rispetta il formato richiesto",
+    "finite_number": "deve essere un numero finito (niente NaN/Infinity)",
+    "greater_than_equal": "deve essere maggiore o uguale al minimo consentito",
+}
+
+
 def carica(dati: dict) -> Modello:
     """Dizionario → Modello, con migrazioni e un messaggio che nomina il campo sbagliato."""
     if not isinstance(dati, dict):
@@ -283,7 +300,8 @@ def carica(dati: dict) -> Modello:
         righe = []
         for err in e.errors():
             dove = ".".join(str(p) for p in err["loc"]) or "radice"
-            righe.append(f"{dove}: {err['msg']}")
+            frase = _FRASI_ERRORE.get(err["type"], err["msg"])
+            righe.append(f"{dove}: {frase}")
         raise ValueError("modello rifiutato — " + "; ".join(righe)) from None
 
 
