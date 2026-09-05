@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import math
 
-from nova import deck as _deck
 from nova import modello as _modello
 from nova.modello import Modello
 
@@ -157,7 +156,7 @@ def check_model(m: Modello) -> list[dict]:
     # Due controlli che in T1 non hanno un oracolo: dichiararli qui come «non applicabile» è
     # l'unico modo di non farli sembrare verdi. Il primo sostituisce `sezioni_senza_barre` del
     # resoconto del deck, che nessuno leggeva fuori dal comando `deck`.
-    scoperte = [s.id for s in m.sezioni if _deck.senza_barre(s)]
+    scoperte = [s.id for s in m.sezioni if _modello.senza_barre(s)]
     v.append(_v("armatura_mancante", "non_applicabile",
                 "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
                 "con il non lineare (T4)", scoperte or None))

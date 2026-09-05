@@ -111,6 +111,15 @@ class Sezione(_Base):
     origine: Origine | None = None
 
 
+def senza_barre(s: Sezione) -> bool:
+    """La sezione non porta barre: nessuna fila dichiarata, o nessuna staffa da cui scostarle.
+
+    Sta qui e non in `deck.py` perché il Check Model (C1) la legge **prima** del deck, e non
+    deve tirarsi dietro il generatore del `.tcl` per una condizione sul modello dati.
+    """
+    return not s.file or s.staffe is None
+
+
 class Materiale(_Base):
     id: int
     nome: str

@@ -1097,3 +1097,38 @@ def test_forza_con_materiale_inesistente_nomina_sezione_e_materiale(chiedi, tmp_
     assert "sezione 1" in r["motivo"] and "99" in r["motivo"] and campo in r["motivo"]
     assert "AttributeError" not in r["motivo"]
     assert not (tmp_path / "13_telaio.tcl").exists()
+
+
+def test_la_fila_sx_che_si_scavalca_su_b_lo_dice(chiedi, tmp_path):
+    """100×500, copriferro 40, staffe Ø8, Ø16: 2·56 ≥ 100 su `b`, ma 2·56 < 500 su `h`.
+    Il messaggio deve nominare la dimensione giusta, non quella che scatta per prima."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0].update({"b": 100, "h": 500, "copriferro": 40,
+                            "file": [{"lato": "sx", "n": 2, "diametro": 16}]})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and r["fase"] == "deck"
+    assert "sezione 1" in r["motivo"] and "i copriferri opposti si sovrappongono su b" in r["motivo"]
+
+
+def test_la_sezione_stretta_con_la_sola_fila_inf_non_e_rifiutata(chiedi, tmp_path):
+    """96×500 con una sola Ø20 `inf`: non c'è nessuna fila opposta lungo `b`, e il fit
+    della fila fra le staffe (1·20 ≤ 96 − 2·38) lo controlla già `armatura.colloca`.
+    Rifiutarla era un falso positivo, per giunta con un messaggio che parlava di `b`."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0].update({"b": 96, "h": 500, "copriferro": 30,
+                            "file": [{"lato": "inf", "n": 1, "diametro": 20}]})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "ok", r
+    blocco = _tcl(tmp_path).split("section Fiber")[1]
+    fibre = [x for x in blocco.splitlines() if x.strip().startswith("fiber ")]
+    assert len(fibre) == 1 and float(fibre[0].split()[1]) == -202.0  # 500/2 − 30 − 8 − 10
+
+
+def test_la_fila_sx_si_scavalca_anche_su_h_e_colloca_non_la_vede(chiedi, tmp_path):
+    """Il ramo `sx`/`dx` non passa da `armatura.colloca`: `z0` e `passo` li calcola `_barre`
+    a mano sull'altezza, quindi la sovrapposizione lungo `h` la può vedere solo la guardia."""
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["sezioni"][0].update({"b": 300, "h": 100, "copriferro": 40,
+                            "file": [{"lato": "sx", "n": 2, "diametro": 16}]})
+    r = _deck(chiedi, tmp_path, m)
+    assert r["esito"] == "errore" and "sovrappongono su h" in r["motivo"]

@@ -17,7 +17,7 @@ import numpy as np
 
 from meshrec.core import armatura, opensees
 from nova import catalogo
-from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati
+from nova.modello import Modello, Sezione, caso_valido, casi_dichiarati, senza_barre
 
 NOME_TCL = "13_telaio.tcl"
 GRAVITA = 9806.65
@@ -98,11 +98,6 @@ def _dimensioni_lungo(s: Sezione, verticale: bool) -> tuple[float, float]:
     return (s.h, s.b) if verticale else (s.b, s.h)
 
 
-def senza_barre(s: Sezione) -> bool:
-    """La condizione con cui `_barre` rende la lista vuota, letta anche dal Check Model (C1)."""
-    return not s.file or s.staffe is None
-
-
 def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     """Posizioni delle barre nel piano locale (e1, e2), centrate sul baricentro.
 
@@ -123,6 +118,12 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
     e barre Ø16 (40 + 8 + 8 = 56 > 50), dove le barre `inf` finivano a z = +6, cioè **sopra**
     il baricentro, e le `sx`/`dx` si ammucchiavano attorno a zero con passo negativo. La
     guardia sta qui e non in `meshrec/`, che è copia verbatim.
+
+    Quella guardia è **per gruppo di file**, non per sezione: `inf`/`sup` misurano la sola `h`,
+    `sx`/`dx` misurano `h` e `b`. Il fit lungo `b` di una fila `inf`/`sup` lo fa già `colloca`
+    (`n·Ø ≤ b − 2·(copriferro + staffa)`, `armatura._fila`), e ricontrollarlo qui rifiutava una
+    96×500 con una sola Ø20 `inf` che sta in piedi benissimo — per giunta dicendo «copriferri
+    opposti su b», dove di file opposte non ce n'è nessuna.
     """
     lati = [f.lato for f in s.file]
     doppio = next((x for x in lati if lati.count(x) > 1), None)
@@ -132,14 +133,23 @@ def _barre(s: Sezione, verticale: bool) -> list[Barra]:
         return []
     file = {f.lato: f for f in s.file}
     st = s.staffe
-    mezza_barra = max(f.diametro for f in s.file) / 2
-    ingombro = s.copriferro + st.diametro + mezza_barra
-    for lato, dimensione in (("h", s.h), ("b", s.b)):
-        if 2 * ingombro >= dimensione:
+    # Ogni gruppo di file guarda **solo** le dimensioni su cui può scavalcarsi davvero.
+    # Lungo `h` si misurano tutte: `inf`/`sup` con lo scostamento delle due facce, `sx`/`dx`
+    # con `z0` e `passo`. Lungo `b` solo `sx`/`dx`: per `inf`/`sup` il fit lungo `b` è il
+    # `n·Ø ≤ b − 2·(copriferro + staffa)` che `armatura.colloca` controlla già, e ricontrollarlo
+    # qui rifiuterebbe sezioni sane (una 96×500 con una sola Ø20 `inf` sta in piedi benissimo).
+    # `sx`/`dx` invece `colloca` non lo chiamano mai: là la guardia è l'unica che guarda.
+    for quota, dimensione, gruppo in (("h", s.h, ("inf", "sup", "sx", "dx")), ("b", s.b, ("sx", "dx"))):
+        diametri = [f.diametro for f in s.file if f.lato in gruppo]
+        if not diametri:
+            continue
+        mezza_barra = max(diametri) / 2
+        ingombro = s.copriferro + st.diametro + mezza_barra
+        if 2 * ingombro >= dimensione:  # «≥ dimensione/2», scritto senza dividere
             raise ValueError(
-                f"sezione {s.id} «{s.nome}»: i copriferri opposti si sovrappongono su {lato} "
+                f"sezione {s.id} «{s.nome}»: i copriferri opposti si sovrappongono su {quota} "
                 f"(copriferro {s.copriferro:g} + staffa {st.diametro:g} + mezza barra "
-                f"{mezza_barra:g} = {ingombro:g} mm, metà di {lato} = {dimensione / 2:g} mm)")
+                f"{mezza_barra:g} = {ingombro:g} mm, metà di {quota} = {dimensione / 2:g} mm)")
     inf, sup = file.get("inf"), file.get("sup")
     piano: list[Barra] = []  # y lungo b, z lungo h, dal baricentro
     try:
