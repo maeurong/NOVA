@@ -13,12 +13,23 @@ from meshrec.core import materiali as _materiali
 
 UNITA = "mm-N-MPa-t-s"
 VERSIONE_SCHEMA = 1
+# La versione dei **default**, che è cosa diversa da `VERSIONE_SCHEMA` (il formato del file, con
+# le sue `MIGRAZIONI`): entra nel canonico di `impronta` e si bumpa **a mano** quando cambia il
+# valore di un default che finisce nel `.tcl`. Vale 2 perché 1 era l'impronta senza versione.
+VERSIONE_IMPRONTA = 2
 
 # La forma di un caso di carico, in **un** punto solo: `AnalisiStatica` la dà a pydantic,
 # `deck.py` e `server.py` la rileggono da qui. Chi la usa in Python passa da `caso_valido`
 # e non da `match`: `$` di Python accetta l'a capo finale, e `int("1\n")` non se ne accorge.
 FORMA_CASO = r"^[ZC][0-9]+$"
 _FORMA_CASO = re.compile(FORMA_CASO)
+
+
+# `ux`/`uy`/`uz` → offset di colonna, cioè l'ordine di `Vincolo.gradi()` e delle sei colonne
+# che un `recorder Node -dof 1 2 3 4 5 6` scrive per nodo. OpenSees conta i dof **da 1**, e la
+# conversione la fa `deck.DOF_TCL` con un `+1` esplicito: due dizionari con le stesse chiavi e
+# basi diverse erano il modo più silenzioso di sbagliare una colonna.
+DOF_COLONNA = {"ux": 0, "uy": 1, "uz": 2}
 
 
 def caso_valido(caso) -> bool:
@@ -138,6 +149,43 @@ def senza_barre(s: Sezione) -> bool:
     return not s.file or s.staffe is None
 
 
+class Legame(_Base):
+    """Il legame costitutivo non lineare di un materiale: tutti campi, tutti sovrascrivibili.
+
+    I default sono quelli che `nova/legami.py` deriva dalla classe NTC e dalla veste; qui
+    stanno solo le scelte che la norma non fissa (`lambda`, `fpcu/fpc`, `R0 cR1 cR2`) e le
+    deroghe a quelle che fissa (`epsU_nucleo` contro la [4.1.11], `fym` contro `f_yk`).
+    `None` non vuol dire zero: vuol dire «lo decide la norma».
+
+    `lambda` è una parola riservata di Python. Il campo si chiama `lambda_` e l'alias tiene
+    il nome che il JSON e la riga `uniaxialMaterial` portano davvero; `populate_by_name` e
+    `serialize_by_alias` fanno sì che entrambe le grafie entrino e che il `model_dump` che
+    `server.py` risalva si rilegga da solo, che con `extra="forbid"` non è scontato.
+    """
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+    # Il materiale non dichiara il proprio `uniaxialMaterial`: lo decide `confinamento` per il
+    # calcestruzzo (`Concrete02` di norma, `Concrete04` con Mander) e la famiglia per l'acciaio.
+    # I tetti sono limiti **fisici**, non una convenzione: senza, un numero enorme non è un
+    # rifiuto ma un `inf` dentro la riga `uniaxialMaterial` (misurato: `fpcu_su_fpc: 1e307` →
+    # `fpcu = -inf` nel `.tcl`, che l'interprete manda giù).
+    confinamento: Literal["nessuno", "ntc", "mander"] = "ntc"
+    epsU_copriferro: float = Field(0.0035, gt=0, le=0.1)  # 10 % è già oltre ogni calcestruzzo
+    epsU_nucleo: float | None = Field(None, gt=0, le=0.1)  # None → ε_cu2,c dalla [4.1.11]
+    lambda_: float = Field(0.1, ge=0, le=1, alias="lambda")  # è un rapporto fra pendenze
+    # rapporto fra la resistenza residua e quella di picco: 0 = copriferro che si sbriciola
+    # (RCFrameGravity), 1 = nessuna caduta. Sopra 1 il ramo non è più di scarico.
+    fpcu_su_fpc: float = Field(0.2, ge=0, le=1)
+    Es: float = Field(200000.0, gt=0, le=1e6)  # acciaio da c.a.: 200 000, cinque volte è già tanto
+    fym: float | None = None  # None → f_yk della classe (450 per B450C): f_ym non ha fonte
+    # rapporto fra la pendenza incrudente e quella elastica: 0 = elastico-perfetto, 1 = nessun
+    # ginocchio. None → da k e ε_ud della classe.
+    b: float | None = Field(None, ge=0, le=1)
+    R0: float = Field(18, gt=0, le=50)  # transizione di Steel02: la doc OpenSees consiglia 10÷20
+    cR1: float = 0.925
+    cR2: float = 0.15
+
+
 class Materiale(_Base):
     id: int
     nome: str
@@ -149,6 +197,7 @@ class Materiale(_Base):
     origine: Origine | None = None
     valori: dict[str, float] = {}
     personalizzato: bool = False
+    legame: Legame = Legame()
 
     @model_validator(mode="after")
     def _la_classe_esiste_nel_catalogo(self):
@@ -239,8 +288,17 @@ class Combinazione(_Base):
 
 
 class AnalisiStatica(_Base):
+    """`legami: "fibre"` è la stessa statica con le sezioni non lineari e il carico applicato in
+    `passi` incrementi (`LoadControl 1/passi`) invece che in una botta sola.
+
+    La veste dei legami **non** sta qui: è `impostazioni_analisi.veste`, una per modello, perché
+    un pilastro non può essere di calcestruzzo medio in una corsa e caratteristico in un'altra
+    dentro lo stesso deck — i tag di sezione sono gli stessi.
+    """
     tipo: Literal["statica"]
     casi: list[Annotated[str, Field(pattern=FORMA_CASO)]]
+    legami: Literal["elastico", "fibre"] = "elastico"
+    passi: int = Field(10, ge=1)
 
 
 class MassaDaAzione(_Base):
@@ -254,7 +312,38 @@ class AnalisiModale(_Base):
     masse_da_azioni: list[MassaDaAzione] = []
 
 
-Analisi = Annotated[Union[AnalisiStatica, AnalisiModale], Field(discriminator="tipo")]
+class ForzaNodale(_Base):
+    nodo: int
+    fx: float = 0.0
+    fy: float = 0.0
+    fz: float = 0.0
+
+
+class AnalisiPushover(_Base):
+    """La pushover monotona in controllo di spostamento: si spinge il `nodo_controllo` lungo
+    `dof` a passi di `incremento` fino a `spostamento_max`, e si legge il taglio alla base.
+
+    `caso_gravita` è il caso statico applicato **prima** e tenuto addosso alla struttura con
+    `loadConst -time 0.0`: senza, la pushover partirebbe da una struttura scarica, che non è
+    la condizione in cui un edificio prende il sisma.
+
+    Non porta `legami`: la pushover **è** a fibre, e il Check Model rifiuta un modello che
+    non dichiari almeno una statica «legami: fibre» — i tag di sezione sono gli stessi per
+    tutto il deck, e una pushover su sezioni elastiche sarebbe una retta con un nome non lineare.
+    """
+    tipo: Literal["pushover"]
+    distribuzione: Literal["nodale", "uniforme", "modo1"]
+    nodo_controllo: int
+    dof: Literal["ux", "uy", "uz"]
+    incremento: float = Field(gt=0)
+    spostamento_max: float = Field(gt=0)
+    forze_nodali: list[ForzaNodale] = []
+    caso_gravita: Annotated[str, Field(pattern=FORMA_CASO)] | None = None
+    passi_max: int = Field(2000, ge=1)
+
+
+Analisi = Annotated[Union[AnalisiStatica, AnalisiModale, AnalisiPushover],
+                    Field(discriminator="tipo")]
 
 
 class ImpostazioniAnalisi(_Base):
@@ -361,7 +450,25 @@ def carica(dati: dict) -> Modello:
 
 
 def impronta(m: Modello) -> str:
-    canonico = json.dumps(m.model_dump(mode="json", exclude_none=True), sort_keys=True, separators=(",", ":"))
+    """L'identità del modello, e quel che decide se un risultato è stantio.
+
+    `exclude_defaults` e non `exclude_none`: un campo lasciato al proprio default non descrive
+    il modello, lo descrive lo schema. Con `exclude_none` ogni campo aggiunto allo schema
+    cambiava `hash_modello` di **ogni** modello — T4 ha aggiunto `Legame`, `legami`, `passi`,
+    `AnalisiPushover`, e `muro_1.nova.json` intatto è passato da `a0768dcb…` a `2bf56c67…`,
+    rendendo stantii risultati che nessuno aveva toccato. Un campo scritto al proprio valore
+    di default e un campo assente sono lo stesso modello, e ora hanno la stessa impronta.
+
+    Il prezzo è che l'impronta diventa cieca al **cambio di valore** di un default: spostare
+    `Legame.epsU_copriferro` da 0,0035 a 0,004 cambia il `.tcl` di ogni modello che non lo
+    dichiara, e senza `VERSIONE_IMPRONTA` nel canonico i risultati vecchi non si direbbero
+    stantii. Quella costante si bumpa **a mano** quando succede, e
+    `tests/test_sidecar.py::test_lo_snapshot_dei_default_che_entrano_nel_deck` fallisce apposta
+    per ricordarlo.
+    """
+    canonico = json.dumps({"schema": VERSIONE_IMPRONTA,
+                           "dati": m.model_dump(mode="json", exclude_defaults=True)},
+                          sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonico.encode("utf-8")).hexdigest()
 
 
@@ -378,6 +485,7 @@ def assicura_peso_proprio(m: Modello) -> Modello:
 
 def casi_dichiarati(m: Modello) -> list[str]:
     return [f"Z{a.id}" for a in m.azioni] + [f"C{c.id}" for c in m.combinazioni]
+
 
 
 def grafo(m: Modello) -> dict[int, list[tuple[int, bool]]]:

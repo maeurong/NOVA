@@ -196,15 +196,19 @@ verdetti   [ ]{controllo, oggetto?, stazione?, caso?, esito: passato | non_passa
 
 `hash_modello` diverso dall'impronta corrente = risultati stantii, mostrati in rosso, mai cancellati. Le stazioni sono i punti di integrazione (Lobatto) letti con un recorder per sezione, ricomposti sull'asta come `x_rel` fra 0 e 1.
 
+Contratto della curva (T4): `passi[].spostamento` e `caduta.spostamento` sono **relativi** a `run.pushover.u0`, cioè allo spostamento che il nodo di controllo aveva dopo il caso di gravità; `passi[].spostamenti[nodo]` sono **assoluti**, perché quello è il campo di spostamento vero che si disegna. `u0` è la chiave che riconcilia i due zeri.
+
+I verdetti si leggono per la coppia `(controllo, caso)` e non per il solo nome: una corsa con statica a fibre e pushover porta due `convergenza` (`caso: "Z1"` e `caso: "pushover"`) e due `spostamenti`, e chi cerca per nome ne trova uno solo.
+
 ### Generazione del deck e adattamenti
 
 Deck `.tcl` per il binario `OpenSees`, generato dal codice riusato; la lettura è da stderr e marcatore di fine, non dal codice d'uscita. Adattamenti dichiarati rispetto alla copia verbatim, ognuno con la misura che lo giustifica: `fix` scritti dai vincoli **dichiarati** (la copia li deduce dalla geometria); carichi nodali, distribuiti, gravità e cedimenti oltre il peso proprio; casi di carico oltre `GRAVITA`/`MODALE`, uno per azione o combinazione; recorder per sezione per le stazioni; soglia di massa partecipante 0,85 (la copia usa 0,90); `Concrete02`/`Steel02` dalla classe e dalla veste per il non lineare, `Concrete04` con Mander opzionale; pushover con `DisplacementControl` e scala di algoritmi. Valori dichiarati: `f_ym` di B450C = 450 MPa, `epsU` del copriferro = 0,0035, `E_s` = 200 000 MPa, deformazione ultima del nucleo da NTC [4.1.11]; tutti campi del materiale, sovrascrivibili e stampati.
 
 ### Check Model (C1) e controlli sui risultati (C3)
 
-Dodici controlli C1 con oracolo, dal prototipo #9: `unita`, `nodi_coincidenti` (< 1 mm), `aste_sconnesse`, `aste_lunghezza_zero`, `aste_duplicate`, `nodi_liberi`, `nodo_su_asta`, `sezione_nulla`, `massa_nulla`, `vincoli` (nessuno o tutti), `vincoli_dedotti`, `moti_rigidi` (non applicabile prima della corsa), più `carico_termico` (rifiuto dichiarato in v1) e `armatura_mancante` per le corse a fibre. Un `non_passato` rifiuta la corsa prima di scrivere il deck.
+**Sedici** controlli C1 con oracolo, dodici dal prototipo #9: `unita`, `nodi_coincidenti` (< 1 mm), `aste_sconnesse`, `aste_lunghezza_zero`, `aste_duplicate`, `nodi_liberi`, `nodo_su_asta`, `sezione_nulla`, `massa_nulla`, `vincoli` (nessuno o tutti), `vincoli_dedotti`, `moti_rigidi` (non applicabile prima della corsa); più `carico_termico` (rifiuto dichiarato in v1), `riferimenti` (sezioni, materiali, carichi, combinazioni, casi delle statiche, azioni della modale), `armatura_mancante` per le corse a fibre e `pushover` (T4: nodo di controllo assente o vincolato nella direzione di spinta, caso di gravità assente, `modo1` senza modale, `nodale` senza forze, forza su un nodo assente, nessuna statica `legami: fibre`; `non_applicabile` quando il modello non dichiara una spinta). Un `non_passato` rifiuta la corsa prima di scrivere il deck.
 
-Sette controlli C3 sui risultati, dal codice riusato, riletti nel verdetto a tre valori: `reazioni` (Σ reazioni contro Σ carichi per caso), `autovalori` (moti rigidi), `picco`, `vincolo_in_pianta`, `avvisi` (conteggio `WARNING`), `spostamenti` (in banda), `massa_modale` (≥ 85 %).
+Sette controlli C3 sui risultati, dal codice riusato, riletti nel verdetto a tre valori: `reazioni` (Σ reazioni contro Σ carichi per caso), `autovalori` (moti rigidi), `picco`, `vincolo_in_pianta`, `avvisi` (conteggio `WARNING`), `spostamenti` (in banda), `massa_modale` (≥ 85 %); più `convergenza` (T4: la statica a passi e la pushover sono arrivate in fondo, e con quali algoritmi). `spostamenti` guarda due scale (#26), e ciascuna porta la propria soglia: la diagonale del modello, com'era in T1 (`valori.rapporto_diagonale`, `valori.soglia_diagonale`), e la **luce** dell'asta più corta che tocca il nodo (`valori.rapporto`, `valori.soglia_luce` = 1/10, `valori.soglia_avviso_luce` = 1/50). Il rapporto con la luce è il **massimo su tutti i nodi con aste**, non il rapporto del nodo di `u_max`: il nodo peggiore può essere un altro, e `valori.nodo`, `valori.u` e `valori.luce_minima` sono i suoi. Oltre 1/10 è `non_passato` («il modello non descrive più la struttura»); fra 1/50 e 1/10 è verde con `valori.avviso: true` e l'avviso nella ragione.
 
 C2: `modi: "auto"` fa crescere il numero di modi finché la massa partecipante cumulata raggiunge l'85 % su ogni direzione con massa.
 
@@ -258,7 +262,7 @@ Oggi 05/09/2026 = giorno 1. Il backend avanza da solo di notte (ha oracoli), l'i
 | T4 | 8–9 | non lineare lato dati: legami da classe e veste, statica non lineare, pushover con curva, stato delle sezioni, scala di algoritmi | curva su telaio 2×1; caduta dichiarata |
 | T5 | 10–15, con Mario | tutta l'interfaccia: spazio B, albero, pannello, estrusione, palette, cronologia, ghost, deformata con scala, M per stazione, modi animati, editor delle barre, scheda Confronto, curva pushover con scrubber, modo presentazione, critique e polish | telaio 2×1 disegnato da zero in meno di due minuti; leggibile a 8 m; zero sovrapposizioni |
 | T6 | 16–18 | caso studio completo, corse CalculiX e Abaqus, figure per l'appendice, riserva | tabella di confronto e figure esportate |
-| 19 | consegna | | |
+| 19 | consegna | consegna della tesi (19/09/2026) — niente sviluppo | — |
 
 Tagli in ordine, se il tempo manca: pushover (resta la statica non lineare) → stato delle sezioni → CSV Abaqus (resta CalculiX) → importatore dal prior (il caso studio è a mano comunque) → export LaTeX. Mai: Check Model, controlli, scala stampata, modo presentazione.
 

@@ -38,6 +38,46 @@ def _porta_il_peso_proprio(a) -> bool:
     return a.generata or any(c.tipo == "gravita" and c.fattore_z for c in a.carichi)
 
 
+def _pushover(m: Modello, an, nodi: dict, dichiarati: set, rossi: list, note: list) -> None:
+    """Quel che una pushover chiede al modello, e che il solutore non chiede mai due volte.
+
+    Controllo **suo** e non `riferimenti`: le sette righe qui sotto non sono tutte «un id che
+    non esiste» — un nodo di controllo incastrato esiste eccome, e una distribuzione `modo1`
+    senza analisi modale non nomina niente di rotto. Chi legge i verdetti per nome vuole
+    sapere che è **la pushover** a non stare in piedi, non che il modello ha un riferimento
+    penzolante da qualche parte. `riferimenti` torna a fare il suo: sezioni, materiali,
+    carichi, combinazioni, casi delle statiche, azioni della modale.
+
+    L'ultima — «serve una statica a fibre» — non è un capriccio: i tag di sezione sono uno per
+    (sezione, orientamento) e valgono per tutto il deck, quindi senza una statica dichiarata
+    `legami: fibre` la pushover girerebbe su sezioni elastiche e renderebbe una retta.
+    """
+    n = nodi.get(an.nodo_controllo)
+    if n is None:
+        rossi.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo})
+    elif not n.libero(_modello.DOF_COLONNA[an.dof]):
+        rossi.append({"analisi": "pushover", "nodo_controllo": an.nodo_controllo,
+                      "dof": an.dof})
+        note.append(f"il nodo di controllo è vincolato in {an.dof}: "
+                    "in controllo di spostamento non si muove")
+    if an.caso_gravita and an.caso_gravita not in dichiarati:
+        rossi.append({"analisi": "pushover", "caso_gravita": an.caso_gravita})
+    if an.distribuzione == "modo1" and not any(a.tipo == "modale" for a in m.analisi):
+        rossi.append({"analisi": "pushover", "distribuzione": "modo1"})
+        note.append("la distribuzione modo1 richiede l'analisi modale: φ₁ lo estrae «eigen», "
+                    "e senza il passo modale nel deck non esiste")
+    if an.distribuzione == "nodale" and not an.forze_nodali:
+        rossi.append({"analisi": "pushover", "distribuzione": "nodale"})
+        note.append("la distribuzione nodale non ha forze_nodali: non c'è niente da spingere")
+    for f in an.forze_nodali:
+        if f.nodo not in nodi:
+            rossi.append({"analisi": "pushover", "forza_nodale": f.nodo})
+    if not any(a.tipo == "statica" and a.legami == "fibre" for a in m.analisi):
+        rossi.append({"analisi": "pushover", "legami": "fibre"})
+        note.append("la pushover richiede sezioni a fibre: dichiara una statica con "
+                    "«legami»: «fibre», i tag di sezione valgono per tutto il deck")
+
+
 def check_model(m: Modello) -> list[dict]:
     v: list[dict] = []
     nodi = {n.id: n for n in m.nodi}
@@ -162,6 +202,26 @@ def check_model(m: Modello) -> list[dict]:
                 riferimenti or None,
                 note[0] if note else ("correggi il riferimento" if riferimenti else None)))
 
+    spinte = [an for an in m.analisi if an.tipo == "pushover"]
+    rossi: list[dict] = []
+    note_push: list[str] = []
+    # `deck.scrivi` solleva su due spinte, ma la fase deck non ha un verdetto: senza questa
+    # riga il Check Model resta verde e l'errore arriva dopo, come un guasto invece che come
+    # un modello mal posto. Prima delle altre: il conto non dipende da com'è fatta ciascuna.
+    if len(spinte) > 1:
+        rossi.append({"analisi": "pushover", "dichiarate": len(spinte)})
+        note_push.append(f"una sola pushover per modello, dichiarate {len(spinte)}: "
+                         "tienine una e togli le altre")
+    for an in spinte:
+        _pushover(m, an, nodi, dichiarati, rossi, note_push)
+    if not spinte:
+        v.append(_v("pushover", "non_applicabile", "nessuna analisi pushover nel modello"))
+    else:
+        v.append(_v("pushover", "non_passato" if rossi else "passato",
+                    "; ".join([*note_push, f"la pushover nomina: {rossi or 'niente di rotto'}"]),
+                    rossi or None,
+                    note_push[0] if note_push else ("correggi la pushover" if rossi else None)))
+
     v.append(_v("massa_nulla", "passato" if m.aste else "non_passato",
                 f"{len(m.aste)} aste" if m.aste else "nessuna asta: massa totale zero"))
 
@@ -183,13 +243,22 @@ def check_model(m: Modello) -> list[dict]:
 
     v.append(_v("moti_rigidi", "non_applicabile", "si legge dopo la corsa dalla prima frequenza (controllo autovalori)"))
 
-    # Due controlli che in T1 non hanno un oracolo: dichiararli qui come «non applicabile» è
-    # l'unico modo di non farli sembrare verdi. Il primo sostituisce `sezioni_senza_barre` del
-    # resoconto del deck, che nessuno leggeva fuori dal comando `deck`.
+    # In una corsa elastica le barre pesano nella sola massa, e il controllo non ha un oracolo:
+    # dichiararlo «non applicabile» è l'unico modo di non farlo sembrare verde. Con una statica
+    # a fibre l'oracolo c'è — una sezione senza acciaio non ha momento resistente — e il rosso
+    # guarda le sole sezioni **usate** da un'asta: una sezione in catalogo e non montata non
+    # entra nel deck e non ha niente da rompere.
     scoperte = [s.id for s in m.sezioni if _modello.senza_barre(s)]
-    v.append(_v("armatura_mancante", "non_applicabile",
-                "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
-                "con il non lineare (T4)", scoperte or None))
+    if any(a.tipo == "statica" and a.legami == "fibre" for a in m.analisi):
+        montate = [i for i in scoperte if i in {a.sezione for a in m.aste}]
+        v.append(_v("armatura_mancante", "non_passato" if montate else "passato",
+                    f"statica a fibre: sezioni montate senza barre: {montate or 'nessuna'}",
+                    montate or None, "dichiara le file di barre e le staffe" if montate else None))
+    else:
+        v.append(_v("armatura_mancante", "non_applicabile",
+                    "corse a fibre elastiche: le barre pesano nella massa, il controllo arriva "
+                    "con il non lineare (T4) e una statica dichiarata «legami: fibre»",
+                    scoperte or None))
     vicini = _modello.grafo(m)
     piede = _modello.piedi(m, vicini)
     if not m.aste:

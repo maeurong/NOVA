@@ -160,6 +160,143 @@ def test_spostamenti_e_reazioni_passato_su_tutti_i_casi(chiedi, binario_opensees
         assert per_caso[("reazioni", caso)] == "passato", caso
 
 
+# --- T4, ingresso degenere: la corsa elastica non guadagna niente ------------------------
+
+def test_la_corsa_elastica_del_muro_1_non_ha_passi_ne_pushover(chiedi, binario_opensees, tmp_path):
+    """`muro_1.nova.json` resta elastico — è il modello del confronto ccx — e il JSON della
+    sua corsa non cambia forma con il non lineare: `passi` vuoto, `caduta` e `run.pushover`
+    a `null`, `convergenza` non applicabile su ogni caso con la sua ragione.
+
+    Regressione dei campi di T1-T3: `run` porta le stesse chiavi e `per_caso` le stesse
+    quattro, con `stato_sezioni` vuoto (una `patch` di `uniaxialMaterial Elastic` non ha
+    uno stato di sezione da leggere, e inventarne uno elastico direbbe di un controllo che
+    nessuno ha fatto).
+    """
+    fin = _corsa(chiedi, tmp_path)
+    assert fin["esito"] == "ok", fin
+    ris = fin["risultati"]
+    assert ris["passi"] == [] and ris["caduta"] is None
+    assert ris["run"]["pushover"] is None
+    assert ris["run"]["legami"] == "elastico" and ris["run"]["passi"] == 0
+    assert ris["run"]["materiali"] == {}
+    for caso in ("C1", "C2", "C3"):
+        v = next(x for x in ris["verdetti"]
+                 if x["controllo"] == "convergenza" and x["caso"] == caso)
+        assert v["esito"] == "non_applicabile" and "corsa elastica" in v["ragione"]
+        assert set(ris["per_caso"][caso]) == {"con_segno", "spostamenti", "reazioni",
+                                              "sollecitazioni", "stato_sezioni"}
+        assert ris["per_caso"][caso]["stato_sezioni"] == {}
+    # C1 dedicato: senza spinta dichiarata il controllo esce lo stesso, non applicabile
+    v = next(x for x in fin["verdetti_check"] if x["controllo"] == "pushover")
+    assert v["esito"] == "non_applicabile"
+
+
+# --- T4: la pushover del MURO 1 -----------------------------------------------------------
+#
+# Il file della spinta è **separato** da `muro_1.nova.json`, e non è una duplicazione per
+# comodità: `deck._legami_dichiarati` sceglie i legami per **tutto** il deck, quindi una
+# statica «legami: fibre» dentro `muro_1.nova.json` avrebbe reso a fibre anche i casi
+# C1/C2/C3 del confronto con ccx, che è lineare elastico. I due file portano la stessa
+# struttura e differiscono nelle sole analisi: il test qui sotto lo pinza.
+
+FILE_PUSHOVER = FILE_MODELLO.parent / "muro_1_pushover.nova.json"
+CSV_PUSHOVER = FILE_MODELLO.parent / "pushover.csv"
+
+
+def test_il_file_della_spinta_e_lo_stesso_telaio_con_altre_analisi():
+    """La sola deriva possibile fra i due file è la geometria, e questo la chiude."""
+    base = _leggi_muro_1()
+    push = json.loads(FILE_PUSHOVER.read_text(encoding="utf-8"))
+    assert {k: v for k, v in base.items() if k != "analisi"} == \
+           {k: v for k, v in push.items() if k != "analisi"}
+    assert push["analisi"] == [
+        {"tipo": "statica", "casi": ["C1", "C3"], "legami": "fibre", "passi": 10},
+        {"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 3, "dof": "ux",
+         "incremento": 0.5, "spostamento_max": 60.0, "caso_gravita": "C1"}]
+    m = _modello.carica(push)
+    verdetti = {v["controllo"]: v for v in check.check_model(m)}
+    assert verdetti["pushover"]["esito"] == "passato", verdetti["pushover"]
+    # con una statica a fibre il controllo dell'armatura ha un oracolo, e le sezioni ce l'hanno
+    assert verdetti["armatura_mancante"]["esito"] == "passato"
+
+
+@pytest.fixture(scope="module")
+def spinta_muro_1(tmp_path_factory, binario_opensees):
+    from nova import sidecar
+    cartella = tmp_path_factory.mktemp("pushover_muro_1")
+    r = sidecar.rispondi({"comando": "corsa",
+                          "modello": json.loads(FILE_PUSHOVER.read_text(encoding="utf-8")),
+                          "cartella": str(cartella), "casi": ["C1", "C3"]}, lambda ev: None)
+    return r, cartella
+
+
+def test_pushover_muro_1(spinta_muro_1):
+    """Misurato il 05/09/2026, OpenSees 3.8.0, ≈ 2 s: 120 passi da 0,5 mm fino a 60,000 mm,
+    **nessuna caduta**, taglio alla base massimo 72 115,2 N al passo 109 (54,5 mm) e 70 932,9 N
+    all'ultimo. Scala di algoritmi ai passi 18, 36, 89, 113 (`KrylovNewton`).
+
+    Gli oracoli sono proprietà, non i numeri: la spinta arriva in fondo senza cadere,
+    l'equilibrio `taglio_base = −Σ reazioni` tiene a ogni passo, il massimo **non** è
+    l'ultimo passo (c'è un ramo calante) e le sezioni che cedono sono quelle del meccanismo
+    a nodi fissi: i due piedi dei pilastri e i due estremi della trave superiore.
+    I numeri stanno nel report e in `docs/caso-studio/pushover.csv`.
+
+    **Verifica del codice, non validazione**: nessuna prova ai pistoni è documentata sulla
+    tavola, e nessun numero qui è confrontato con una misura di laboratorio.
+    """
+    import numpy as np
+
+    r, cartella = spinta_muro_1
+    assert r["esito"] == "ok", r.get("motivo") or r
+    ris = r["risultati"]
+    passi = ris["passi"]
+
+    assert ris["caduta"] is None, ris["caduta"]
+    assert len(passi) == 120 and [p["n"] for p in passi] == list(range(1, 121))
+    assert passi[0]["spostamento"] == pytest.approx(0.5, abs=1e-3)
+    assert passi[-1]["spostamento"] == pytest.approx(60.0, abs=1e-3)
+    assert all(b["spostamento"] > a["spostamento"] for a, b in zip(passi, passi[1:]))
+
+    # l'equilibrio per passo, letto dal recorder e non dal JSON che lo compone
+    R = np.loadtxt(cartella / "push_reazioni.out")
+    tag = {int(k): v for k, v in ris["run"]["mappa_tag"]["nodo"].items()}
+    for k, p in enumerate(passi):
+        atteso = -sum(R[k, 1 + 6 * (tag[t] - 1)] for t in (1, 2))
+        assert p["taglio_base"] == pytest.approx(atteso, rel=1e-6, abs=1e-6), k
+
+    tagli = [p["taglio_base"] for p in passi]
+    assert tagli.index(max(tagli)) < len(tagli) - 1  # il ramo calante c'è
+    assert max(tagli) == pytest.approx(72115.2, rel=1e-3)
+
+    # il meccanismo: piedi dei pilastri (aste 2 e 3, stazione 0) e i due estremi della trave
+    # superiore (asta 4, stazioni 0 e 16), e nessun'altra stazione
+    ultimo = passi[-1]["stato_sezioni"]
+    ceduto = {(a, i) for a, st in ultimo.items() for i, s in enumerate(st)
+              if s["calcestruzzo"] == "schiacciata" or s["acciaio"] == "rotta"}
+    assert ceduto == {("2", 0), ("3", 0), ("4", 0), ("4", 16)}, sorted(ceduto)
+    for asta, stazione in ceduto:
+        assert ultimo[asta][stazione] == {"calcestruzzo": "schiacciata", "acciaio": "rotta"}
+    assert {s["calcestruzzo"] for st in passi[0]["stato_sezioni"].values() for s in st} == {"elastica"}
+
+    v = next(x for x in ris["verdetti"]
+             if x["controllo"] == "convergenza" and x["caso"] == "pushover")
+    assert v["esito"] == "passato" and v["valori"]["caduta"] is None
+
+
+def test_la_curva_esportata_e_quella_della_corsa(spinta_muro_1):
+    """`docs/caso-studio/pushover.csv` non si scrive a mano: le righe vengono dai `passi[]`
+    della corsa, e questo test le rimette a confronto passo per passo."""
+    passi = spinta_muro_1[0]["risultati"]["passi"]
+    righe = CSV_PUSHOVER.read_text(encoding="utf-8").splitlines()
+    assert righe[0] == "passo;spostamento_mm;taglio_base_N;algoritmo"
+    assert len(righe) - 1 == len(passi)
+    for riga, p in zip(righe[1:], passi):
+        n, u, taglio, algoritmo = riga.split(";")
+        assert int(n) == p["n"] and algoritmo == p["algoritmo"]
+        assert float(u) == pytest.approx(p["spostamento"], abs=1e-6)
+        assert float(taglio) == pytest.approx(p["taglio_base"], rel=1e-6, abs=1e-3)
+
+
 # --- ultima riga: `python -m nova` + POST /api/modello/apri -> 200 con la stessa impronta
 # di `carica` (prova reale con curl, porta libera >= 8793) ---------------------------------
 

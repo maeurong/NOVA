@@ -56,6 +56,103 @@ def test_impronta_stabile_e_sensibile():
     assert impronta(a) != impronta(b)
 
 
+def test_un_campo_al_default_scritto_per_esteso_non_sposta_limpronta():
+    """Ingresso degenere: lo stesso modello con e senza il `legame` scritto tutto ai default.
+    Sono lo stesso modello, e devono avere la stessa impronta — se non ce l'hanno, ogni campo
+    aggiunto allo schema rende stantio ogni `hash_modello` scritto prima."""
+    from nova.modello import Legame, carica, impronta
+    nudo = carica(leggi_fixture("pilastro_30x50.nova.json"))
+    dati = leggi_fixture("pilastro_30x50.nova.json")
+    for mat in dati["materiali"]:
+        mat["legame"] = Legame().model_dump(mode="json")
+    assert impronta(carica(dati)) == impronta(nudo)
+
+
+def test_un_campo_nuovo_con_default_non_cambia_limpronta_e_un_valore_diverso_si():
+    """L'oracolo di §1 su due modelli di prova, che è il solo modo di simulare *l'aggiunta*
+    di un campo allo schema senza toccare lo schema: `Dopo` ha un campo che `Prima` non ha,
+    con il suo default, e l'impronta non si muove; cambiarne il valore la muove."""
+    from pydantic import BaseModel
+
+    from nova.modello import impronta
+
+    class Prima(BaseModel):
+        a: int = 1
+        b: str = "vecchio"
+
+    class Dopo(BaseModel):
+        a: int = 1
+        b: str = "vecchio"
+        c: float | None = None
+        d: bool = False
+
+    assert impronta(Prima()) == impronta(Dopo())
+    assert impronta(Dopo(d=True)) != impronta(Prima())
+    assert impronta(Prima(b="altro")) != impronta(Prima())
+
+
+def test_cambiare_il_valore_della_versione_cambia_ogni_impronta():
+    """Round 2: `exclude_defaults` è cieco al **cambio di valore** di un default. Spostare
+    `Legame.epsU_copriferro` da 0,0035 a 0,004 cambia il `.tcl` di ogni modello che non lo
+    dichiara, e l'impronta resterebbe la stessa: i risultati vecchi non si direbbero stantii.
+    `VERSIONE_IMPRONTA` entra nel canonico e si bumpa a mano quando succede."""
+    from nova import modello as _m
+    m = _m.carica(leggi_fixture("pilastro_30x50.nova.json"))
+    prima = _m.impronta(m)
+    try:
+        _m.VERSIONE_IMPRONTA += 1
+        assert _m.impronta(m) != prima
+    finally:
+        _m.VERSIONE_IMPRONTA -= 1
+    assert _m.impronta(m) == prima
+
+
+def test_un_modello_senza_campi_opzionali_cambia_solo_per_la_versione():
+    """Ingresso degenere: un modello che non dichiara nessun campo opzionale. Il canonico è
+    ridotto ai soli campi obbligatori più la versione, quindi la versione è l'unica cosa che
+    può muoverlo — e deve muoverlo, altrimenti su questo modello non morde niente."""
+    from nova import modello as _m
+    nudo = _m.Modello(unita=_m.UNITA)
+    assert nudo.model_dump(mode="json", exclude_defaults=True) == {"unita": _m.UNITA}
+    prima = _m.impronta(nudo)
+    try:
+        _m.VERSIONE_IMPRONTA += 1
+        assert _m.impronta(nudo) != prima
+    finally:
+        _m.VERSIONE_IMPRONTA -= 1
+
+
+# Lo snapshot dei default che finiscono nel `.tcl`. Non è un test di comportamento: è la rete
+# che fa **fallire di proposito** chi cambia uno di questi numeri senza bumpare la versione,
+# perché `exclude_defaults` non se ne accorgerebbe mai.
+DEFAULT_NEL_DECK = {
+    "Legame": {"confinamento": "ntc", "epsU_copriferro": 0.0035, "epsU_nucleo": None,
+               "lambda": 0.1, "fpcu_su_fpc": 0.2, "Es": 200000.0, "fym": None, "b": None,
+               "R0": 18, "cR1": 0.925, "cR2": 0.15},
+    "AnalisiStatica": {"legami": "elastico", "passi": 10},
+    "AnalisiPushover": {"passi_max": 2000},
+    "ImpostazioniAnalisi": {"fibre": 10, "veste": "media"},
+}
+
+
+def test_lo_snapshot_dei_default_che_entrano_nel_deck():
+    from nova.modello import (AnalisiPushover, AnalisiStatica, ImpostazioniAnalisi, Legame)
+    statica = AnalisiStatica(tipo="statica", casi=["Z1"])
+    spinta = AnalisiPushover(tipo="pushover", distribuzione="uniforme", nodo_controllo=1,
+                             dof="ux", incremento=1.0, spostamento_max=1.0)
+    impostazioni = ImpostazioniAnalisi()
+    visto = {
+        "Legame": Legame().model_dump(by_alias=True),
+        "AnalisiStatica": {"legami": statica.legami, "passi": statica.passi},
+        "AnalisiPushover": {"passi_max": spinta.passi_max},
+        "ImpostazioniAnalisi": {"fibre": impostazioni.fibre, "veste": impostazioni.veste},
+    }
+    assert visto == DEFAULT_NEL_DECK, (
+        "hai cambiato un default che entra nel deck: bumpa VERSIONE_IMPRONTA in nova/modello.py "
+        "e aggiorna questo snapshot. `impronta` esclude i default, quindi da sola non vedrebbe "
+        "il cambio e ogni risultato vecchio si leggerebbe fresco su un `.tcl` diverso")
+
+
 def test_il_peso_proprio_e_generato_una_volta_sola():
     from nova.modello import assicura_peso_proprio, carica
     m = carica(leggi_fixture("telaio_2x1.nova.json"))
@@ -305,11 +402,12 @@ def test_telaio_sano_passa_il_check(chiedi):
     esiti = _esiti(r[-1]["verdetti"])
     assert esiti["nodi_coincidenti"] == "passato" and esiti["vincoli"] == "passato"
     assert esiti["moti_rigidi"] == "non_applicabile"
-    # l'insieme dei controlli C1 è sempre lo stesso, e sono quindici: chi ne aggiunge uno
+    # l'insieme dei controlli C1 è sempre lo stesso, e sono sedici: chi ne aggiunge uno
     # aggiorna qui, così una voce nuova non entra in silenzio senza il suo oracolo
     assert set(esiti) == {"unita", "nodi_coincidenti", "aste_sconnesse", "aste_lunghezza_zero", "aste_duplicate",
-                          "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "massa_nulla", "vincoli",
-                          "carico_termico", "moti_rigidi", "armatura_mancante", "vincoli_dedotti"}
+                          "nodi_liberi", "nodo_su_asta", "sezione_nulla", "riferimenti", "pushover", "massa_nulla",
+                          "vincoli", "carico_termico", "moti_rigidi", "armatura_mancante", "vincoli_dedotti"}
+    assert esiti["pushover"] == "non_applicabile"  # il telaio 2×1 non dichiara una spinta
 
 
 def test_asta_a_lunghezza_zero_e_rifiutata(chiedi):
@@ -909,7 +1007,10 @@ def test_la_corsa_oltre_il_timeout_e_un_errore_di_fase_solutore(chiedi, tmp_path
     monkeypatch.setattr(_c, "_TIMEOUT_S", 0.5)
     fin = _corsa(chiedi, tmp_path, solutore=_finto(tmp_path, "echo comincio\nsleep 5\n"))
     assert fin["esito"] == "errore" and fin["fase"] == "solutore" and "timeout" in fin["motivo"]
-    assert "comincio" in (tmp_path / "c" / "13_solver.log").read_text()  # il registro c'è comunque
+    # Il registro c'è comunque (`corsa._errore_solutore` lo scrive prima di tornare); il suo
+    # **contenuto** no: sotto carico il `sleep 5` viene ucciso a 0,5 s senza che l'`echo` sia
+    # arrivato a `capture_output`, e asserire «comincio» rendeva il test rosso a caso.
+    assert (tmp_path / "c" / "13_solver.log").is_file()
 
 
 def test_forza_fa_partire_la_corsa_e_tiene_il_rifiuto_del_check(chiedi, tmp_path):

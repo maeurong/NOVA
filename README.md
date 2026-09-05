@@ -30,6 +30,72 @@ Tre fatti sono già stabiliti dalla ricerca, misurati e non opinabili:
   delle armature, combinazioni NTC
   (`docs/ricerca/05-archeologia-linea-integrata.md`, §7).
 
+## Il non lineare
+
+I legami vengono dalla **classe** del materiale e dalla **veste**
+(`impostazioni_analisi.veste`, default `media`), non da numeri scritti a mano:
+`Concrete02` per nucleo e copriferro, `Steel02` per le barre, con il
+confinamento NTC [4.1.8]–[4.1.12.i] di default e Mander opzionale
+(→ `Concrete04`). Ogni parametro che finisce nel `.tcl` è stampato in
+`run.materiali` con la sua provenienza (`classe`, `veste`, `articolo`): il deck
+non porta un numero che il resoconto non dichiari. La veste `progetto` è
+ammessa e produce un **avviso**, non un rifiuto («rigidezza dimezzata, non è la
+prassi»).
+
+Una statica dichiarata `legami: fibre` monta sezioni a fibre a due `patch`
+(nucleo entro la linea media delle staffe, copriferro fuori) e applica il carico
+in `passi` incrementi con una scala di algoritmi. La scelta è **del deck** e non
+del caso: i tag di sezione sono uno per (sezione, orientamento), quindi un
+modello con una statica a fibre ha il deck a fibre per **tutti** i suoi casi.
+
+`AnalisiPushover` spinge un nodo di controllo lungo un dof in controllo di
+spostamento (`DisplacementControl`), con il caso di gravità applicato prima e
+tenuto addosso (`loadConst -time 0.0`). Rende la curva in `passi[]`
+— spostamento, taglio alla base, spostamenti di tutti i nodi, algoritmo — e lo
+**stato delle sezioni** per stazione su due canali: calcestruzzo
+(`elastica`/`fessurata`/`schiacciata`) e acciaio
+(`elastica`/`snervata`/`rotta`), `null` dove le barre non ci sono.
+
+**La caduta si dichiara, non si traveste da collasso.** Quando la scala di
+algoritmi e gli otto dimezzamenti del passo non bastano, la corsa scrive
+`caduta: {passo, spostamento, algoritmo, motivo}`, tiene la curva fino
+all'ultimo passo convergente e mette `convergenza: non_passato`. Una pushover
+che arriva allo spostamento chiesto ha `caduta: null`.
+
+Contratto del JSON, per chi lo legge: `passi[].spostamento` e
+`caduta.spostamento` sono **relativi** a `run.pushover.u0` (lo spostamento che
+il nodo di controllo aveva dopo la gravità), `passi[].spostamenti[nodo]` sono
+**assoluti**. I verdetti si leggono per la coppia `(controllo, caso)`: una corsa
+con statica a fibre e pushover porta due `convergenza` e due `spostamenti`, e
+il `caso` (`"Z1"`, `"pushover"`) è quel che li distingue.
+
+Nessun campionamento e nessun tetto ai file: la pushover del telaio 2×1 a
+60 passi fa 192 kB di JSON e 231 file `.out`, quella del MURO 1 a 120 passi
+774 kB e 514 file. `/api/risultati/{run_id}` rende il file intero.
+
+Due misure che vale la pena conoscere prima di leggere i numeri:
+
+- **#25 — il ramo elastico itera.** `algorithm Linear` su un telaio iperstatico
+  con `eleLoad -beamUniform` su `forceBeamColumn` non chiude l'equilibrio: gli
+  spostamenti elastici erano sbagliati fino a `+45,8 %` su un caso del telaio
+  2×1. Con `Newton` lo scarto elastico ↔ fibre scende a `+0,03 %`. Gli
+  spostamenti pubblicati prima del fix non sono confrontabili con quelli di oggi
+  (reazioni e frequenze non cambiano: quelle le porta il carico, non
+  l'algoritmo).
+- **#26 — lo spostamento si misura sulla luce.** Un modello convergente può
+  essere assurdo: la trave di 6 000 mm che scende di 3 769 passava il controllo
+  di T1, che guarda la diagonale del modello. Ora `spostamenti` guarda anche il
+  rapporto con la luce dell'asta più corta al nodo: oltre 1/10 è rosso, fra 1/50
+  e 1/10 è verde con `valori.avviso: true`. Il rapporto è il **massimo su tutti
+  i nodi con aste**, non quello del nodo più spostato — il nodo peggiore può
+  essere un altro, e `valori.nodo`, `valori.u`, `valori.luce_minima` sono i
+  suoi. Le due scale portano due soglie con due nomi (`soglia_luce` 1/10 e
+  `soglia_avviso_luce` 1/50 per la luce, `soglia_diagonale` per la diagonale):
+  chi legge `valori` deve poter rifare il conto che ha deciso l'esito.
+
+Caso studio con la pushover vera, curva e stato delle sezioni:
+[`docs/caso-studio/README.md`](docs/caso-studio/README.md).
+
 ## A chi serve
 
 L'utente primario è l'autore, ingegnere strutturale. Chi altro lo userà non è
