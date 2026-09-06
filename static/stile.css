@@ -49,6 +49,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 
 .numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+#pannello-dati { margin: 0; }
+#pannello-dati dt { color: var(--testo-tenue); font-size: 11px; margin-top: var(--passo); }
+#pannello-dati dt:first-child { margin-top: 0; }
+#pannello-dati dd { margin: 0; }        /* il default UA è 40px: dentro 220px taglia */
+
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
 #albero li:hover { background: var(--pannello); }
