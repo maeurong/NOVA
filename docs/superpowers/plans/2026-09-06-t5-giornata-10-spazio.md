@@ -1254,7 +1254,7 @@ git commit -m "feat(interfaccia): guscio a tre colonne, palette colonna tensegra
 - Create: `static/piano.js`
 
 **Interfaces:**
-- Consumes: `stampaNumero` da `static/numeri.js`; `asteDelNodo`, `nodo` da `static/modello.js`.
+- Consumes: `stampaNumero` da `static/numeri.js`; `nodo` e `asteDelNodo` da `static/modello.js` — `asteDelNodo` serve a scegliere dove posare l'etichetta, non a disegnare le aste.
 - Produces: `creaPiano(contenitore, {suSelezione, suSfondo}) → {disegna(modello, {selezione, ghost})}`.
   - `disegna` è **idempotente**: chiamarla due volte con lo stesso stato dà lo stesso SVG.
   - `ghost` è `{da: idNodo, dx, dz} | null`: l'asta che si sta digitando, tratteggiata, **non** nel modello.
@@ -1272,7 +1272,8 @@ Il piano lavora nel piano `x–z` (l'alzado del telaio): `x` verso destra, `z` v
 - I cerchi si selezionano col solo clic: nessun `tabindex`, nessun ruolo, nessun `:focus-visible`. Il vincolo globale dice **WCAG AA** e il Goal dice «con la sola tastiera»; oggi la selezione da tastiera non esiste né qui né nell'albero (Task 9).
 
 **Ingressi degeneri:**
-- modello senza nodi → si disegna la sola griglia, `inquadra` non divide per zero
+- modello senza nodi → l'SVG resta vuoto con un `viewBox` finito (nessuna griglia: non è mai esistita, e nessuna story la chiede), `inquadra` non divide per zero
+- nodo con un'asta **diagonale** → l'etichetta non ci finisce sopra: va scelta nel quadrante libero, non messa a un offset fisso
 - modello con **un solo** nodo (estensione nulla in entrambe le direzioni) → `viewBox` con un lato minimo, non `0`
 - ghost che punta a un nodo eliminato → il ghost non si disegna, nessuna eccezione
 - nodi coincidenti in coordinate (arrivati da un modello aperto, non creabili dai comandi) → si disegnano entrambi, l'etichetta di uno solo, mai due etichette sovrapposte
@@ -1295,6 +1296,11 @@ const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
 const LATO_MINIMO = 2000;  // mm: un modello con un solo nodo ha estensione zero
 const RAGGIO = 5;          // px del nodo, in coordinate schermo
+// Distanza dell'etichetta dal centro del nodo. Deve stare **oltre** il cerchio del nodo
+// selezionato, che è `RAGGIO * 1,6 = 8`: a 9 px l'etichetta gli toccava addosso (misurati
+// 6 px di sovrapposizione con un verso assiale), e sovrapporsi al proprio nodo è lo stesso
+// difetto del sovrapporsi a un'asta.
+const OFFSET_ETICHETTA = 16;
 
 // I colori scritti a mano, non come `var(--…)`: le presentation attribute dell'SVG non
 // risolvono le variabili CSS, e un `fill="var(--rosso)"` esce nero senza dire niente.
@@ -1324,6 +1330,35 @@ function estensione(m, ghost = null) {
   const altezza = Math.max(z1 - z0, LATO_MINIMO);
   const mx = larghezza * MARGINE, mz = altezza * MARGINE;
   return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
+}
+
+// Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
+// vince la prima, e il disegno resta identico a parità di stato.
+const VERSI = [
+  { x: 1, z: 1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 1 },
+  { x: -1, z: 0 }, { x: -1, z: -1 }, { x: 0, z: -1 }, { x: 1, z: -1 },
+].map(({ x, z }) => { const l = Math.hypot(x, z); return { x: x / l, z: z / l }; });
+
+/** Il verso in cui posare l'etichetta di un nodo: quello più lontano da tutte le sue aste.
+ *  Un nodo isolato non ha vincoli e prende il primo, in alto a destra. */
+function versoLibero(m, n) {
+  const direzioni = [];
+  for (const a of asteDelNodo(m, n.id)) {
+    const altro = nodo(m, a.nodo_i === n.id ? a.nodo_j : a.nodo_i);
+    if (!altro) continue;
+    const l = Math.hypot(altro.x - n.x, altro.z - n.z);
+    if (l > 0) direzioni.push({ x: (altro.x - n.x) / l, z: (altro.z - n.z) / l });
+  }
+  if (direzioni.length === 0) return VERSI[0];
+  let scelto = VERSI[0], peggiore = Infinity;
+  for (const v of VERSI) {
+    // Il prodotto scalare più alto è l'asta angolarmente più vicina a questo verso: è lei
+    // che deciderebbe la collisione. Fra i versi si tiene quello il cui vicino più stretto
+    // è il **meno** vicino di tutti — cioè il minimo dei massimi.
+    const vicino = Math.max(...direzioni.map((d) => d.x * v.x + d.z * v.z));
+    if (vicino < peggiore) { peggiore = vicino; scelto = v; }
+  }
+  return scelto;
 }
 
 export function creaPiano(contenitore, { suSelezione, suSfondo }) {
@@ -1407,9 +1442,16 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
       if (etichettate.has(posto)) continue;
       etichettate.add(posto);
+      // L'etichetta va nel quadrante libero, non a un offset fisso: con un'asta diagonale
+      // in alto a destra, un offset fisso in alto a destra ci finisce sopra — ed è proprio
+      // il difetto che questo programma non si può permettere. Otto direzioni candidate,
+      // si sceglie quella angolarmente più lontana da tutte le aste del nodo; a parità
+      // vince la prima, così `disegna` resta idempotente.
+      const v = versoLibero(m, n);
       const testo = el("text", {
-        x: p.x + 9 * s, y: p.y - 9 * s, "font-size": 11 * s,
+        x: p.x + OFFSET_ETICHETTA * s * v.x, y: p.y - OFFSET_ETICHETTA * s * v.z, "font-size": 11 * s,
         fill: INCHIOSTRO, "font-family": MONO,
+        "text-anchor": v.x < -0.3 ? "end" : v.x > 0.3 ? "start" : "middle",
       });
       testo.textContent = n.nome ?? String(n.id);
       gruppo.append(testo);
