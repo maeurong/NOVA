@@ -1,0 +1,78 @@
+/* Mondo «colonna tensegrale» (PRODUCT.md, «Convenzioni grafiche»): tema chiaro, un solo
+   rosso, mono tabulare per i numeri. Il rosso vuol dire attenzione e nient'altro. */
+:root {
+  --fondo: #dcdad5;
+  --inchiostro: #141414;
+  --rosso: #b8321e;
+  --tratto: #14141433;
+  /* ponytail: a0/88 non 99/66 — misurato, il brief dava 99/66 ma reggevano
+     4.29:1 e 2.44:1 contro --fondo, sotto le soglie AA 4.5:1 / 3:1. */
+  --tratto-forte: #14141488;
+  --pannello: #d2cfc9;
+  --testo-tenue: #141414a0;
+  --mono: ui-monospace, "SF Mono", "Menlo", monospace;
+  --testo: -apple-system, "Helvetica Neue", system-ui, sans-serif;
+  --passo: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(180px, 15rem) 1fr minmax(220px, 20rem);
+  /* il messaggio ha la sua riga: dentro quella della barra si sovrapporrebbe ai tasti */
+  grid-template-rows: 1fr auto auto;
+  grid-template-areas:
+    "albero viste pannello"
+    "messaggio messaggio messaggio"
+    "barra barra barra";
+  background: var(--fondo);
+  color: var(--inchiostro);
+  font: 13px/1.45 var(--testo);
+  overflow: hidden;
+}
+
+#albero { grid-area: albero; border-right: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
+#viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; min-width: 0; }
+#pannello { grid-area: pannello; border-left: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
+#barra  { grid-area: barra; border-top: 1px solid var(--tratto); padding: calc(var(--passo) / 2) var(--passo);
+          display: flex; gap: calc(var(--passo) * 2); flex-wrap: wrap; align-items: baseline; }
+
+#piano, #spazio { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#piano { border-right: 1px solid var(--tratto); }
+#piano svg { width: 100%; height: 100%; display: block; }
+
+h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+     color: var(--testo-tenue); margin: 0 0 var(--passo); font-weight: 600; }
+
+.numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+#albero ul { margin: 0; padding: 0; list-style: none; }
+#albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
+#albero li:hover { background: var(--pannello); }
+/* Il fuoco si deve vedere: chi naviga con ⇥ non ha altro modo di sapere dov'è (WCAG 2.4.7). */
+#albero li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
+/* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e quale tasto lo crea. */
+.vuoto { color: var(--testo-tenue); max-width: 24rem; padding: var(--passo); }
+.vuoto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
+             border-radius: 3px; padding: 0 4px; background: var(--pannello); }
+
+.tasto { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.tasto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
+             border-radius: 3px; padding: 0 4px; background: var(--pannello); }
+.tasto .aiuto { color: var(--testo-tenue); }
+
+/* Doppio canale: il rosso non viaggia mai da solo (WCAG 1.4.1) — c'è anche il segno.
+   Misurato: #b8321e su #dcdad5 fa 4.28:1, sotto il 4.5:1 di AA per testo normale.
+   Non si tocca l'unico rosso (ticket #14): il messaggio sale a testo grande
+   (≥18.66px, grassetto) dove la soglia AA scende a 3:1, che il rosso supera. */
+#messaggio { grid-area: messaggio; margin: 0; color: var(--rosso); font-family: var(--mono);
+             font-size: 1.2rem; font-weight: 700;
+             padding: calc(var(--passo) / 2) var(--passo); border-top: 1px solid var(--rosso); }
+#messaggio:empty { display: none; }
+#messaggio::before { content: "▲ "; }
+
+.staccato { margin-top: 1.5rem; }

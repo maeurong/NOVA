@@ -2,19 +2,38 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NOVA</title>
-<style>
-  body { background: #dcdad5; color: #141414; font-family: system-ui, sans-serif; }
-</style>
+<link rel="stylesheet" href="/static/stile.css">
 </head>
 <body>
-<h1>NOVA</h1>
-<p>Interfaccia in costruzione (tappa T5). Il sidecar risponde su /api/salute.</p>
-<pre id="salute"></pre>
-<script>
-  fetch("/api/salute")
-    .then((r) => r.json())
-    .then((d) => { document.getElementById("salute").textContent = JSON.stringify(d, null, 1); });
-</script>
+<nav id="albero" aria-label="albero del modello">
+  <h2>Modello</h2>
+  <div class="vuoto" id="albero-vuoto">
+    Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
+    in millimetri.
+  </div>
+  <ul id="albero-elenco" hidden></ul>
+</nav>
+
+<main id="viste">
+  <section id="piano" aria-label="piano di lavoro"></section>
+  <section id="spazio" aria-label="spazio"></section>
+</main>
+
+<aside id="pannello" aria-label="ispettore">
+  <h2>Selezione</h2>
+  <div class="vuoto" id="pannello-vuoto">
+    Niente di selezionato. Clicca un nodo o un'asta nel piano, oppure scegline uno nell'albero.
+  </div>
+  <dl id="pannello-dati" hidden></dl>
+  <h2 class="staccato">Unità</h2>
+  <p class="numero">mm · N · MPa · t · s</p>
+</aside>
+
+<footer id="barra" aria-label="scorciatoie"></footer>
+<p id="messaggio" role="status" aria-live="polite"></p>
+
+<script type="module" src="/static/app.js"></script>
 </body>
 </html>
