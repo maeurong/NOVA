@@ -43,4 +43,9 @@ test("un comando dopo un indietro taglia il futuro invece di biforcarlo", () => 
   c = indietro(c);
   c = applica(c, (m) => creaNodo(m, { x: 0, z: 3000 }), "nodo 3");
   assert.deepEqual(etichette(c).map((e) => e.etichetta), ["modello vuoto", "nodo 1", "nodo 3"]);
+  assert.equal(corrente(c).nodi.length, 2, "nodo 3 c'è, nodo 2 no");
+  assert.equal(etichette(c).length, 3, "snapshot ed etichette restano allineati");
+  assert.equal(c.snapshot.length, etichette(c).length, "stessa lunghezza, nessun disallineamento");
+  c = indietro(c);
+  assert.equal(corrente(c).nodi.length, 1, "indietro dopo il taglio torna a nodo 1, non a nodo 2");
 });

@@ -12,10 +12,10 @@ export const corrente = (c) => c.snapshot[c.indice];
 export function applica(c, fn, etichetta) {
   const m = fn(corrente(c));  // se solleva, esce di qui e `c` resta com'era
   const snapshot = c.snapshot.slice(0, c.indice + 1);
-  const etichette = c.etichetta.slice(0, c.indice + 1);
+  const nuoveEtichette = c.etichetta.slice(0, c.indice + 1);
   snapshot.push(m);
-  etichette.push(etichetta);
-  return { snapshot, etichetta: etichette, indice: snapshot.length - 1 };
+  nuoveEtichette.push(etichetta);
+  return { snapshot, etichetta: nuoveEtichette, indice: snapshot.length - 1 };
 }
 
 export const indietro = (c) => (c.indice > 0 ? { ...c, indice: c.indice - 1 } : c);
