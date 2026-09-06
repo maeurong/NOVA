@@ -464,8 +464,10 @@ export function modelloVuoto() {
   };
 }
 
-/** Il prossimo identificatore libero, con la regola di `nova/modello.py:479`: mai riusato.
- *  Il contatore ricorda anche ciò che è stato cancellato, e per questo entra nel massimo. */
+/** Il prossimo identificatore libero. La regola sta scritta a `nova/modello.py:383`
+ *  («Identificatori: interi per tipo, mai riusati»), il modo di calcolarlo a
+ *  `nova/modello.py:479`. Il contatore ricorda anche ciò che è stato cancellato, e per
+ *  questo entra nel massimo. */
 export function prossimoId(m, tipo) {
   const chiave = LISTE[tipo];
   if (chiave === undefined) throw new Error(`tipo sconosciuto: ${tipo}`);
