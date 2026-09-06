@@ -846,6 +846,12 @@ test("un comando dopo un indietro taglia il futuro invece di biforcarlo", () => 
   c = indietro(c);
   c = applica(c, (m) => creaNodo(m, { x: 0, z: 3000 }), "nodo 3");
   assert.deepEqual(etichette(c).map((e) => e.etichetta), ["modello vuoto", "nodo 1", "nodo 3"]);
+  // Non basta guardare le etichette: snapshot ed etichette sono due `slice` quasi identici,
+  // e se uno solo cambiasse resterebbe uno snapshot fantasma che solo la UI vedrebbe.
+  assert.equal(corrente(c).nodi.length, 2, "il nodo 3 sta sopra il nodo 1, non sopra il 2");
+  assert.equal(corrente(c).nodi[1].z, 3000);
+  assert.equal(etichette(c).length, c.snapshot.length, "snapshot ed etichette restano allineati");
+  assert.equal(corrente(indietro(c)).nodi.length, 1, "indietro dopo il taglio torna al nodo 1");
 });
 ```
 
@@ -870,11 +876,13 @@ export const corrente = (c) => c.snapshot[c.indice];
 
 export function applica(c, fn, etichetta) {
   const m = fn(corrente(c));  // se solleva, esce di qui e `c` resta com'era
+  // Lo stesso bound sui due `slice`, sempre: se si disallineano, resta uno snapshot
+  // fantasma raggiungibile con `indietro()` e non se ne accorge nessuno fino alla UI.
   const snapshot = c.snapshot.slice(0, c.indice + 1);
-  const etichette = c.etichetta.slice(0, c.indice + 1);
+  const nuoveEtichette = c.etichetta.slice(0, c.indice + 1);
   snapshot.push(m);
-  etichette.push(etichetta);
-  return { snapshot, etichetta: etichette, indice: snapshot.length - 1 };
+  nuoveEtichette.push(etichetta);
+  return { snapshot, etichetta: nuoveEtichette, indice: snapshot.length - 1 };
 }
 
 export const indietro = (c) => (c.indice > 0 ? { ...c, indice: c.indice - 1 } : c);
