@@ -18,6 +18,10 @@ test("gli spazi attorno non contano", () => {
   assert.equal(leggiNumero("  1200 "), 1200);
 });
 
+test("senza virgola il punto resta decimale, anche quando sembra migliaia", () => {
+  assert.equal(leggiNumero("1.234"), 1.234);
+});
+
 test("quel che non è un numero è null, mai NaN", () => {
   for (const t of ["", "   ", "abc", "1,2,3", "--3", "1,2.3"]) {
     assert.equal(leggiNumero(t), null, `«${t}» doveva essere null`);
