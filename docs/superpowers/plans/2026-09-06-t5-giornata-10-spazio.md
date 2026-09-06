@@ -981,6 +981,10 @@ test("un tasto non mappato torna null", () => {
 test("con un modificatore non si intercetta niente: ⌘K e ⌘Z sono di domani", () => {
   assert.equal(voceDaEvento({ key: "n", metaKey: true, ctrlKey: false, altKey: false }), null);
   assert.equal(voceDaEvento({ key: "z", metaKey: true, ctrlKey: false, altKey: false }), null);
+  // Tutti e tre i modificatori, non solo ⌘: su una tastiera PC `Ctrl+N` creerebbe un nodo
+  // mentre l'utente sta facendo altro, e con il solo test su `metaKey` nessuno se ne accorge.
+  assert.equal(voceDaEvento({ key: "n", metaKey: false, ctrlKey: true, altKey: false }), null);
+  assert.equal(voceDaEvento({ key: "b", metaKey: false, ctrlKey: false, altKey: true }), null);
 });
 
 test("la barra mostra le voci del contesto più quelle di sempre", () => {
