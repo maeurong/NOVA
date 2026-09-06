@@ -6,12 +6,23 @@
 // quindi `z` si specchia una volta sola, qui dentro, e nessun altro modulo se ne accorge.
 
 import { stampaNumero } from "./numeri.js";
-import { nodo } from "./modello.js";
+import { nodo, asteDelNodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
 const LATO_MINIMO = 2000;  // mm: un modello con un solo nodo ha estensione zero
 const RAGGIO = 5;          // px del nodo, in coordinate schermo
+// px, distanza dell'etichetta dal nodo: 9 bastava sulla diagonale (9√2≈12.7 di ipotenusa)
+// ma non sul verso assiale puro (su/giù/dx/sx), dove l'offset è tutto su un asse solo e
+// l'etichetta tocca il proprio cerchio — misurato, 6px di sovrapposizione reale.
+const OFFSET_ETICHETTA = 16;
+
+// Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
+// vince la prima, e il disegno resta identico a parità di stato.
+const VERSI = [
+  { x: 1, z: 1 }, { x: 1, z: 0 }, { x: 0, z: 1 }, { x: -1, z: 1 },
+  { x: -1, z: 0 }, { x: -1, z: -1 }, { x: 0, z: -1 }, { x: 1, z: -1 },
+].map(({ x, z }) => { const l = Math.hypot(x, z); return { x: x / l, z: z / l }; });
 
 // I colori scritti a mano, non come `var(--…)`: le presentation attribute dell'SVG non
 // risolvono le variabili CSS, e un `fill="var(--rosso)"` esce nero senza dire niente.
@@ -41,6 +52,28 @@ function estensione(m, ghost = null) {
   const altezza = Math.max(z1 - z0, LATO_MINIMO);
   const mx = larghezza * MARGINE, mz = altezza * MARGINE;
   return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
+}
+
+/** Il verso in cui posare l'etichetta di un nodo: quello più lontano da tutte le sue aste.
+ *  Un nodo isolato non ha vincoli e prende il primo, in alto a destra. */
+function versoLibero(m, n) {
+  const direzioni = [];
+  for (const a of asteDelNodo(m, n.id)) {
+    const altro = nodo(m, a.nodo_i === n.id ? a.nodo_j : a.nodo_i);
+    if (!altro) continue;
+    const l = Math.hypot(altro.x - n.x, altro.z - n.z);
+    if (l > 0) direzioni.push({ x: (altro.x - n.x) / l, z: (altro.z - n.z) / l });
+  }
+  if (direzioni.length === 0) return VERSI[0];
+  let scelto = VERSI[0], peggiore = Infinity;
+  for (const v of VERSI) {
+    // Il prodotto scalare più alto è l'asta angolarmente più vicina a questo verso: è lei
+    // che deciderebbe la collisione. Fra i versi si tiene quello il cui vicino più stretto
+    // è il **meno** vicino di tutti — cioè il minimo dei massimi.
+    const vicino = Math.max(...direzioni.map((d) => d.x * v.x + d.z * v.z));
+    if (vicino < peggiore) { peggiore = vicino; scelto = v; }
+  }
+  return scelto;
 }
 
 export function creaPiano(contenitore, { suSelezione, suSfondo }) {
@@ -114,22 +147,28 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     for (const n of m.nodi) {
       const p = schermo(n);
       const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;
-      gruppo.append(el("circle", {
+      // Un `<g>` unico per cerchio ed etichetta: senza, un clic sull'etichetta non trova
+      // `[data-tipo]` risalendo da un `<text>` nudo e scivola a `suSfondo()`.
+      const nodoEl = el("g", { "data-tipo": "nodo", "data-id": n.id });
+      nodoEl.append(el("circle", {
         cx: p.x, cy: p.y, r: (scelto ? RAGGIO * 1.6 : RAGGIO) * s,  // doppio canale: rosso e più grosso
         fill: scelto ? ROSSO : INCHIOSTRO,
-        "data-tipo": "nodo", "data-id": n.id,
       }));
       // Un'etichetta per posizione: due nodi coincidenti (da un file, non dai comandi)
       // scriverebbero due volte nello stesso punto, e il risultato è illeggibile.
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
-      if (etichettate.has(posto)) continue;
-      etichettate.add(posto);
-      const testo = el("text", {
-        x: p.x + 9 * s, y: p.y - 9 * s, "font-size": 11 * s,
-        fill: INCHIOSTRO, "font-family": MONO,
-      });
-      testo.textContent = n.nome ?? String(n.id);
-      gruppo.append(testo);
+      if (!etichettate.has(posto)) {
+        etichettate.add(posto);
+        const v = versoLibero(m, n);
+        const testo = el("text", {
+          x: p.x + OFFSET_ETICHETTA * s * v.x, y: p.y - OFFSET_ETICHETTA * s * v.z, "font-size": 11 * s,
+          fill: INCHIOSTRO, "font-family": MONO,
+          "text-anchor": v.x < -0.3 ? "end" : v.x > 0.3 ? "start" : "middle",
+        });
+        testo.textContent = n.nome ?? String(n.id);
+        nodoEl.append(testo);
+      }
+      gruppo.append(nodoEl);
     }
 
     svg.replaceChildren(gruppo);
