@@ -412,6 +412,14 @@ test("nodoVicino trova un nodo entro il millimetro e non oltre", () => {
   assert.equal(nodoVicino(m, 0.4, 0, 0).id, 1);
   assert.equal(nodoVicino(m, 3, 0, 0), null);
 });
+
+test("il confine della tolleranza è stretto: a un millimetro esatto il nodo non è vicino", () => {
+  // Senza questi due, un `<` che diventasse `<=` passerebbe inosservato — e i nodi
+  // coincidenti li vede solo il Check Model, mai il solutore.
+  const m = conNodi();
+  assert.equal(nodoVicino(m, 1.0, 0, 0), null, "1,0 mm è già fuori, come in nova/check.py");
+  assert.equal(nodoVicino(m, 0.999, 0, 0).id, 1, "appena sotto è dentro");
+});
 ```
 
 - [ ] **Step 2: Fai girare il test e verifica che fallisca**
@@ -461,8 +469,9 @@ export function modelloVuoto() {
 export function prossimoId(m, tipo) {
   const chiave = LISTE[tipo];
   if (chiave === undefined) throw new Error(`tipo sconosciuto: ${tipo}`);
-  // lo 0 in coda regge il caso della lista vuota: Math.max() senza argomenti è -Infinity
-  return Math.max(m.contatori[tipo] ?? 0, ...m[chiave].map((e) => e.id), 0) + 1;
+  // `?? 0` regge la lista vuota: senza un primo argomento sempre presente, `Math.max()`
+  // su una lista senza identificatori tornerebbe -Infinity.
+  return Math.max(m.contatori[tipo] ?? 0, ...m[chiave].map((e) => e.id)) + 1;
 }
 
 export const nodo = (m, id) => m.nodi.find((n) => n.id === id) ?? null;
