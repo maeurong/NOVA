@@ -52,12 +52,33 @@ test("estrudi da un nodo che non esiste si rifiuta", () => {
   assert.throws(() => estrudi(modelloVuoto(), { da: 9, dx: 1000, dz: 0 }), ErroreComando);
 });
 
+test("estrudi non tocca il modello che riceve", () => {
+  const prima = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const snapshot = structuredClone(prima);
+  estrudi(prima, { da: 1, dx: 5000, dz: 0 });
+  assert.deepEqual(prima, snapshot);
+});
+
 test("sposta un nodo e le aste lo seguono senza cambiare", () => {
   let m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
   const asteprima = structuredClone(m.aste);
   m = spostaNodo(m, { id: 2, x: 5000, z: 3000 });
   assert.deepEqual(m.aste, asteprima, "l'asta referenzia gli identificatori, non le coordinate");
   assert.equal(m.nodi[1].z, 3000);
+});
+
+test("spostaNodo non tocca il modello che riceve", () => {
+  const prima = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  const snapshot = structuredClone(prima);
+  spostaNodo(prima, { id: 2, x: 5000, z: 3000 });
+  assert.deepEqual(prima, snapshot);
+});
+
+test("spostaNodo su coordinate che coincidono con un altro nodo si rifiuta", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaNodo(m, { x: 5000, z: 0 });
+  assert.throws(() => spostaNodo(m, { id: 1, x: 5000, z: 0 }), ErroreComando);
+  assert.deepEqual(m.nodi[0], { id: 1, nome: null, x: 0, y: 0, z: 0 }, "il modello resta intatto");
 });
 
 test("elimina un nodo e con lui aste e carichi che lo nominano", () => {
@@ -80,6 +101,18 @@ test("elimina un nodo che non esiste si rifiuta e lascia il modello intatto", ()
   assert.equal(m.nodi.length, 1);
 });
 
+test("eliminaNodo non tocca il modello che riceve, aste e carichi compresi", () => {
+  let m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  m = { ...m, azioni: [{ id: 1, nome: "Q", natura: "Q", generata: false, carichi: [
+    { tipo: "nodale", nodo: 2, fz: -1200 },
+    { tipo: "distribuito", asta: 1, q: -3, direzione: "z" },
+    { tipo: "gravita", fattore_z: -1 },
+  ] }] };
+  const snapshot = structuredClone(m);
+  eliminaNodo(m, { id: 2 });
+  assert.deepEqual(m, snapshot);
+});
+
 test("rinomina cambia il nome e mai l'identificatore", () => {
   const m = rinomina(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { tipo: "nodo", id: 1, nome: "piede sinistro" });
   assert.equal(m.nodi[0].nome, "piede sinistro");
@@ -96,4 +129,11 @@ test("rinomina accetta un nome già usato: il nome è libero, l'identità no", (
 test("rinomina a nome vuoto si rifiuta", () => {
   const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
   assert.throws(() => rinomina(m, { tipo: "nodo", id: 1, nome: "   " }), ErroreComando);
+});
+
+test("rinomina non tocca il modello che riceve", () => {
+  const prima = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const snapshot = structuredClone(prima);
+  rinomina(prima, { tipo: "nodo", id: 1, nome: "piede" });
+  assert.deepEqual(prima, snapshot);
 });
