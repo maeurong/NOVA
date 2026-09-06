@@ -45,6 +45,110 @@
 | `static/test/*.test.js` | test `node --test` sui moduli puri | — |
 | `tests/test_js.py` | fa girare `node --test` dentro `pytest` | — |
 
+## Annotazione di dispatch
+
+Scritta il 06/09/2026 dall'`architect` sul worktree `feat/interfaccia`, prima del dispatch.
+Non tocca la logica dei task: aggiunge chi li esegue, in che ordine, con quale skill-gate,
+e dove un agente fresco può sbagliare senza accorgersene.
+
+### Chi esegue
+
+Tutti e nove i task cadono dentro `static/`: assegnati a **`frontend-engineer`**, senza
+eccezioni. Il solo file fuori da `static/` è `tests/test_js.py` (Task 1, venti righe di
+cucitura `subprocess`): staccarlo su `backend-engineer` costerebbe un dispatch in più per
+un file senza logica di dominio, che serve a chi scrive i moduli JS e a nessun altro.
+Nessun task del piano resta scoperto dal roster.
+
+### Il grafo vero degli import
+
+Preso dal codice dei task, non dai blocchi `Interfaces`: i due divergono in due punti
+(vedi «Scostamenti»).
+
+```mermaid
+graph TD
+  numeri[numeri.js · T1]
+  modello[modello.js · T2]
+  comandi[comandi.js · T3]
+  cronologia[cronologia.js · T4]
+  tastiera[tastiera.js · T5]
+  guscio[index.html + stile.css · T6]
+  piano[piano.js · T7]
+  three[vendor/three.module.js · T8]
+  spazio[spazio.js · T8]
+  albero[albero.js · T9]
+  app[app.js · T9]
+
+  comandi --> modello
+  piano --> numeri
+  spazio --> three
+  albero --> modello
+  albero --> numeri
+  app --> modello
+  app --> comandi
+  app --> cronologia
+  app --> tastiera
+  app --> piano
+  app --> spazio
+  app --> albero
+  app --> numeri
+  cronologia -. solo il test .-> comandi
+```
+
+`cronologia.js` non importa niente: è il suo **test** a tirare dentro `comandi.js`, ed è
+quello a legare T4 dopo T3. `piano.js` importa il solo `numeri.js`. Il guscio non importa
+nessun modulo: carica `app.js` e basta.
+
+### Onde
+
+| onda | task | in parallelo | perché |
+|---|---|---|---|
+| 0 | 1 | no, da solo | crea `tests/test_js.py`, la cucitura che ogni verifica dopo richiama |
+| 1 | 2 → 3 → 4 · 5 · 6 | tre corsie | 2→3→4 è una catena forzata (import e test); 5 e 6 non toccano nessun file delle altre |
+| 2 | 7 · 8 | due corsie | file disgiunti; entrambe **leggono** il DOM del Task 6, nessuna lo scrive |
+| 3 | 9 | no, da solo | cuce tutto quel che le onde prima hanno prodotto |
+
+La corsia 2→3→4 va a **un solo agente** per tutta la catena: tre dispatch separati si
+passerebbero lo stato via file e pagherebbero due riletture di `modello.js` per niente.
+
+### Tre regole per le onde parallele (stesso worktree, stessi comandi)
+
+1. **La verifica JS si stringe al proprio file.** `pytest tests/test_js.py` espande
+   `static/test/*.test.js`: in onda parallela raccoglie anche il test che l'altra corsia
+   sta scrivendo a metà, e fallisce per colpa d'altri. In onda 1 e 2 ogni corsia verifica
+   con `node --test static/test/<il proprio>.test.js`; `pytest tests` intero gira al
+   confine dell'onda, quando le corsie hanno chiuso.
+2. **Una porta per corsia.** L'onda 2 farebbe partire due volte `python -m nova --porta
+   8766` e la seconda morirebbe su porta occupata. Task 7 usa **8766**, Task 8 usa **8767**.
+3. **Commit con pathspec esplicito.** In onda parallela lo staging condiviso si porta
+   dentro anche quel che l'altra corsia ha appena messo in indice. Forma da usare:
+   `git commit <percorsi> -m "..."`, che ignora il resto dell'indice.
+
+### Skill-gate
+
+`true` su tutti e nove. `impeccable` è **nominata** solo dove il file toccato è di
+interfaccia — **Task 6, 7, 8, 9** (`index.html`, `stile.css`, `piano.js`, `spazio.js`,
+`albero.js`, `app.js`). Sui task 1–5 il gate resta vincolante ma la skill la sceglie
+l'agente: sono moduli puri, con il test scritto prima, e non c'è superficie da guardare.
+**Mai «cream palette»**, in nessuno dei quattro.
+
+### Scostamenti trovati durante l'annotazione
+
+- **`.impeccable/config.json` non esiste in questo worktree.** Il vincolo globale dice che
+  «esclude già la cream palette per `static/index.html`»: la cartella `.impeccable/` è
+  **non tracciata** nel checkout principale, quindi qui non arriva. Il divieto regge lo
+  stesso, perché `PRODUCT.md:186` porta la palette «colonna tensegrale» e `impeccable`
+  legge `PRODUCT.md` — ma va detto all'agente, che altrimenti si fida di una
+  configurazione assente.
+- **Task 6 dichiara `Consumes: static/tastiera.js`**: `index.html` non lo nomina. La barra
+  la riempie `app.js` al Task 9. La dipendenza dichiarata non esiste e non vincola l'ordine.
+- **Task 7 dichiara `Consumes: asteDelNodo, nodo da static/modello.js`**: `piano.js`
+  importa il solo `numeri.js` e rifà `m.nodi.find((n) => n.id === …)` tre volte a mano. O
+  importa `nodo` e cancella le tre righe, o corregge il blocco. Il grafo sopra legge il
+  codice.
+- **`modelloVuoto()` non porta `impostazioni_analisi`**, che `nova/modello.py:365` invece
+  dichiara. Regge, perché il campo ha un default e `extra="forbid"` rifiuta solo i campi in
+  più — ma «la stessa forma di `nova/modello.py:354`» è una frase più larga del vero.
+
 ---
 
 ### Task 1: cucitura dei test JS e notazione italiana
@@ -57,6 +161,13 @@
 **Interfaces:**
 - Consumes: niente.
 - Produces: `leggiNumero(testo) → number | null`, `stampaNumero(valore, {decimali = 1, migliaia = false}) → string`. La cucitura `tests/test_js.py` che tutti i task successivi riusano senza modificarla.
+
+**Dispatch:** `frontend-engineer` · onda **0**, da solo · skill-gate **true** (skill a scelta dell'agente: modulo puro, nessuna superficie da guardare).
+
+**Rischi (agente fresco):**
+- `stampaNumero(-0.4, { decimali: 0 })` dà `"-0"`: `toFixed` tiene il segno di uno zero. Nessun test lo copre. Segnale: una coordinata a −0,4 mm si stampa «−0 mm».
+- `leggiNumero("1.234")` torna **1,234**, non 1234 — è la regola dichiarata nel commento, non un difetto. Nessun test la fissa: senza un assert il primo che legge il file la «corregge». Aggiungi la riga, non riscrivere la regola.
+- La cucitura `tests/test_js.py` la riusano tutti i task dopo: **non modificarla** più avanti e non allargare il glob oltre `static/test/*.test.js`.
 
 **Ingressi degeneri:**
 - stringa vuota o soli spazi → `null`, mai `NaN`
@@ -222,6 +333,13 @@ git commit -m "feat(interfaccia): notazione numerica italiana e cucitura node --
 - Consumes: niente.
 - Produces: `UNITA`, `modelloVuoto() → Modello`, `prossimoId(m, tipo) → number`, `nodo(m, id) → Nodo | null`, `asta(m, id) → Asta | null`, `asteDelNodo(m, id) → Asta[]`, `nodoVicino(m, x, y, z) → Nodo | null`, `TOLLERANZA_MM`.
 
+**Dispatch:** `frontend-engineer` · onda **1**, corsia A (2 → 3 → 4, stesso agente per tutta la catena) · skill-gate **true**.
+
+**Rischi (agente fresco):**
+- La regola di `prossimoId` deve restare quella di `nova/modello.py:479` (`max(contatore, max id) + 1`). Se il JS diverge, gli identificatori nati nell'interfaccia collidono con quelli nati nel backend. Segnale: due entità con lo stesso `id` dopo un salva e riapri (giornata 11), quando ormai è tardi.
+- `modelloVuoto()` non porta `impostazioni_analisi` (`nova/modello.py:365`): il campo ha un default lato Pydantic e `extra="forbid"` rifiuta solo i campi in più. Non aggiungerlo per simmetria.
+- `nodoVicino` torna il **primo** nodo entro tolleranza, non il più vicino. Con `TOLLERANZA_MM = 1.0` (`nova/check.py:13`) la differenza non si vede: non trasformarlo in una ricerca del minimo per «pulizia».
+
 **Ingressi degeneri:**
 - modello vuoto → `asteDelNodo` torna `[]`, `nodo` torna `null`, nessuna eccezione
 - `prossimoId` su una lista vuota e `contatori` vuoti → `1` (non `-Infinity`)
@@ -372,6 +490,13 @@ git commit -m "feat(interfaccia): forma dello stato allineata a nova/modello.py"
 **Interfaces:**
 - Consumes: `prossimoId`, `nodo`, `asteDelNodo`, `nodoVicino`, `TOLLERANZA_MM` da `static/modello.js`.
 - Produces: `ErroreComando`, `creaNodo(m, {x, z, y})`, `estrudi(m, {da, dx, dz, dy, sezione})`, `spostaNodo(m, {id, x, z, y})`, `eliminaNodo(m, {id})`, `rinomina(m, {tipo, id, nome})`. Ogni riduttore torna un modello **nuovo** e non tocca quello ricevuto.
+
+**Dispatch:** `frontend-engineer` · onda **1**, corsia A, dopo il Task 2 · skill-gate **true**.
+
+**Rischi (agente fresco):**
+- Il commento in testa dice che i riduttori rifiutano «esattamente quel che il Check Model rifiuterebbe dopo». Non è vero: `nova/check.py` ha anche `aste_duplicate` e `nodo_su_asta`, e `estrudi` non li impedisce — due estrusioni opposte fra gli stessi due nodi creano un'asta doppia. **Non aggiungere le guardie** (il Check Model è la giornata 12): stringi il commento a quel che il codice fa davvero.
+- `creaNodo` rifiuta un punto già occupato entro la tolleranza, ma la lista degli ingressi degeneri non lo nomina e nessun test lo copre. Aggiungi l'assert, non il comportamento: c'è già.
+- `structuredClone` a ogni riduttore è la scelta, non un'inefficienza da ottimizzare. Un telaio pesa pochi KB.
 
 **Ingressi degeneri:**
 - coordinate non finite (`NaN`, `Infinity`, `null`) → `ErroreComando`, nessun nodo creato
@@ -632,6 +757,12 @@ git commit -m "feat(interfaccia): riduttori puri per nodo, estrusione, spostamen
 - Consumes: `ErroreComando` da `static/comandi.js` (solo per il test).
 - Produces: `nuovaCronologia(m) → Cronologia`, `applica(c, fn, etichetta) → Cronologia`, `corrente(c) → Modello`, `indietro(c) → Cronologia`, `avanti(c) → Cronologia`, `etichette(c) → {etichetta, attiva}[]`.
 
+**Dispatch:** `frontend-engineer` · onda **1**, corsia A, dopo il Task 3 · skill-gate **true**.
+
+**Rischi (agente fresco):**
+- `cronologia.js` **non importa niente**: è il suo test a tirare dentro `comandi.js` e `modello.js`. Se l'agente aggiunge un import in produzione «per coerenza», lega due moduli puri senza motivo.
+- `applica` non ha tetto agli snapshot. Non metterlo: la giornata dura una sessione, e il pannello della cronologia è la giornata 11.
+
 **Ingressi degeneri:**
 - `indietro` sulla cronologia appena nata → torna la stessa cronologia, nessuna eccezione, nessun indice negativo
 - `avanti` quando si è già in fondo → torna la stessa cronologia
@@ -752,6 +883,13 @@ git commit -m "feat(interfaccia): cronologia lineare a snapshot, uno per comando
 - Produces: `TASTI` (array di `{tasto, codice, etichetta, aiuto, contesto}`), `voceDaEvento(evento) → Voce | null`, `vociDellaBarra(contesto) → Voce[]`.
 
 `contesto` vale `"sempre"`, `"selezione"` (serve un oggetto selezionato) o `"ghost"` (serve un ghost aperto). La barra in basso si genera da `TASTI`: story 14 chiede che le scorciatoie stampate siano **le stesse** che funzionano, e due elenchi divergono al primo cambio.
+
+**Dispatch:** `frontend-engineer` · onda **1**, corsia B (parallela alla A e alla C) · skill-gate **true**.
+
+**Rischi (agente fresco):**
+- Il test verifica l'unicità di `codice|contesto`, non quella del **tasto**. Due voci con lo stesso tasto passerebbero il test, e `DA_KEY`, che è una `Map`, ne perderebbe una in silenzio. Aggiungi l'assert sull'unicità di `tasto`.
+- `tasto: "Canc"` con `DA_KEY` che accetta anche `backspace`: su una tastiera Mac il tasto che funziona è **⌫**, e la barra ne stampa uno che sulla macchina non esiste — proprio ciò che story 14 vieta. Segnale: premi ⌫ su un Mac, il nodo sparisce, la barra dice «Canc». Stessa classe per `F2`, che su Mac vuole `fn`.
+- `voceDaEvento` non guarda il contesto: `Invio` e `Canc` restano riconosciuti anche fuori dal loro contesto. Le guardie stanno in `app.js` (Task 9) e lì devono restare — non spostarle qui.
 
 **Ingressi degeneri:**
 - evento con `key` di un tasto non mappato → `null`, nessuna eccezione
@@ -876,6 +1014,14 @@ git commit -m "feat(interfaccia): mappa dei tasti unica, la barra in basso la le
 - Produces: la struttura del DOM su cui i task 7–9 attaccano: `#albero`, `#piano` (un `<svg>`), `#spazio` (un `<div>` per three.js), `#pannello`, `#barra`, `#messaggio`.
 
 **Skill obbligatoria: `impeccable`.** Zero sovrapposizioni, zero testo tagliato, verifica a 1280 e a 1920 px. **Mai «cream palette»**.
+
+**Dispatch:** `frontend-engineer` · onda **1**, corsia C (parallela alla A e alla B) · skill-gate **true**, **`impeccable` obbligatoria** · porta del server **8766**.
+
+**Rischi (agente fresco):**
+- **`.impeccable/config.json` non esiste in questo worktree** (vedi «Scostamenti» nell'annotazione di dispatch). Il divieto della cream palette vale lo stesso — `PRODUCT.md:186` porta la palette «colonna tensegrale» — ma non aspettarti che una configurazione lo imponga al posto tuo.
+- `#albero-elenco` è un `<ul>` e `#pannello-dati` una `<dl>`: `stile.css` non tocca né l'uno né l'altra, quindi arrivano con i pallini e i circa 40 px di rientro di serie, dentro una colonna larga 180 px. È il testo tagliato che il vincolo globale vieta, e si vede solo quando il Task 9 li riempie: guardali con delle righe finte adesso, non dopo.
+- `#messaggio` sta nel sorgente **dopo** `<footer id="barra">` e sopra di lui nella griglia: per chi legge lo schermo conta l'ordine del sorgente. E con `:empty { display: none }` un `role="status"` che passa da `display: none` a visibile può non essere annunciato affatto.
+- La console segnala `app.js` mancante fino al Task 9: è atteso, non è il difetto da inseguire.
 
 **Ingressi degeneri:**
 - modello vuoto (il caso all'apertura) → l'albero e il piano mostrano lo stato che **insegna il gesto** («nessun nodo. Premi N e scrivi x; z»), non una tela bianca
@@ -1033,6 +1179,15 @@ git commit -m "feat(interfaccia): guscio a tre colonne, palette colonna tensegra
   - `suSelezione(tipo, id)` con `tipo` in `"nodo" | "asta"`; `suSfondo()` quando si clicca il vuoto.
 
 Il piano lavora nel piano `x–z` (l'alzado del telaio): `x` verso destra, `z` verso l'alto. Il `viewBox` si calcola dall'estensione del modello con un margine, e `z` si specchia perché in SVG cresce verso il basso.
+
+**Dispatch:** `frontend-engineer` · onda **2**, in parallelo con il Task 8 · skill-gate **true**, **`impeccable` obbligatoria** · porta del server **8766**.
+
+**Rischi (agente fresco):**
+- **Il ghost esce dal riquadro.** `disegna` richiama `inquadra(m)`, e `inquadra` misura la sola estensione del **modello**: un ghost più lungo del telaio cade fuori dal `viewBox` e non si vede, senza che nessuna eccezione lo dica. Segnale: un nodo solo, `B` → `3000`, `↑` — la tratteggiata e la misura non compaiono (il `viewBox` è largo 2000 mm). Lo Step 3 non lo prende, perché prova il ghost su un modello già largo 9000 mm.
+- **La scala `s` guarda la sola larghezza.** Con `preserveAspectRatio="xMidYMid meet"` la scala vera la detta il lato più stretto: in un riquadro alto e magro tratti, etichette e raggi escono della misura sbagliata. Segnale: stringi la finestra in orizzontale — lo spessore apparente del tratto cambia invece di restare.
+- **`inquadra` nell'oggetto restituito non lo chiama nessuno**: `app.js` usa solo `disegna`, che se lo richiama da sé. Superficie morta, toglila dal ritorno.
+- **`nodo` e `asteDelNodo` sono dichiarati in `Interfaces` ma non importati**: il file rifà `m.nodi.find((n) => n.id === …)` tre volte a mano. Importa `nodo` da `modello.js` e cancella le tre righe, oppure correggi il blocco `Interfaces` — non lasciare le due versioni a divergere.
+- I cerchi si selezionano col solo clic: nessun `tabindex`, nessun ruolo, nessun `:focus-visible`. Il vincolo globale dice **WCAG AA** e il Goal dice «con la sola tastiera»; oggi la selezione da tastiera non esiste né qui né nell'albero (Task 9).
 
 **Ingressi degeneri:**
 - modello senza nodi → si disegna la sola griglia, `inquadra` non divide per zero
@@ -1228,6 +1383,15 @@ git commit -m "feat(interfaccia): piano di lavoro SVG con selezione, etichette e
   - Se three.js non si carica, `creaSpazio` **non solleva**: torna `disponibile: false` e scrive nel contenitore perché la vista non c'è. Il piano SVG resta intero.
 
 Terna: `x` a destra, `z` in alto, `y` in profondità — la stessa di `nova/modello.py` e del piano. La camera è in prospettiva, punta al centro del modello e si orbita col mouse; nessuna dipendenza oltre three.js (i controlli sono venti righe, `camera-controls` sarebbe un secondo file vendorizzato per un giro di trascinamento).
+
+**Dispatch:** `frontend-engineer` · onda **2**, in parallelo con il Task 7 · skill-gate **true**, **`impeccable` obbligatoria** · porta del server **8767** (la 8766 è del Task 7).
+
+**Rischi (agente fresco):**
+- **`renderer.setSize(w, h, false)` insieme a `setPixelRatio(devicePixelRatio)`.** Il terzo argomento a `false` dice a three.js di non scrivere lo stile del canvas: il canvas resta largo `w × rapporto` pixel CSS, cioè il doppio su uno schermo retina, e `#spazio { overflow: hidden }` taglia il resto senza dire niente. Segnale: su un Mac si vede un quarto della scena, in alto a sinistra, e il modello non è mai al centro. Rimedio: `setSize(w, h)`.
+- **Lo zoom si perde a ogni comando.** `disegna` chiama `inquadra(m)`, che riscrive `orbita.distanza`: la rotella funziona finché non si preme un tasto. Segnale: avvicina la vista, premi `N`, la camera torna dov'era. `theta` e `phi` invece sopravvivono, quindi sembra un difetto della sola rotella.
+- **`PROVENIENZA.md` nasce con `<incolla qui l'impronta stampata da shasum>`.** Segnale: `grep -n 'incolla qui' static/vendor/PROVENIENZA.md` deve non dare niente prima del commit.
+- **Lo Step 2 non è cerimonia.** `curl -f` su una versione che non esiste non lascia file; una redirezione lascia dell'HTML. Le prime righe devono essere JavaScript e la dimensione dell'ordine del megabyte. Verifica anche che `three@0.185.0` esista davvero e spedisca ancora `build/three.module.js`: la versione la sceglie il piano, non una misura.
+- **`new THREE.WebGLRenderer` non solleva in tutti i casi in cui WebGL manca.** Segnale del falso positivo: `disponibile === true` e un rettangolo nero, senza messaggio. La prova dello Step 5 copre il file mancante, non questo.
 
 **Ingressi degeneri:**
 - `static/vendor/three.module.js` assente o corrotto → `disponibile: false`, messaggio nel riquadro, **nessuna pagina bianca**
@@ -1459,6 +1623,16 @@ git commit -m "feat(interfaccia): vista spaziale three.js vendorizzato, con l'as
 - Produces: la pagina che funziona. Nessun altro modulo dipende da questi due.
 
 `app.js` tiene **due** cose e nient'altro: la cronologia (da cui esce il modello corrente) e la selezione (`{tipo, id} | null`). Ogni evento diventa un comando; ogni comando ridisegna le quattro viste dallo stesso stato. Il ghost vive in `app.js` e **non** entra mai nel modello finché non si preme Invio.
+
+**Dispatch:** `frontend-engineer` · onda **3**, da solo · skill-gate **true**, **`impeccable` obbligatoria** · porta del server **8766**.
+
+**Rischi (agente fresco):**
+- **Le due debolezze del Task 8 si vedono qui, non là.** Ogni `ridisegna()` chiama `spazio.disegna`, quindi la camera si rimette a posto a ogni tasto premuto. Se il Task 8 non le ha chiuse, il sintomo arriva adesso e sembra colpa di `app.js`: cercalo in `spazio.js`.
+- **Le voci dell'albero sono `<li>` con un `click` e basta**: niente `tabindex`, niente ruolo, nessun modo di selezionare da tastiera. Col piano SVG nella stessa condizione (Task 7), l'intera selezione resta fuori portata da tastiera — contro il vincolo **WCAG AA** e contro il «con la sola tastiera» del Goal.
+- **`selezione = m.aste[m.aste.length - 1].nodo_j`** regge solo perché `estrudi` accoda l'asta nuova in fondo. Vero oggi; se qualcuno riordina `aste`, la selezione finisce su un nodo a caso e nessun test lo dice.
+- **`await creaSpazio(...)` in cima al modulo** ferma tutto il resto finché il megabyte di three.js non è stato analizzato: fino a lì la barra dei tasti è vuota e la pagina sembra morta. Segnale: ricarica a cache fredda e conta i decimi prima che la barra compaia.
+- **`chiedi` che torna `null` (Annulla) non pulisce `#messaggio`**: l'avviso di prima resta a schermo mentre non c'è più niente che non vada.
+- Lo Step 4 lo dice già e vale la pena ripeterlo: se l'estrusione **sdoppia** il nodo di arrivo invece di riusarlo, il difetto è del Task 3. Non aggiustarlo in `app.js`.
 
 **Ingressi degeneri:**
 - `Esc` mentre si digita un ghost → il ghost sparisce, il modello non cambia, la cronologia non cresce
