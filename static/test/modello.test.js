@@ -50,3 +50,9 @@ test("nodoVicino trova un nodo entro il millimetro e non oltre", () => {
   assert.equal(nodoVicino(m, 0.4, 0, 0).id, 1);
   assert.equal(nodoVicino(m, 3, 0, 0), null);
 });
+
+test("il confine della tolleranza è stretto: a un millimetro esatto il nodo non è vicino", () => {
+  const m = conNodi();
+  assert.equal(nodoVicino(m, 1.0, 0, 0), null, "1,0 mm è già fuori, come in nova/check.py");
+  assert.equal(nodoVicino(m, 0.999, 0, 0).id, 1, "appena sotto è dentro");
+});

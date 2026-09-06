@@ -37,8 +37,9 @@ export function modelloVuoto() {
 export function prossimoId(m, tipo) {
   const chiave = LISTE[tipo];
   if (chiave === undefined) throw new Error(`tipo sconosciuto: ${tipo}`);
-  // lo 0 in coda regge il caso della lista vuota: Math.max() senza argomenti è -Infinity
-  return Math.max(m.contatori[tipo] ?? 0, ...m[chiave].map((e) => e.id), 0) + 1;
+  // `?? 0` regge la lista vuota: senza un primo argomento sempre presente, `Math.max()`
+  // su una lista senza identificatori tornerebbe -Infinity.
+  return Math.max(m.contatori[tipo] ?? 0, ...m[chiave].map((e) => e.id)) + 1;
 }
 
 export const nodo = (m, id) => m.nodi.find((n) => n.id === id) ?? null;
