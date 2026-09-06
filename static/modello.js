@@ -1,0 +1,55 @@
+// I campi che la giornata 10 tocca, con i nomi di `nova/modello.py:354` (classe `Modello`).
+// Le chiavi coincidono alla lettera perché il modello viaggia così com'è verso
+// `/api/modello/salva` e verso `/api/check`: qualunque rinomina qui diventerebbe un campo
+// rifiutato là (`extra="forbid"` su `_Base`, `nova/modello.py:40`).
+//
+// Non è la forma **intera**: `impostazioni_analisi` (`nova/modello.py:365`) manca, e va
+// bene perché ha un default suo e oggi nulla va su disco. Chi aggiunge apri/salva alla
+// giornata 11 guardi di nuovo qui.
+
+export const UNITA = "mm-N-MPa-t-s";
+
+/** La stessa soglia del Check Model `nodi_coincidenti` (`nova/check.py:13`). */
+export const TOLLERANZA_MM = 1.0;
+
+const LISTE = {
+  nodo: "nodi", asta: "aste", sezione: "sezioni",
+  materiale: "materiali", azione: "azioni", combinazione: "combinazioni",
+};
+
+export function modelloVuoto() {
+  return {
+    schema_version: 1,
+    unita: UNITA,
+    contatori: {},
+    nodi: [],
+    aste: [],
+    sezioni: [],
+    materiali: [],
+    azioni: [],
+    combinazioni: [],
+    analisi: [],
+  };
+}
+
+/** Il prossimo identificatore libero, con la regola di `nova/modello.py:479`: mai riusato.
+ *  Il contatore ricorda anche ciò che è stato cancellato, e per questo entra nel massimo. */
+export function prossimoId(m, tipo) {
+  const chiave = LISTE[tipo];
+  if (chiave === undefined) throw new Error(`tipo sconosciuto: ${tipo}`);
+  // lo 0 in coda regge il caso della lista vuota: Math.max() senza argomenti è -Infinity
+  return Math.max(m.contatori[tipo] ?? 0, ...m[chiave].map((e) => e.id), 0) + 1;
+}
+
+export const nodo = (m, id) => m.nodi.find((n) => n.id === id) ?? null;
+export const asta = (m, id) => m.aste.find((a) => a.id === id) ?? null;
+export const asteDelNodo = (m, id) => m.aste.filter((a) => a.nodo_i === id || a.nodo_j === id);
+
+/** Il nodo entro la tolleranza da un punto, se c'è. Serve a non creare nodi coincidenti,
+ *  che il Check Model rifiuta e che il solutore invece accetta in silenzio. */
+export function nodoVicino(m, x, y, z) {
+  for (const n of m.nodi) {
+    if (Math.hypot(n.x - x, n.y - y, n.z - z) < TOLLERANZA_MM) return n;
+  }
+  return null;
+}
