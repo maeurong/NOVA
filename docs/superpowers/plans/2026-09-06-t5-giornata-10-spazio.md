@@ -1100,9 +1100,12 @@ git commit -m "feat(interfaccia): mappa dei tasti unica, la barra in basso la le
   --inchiostro: #141414;
   --rosso: #b8321e;
   --tratto: #14141433;
-  --tratto-forte: #14141466;
+  /* Le opacità sono misurate, non scelte a occhio: su `--fondo`, `66` dà 2,44:1 e `99` dà
+     4,29:1, sotto le soglie WCAG AA di 3,0 per un bordo e 4,5 per il testo. `88` e `a0`
+     danno 3,52:1 e 4,66:1. */
+  --tratto-forte: #14141488;
   --pannello: #d2cfc9;
-  --testo-tenue: #14141499;
+  --testo-tenue: #141414a0;
   --mono: ui-monospace, "SF Mono", "Menlo", monospace;
   --testo: -apple-system, "Helvetica Neue", system-ui, sans-serif;
   --passo: 8px;
@@ -1142,6 +1145,12 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 
 .numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+/* Il default del browser dà a `dd` un `margin-inline-start` di 40px: dentro un pannello
+   largo 220px restano ~164px per il valore, e «lunghezza 2.262 mm» si taglia. */
+#pannello-dati { margin: 0; }
+#pannello-dati dt { color: var(--testo-tenue); font-size: 11px; margin-top: var(--passo); }
+#pannello-dati dd { margin: 0; }
+
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
 #albero li:hover { background: var(--pannello); }
@@ -1159,7 +1168,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .tasto .aiuto { color: var(--testo-tenue); }
 
 /* Doppio canale: il rosso non viaggia mai da solo (WCAG 1.4.1) — c'è anche il segno. */
+/* `--rosso` su `--fondo` dà 4,28:1: sotto la soglia AA del testo normale (4,5), sopra
+   quella del testo grande (3,0). Il colore è pinnato dal ticket #14 e non si tocca, quindi
+   è il testo a farsi grande. */
 #messaggio { grid-area: messaggio; margin: 0; color: var(--rosso); font-family: var(--mono);
+             font-size: 1.2rem; font-weight: 700;
              padding: calc(var(--passo) / 2) var(--passo); border-top: 1px solid var(--rosso); }
 #messaggio:empty { display: none; }
 #messaggio::before { content: "▲ "; }
@@ -1203,8 +1216,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
   <p class="numero">mm · N · MPa · t · s</p>
 </aside>
 
-<footer id="barra" aria-label="scorciatoie"></footer>
+<!-- Il messaggio prima della barra anche nel sorgente: in griglia sta sopra, e chi legge
+     con uno screen reader deve incontrarli nello stesso ordine di chi guarda (WCAG 1.3.2). -->
 <p id="messaggio" role="status" aria-live="polite"></p>
+<footer id="barra" aria-label="scorciatoie"></footer>
 
 <script type="module" src="/static/app.js"></script>
 </body>
