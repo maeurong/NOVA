@@ -227,6 +227,12 @@ test("un numero che non è finito si stampa come trattino, mai NaN", () => {
   assert.equal(stampaNumero(NaN), "—");
   assert.equal(stampaNumero(Infinity), "—");
 });
+
+test("uno zero non porta mai il segno meno", () => {
+  assert.equal(stampaNumero(-0.4, { decimali: 0 }), "0");
+  assert.equal(stampaNumero(-0, { decimali: 1 }), "0,0");
+  assert.equal(stampaNumero(-0.6, { decimali: 0 }), "-1", "il meno resta quando il numero non è zero");
+});
 ```
 
 - [ ] **Step 2: Scrivi la cucitura pytest che fallisce**
@@ -298,7 +304,9 @@ export function leggiNumero(testo) {
 /** Stampa un numero per una persona. Quel che non è finito esce come trattino, non come «NaN». */
 export function stampaNumero(valore, { decimali = 1, migliaia = false } = {}) {
   if (!Number.isFinite(valore)) return "—";
-  const fisso = valore.toFixed(decimali).replace(".", ",");
+  // `(-0,4).toFixed(0)` è «-0»: un meno che non dice niente su una quota che è zero.
+  const arrotondato = Number(valore.toFixed(decimali)) === 0 ? 0 : valore;
+  const fisso = arrotondato.toFixed(decimali).replace(".", ",");
   if (!migliaia) return fisso;
   const [intera, frazione] = fisso.split(",");
   const segno = intera.startsWith("-") ? "-" : "";
@@ -621,9 +629,11 @@ Expected: FAIL — `Cannot find module '../comandi.js'`.
 // tocca il modello che riceve, perché la cronologia tiene gli snapshot precedenti e un
 // riduttore che muta cancellerebbe il passato invece di aggiungerci un presente.
 //
-// Quel che questi riduttori rifiutano è esattamente quel che il Check Model rifiuterebbe
-// dopo (`nova/check.py`): nodi coincidenti, aste a lunghezza zero, riferimenti a oggetti
-// inesistenti. Fermarlo qui costa un messaggio; fermarlo là costa una corsa.
+// Tre delle cose che il Check Model rifiuterebbe dopo (`nova/check.py`) sono già rifiutate
+// qui: nodi coincidenti, aste a lunghezza zero, riferimenti a oggetti inesistenti.
+// Fermarle qui costa un messaggio; fermarle là costa una corsa. Le altre — `aste_duplicate`,
+// `nodo_su_asta`, i vincoli, le unità — restano al Check Model della giornata 12: rifarle
+// qui vorrebbe dire tenere due oracoli allineati a mano, ed è così che divergono.
 
 import { prossimoId, nodo, asteDelNodo, nodoVicino, TOLLERANZA_MM } from "./modello.js";
 
@@ -906,9 +916,27 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TASTI, voceDaEvento, vociDellaBarra } from "../tastiera.js";
 
-test("nessun tasto è mappato due volte", () => {
-  const codici = TASTI.map((v) => `${v.codice}|${v.contesto}`);
+test("nessun codice compare due volte", () => {
+  const codici = TASTI.map((v) => v.codice);
   assert.equal(new Set(codici).size, codici.length);
+});
+
+test("nessun tasto è assegnato a due comandi", () => {
+  // `DA_KEY` è una Map: due voci sullo stesso tasto non danno errore, una delle due
+  // semplicemente non arriva mai. Il conflitto va visto qui, non in aula.
+  const tasti = TASTI.map((v) => v.tasto);
+  assert.equal(new Set(tasti).size, tasti.length, `tasto doppio in: ${tasti.join(" ")}`);
+});
+
+test("ogni voce si raggiunge davvero da un evento", () => {
+  const raggiunti = new Set();
+  for (const key of ["n", "Tab", "b", "m", "r", "F2", "Backspace", "Delete", "Enter", "Escape"]) {
+    const v = voceDaEvento({ key, metaKey: false, ctrlKey: false, altKey: false });
+    if (v) raggiunti.add(v.codice);
+  }
+  for (const v of TASTI) {
+    assert.ok(raggiunti.has(v.codice), `${v.codice} è nella barra ma nessun tasto lo raggiunge`);
+  }
 });
 
 test("ogni voce ha tasto ed etichetta da stampare nella barra", () => {
@@ -936,6 +964,7 @@ test("la barra mostra le voci del contesto più quelle di sempre", () => {
   const sempre = vociDellaBarra("sempre").map((v) => v.codice);
   const conSelezione = vociDellaBarra("selezione").map((v) => v.codice);
   assert.ok(sempre.includes("nodo"));
+  assert.ok(sempre.includes("seleziona"), "senza selezione, ⇥ è l'unico modo di averne una");
   assert.ok(!sempre.includes("estrudi"), "estrudere richiede un nodo selezionato");
   assert.ok(!sempre.includes("sposta"), "spostare richiede un nodo selezionato");
   assert.ok(conSelezione.includes("estrudi"));
@@ -961,19 +990,24 @@ Expected: FAIL — `Cannot find module '../tastiera.js'`.
 // quindi ce n'è uno solo e la barra lo legge.
 
 export const TASTI = [
-  { codice: "nodo",     tasto: "N",     etichetta: "nodo",     aiuto: "x; z",                 contesto: "sempre" },
+  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "sempre" },
+  { codice: "seleziona", tasto: "⇥",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "sempre" },
   { codice: "estrudi",  tasto: "B",     etichetta: "estrudi",  aiuto: "lunghezza, poi freccia", contesto: "selezione" },
   { codice: "sposta",   tasto: "M",     etichetta: "sposta",   aiuto: "x; z",                  contesto: "selezione" },
-  { codice: "rinomina", tasto: "F2",    etichetta: "rinomina", aiuto: null,                    contesto: "selezione" },
-  { codice: "elimina",  tasto: "Canc",  etichetta: "elimina",  aiuto: null,                    contesto: "selezione" },
+  { codice: "rinomina", tasto: "R",     etichetta: "rinomina", aiuto: null,                    contesto: "selezione" },
+  { codice: "elimina",  tasto: "⌫",     etichetta: "elimina",  aiuto: null,                    contesto: "selezione" },
   { codice: "conferma", tasto: "Invio", etichetta: "conferma", aiuto: null,                    contesto: "ghost" },
   { codice: "annulla",  tasto: "Esc",   etichetta: "annulla",  aiuto: null,                    contesto: "ghost" },
 ];
 
-// `key` dell'evento → codice. `Delete` è il Canc dei PC, `Backspace` il ⌫ dei Mac.
+// `key` dell'evento → codice. I tasti **stampati** sopra sono quelli che stanno sulla
+// tastiera di questa macchina, che è un Mac: stampare «Canc» o «F2» sarebbe la bugia che
+// story 14 vieta, perché la barra è il manuale. Chi ha un PC preme Canc o F2 lo stesso —
+// qui sotto sono riconosciuti entrambi; è solo l'etichetta a scegliere.
 const DA_KEY = new Map([
-  ["n", "nodo"], ["b", "estrudi"], ["m", "sposta"], ["f2", "rinomina"],
-  ["delete", "elimina"], ["backspace", "elimina"],
+  ["n", "nodo"], ["tab", "seleziona"], ["b", "estrudi"], ["m", "sposta"],
+  ["r", "rinomina"], ["f2", "rinomina"],
+  ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
 ]);
 
@@ -1081,6 +1115,12 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 
 .numero { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+#albero ul { margin: 0; padding: 0; list-style: none; }
+#albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
+#albero li:hover { background: var(--pannello); }
+/* Il fuoco si deve vedere: chi naviga con ⇥ non ha altro modo di sapere dov'è (WCAG 2.4.7). */
+#albero li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
 /* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e quale tasto lo crea. */
 .vuoto { color: var(--testo-tenue); max-width: 24rem; padding: var(--passo); }
 .vuoto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
@@ -1173,7 +1213,7 @@ git commit -m "feat(interfaccia): guscio a tre colonne, palette colonna tensegra
 
 **Interfaces:**
 - Consumes: `stampaNumero` da `static/numeri.js`; `asteDelNodo`, `nodo` da `static/modello.js`.
-- Produces: `creaPiano(contenitore, {suSelezione, suSfondo}) → {disegna(modello, {selezione, ghost}), inquadra(modello)}`.
+- Produces: `creaPiano(contenitore, {suSelezione, suSfondo}) → {disegna(modello, {selezione, ghost})}`.
   - `disegna` è **idempotente**: chiamarla due volte con lo stesso stato dà lo stesso SVG.
   - `ghost` è `{da: idNodo, dx, dz} | null`: l'asta che si sta digitando, tratteggiata, **non** nel modello.
   - `suSelezione(tipo, id)` con `tipo` in `"nodo" | "asta"`; `suSfondo()` quando si clicca il vuoto.
@@ -1207,6 +1247,7 @@ Il piano lavora nel piano `x–z` (l'alzado del telaio): `x` verso destra, `z` v
 // quindi `z` si specchia una volta sola, qui dentro, e nessun altro modulo se ne accorge.
 
 import { stampaNumero } from "./numeri.js";
+import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -1226,9 +1267,15 @@ const el = (nome, attributi = {}) => {
   return e;
 };
 
-function estensione(m) {
-  if (m.nodi.length === 0) return { x0: -LATO_MINIMO / 2, z0: -LATO_MINIMO / 2, larghezza: LATO_MINIMO, altezza: LATO_MINIMO };
-  const xs = m.nodi.map((n) => n.x), zs = m.nodi.map((n) => n.z);
+/** L'estensione da inquadrare: i nodi **più la punta del ghost**. Senza il ghost, il primo
+ *  gesto su un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da
+ *  3000 fuori dal riquadro, senza sollevare niente: si vedrebbe solo sparire. */
+function estensione(m, ghost = null) {
+  const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
+  const da = ghost && m.nodi.find((n) => n.id === ghost.da);
+  if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
+  if (punti.length === 0) return { x0: -LATO_MINIMO / 2, z0: -LATO_MINIMO / 2, larghezza: LATO_MINIMO, altezza: LATO_MINIMO };
+  const xs = punti.map((p) => p.x), zs = punti.map((p) => p.z);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
   const z0 = Math.min(...zs), z1 = Math.max(...zs);
   const larghezza = Math.max(x1 - x0, LATO_MINIMO);
@@ -1252,20 +1299,28 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // cima è `z0 + altezza`, quindi `y = 2·z0 + altezza − z` porta l'uno sull'altro.
   const schermo = (n) => ({ x: n.x, y: 2 * vista.z0 + vista.altezza - n.z });
 
-  function inquadra(m) {
-    vista = estensione(m);
+  function inquadra(m, ghost) {
+    vista = estensione(m, ghost);
     svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   }
 
+  /** Millimetri per pixel. Con `preserveAspectRatio="… meet"` il riquadro ci sta **intero**,
+   *  quindi comanda il lato più stretto: prendere la sola larghezza dà tratti ed etichette
+   *  della misura sbagliata in un riquadro alto e magro, che è come nasce a 1280 px. */
+  function millimetriPerPixel() {
+    const w = Math.max(contenitore.clientWidth || 1, 1);
+    const h = Math.max(contenitore.clientHeight || 1, 1);
+    return Math.max(vista.larghezza / w, vista.altezza / h);
+  }
+
   function disegna(m, { selezione = null, ghost = null } = {}) {
-    inquadra(m);
-    const s = vista.larghezza / Math.max(contenitore.clientWidth || 1, 1);  // mm per px
+    inquadra(m, ghost);
+    const s = millimetriPerPixel();
     const gruppo = el("g");
 
     for (const a of m.aste) {
-      const i = m.nodi.find((n) => n.id === a.nodo_i);
-      const j = m.nodi.find((n) => n.id === a.nodo_j);
+      const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
       if (!i || !j) continue;  // un'asta orfana non si disegna: la eliminerà il Check Model
       const pi = schermo(i), pj = schermo(j);
       const scelta = selezione?.tipo === "asta" && selezione.id === a.id;
@@ -1278,7 +1333,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     }
 
     if (ghost) {
-      const da = m.nodi.find((n) => n.id === ghost.da);
+      const da = nodo(m, ghost.da);
       if (da) {  // un ghost su un nodo sparito è solo un ghost che non si disegna
         const p0 = schermo(da);
         const p1 = schermo({ x: da.x + ghost.dx, z: da.z + ghost.dz });
@@ -1321,7 +1376,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     svg.replaceChildren(gruppo);
   }
 
-  return { disegna, inquadra };
+  return { disegna };  // `inquadra` se la chiama `disegna` da sé: fuori non serve a nessuno
 }
 ```
 
@@ -1478,11 +1533,18 @@ export async function creaSpazio(contenitore) {
   scena.add(disegnato);
 
   let orbita = { theta: 0.6, phi: 1.1, distanza: DISTANZA_MINIMA, centro: new THREE.Vector3() };
+  // Chi ha mosso la camera ha detto dove vuole guardare: da lì in poi `inquadra` sposta il
+  // centro (il modello cresce) ma non la distanza. Senza questo, ogni comando riporterebbe
+  // la vista al suo inquadramento e la rotella sembrerebbe non funzionare.
+  let camerAToccata = false;
 
   function ridimensiona() {
     const w = Math.max(contenitore.clientWidth, 1), h = Math.max(contenitore.clientHeight, 1);
     renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.setSize(w, h, false);
+    // Senza il terzo argomento three.js scrive anche lo stile del canvas. Con `false` non
+    // lo scrive, e su uno schermo retina il canvas resta grande il doppio in pixel CSS:
+    // `#spazio { overflow: hidden }` ne taglia via tre quarti, in silenzio.
+    renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
@@ -1515,6 +1577,7 @@ export async function creaSpazio(contenitore) {
   });
   renderer.domElement.addEventListener("wheel", (e) => {
     e.preventDefault();
+    camerAToccata = true;
     orbita.distanza = Math.max(DISTANZA_MINIMA / 8, orbita.distanza * (e.deltaY > 0 ? 1.1 : 0.9));
     rendi();
   }, { passive: false });
@@ -1552,12 +1615,16 @@ export async function creaSpazio(contenitore) {
   }
 
   function inquadra(m) {
-    if (m.nodi.length === 0) { orbita.centro.set(0, 0, 0); orbita.distanza = DISTANZA_MINIMA; return; }
+    if (m.nodi.length === 0) {
+      orbita.centro.set(0, 0, 0);
+      if (!camerAToccata) orbita.distanza = DISTANZA_MINIMA;
+      return;
+    }
     const xs = m.nodi.map((n) => n.x), ys = m.nodi.map((n) => n.y), zs = m.nodi.map((n) => n.z);
     const c = (v) => (Math.min(...v) + Math.max(...v)) / 2;
     const d = (v) => Math.max(...v) - Math.min(...v);
     orbita.centro.set(c(xs), c(ys), c(zs));
-    orbita.distanza = Math.max(DISTANZA_MINIMA, Math.hypot(d(xs), d(ys), d(zs)) * 1.8);
+    if (!camerAToccata) orbita.distanza = Math.max(DISTANZA_MINIMA, Math.hypot(d(xs), d(ys), d(zs)) * 1.8);
   }
 
   ridimensiona();
@@ -1655,9 +1722,18 @@ import { asteDelNodo } from "./modello.js";
 import { stampaNumero } from "./numeri.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
-  elenco.addEventListener("click", (ev) => {
+  const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
+
+  elenco.addEventListener("click", (ev) => scegli(ev.target.closest("[data-tipo]")));
+
+  // Le voci sono raggiungibili con ⇥ e si attivano con Invio o spazio: un elenco che si
+  // apre solo al clic è un comando che chi usa la tastiera non ha (WCAG 2.1.1).
+  elenco.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
     const voce = ev.target.closest("[data-tipo]");
-    if (voce) suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
+    if (!voce) return;
+    ev.preventDefault();
+    scegli(voce);
   });
 
   function disegna(m, { selezione = null } = {}) {
@@ -1681,6 +1757,9 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       li.dataset.id = r.id;
       li.textContent = r.testo;
       li.className = "numero";
+      li.tabIndex = 0;
+      li.setAttribute("role", "button");
+      li.setAttribute("aria-pressed", String(selezione?.tipo === r.tipo && selezione.id === r.id));
       // Doppio canale: chi è selezionato ha il rosso e il segno «▸», non il solo colore.
       if (selezione?.tipo === r.tipo && selezione.id === r.id) {
         li.style.color = "var(--rosso)";
@@ -1809,7 +1888,8 @@ window.addEventListener("keydown", (ev) => {
   if (ev.target instanceof HTMLInputElement) return;
   const voce = voceDaEvento(ev);
   if (!voce) return;
-  ev.preventDefault();
+  // `seleziona` decide da sé: solo lui può lasciare l'evento al browser (vedi sotto).
+  if (voce.codice !== "seleziona") ev.preventDefault();
 
   if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
 
@@ -1819,7 +1899,30 @@ window.addEventListener("keydown", (ev) => {
     const [sx, sz] = t.split(";");
     const x = leggiNumero(sx ?? ""), z = leggiNumero(sz ?? "");
     if (x === null || z === null) { dì("coordinate non lette: scrivi «x; z», per esempio «0; 3000»"); return; }
-    esegui((m) => creaNodo(m, { x, z }), `nodo ${stampaNumero(x, { decimali: 0 })}; ${stampaNumero(z, { decimali: 0 })}`);
+    if (esegui((m) => creaNodo(m, { x, z }), `nodo ${stampaNumero(x, { decimali: 0 })}; ${stampaNumero(z, { decimali: 0 })}`)) {
+      // Il nodo appena posato è selezionato: è da lì che si estrude, e senza questo
+      // servirebbe il mouse per riprenderlo — con il Goal che dice «senza il mouse».
+      const m = corrente(cronologia);
+      selezione = { tipo: "nodo", id: m.nodi[m.nodi.length - 1].id };
+    }
+    ridisegna();
+    return;
+  }
+
+  if (voce.codice === "seleziona") {
+    // ⇥ gira fra i nodi in ordine di identificatore. È l'unico modo di avere una selezione
+    // senza mouse, e senza selezione metà dei comandi non parte.
+    //
+    // Ma solo con il fuoco sul corpo della pagina: dentro l'albero o il pannello, ⇥ resta
+    // il ⇥ del browser. Rubarlo ovunque significherebbe che chi naviga da tastiera non
+    // raggiunge più nulla — un difetto di accessibilità peggiore di quello che risolve.
+    if (document.activeElement !== document.body) return;
+    ev.preventDefault();
+    const m = corrente(cronologia);
+    if (m.nodi.length === 0) { dì("nessun nodo da selezionare: premi N"); return; }
+    const ids = m.nodi.map((n) => n.id);
+    const dove = selezione?.tipo === "nodo" ? ids.indexOf(selezione.id) : -1;
+    selezione = { tipo: "nodo", id: ids[(dove + 1) % ids.length] };
     ridisegna();
     return;
   }
@@ -1910,12 +2013,15 @@ Expected: PASS.
 
 Su `http://127.0.0.1:8766/`, con il cronometro:
 
-1. `N` → `0; 0` · `N` → `5000; 0` · `N` → `9000; 0`
-2. seleziona il nodo 1, `B` → `3000`, `↑`, Invio; ripeti dal nodo 2 e dal nodo 3
-3. seleziona il nodo 4, `B` → `5000`, `→`, Invio (arriva sul nodo 5: **non** ne crea uno nuovo)
-4. seleziona il nodo 5, `B` → `4000`, `→`, Invio
+**Senza toccare il mouse** — è il Goal, e il percorso va provato così:
 
-Atteso: sei nodi, cinque aste, meno di due minuti. Se il nodo di arrivo si sdoppia invece di riusarsi, è il difetto che `estrudi` deve impedire (Task 3): fermati e sistemalo là, non qui.
+1. `N` → `0; 0` · `N` → `5000; 0` · `N` → `9000; 0` (dopo ogni `N` il nodo nuovo resta selezionato)
+2. `⇥` fino al nodo 1, `B` → `3000`, `↑`, Invio → nasce il nodo 4, già selezionato
+3. `⇥` fino al nodo 2, `B` → `3000`, `↑`, Invio; `⇥` fino al nodo 3, `B` → `3000`, `↑`, Invio
+4. `⇥` fino al nodo 4, `B` → `5000`, `→`, Invio — arriva sul nodo 5 e **lo riusa**, niente nodo nuovo
+5. `⇥` fino al nodo 5, `B` → `4000`, `→`, Invio
+
+Atteso: sei nodi, cinque aste, meno di due minuti, zero clic. Se il nodo di arrivo si sdoppia invece di riusarsi, è il difetto che `estrudi` deve impedire (Task 3): fermati e sistemalo là, non qui. Se dopo il passo 4 la selezione finisce sul nodo 6 invece che sul 5, è la selezione dopo l'estrusione (`app.js`), non `estrudi`.
 
 - [ ] **Step 5: Prova gli ingressi degeneri in browser**
 
