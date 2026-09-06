@@ -1,0 +1,139 @@
+// Il piano di lavoro: SVG, perché qui vivono i gesti e le etichette, e un'etichetta che
+// non si sovrappone è più facile da garantire con il testo del documento che con una
+// texture. Lo spazio three.js legge lo stesso modello e non tocca niente.
+//
+// Terna: `x` a destra, `z` in alto (l'alzado del telaio). In SVG `y` cresce verso il basso,
+// quindi `z` si specchia una volta sola, qui dentro, e nessun altro modulo se ne accorge.
+
+import { stampaNumero } from "./numeri.js";
+import { nodo } from "./modello.js";
+
+const NS = "http://www.w3.org/2000/svg";
+const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
+const LATO_MINIMO = 2000;  // mm: un modello con un solo nodo ha estensione zero
+const RAGGIO = 5;          // px del nodo, in coordinate schermo
+
+// I colori scritti a mano, non come `var(--…)`: le presentation attribute dell'SVG non
+// risolvono le variabili CSS, e un `fill="var(--rosso)"` esce nero senza dire niente.
+// Sono gli stessi valori di `stile.css`; se là cambiano, cambiano qui.
+const INCHIOSTRO = "#141414";
+const ROSSO = "#b8321e";
+const MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
+
+const el = (nome, attributi = {}) => {
+  const e = document.createElementNS(NS, nome);
+  for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v);
+  return e;
+};
+
+/** L'estensione da inquadrare: i nodi **più la punta del ghost**. Senza il ghost, il primo
+ *  gesto su un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da
+ *  3000 fuori dal riquadro, senza sollevare niente: si vedrebbe solo sparire. */
+function estensione(m, ghost = null) {
+  const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
+  const da = ghost && nodo(m, ghost.da);
+  if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
+  if (punti.length === 0) return { x0: -LATO_MINIMO / 2, z0: -LATO_MINIMO / 2, larghezza: LATO_MINIMO, altezza: LATO_MINIMO };
+  const xs = punti.map((p) => p.x), zs = punti.map((p) => p.z);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const z0 = Math.min(...zs), z1 = Math.max(...zs);
+  const larghezza = Math.max(x1 - x0, LATO_MINIMO);
+  const altezza = Math.max(z1 - z0, LATO_MINIMO);
+  const mx = larghezza * MARGINE, mz = altezza * MARGINE;
+  return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
+}
+
+export function creaPiano(contenitore, { suSelezione, suSfondo }) {
+  const svg = el("svg", { "aria-label": "piano di lavoro x–z" });
+  contenitore.replaceChildren(svg);
+  let vista = estensione({ nodi: [] });
+
+  svg.addEventListener("click", (ev) => {
+    const bersaglio = ev.target.closest("[data-tipo]");
+    if (bersaglio) suSelezione(bersaglio.dataset.tipo, Number(bersaglio.dataset.id));
+    else suSfondo();
+  });
+
+  // `z` verso l'alto: si specchia qui, in un punto solo. Il fondo del riquadro è `z0`, la
+  // cima è `z0 + altezza`, quindi `y = 2·z0 + altezza − z` porta l'uno sull'altro.
+  const schermo = (n) => ({ x: n.x, y: 2 * vista.z0 + vista.altezza - n.z });
+
+  function inquadra(m, ghost) {
+    vista = estensione(m, ghost);
+    svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  }
+
+  /** Millimetri per pixel. Con `preserveAspectRatio="… meet"` il riquadro ci sta **intero**,
+   *  quindi comanda il lato più stretto: prendere la sola larghezza dà tratti ed etichette
+   *  della misura sbagliata in un riquadro alto e magro, che è come nasce a 1280 px. */
+  function millimetriPerPixel() {
+    const w = Math.max(contenitore.clientWidth || 1, 1);
+    const h = Math.max(contenitore.clientHeight || 1, 1);
+    return Math.max(vista.larghezza / w, vista.altezza / h);
+  }
+
+  function disegna(m, { selezione = null, ghost = null } = {}) {
+    inquadra(m, ghost);
+    const s = millimetriPerPixel();
+    const gruppo = el("g");
+
+    for (const a of m.aste) {
+      const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
+      if (!i || !j) continue;  // un'asta orfana non si disegna: la eliminerà il Check Model
+      const pi = schermo(i), pj = schermo(j);
+      const scelta = selezione?.tipo === "asta" && selezione.id === a.id;
+      gruppo.append(el("line", {
+        x1: pi.x, y1: pi.y, x2: pj.x, y2: pj.y,
+        stroke: scelta ? ROSSO : INCHIOSTRO,
+        "stroke-width": (scelta ? 3 : 2) * s,
+        "stroke-linecap": "round", "data-tipo": "asta", "data-id": a.id,
+      }));
+    }
+
+    if (ghost) {
+      const da = nodo(m, ghost.da);
+      if (da) {  // un ghost su un nodo sparito è solo un ghost che non si disegna
+        const p0 = schermo(da);
+        const p1 = schermo({ x: da.x + ghost.dx, z: da.z + ghost.dz });
+        gruppo.append(el("line", {
+          x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y,
+          stroke: ROSSO, "stroke-width": 2 * s,
+          "stroke-dasharray": `${6 * s} ${5 * s}`,
+        }));
+        const testo = el("text", {
+          x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 - 8 * s,
+          "font-size": 12 * s, fill: ROSSO, "text-anchor": "middle", "font-family": MONO,
+        });
+        testo.textContent = `${stampaNumero(Math.hypot(ghost.dx, ghost.dz), { decimali: 0, migliaia: true })} mm`;
+        gruppo.append(testo);
+      }
+    }
+
+    const etichettate = new Set();
+    for (const n of m.nodi) {
+      const p = schermo(n);
+      const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;
+      gruppo.append(el("circle", {
+        cx: p.x, cy: p.y, r: (scelto ? RAGGIO * 1.6 : RAGGIO) * s,  // doppio canale: rosso e più grosso
+        fill: scelto ? ROSSO : INCHIOSTRO,
+        "data-tipo": "nodo", "data-id": n.id,
+      }));
+      // Un'etichetta per posizione: due nodi coincidenti (da un file, non dai comandi)
+      // scriverebbero due volte nello stesso punto, e il risultato è illeggibile.
+      const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
+      if (etichettate.has(posto)) continue;
+      etichettate.add(posto);
+      const testo = el("text", {
+        x: p.x + 9 * s, y: p.y - 9 * s, "font-size": 11 * s,
+        fill: INCHIOSTRO, "font-family": MONO,
+      });
+      testo.textContent = n.nome ?? String(n.id);
+      gruppo.append(testo);
+    }
+
+    svg.replaceChildren(gruppo);
+  }
+
+  return { disegna };  // `inquadra` se la chiama `disegna` da sé: fuori non serve a nessuno
+}
