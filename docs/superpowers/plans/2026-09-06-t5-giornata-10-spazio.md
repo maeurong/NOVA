@@ -422,10 +422,14 @@ Expected: FAIL — `Cannot find module '../modello.js'`.
 - [ ] **Step 3: Scrivi `static/modello.js`**
 
 ```js
-// La stessa forma di `nova/modello.py:354` (classe `Modello`), scritta in JS. Le chiavi
-// coincidono alla lettera perché il modello viaggia così com'è verso `/api/modello/salva`
-// e verso `/api/check`: qualunque rinomina qui diventerebbe un campo rifiutato là
-// (`extra="forbid"` su `_Base`, `nova/modello.py:39`).
+// I campi che la giornata 10 tocca, con i nomi di `nova/modello.py:354` (classe `Modello`).
+// Le chiavi coincidono alla lettera perché il modello viaggia così com'è verso
+// `/api/modello/salva` e verso `/api/check`: qualunque rinomina qui diventerebbe un campo
+// rifiutato là (`extra="forbid"` su `_Base`, `nova/modello.py:39`).
+//
+// Non è la forma **intera**: `impostazioni_analisi` (`nova/modello.py:365`) manca, e va
+// bene perché ha un default suo e oggi nulla va su disco. Chi aggiunge apri/salva alla
+// giornata 11 guardi di nuovo qui.
 
 export const UNITA = "mm-N-MPa-t-s";
 
@@ -1044,7 +1048,7 @@ git commit -m "feat(interfaccia): mappa dei tasti unica, la barra in basso la le
 - Create: `static/stile.css`
 
 **Interfaces:**
-- Consumes: `static/tastiera.js` (per la barra), `static/app.js` (caricato come modulo; il file arriva al Task 9 — fino a lì la pagina si apre e mostra gli stati vuoti).
+- Consumes: niente. `index.html` non importa nessun modulo da sé: carica `/static/app.js`, che arriva al Task 9 — fino a lì la pagina si apre e mostra gli stati vuoti. La barra la riempie `app.js` leggendo `tastiera.js`, non l'HTML.
 - Produces: la struttura del DOM su cui i task 7–9 attaccano: `#albero`, `#piano` (un `<svg>`), `#spazio` (un `<div>` per three.js), `#pannello`, `#barra`, `#messaggio`.
 
 **Skill obbligatoria: `impeccable`.** Zero sovrapposizioni, zero testo tagliato, verifica a 1280 e a 1920 px. **Mai «cream palette»**.
