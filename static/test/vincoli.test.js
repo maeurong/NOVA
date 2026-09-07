@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "../vincoli.js";
+import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione, alternaIncastro } from "../vincoli.js";
 
 test("i sei gradi sono nell'ordine di nova/modello.py", () => {
   assert.deepEqual(GRADI, ["ux", "uy", "uz", "rx", "ry", "rz"]);
@@ -74,4 +74,33 @@ test("la descrizione dice il nome quando c'è, i gradi quando non c'è", () => {
   assert.equal(descrizione(null), "libero");
   assert.equal(descrizione(vincoloVuoto()), "libero");
   assert.equal(descrizione({ ...vincoloVuoto(), ux: true, rz: true }), "bloccati: ux, rz");
+});
+
+// --- alternaIncastro: il tasto `V` non deve mai cancellare il campo ---
+// Il ramo che conta non è «incastra», è l'altro: `null` significa «non dichiarato» e
+// `nova/check.py` lo segnala al piede, mentre sei booleani falsi sono una scelta.
+
+test("alternaIncastro: un nodo senza vincolo si incastra", () => {
+  assert.deepEqual(alternaIncastro(null), PREIMPOSTAZIONI.incastro);
+  assert.deepEqual(alternaIncastro(undefined), PREIMPOSTAZIONI.incastro);
+  assert.deepEqual(alternaIncastro(vincoloVuoto()), PREIMPOSTAZIONI.incastro);
+});
+
+test("alternaIncastro: un nodo bloccato torna libero DICHIARATO, non cancellato", () => {
+  const dopo = alternaIncastro(PREIMPOSTAZIONI.incastro);
+  assert.notEqual(dopo, null);
+  assert.deepEqual(dopo, vincoloVuoto());
+  assert.equal(GRADI.every((g) => dopo[g] === false), true);
+  assert.equal(Object.keys(dopo).length, 6);
+});
+
+test("alternaIncastro: basta un grado bloccato per tornare liberi", () => {
+  assert.deepEqual(alternaIncastro({ rx: true }), vincoloVuoto());
+});
+
+test("alternaIncastro: l'incastro restituito è una copia, non la costante congelata", () => {
+  const dopo = alternaIncastro(null);
+  assert.notEqual(dopo, PREIMPOSTAZIONI.incastro);
+  dopo.ux = false;                                    // non deve poter sporcare la costante
+  assert.equal(PREIMPOSTAZIONI.incastro.ux, true);
 });

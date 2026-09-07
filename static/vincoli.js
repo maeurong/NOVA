@@ -34,3 +34,11 @@ export function descrizione(vincolo) {
   const bloccati = vincolo ? GRADI.filter((g) => vincolo[g]) : [];
   return bloccati.length === 0 ? "libero" : `bloccati: ${bloccati.join(", ")}`;
 }
+
+/** Il vincolo dopo il tasto `V`, che alterna fra incastro e libero. Un nodo che non ha
+ *  niente di bloccato si incastra; uno che ha qualcosa torna **dichiarato** libero — sei
+ *  booleani falsi, mai il campo cancellato. `null` e `vincoloVuoto()` sono due stati
+ *  diversi per `nova/check.py`: il primo è una dimenticanza che il Check Model segnala al
+ *  piede, il secondo una scelta dell'utente. Da qui esce solo la scelta. */
+export const alternaIncastro = (vincolo) =>
+  (GRADI.some((g) => vincolo?.[g]) ? vincoloVuoto() : { ...PREIMPOSTAZIONI.incastro });

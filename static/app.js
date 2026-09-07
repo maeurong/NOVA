@@ -14,7 +14,7 @@ import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile } from "./file.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra } from "./modo.js";
-import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "./vincoli.js";
+import { alternaIncastro } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
@@ -196,8 +196,7 @@ window.addEventListener("keydown", (ev) => {
     // dichiara il nodo libero, non cancella il campo — sono due stati diversi per
     // `nova/check.py:274` (vedi la correzione C3 del brief). Le altre preimpostazioni e i
     // gradi singoli stanno nel pannello, dove si vedono.
-    const libero = !GRADI.some((g) => n.vincolo?.[g]);
-    esegui((m) => impostaVincolo(m, { id, vincolo: libero ? { ...PREIMPOSTAZIONI.incastro } : vincoloVuoto() }),
+    esegui((m) => impostaVincolo(m, { id, vincolo: alternaIncastro(n.vincolo) }),
            `vincolo del nodo ${id}`);
     ridisegna();
     return;
