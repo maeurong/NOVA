@@ -67,12 +67,18 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .vincolo-preimpostazioni legend, .vincolo-gradi legend { font-size: 10px; color: var(--testo-tenue);
                                                          text-transform: uppercase; letter-spacing: 0.04em;
                                                          padding: 0; margin-bottom: 2px; }
-/* Quattro colonne uguali, che seguono la larghezza del pannello: la larghezza non dipende dal
-   contenuto, e senza questo il grassetto del bottone premuto lo allargherebbe di qualche px
-   riassestando la fila a ogni clic (fix round 1, D). */
-.vincolo-preimpostazioni { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+/* Basi uguali e a capo quando serve. Le due cose insieme, perché servono a due difetti
+   diversi: la base uguale (`flex: 1 1 5.5em`) toglie la larghezza dal contenuto, e senza il
+   grassetto del bottone premuto allargherebbe la fila riassestandola a ogni clic; il `wrap`
+   la manda a capo invece di sfondare il pannello. Un grid a quattro colonne fisse risolveva
+   solo il primo: a zoom testo 200% i quattro bottoni sommavano 362px in 319 disponibili e il
+   pannello scorreva in orizzontale (WCAG 1.4.10) — misurato sulla pagina servita, insieme ai
+   due rimedi sbagliati: `auto-fit` a 64px non scorre ma **taglia** il testo, a 88px va a capo
+   anche a testo normale. La base in `em` segue il testo, che è il punto. */
+.vincolo-preimpostazioni { display: flex; flex-wrap: wrap; gap: 4px;
                             margin: var(--passo) 0 0; }
-.vincolo-preimpostazioni button { font: inherit; font-size: 11px; cursor: pointer; padding: 4px 8px;
+.vincolo-preimpostazioni button { flex: 1 1 5.5em;
+                                  font: inherit; font-size: 11px; cursor: pointer; padding: 4px 8px;
                                   background: var(--pannello); color: var(--inchiostro);
                                   border: 1px solid var(--tratto-forte); border-radius: 2px; }
 /* Premuto è uno stato, non una tinta: il bordo cambia spessore oltre al colore. */
