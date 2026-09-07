@@ -563,7 +563,25 @@ Voci nuove:
 | `asta` | `A` | — | `selezione` |
 | `vincolo` | `V` | — | `selezione` |
 
-Il contesto `asta` è nuovo: quando si sta scegliendo il secondo nodo, la barra mostra `⇥`, `Invio`, `Esc` — e **non** i comandi che il modo blocca.
+> **Corretto il 07/09/2026, a consegna avvenuta.** Due punti di questo piano sono stati
+> cambiati durante l'esecuzione, e il testo qui sotto riporta il codice consegnato:
+>
+> - **Il tasto per girare fra i nodi è `G`, non `⇥`.** Il piano lo dava per ⇥, ma `app.js`
+>   intercettava il ⇥ e faceva `preventDefault` a ogni pressione: misurato, otto Tab
+>   consecutivi lasciavano il fuoco su `body`, cioè **da tastiera non si raggiungeva nessun
+>   controllo della pagina**. Il ⇥ appartiene al browser; la rotazione fra i nodi ha preso un
+>   tasto proprio.
+> - **«libero» dichiara il vincolo, non lo cancella.** Il piano faceva passare `null` a
+>   `impostaVincolo` per liberare un nodo. Ma `nova/modello.py` distingue apposta `None`
+>   («non dichiarato», una dimenticanza) da `Vincolo()` («dichiarato libero», una scelta), e
+>   `nova/check.py` usa quella differenza: misurato sul caso studio, un nodo al piede
+>   dichiarato libero dà `vincoli_dedotti: passato`, lo stesso nodo col campo cancellato dà
+>   `non_passato`, che blocca la corsa. L'interfaccia produce ora solo la scelta.
+>
+> Resta invariato il contratto di basso livello di `impostaVincolo`, che accetta ancora `null`
+> per il caso «mai toccato»: è chi lo chiama dall'interfaccia a non passarlo più.
+
+Il contesto `asta` è nuovo: quando si sta scegliendo il secondo nodo, la barra mostra `G`, `Invio`, `Esc` — e **non** i comandi che il modo blocca.
 
 **Tre test della giornata 10 vanno sostituiti, non solo integrati** — misurato eseguendo il modulo nuovo contro i test vecchi:
 - «con un modificatore non si intercetta niente» — la regola è cambiata: ora due voci *vogliono* il modificatore;
@@ -655,7 +673,7 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // i tasti senza modificatori e con `⌘O`/`⌘S` nella mappa fallirebbe. La sonda si deriva da
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
-  const KEY = { "⇥": "Tab", "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s" };
+  const KEY = { "G": "g", "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const key = KEY[v.tasto] ?? v.tasto.toLowerCase();
@@ -675,7 +693,7 @@ Expected: FAIL — `apri` non esiste ancora fra le voci.
 ```js
 export const TASTI = [
   { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "salvo-ghost" },
-  { codice: "seleziona", tasto: "⇥",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
+  { codice: "seleziona", tasto: "G",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione" },
@@ -717,7 +735,7 @@ export function voceDaEvento(evento) {
 }
 
 // `salvo-ghost` vuol dire «sempre, tranne mentre c'è un modo aperto». `seleziona` fa
-// eccezione: mentre si sceglie il secondo nodo di un'asta, `⇥` **è** il gesto.
+// eccezione: mentre si sceglie il secondo nodo di un'asta, `G` **è** il gesto.
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
     if (v.codice === "seleziona") return contesto !== "ghost";
@@ -1016,7 +1034,7 @@ export function creaPannello(dati, vuoto, editor, { suVincolo }) {
       const premuto = nome === "libero" ? attivo === null && !GRADI.some((g) => n.vincolo?.[g]) : nome === attivo;
       // doppio canale: premuto è uno stato, non un colore
       b.setAttribute("aria-pressed", String(premuto));
-      b.addEventListener("click", () => suVincolo(n.id, nome === "libero" ? null : { ...PREIMPOSTAZIONI[nome] }));
+      b.addEventListener("click", () => suVincolo(n.id, nome === "libero" ? vincoloVuoto() : { ...PREIMPOSTAZIONI[nome] }));
       fila.append(b);
     }
     box.append(fila);
@@ -1031,7 +1049,7 @@ export function creaPannello(dati, vuoto, editor, { suVincolo }) {
       c.addEventListener("change", () => {
         const nuovo = Object.fromEntries(GRADI.map((k) => [k, Boolean(n.vincolo?.[k])]));
         nuovo[g] = c.checked;
-        suVincolo(n.id, GRADI.some((k) => nuovo[k]) ? nuovo : null);
+        suVincolo(n.id, nuovo);   // sempre i sei booleani: spegnere l'ultimo grado **dichiara** libero
       });
       et.append(c, document.createTextNode(g));
       gradi.append(et);
@@ -1120,7 +1138,7 @@ Servono quindi **due modi**, non un ghost solo:
 
 **Ingressi degeneri:**
 - `A` senza selezione → messaggio, nessun modo aperto
-- in modo `asta`, `⇥` o un clic su un nodo → il ghost segue il nuovo nodo, e la selezione cambia (è il gesto)
+- in modo `asta`, `G` o un clic su un nodo → il ghost segue il nuovo nodo, e la selezione cambia (è il gesto)
 - in modo `asta`, `Invio` con `a === null` → messaggio «scegli il secondo nodo», il modo resta aperto
 - in modo `asta`, `Invio` sul nodo di partenza → `ErroreComando` da `collega`, il modo resta aperto
 - in modo `estrusione`, un clic su un altro nodo → **rifiutato**, con la ragione (il difetto di ieri, che deve restare chiuso)
@@ -1280,8 +1298,7 @@ Nel gestore globale, dopo `annulla` e prima degli altri comandi:
     const id = selezione.id;
     // `V` alterna fra incastro e libero: il gesto rapido. Le altre preimpostazioni e i
     // gradi singoli stanno nel pannello, dove si vedono.
-    const libero = !n.vincolo || !["ux", "uy", "uz", "rx", "ry", "rz"].some((g) => n.vincolo[g]);
-    esegui((m) => impostaVincolo(m, { id, vincolo: libero ? { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true } : null }),
+    esegui((m) => impostaVincolo(m, { id, vincolo: alternaIncastro(n.vincolo) }),
            `vincolo del nodo ${id}`);
     ridisegna();
     return;
@@ -1372,7 +1389,7 @@ Il punto 6 è la prova vera che l'impronta è del **contenuto** e non della stor
 
 - [ ] **Step 3: L'asta fra due nodi**
 
-Con il MURO 1 aperto: seleziona il nodo 1, `A`, poi `⇥` fino al nodo 4, `Invio`. Nasce l'asta diagonale. Poi riprova la stessa coppia: deve **rifiutare** con «i nodi 1 e 4 sono già uniti dall'asta 5».
+Con il MURO 1 aperto: seleziona il nodo 1, `A`, poi `G` fino al nodo 4, `Invio`. Nasce l'asta diagonale. Poi riprova la stessa coppia: deve **rifiutare** con «i nodi 1 e 4 sono già uniti dall'asta 5».
 
 - [ ] **Step 4: I casi degeneri**
 
