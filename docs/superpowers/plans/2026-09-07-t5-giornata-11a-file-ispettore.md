@@ -135,6 +135,30 @@ test("contenuto malformato nel deposito vale come elenco vuoto", () => {
   assert.deepEqual(leggi(deposito({ "nova.recenti": '{"a":1}' })), []);
   assert.deepEqual(leggi(deposito({ "nova.recenti": '["/a", 7]' })), []);
 });
+
+// I tre che seguono difendono comportamenti **già corretti** nel codice qui sotto, e senza
+// di loro nessun test diventerebbe rosso togliendo la protezione. Sono la differenza fra
+// «funziona» e «resta funzionante».
+
+test("un deposito con più voci del tetto viene tagliato in lettura", () => {
+  const troppi = JSON.stringify(Array.from({ length: TETTO + 5 }, (_, i) => `/f${i}`));
+  assert.equal(leggi(deposito({ "nova.recenti": troppi })).length, TETTO);
+});
+
+test("scrivi taglia al tetto, non si fida di chi chiama", () => {
+  const d = deposito();
+  scrivi(d, Array.from({ length: TETTO + 5 }, (_, i) => `/f${i}`));
+  // Si guarda il deposito **grezzo**, non `leggi`: `leggi` taglia a sua volta, quindi
+  // passando di lì uno `scrivi` che non taglia resterebbe invisibile. Misurato con una
+  // prova di mutazione: la versione che leggeva con `leggi` restava verde sul mutante.
+  assert.equal(JSON.parse(d.getItem("nova.recenti")).length, TETTO);
+});
+
+test("lo stesso percorso con spazi attorno non si duplica", () => {
+  // Il difetto plausibile: trimmare per il controllo di vuotezza e poi inserire il percorso
+  // non trimmato. Passerebbe ogni altro test, e romperebbe il percorso incollato dal Finder.
+  assert.deepEqual(aggiungi(["/a"], "  /a  "), ["/a"]);
+});
 ```
 
 - [ ] **Step 2: Fai girare il test e verifica che fallisca**
