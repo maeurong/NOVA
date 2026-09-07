@@ -8,6 +8,18 @@
 </head>
 <body>
 <nav id="albero" aria-label="albero del modello">
+  <section id="file" aria-label="file del modello">
+    <h2>File</h2>
+    <input id="file-percorso" type="text" spellcheck="false"
+           placeholder="percorso del modello .nova.json"
+           aria-label="percorso del modello">
+    <div class="file-azioni">
+      <button id="file-apri" type="button">apri</button>
+      <button id="file-salva" type="button">salva</button>
+    </div>
+    <p id="file-stato" class="numero"></p>
+    <ul id="file-recenti" aria-label="aperti di recente"></ul>
+  </section>
   <h2>Modello</h2>
   <div class="vuoto" id="albero-vuoto">
     Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
