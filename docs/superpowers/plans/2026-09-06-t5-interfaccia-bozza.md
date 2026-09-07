@@ -15,11 +15,44 @@
 | giorno | consegna | story | verifica a fine giornata |
 |---|---|---|---|
 | 10 | **Spazio di modellazione**: piano SVG + spazio three.js affiancati e sincronizzati, nodi con `N` e `x; z`, estrusione `B` con ghost/Esc/Invio, selezione unica, albero a sinistra, barra dei tasti in basso, stati vuoti che insegnano il gesto | 1–7, 10–14 | telaio 2×1 disegnato da zero in < 2 min da Mario, cronometrato |
-| 11 | **Pannello destro + palette + cronologia + file**: ispettore della selezione (nome, coordinate, vincolo con preimpostazioni incastro/cerniera/carrello), sezioni con editor delle barre (file per lato, staffe, copriferro, riduzione, danno), materiali per classe con «personalizzato» e veste, azioni/carichi/combinazioni, `⌘K` con valori nella query, `⌘Z`/`⇧⌘Z`, apri/salva | 8–9, 12, 15–28, 65–67 | il MURO 1 ricostruito da `docs/caso-studio/README.md` solo con tastiera e palette; salvato, riaperto, stessa impronta |
+| 11 | **Pannello destro + palette + cronologia + file**: ispettore della selezione (nome, coordinate, vincolo con preimpostazioni incastro/cerniera/carrello), sezioni con editor delle barre (file per lato, staffe, copriferro, riduzione, danno), materiali per classe con «personalizzato» e veste, azioni/carichi/combinazioni, `⌘K` con valori nella query, `⌘Z`/`⇧⌘Z`, apri/salva, **asta fra due nodi scelti** (vedi sotto) | 8–9, 12, 15–28, 65–67 | il MURO 1 ricostruito da `docs/caso-studio/README.md` solo con tastiera e palette; salvato, riaperto, stessa impronta |
 | 12 | **Check Model + corsa + attesa parlante**: verdetti a doppio canale con `rimedio` cliccabile (seleziona l'oggetto), localizzazione del solutore con «dove prenderlo», fasi nominate e durata misurata, errore del solutore con coda del registro, risultati stantii in rosso per impronta | 29–35, 41–42, 68 | corsa del telaio 2×1 e del MURO 1 dalla UI; un modello malato rifiutato con il rimedio che porta all'oggetto |
 | 13 | **Risultati statici**: deformata con scala stampata «×n (auto \| a mano)» e ombra indeformata, M sul lato teso con etichetta al picco, V e N con segno e verso i→j in legenda, stazioni, M srotolato sotto il piano, spostamenti/reazioni per nodo; **collisioni delle etichette risolte** (leader line, priorità, nascondi sotto soglia) | 36–40 | trave appoggiata: M(mid) = qL²/8 letto sull'etichetta; nessuna etichetta sovrapposta a 1280 e a 1920 px |
 | 14 | **Modi animati + pushover + Confronto**: modi con `1 2 3`, frequenza e massa partecipante accanto; curva taglio–spostamento con passi cliccabili e scrubber sulla deformata, stato delle sezioni a 4 valori su due canali; scheda Confronto con tabella (massa prima), classi, bias, export CSV/LaTeX e PNG/SVG delle figure | 45, 48–49, 56–61 | MURO 1: modo 2 nel piano animato; pushover scorsa con lo scrubber; tabella esportata uguale a `docs/caso-studio/confronto.csv` |
 | 15 | **Presentazione + critique + polish**: tasto `P` (pannelli ritratti, etichette ≥ 46 px, testo ≥ 32 px, aste ≥ 6 px, nodi ≥ 14 px, contrasto ≥ 3:1), un solo rosso, viridis con legenda, leggibile in bianco e nero; `impeccable critique` + `polish` + `audit` (a11y, responsive); riserva per ciò che è scivolato | 62–64 + tutto | letto da 8 m su uno schermo di 2 m (prova in aula o con lo zoom del browser a 25 %); zero sovrapposizioni; `audit` senza finding Important |
+
+## Deciso a fine giornata 10, guardando il prototipo accanto al lavoro fatto
+
+Mario ha confrontato quel che c'è con il prototipo del ticket #8 e ha detto «manca tutto».
+Il confronto è giusto e vale la pena capirlo, perché non si ripeta la sorpresa alla giornata 12.
+
+**Il prototipo aveva un solutore finto.** `fe.js` — rigidezza diretta 2D scritta in JavaScript,
+con `autotest()` sulla trave appoggiata — calcolava deformata, reazioni e M **nel browser**. Per
+questo il giorno uno mostrava già i diagrammi negli screenshot. NOVA non può farlo: i risultati
+devono venire da OpenSees attraverso il sidecar, e quella catena è check (12) → risultati (13).
+
+Ne segue un **avvallamento strutturale**: la cosa vera sembra più povera del mock finché la
+catena reale non atterra. Non è un difetto del lavoro, è una conseguenza dell'ordine — ed era
+esattamente quel che il «filo verticale» proposto il giorno 10 evitava. Mario ha confermato
+l'ordine orizzontale della bozza anche dopo aver visto l'effetto: **la giornata 11 resta
+pannello, sezioni, materiali, carichi, palette, apri/salva.**
+
+Tre decisioni:
+
+1. **Ordine orizzontale confermato.** I risultati restano alla giornata 13. Chi legge questa
+   bozza alla giornata 12 sappia che fino ad allora il programma disegna e non calcola, e che
+   è una scelta presa due volte, non una svista.
+2. **Asta fra due nodi scelti: entra nella giornata 11.** Oggi un'asta nasce solo per
+   estrusione (lunghezza + freccia), e per chiudere una maglia bisogna indovinare la misura.
+   Il riduttore `estrudi` riusa già il nodo d'arrivo entro `TOLLERANZA_MM`: serve solo il
+   gesto — nodo selezionato, `B`, secondo nodo, Invio. Il prototipo lo aveva nella variante A.
+3. **Importazione dal prior: fuori da T5, e fuori dal calendario della tesi.** Non era in
+   nessuna delle sei giornate — buco del piano trovato da Mario. `/api/importa` esiste ed è
+   testato lato dati dalla T2; manca solo la UI. Mario l'ha collocata «dopo T6», ma T6 sono i
+   giorni 16-18 e il 19 è la consegna, dichiarata «niente sviluppo»: **una giornata dopo T6
+   non esiste**. Va quindi nel cassetto «dopo la tesi», con finestra nativa e installer. Sul
+   prior vero produrrebbe comunque un modello vuoto con otto regioni scartate: mostrerebbe un
+   buco, non una capacità.
 
 ## Rischi noti e decisioni da prendere il giorno 10
 
