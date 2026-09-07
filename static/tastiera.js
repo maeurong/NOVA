@@ -5,8 +5,14 @@
 // `esempio` è il segnaposto del campo di comando (`app.js:apriComando`), e sta qui perché è
 // la stessa cosa che `aiuto` dice nella barra, detta col formato invece che a parole: due
 // elenchi divergerebbero al primo ripensamento, come già la barra e le scorciatoie.
+//
+// `campo` è l'etichetta del campo di comando, e non è `etichetta`: quella è il **verbo** del
+// tasto, e la barra la stampa già; una `<label>` risponde invece a «cosa va in questa
+// casella», che è un sostantivo. Porta con sé la preposizione quando il comando ha un
+// bersaglio da nominare (`etichettaCampo` qui sotto), perché è lì che cambia: `N` non ha
+// nessun bersaglio, `B` parte **da** un nodo, `M` e `R` agiscono **di**/su un nodo.
 export const TASTI = [
-  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z in mm",      contesto: "salvo-ghost", esempio: "0; 3000" },
+  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z in mm",      contesto: "salvo-ghost", esempio: "0; 3000", campo: "coordinate" },
   // Non più ⇥: quello resta del browser (fix round 1, A2). ⇥ da pagina appena caricata
   // restava sempre su `body` — mai passato a un vero controllo — perché questo codice lo
   // intercettava e faceva `preventDefault` a ogni pressione, pure quella che avrebbe dovuto
@@ -16,19 +22,28 @@ export const TASTI = [
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "disfa",     tasto: "⌘Z",    etichetta: "annulla",   aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "rifai",     tasto: "⇧⌘Z",   etichetta: "rifai",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
-  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione", esempio: "3000" },
+  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione", esempio: "3000", campo: "lunghezza da" },
   { codice: "asta",      tasto: "A",     etichetta: "asta",      aiuto: "poi il secondo nodo",    contesto: "selezione" },
   { codice: "vincolo",   tasto: "V",     etichetta: "vincolo",   aiuto: null,              contesto: "selezione" },
-  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z in mm",      contesto: "selezione", esempio: "0; 3000" },
-  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro" },
+  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z in mm",      contesto: "selezione", esempio: "0; 3000", campo: "coordinate di" },
+  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro", campo: "nome di" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
   // Col ghost aperto la freccia non è una comodità, è il gesto obbligatorio: la lunghezza
-  // è già digitata e manca la direzione. Finora era nominata solo dentro il `prompt`, che
-  // è già sparito quando serve — la barra taceva sull'unico tasto che restava da premere.
+  // è già digitata e manca la direzione. Prima della barra non la nominava nessuno — l'unico
+  // tasto che restava da premere, e a schermo non c'era scritto da nessuna parte.
   { codice: "direzione", tasto: "← ↑ → ↓", etichetta: "direzione", aiuto: null,            contesto: "ghost" },
 ];
+
+/** L'etichetta del campo di comando: il sostantivo, e il bersaglio quando ce n'è uno.
+ *
+ *  Il bersaglio è congelato all'apertura (`app.js:apriComando`) mentre la selezione resta
+ *  viva: senza nominarlo, `R` col nodo 1 e un clic sul nodo 6 rinominava il nodo 1 e niente
+ *  a schermo diceva quale dei due. `${tipo} ${id}` è la stessa forma che le etichette della
+ *  cronologia usano («nome di nodo 1»), non una seconda convenzione. */
+export const etichettaCampo = (voce, bersaglio) =>
+  bersaglio ? `${voce.campo} ${bersaglio.tipo} ${bersaglio.id}` : voce.campo;
 
 // `key` dell'evento → codice, separati per modificatore. Le **etichette** stampate sono
 // quelle di questa tastiera, che è un Mac (`⌫`, `R`); la mappa riconosce comunque `delete`

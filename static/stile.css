@@ -138,7 +138,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #comando[hidden] { display: none; }
 #comando label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
                  color: var(--testo-tenue); font-weight: 600; flex: 0 0 auto; }
-#comando-campo { flex: 1 1 14rem; min-width: 8rem; caret-color: var(--rosso); }
+/* `grow: 0`: con `1` il campo si mangiava tutto l'avanzo — 1311px a 1440 di finestra, con
+   l'aiuto spinto a 1300px dall'etichetta. Le tre parti sono un controllo solo e devono
+   restare vicine; 14rem di base bastano per «piede sinistro» e per «12 500; 3 000». */
+#comando-campo { flex: 0 1 14rem; min-width: 8rem; caret-color: var(--rosso); }
 #comando .aiuto { flex: 0 1 auto; }
 
 .staccato { margin-top: 1.5rem; }
@@ -172,11 +175,23 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #file-recenti button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
 
 /* La cronologia visibile (P4): stesso linguaggio dell'albero — riga cliccabile, fuoco
-   visibile, doppio canale sulla voce attiva (storia.js). */
-#storia-elenco { margin: 0; padding: 0; list-style: none; }
-#storia-elenco li { padding: 2px 4px; cursor: pointer; border-radius: 2px; font-family: var(--mono); font-size: 11px; }
+   visibile, doppio canale sulla voce attiva (storia.js).
+
+   Scorre per conto suo, con la ricetta dei recenti qui sopra: senza, alla diciassettesima
+   voce l'elenco sfondava il pannello (fondo a 841px su 833) e l'unico contenitore che
+   scorreva era `#pannello` — cercare nella cronologia spingeva fuori campo la sezione
+   «Selezione», e ispettore e Storia si contendevano un solo scorrimento. */
+#storia-elenco { margin: 0; padding: 0; list-style: none; max-height: 11rem; overflow-y: auto; }
+/* Bersaglio ≥24px come le caselle dei gradi, e per la stessa regola (WCAG 2.5.8): 11px di
+   mono a 1,45 fanno 15,94px di riga, che con 2px di padding restavano 19,94. Queste sono le
+   righe più piccole della pagina e sono impilate, quindi l'eccezione della spaziatura non le
+   copre. Il padding, non il corpo del testo: la densità della colonna resta quella. */
+#storia-elenco li { padding: 5px 4px; cursor: pointer; border-radius: 2px; font-family: var(--mono); font-size: 11px; }
 #storia-elenco li:hover { background: var(--pannello); }
 #storia-elenco li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
-.storia-attiva { color: var(--rosso); font-weight: 700; }
+/* Niente rosso qui: 11px in grassetto è testo normale per WCAG, e #b8321e su #dcdad5 fa
+   4,28:1, sotto il 4,5:1 di AA — l'unica voce della Storia che non passava. Il doppio canale
+   non ne dipendeva già: «▸», il grassetto e `aria-current` (storia.js) restano tutti e tre. */
+.storia-attiva { font-weight: 700; }
 /* Il futuro rifacibile: un comando nuovo lo cancella, e va previsto — non solo trovato dopo. */
 .storia-futuro { color: var(--testo-tenue); font-style: italic; }

@@ -45,6 +45,18 @@ export function ruotaGhost(modo, key) {
  *  ripensamento, ed erano nate lo stesso giorno in due file diversi. */
 export const AVVISO_ESTRUSIONE = "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla";
 
+/** Gemella della precedente: la frase del secondo nodo era scritta due volte in `app.js`,
+ *  una con «Esc per annullare» e una senza. */
+export const AVVISO_SECONDO_NODO = "scegli il secondo nodo, poi Invio — Esc per annullare";
+
+/** Una forma sola per «serve un nodo selezionato». Erano cinque — «estrudere parte da un
+ *  nodo», «un'asta parte da un nodo», «il vincolo è di un nodo», «si sposta un nodo», «si
+ *  elimina un nodo» — e nessuna diceva **come** si seleziona, che è la metà utile a chi il
+ *  messaggio lo sta leggendo. Il soggetto resta un argomento perché è l'unica cosa che
+ *  cambia davvero: dice quale comando l'ha chiesto. */
+export const serveUnNodo = (cosa) =>
+  `${cosa} vuole un nodo selezionato: premi G per girare fra i nodi, o cliccane uno`;
+
 /** La decisione di `scegli`: se il bersaglio è accettato, cosa dire se non lo è, e se
  *  `modo.a` va aggiornato. La stessa guardia blocca in `estrusione` (la selezione è ferma)
  *  e lascia passare in `asta` (la selezione **è** il gesto) — la differenza sta qui, non

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TASTI, voceDaEvento, vociDellaBarra, daControllo } from "../tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "../tastiera.js";
 
 test("nessun codice compare due volte", () => {
   const codici = TASTI.map((v) => v.codice);
@@ -36,7 +36,7 @@ test("un contesto sconosciuto dà le voci di sempre, non un'eccezione", () => {
 
 test("con un'estrusione aperta la barra non mostra nodo né seleziona: non funzionano dietro un ghost", () => {
   const conGhost = vociDellaBarra("ghost").map((v) => v.codice);
-  assert.ok(!conGhost.includes("nodo"), "N aprirebbe un prompt mentre app.js blocca i comandi da tastiera");
+  assert.ok(!conGhost.includes("nodo"), "N aprirebbe un secondo campo mentre app.js blocca i comandi da tastiera");
   assert.ok(!conGhost.includes("seleziona"), "⇥ cambierebbe la selezione sotto il ghost, bloccato da app.js");
   // `direzione` sì: col ghost aperto la freccia è il gesto obbligatorio, e finora la barra
   // taceva proprio sull'unico tasto che serviva (B3).
@@ -302,5 +302,39 @@ test("col ghost la barra nomina la freccia, che è il gesto obbligatorio dell'es
 test("la freccia non compare dove non fa niente: in asta il ghost segue il secondo nodo", () => {
   for (const contesto of ["asta", "sempre", "selezione"]) {
     assert.ok(!vociDellaBarra(contesto).map((v) => v.codice).includes("direzione"), contesto);
+  }
+});
+
+// --- fix round 2, grave 1: l'etichetta del campo nomina il bersaglio -------------
+// Il difetto dal vivo: nodo 1 selezionato, `R`, clic sul nodo 6 (che si evidenzia nel
+// pannello e nel piano), Invio → rinominato il nodo 1. Il bersaglio è congelato apposta
+// all'apertura, ma niente a schermo lo diceva: una regressione contro il `prompt`, che
+// scriveva «Nome per nodo 1» dentro il testo della finestra.
+
+test("etichettaCampo: col bersaglio dice su cosa agisce, non solo il verbo", () => {
+  const rinomina = TASTI.find((v) => v.codice === "rinomina");
+  const etichetta = etichettaCampo(rinomina, { tipo: "nodo", id: 1 });
+  assert.ok(etichetta.includes("nodo 1"), `l'etichetta non nomina il bersaglio: «${etichetta}»`);
+});
+
+test("etichettaCampo: l'etichetta segue il bersaglio congelato, non l'ultimo cliccato", () => {
+  const sposta = TASTI.find((v) => v.codice === "sposta");
+  assert.notEqual(etichettaCampo(sposta, { tipo: "nodo", id: 1 }),
+                  etichettaCampo(sposta, { tipo: "nodo", id: 6 }));
+  assert.ok(etichettaCampo(sposta, { tipo: "nodo", id: 1 }).includes("nodo 1"));
+});
+
+test("etichettaCampo: senza bersaglio resta il solo sostantivo (N non ha un bersaglio)", () => {
+  const nodo = TASTI.find((v) => v.codice === "nodo");
+  assert.equal(etichettaCampo(nodo, null), nodo.campo);
+  assert.ok(!etichettaCampo(nodo, null).includes("nodo"));
+});
+
+test("ogni comando che apre il campo ha il sostantivo di ciò che ci si scrive", () => {
+  // `<label>` risponde a «cosa va in questa casella», non «che tasto ho premuto»: il verbo
+  // lo dice già la barra. I quattro che aprono il campo sono N, B, M, R.
+  for (const codice of ["nodo", "estrudi", "sposta", "rinomina"]) {
+    const v = TASTI.find((x) => x.codice === codice);
+    assert.ok(v.campo && v.campo.trim() !== "", `${codice} senza sostantivo per l'etichetta`);
   }
 });

@@ -18,9 +18,10 @@
       <button id="file-salva" type="button">salva</button>
     </div>
     <p id="file-stato" class="numero"></p>
-    <!-- `hidden` come ogni altro stato vuoto della pagina: `creaFile` gira dopo l'`await` di
-         three.js, e senza questo «Niente di recente.» lampeggia a ogni caricamento pure con
-         otto percorsi in elenco. Chi lo deve mostrare è `disegnaRecenti`. -->
+    <!-- `hidden` come ogni altro stato vuoto della pagina: il markup non sa ancora se il
+         deposito ha percorsi dentro, e uno stato vuoto scritto qui direbbe «Niente di
+         recente.» pure con otto percorsi in elenco. Chi lo deve mostrare è `disegnaRecenti`,
+         che il deposito l'ha letto (`file.js`, `recenti.js`). -->
     <p class="vuoto" id="file-recenti-vuoto" hidden>Niente di recente.</p>
     <ul id="file-recenti" aria-label="aperti di recente" hidden></ul>
   </section>
@@ -65,12 +66,16 @@
      Etichetta, segnaposto e aiuto li scrive `apriComando` leggendoli dalla tastiera: sono
      quattro comandi in questa riga (N, B, M, R), e qui sta quello che si apre più spesso. -->
 <form id="comando" hidden>
-  <label for="comando-campo">nodo</label>
+  <label for="comando-campo">coordinate</label>
   <input id="comando-campo" class="numero" type="text" spellcheck="false"
-         autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="0; 3000">
+         autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="0; 3000"
+         aria-describedby="comando-aiuto">
   <!-- Solo il formato: «Invio conferma, Esc annulla» lo dice già la barra qui sotto, che
-       col campo aperto stampa quelle due voci e nient'altro (story 14). -->
-  <span class="aiuto">x; z in mm</span>
+       col campo aperto stampa quelle due voci e nient'altro (story 14).
+       `aria-describedby` e non un secondo `<label>`: senza, uno screen reader leggeva
+       «ESTRUDI, campo di testo» e basta — il formato era a schermo ma fuori dal nome
+       accessibile, mentre la finestra di prima lo diceva dentro la domanda. -->
+  <span class="aiuto" id="comando-aiuto">x; z in mm</span>
 </form>
 <footer id="barra" aria-label="scorciatoie"></footer>
 

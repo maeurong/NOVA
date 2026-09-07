@@ -15,6 +15,9 @@ function elementoFinto() {
     dispatch(ev) { (listeners[ev] ?? []).forEach((fn) => fn()); },
     append(...figli) { this._figli.push(...figli); },
     replaceChildren(...figli) { this._figli = figli; },
+    // Il vero `scrollIntoView` non esiste in Node: qui registra come è stato chiamato, che è
+    // l'unica cosa che il codice gli chiede (fix round 2, grave 2).
+    scrollIntoView(opzioni) { this._scrollato = opzioni ?? true; },
   };
 }
 
@@ -28,6 +31,35 @@ test("disegna: una cronologia con una voce sola la mostra attiva, non uno spazio
   s.disegna([{ etichetta: "modello vuoto", attiva: true }]);
   assert.equal(elenco._figli.length, 1);
   assert.equal(elenco._figli[0].getAttribute("aria-current"), "true");
+  // Con una voce sola non c'è niente da scorrere, e `block: "nearest"` è proprio la forma
+  // che non muove nulla quando la voce è già in campo: nessuna barra, nessun salto.
+  assert.deepEqual(elenco._figli[0]._scrollato, { block: "nearest" });
+});
+
+// --- fix round 2, grave 2: la voce attiva resta nel campo visibile -------------
+// Misurato dal revisore: alla sedicesima voce il fondo dell'elenco sta a 821px su 833 di
+// pannello, alla diciassettesima a 841 con `scrollTop` a 0. Da lì in poi la voce attiva è
+// fuori campo e niente la riporta dentro — e l'unico contenitore che scorreva era
+// `#pannello`, quindi cercare nella cronologia spingeva fuori la sezione «Selezione».
+
+test("a venti comandi la voce attiva viene riportata in campo, non lasciata fuori", () => {
+  const elenco = elementoFinto();
+  const s = creaStoria(elenco, { suSalto: () => {} });
+  const voci = Array.from({ length: 20 }, (_, i) => ({ etichetta: `comando ${i}`, attiva: i === 19 }));
+  s.disegna(voci);
+  assert.deepEqual(elenco._figli[19]._scrollato, { block: "nearest" },
+                   "la voce attiva non viene riportata nel campo visibile");
+  // e solo lei: scorrere anche le altre le farebbe la guerra a vicenda
+  assert.equal(elenco._figli[0]._scrollato, undefined);
+});
+
+test("dopo un salto indietro è la nuova voce attiva a rientrare in campo", () => {
+  const elenco = elementoFinto();
+  const s = creaStoria(elenco, { suSalto: () => {} });
+  const voci = Array.from({ length: 20 }, (_, i) => ({ etichetta: `comando ${i}`, attiva: i === 2 }));
+  s.disegna(voci);
+  assert.deepEqual(elenco._figli[2]._scrollato, { block: "nearest" });
+  assert.equal(elenco._figli[19]._scrollato, undefined);
 });
 
 // --- 11c/F: le voci sono raggiungibili da tastiera, e lo dicono ---------------
