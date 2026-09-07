@@ -52,3 +52,18 @@ test("contenuto malformato nel deposito vale come elenco vuoto", () => {
   assert.deepEqual(leggi(deposito({ "nova.recenti": '{"a":1}' })), []);
   assert.deepEqual(leggi(deposito({ "nova.recenti": '["/a", 7]' })), []);
 });
+
+test("un deposito con più voci del tetto viene tagliato in lettura", () => {
+  const troppi = JSON.stringify(Array.from({ length: TETTO + 5 }, (_, i) => `/f${i}`));
+  assert.equal(leggi(deposito({ "nova.recenti": troppi })).length, TETTO);
+});
+
+test("scrivi taglia al tetto, non si fida di chi chiama", () => {
+  const d = deposito();
+  scrivi(d, Array.from({ length: TETTO + 5 }, (_, i) => `/f${i}`));
+  assert.equal(leggi(d).length, TETTO);
+});
+
+test("lo stesso percorso con spazi attorno non si duplica", () => {
+  assert.deepEqual(aggiungi(["/a"], "  /a  "), ["/a"]);
+});
