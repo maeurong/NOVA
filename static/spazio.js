@@ -42,7 +42,21 @@ export function calcolaInquadratura(nodi, distanzaMinima = DISTANZA_MINIMA) {
   };
 }
 
+/** Non rigetta **mai**: un guasto qui torna uno spazio che si dichiara assente, e il piano
+ *  SVG regge da solo. Con la `Promise` respinta il chiamante restava con `spazio = null` e la
+ *  pagina continuava a dire «Vista spaziale in caricamento» per sempre — un guasto travestito
+ *  da attesa, che è l'opposto di quel che P5 chiede. I due guasti previsti (three.js assente,
+ *  WebGL assente) hanno il loro `catch` dentro; questo prende tutto il resto — la scena, i
+ *  materiali, il primo `render`. */
 export async function creaSpazio(contenitore) {
+  try {
+    return await costruisci(contenitore);
+  } catch (e) {
+    return assente(contenitore, "la vista 3D non si è costruita", e);
+  }
+}
+
+async function costruisci(contenitore) {
   let THREE;
   try {
     THREE = await import("./vendor/three.module.js");

@@ -1,6 +1,7 @@
 // Notazione numerica italiana (AGENTS.md, «Convenzioni»): la virgola separa i decimali,
 // sempre; il punto separa le migliaia o le migliaia non si separano. Un'unica porta di
-// ingresso e una sola d'uscita, così nessun campo la reinventa a modo suo.
+// ingresso e una sola d'uscita, così nessun campo la reinventa a modo suo. In **lettura** il
+// punto delle migliaia si accetta; in **scrittura** non si emette (vedi `SEPARATORE_MIGLIAIA`).
 
 // La regola, dichiarata una volta perché «1.234» è ambiguo e indovinare è peggio che
 // scegliere: **il punto è decimale finché non compare una virgola**. Con la virgola in
@@ -13,7 +14,11 @@ const VIRGOLA = /^-?\d+(,\d+)?$/;                   // 2,5 · 1200
 /** Legge un numero scritto da una persona. Torna `null` — mai `NaN` — se non è un numero. */
 export function leggiNumero(testo) {
   if (typeof testo !== "string") return null;
-  const t = testo.trim();
+  // Lo spazio fine unificatore (e il suo cugino insecabile, che un incolla si porta dietro)
+  // è ciò che `stampaNumero` emette per le migliaia: toglierlo qui è quello che fa rientrare
+  // l'uscita dalla propria porta. La regola qui sopra non cambia di una virgola — punto e
+  // virgola decidono esattamente come prima.
+  const t = testo.trim().replace(/[\u202F\u00A0]/g, "");
   if (t === "") return null;
   if (t.includes(",")) {
     if (!MIGLIAIA.test(t) && !VIRGOLA.test(t)) return null;
@@ -35,9 +40,11 @@ function tokenizza(testo) {
     } else if ("+-*/()".includes(c)) {
       token.push({ tipo: c });
       i++;
-    } else if (/[0-9.,]/.test(c)) {
+    } else if (/[0-9.,\u202F\u00A0]/.test(c)) {
+      // Lo spazio fine unificatore sta *dentro* il numero, non fra i token: è il separatore
+      // di migliaia di `stampaNumero`, e chi ricopia «12 500 mm» dall'ispettore lo incolla qui.
       let j = i;
-      while (j < testo.length && /[0-9.,]/.test(testo[j])) j++;
+      while (j < testo.length && /[0-9.,\u202F\u00A0]/.test(testo[j])) j++;
       token.push({ tipo: "num", testo: testo.slice(i, j) });
       i = j;
     } else {
@@ -126,8 +133,19 @@ export function leggiLunghezza(testo) {
   }
   const valore = leggiEspressione(corpo);
   if (valore === null) return null;
-  return valore * FATTORE_UNITA[unita];
+  // La guardia sul finito di `leggiEspressione` sta **prima** di questa moltiplicazione:
+  // «1e306 m» ci arriva finito e ne esce `Infinity`, che di lì diventa un `viewBox` di `NaN`
+  // e svuota il piano mentre si scrive. Un incolla lungo basta, e il parser esiste per quello.
+  const millimetri = valore * FATTORE_UNITA[unita];
+  return Number.isFinite(millimetri) ? millimetri : null;
 }
+
+// Lo spazio fine unificatore (U+202F), non il punto: «3.000» che usciva di qui rientrava da
+// `leggiNumero` come **3**, perché con `decimali: 0` la virgola non compare mai e il punto
+// resta decimale. Chi ricopiava un numero dall'ispettore nel campo di comando sbagliava di
+// mille volte in silenzio. È anche il separatore che il SI raccomanda, e `leggiNumero` lo
+// toglie rileggendo: l'uscita rientra dalla propria porta.
+const SEPARATORE_MIGLIAIA = "\u202F";
 
 /** Stampa un numero per una persona. Quel che non è finito esce come trattino, non come «NaN». */
 export function stampaNumero(valore, { decimali = 1, migliaia = false } = {}) {
@@ -139,7 +157,7 @@ export function stampaNumero(valore, { decimali = 1, migliaia = false } = {}) {
   const [intera, frazione] = fisso.split(",");
   const segno = intera.startsWith("-") ? "-" : "";
   const cifre = segno ? intera.slice(1) : intera;
-  const puntata = cifre.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  // con `decimali: 0` la frazione non esiste: senza questo uscirebbe «5.000,undefined»
-  return frazione === undefined ? `${segno}${puntata}` : `${segno}${puntata},${frazione}`;
+  const separata = cifre.replace(/\B(?=(\d{3})+(?!\d))/g, SEPARATORE_MIGLIAIA);
+  // con `decimali: 0` la frazione non esiste: senza questo uscirebbe «5 000,undefined»
+  return frazione === undefined ? `${segno}${separata}` : `${segno}${separata},${frazione}`;
 }

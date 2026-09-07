@@ -229,6 +229,51 @@ test("daControllo: i bottoni dell'area file non si tengono i comandi", () => {
   assert.equal(daControllo(eventoDa("button", { key: "s", comando: true })), false);
 });
 
+// --- 11c/A: le voci dell'albero e della Storia sono `<li tabindex=0 role="button">` ---
+// Un `<li>` non è un `<button>` per il selettore, ma per chi lo usa sì. Cercando i soli tag,
+// l'Invio che salta a uno snapshot risaliva **anche** al listener globale, che lo leggeva
+// come «conferma»: il comando eseguito lì potava la coda del rifà (`cronologia.js:applica`)
+// e tutti gli snapshot dopo il salto sparivano, senza che nessun annulla li riportasse.
+
+function eventoDaVoce({ key = "Enter", comando = false } = {}) {
+  const elemento = { tagName: "LI", getAttribute: (n) => (n === "role" ? "button" : null) };
+  return {
+    key, metaKey: comando, ctrlKey: false, altKey: false,
+    target: { closest: (sel) => (sel.includes('[role="button"]') ? elemento : null) },
+  };
+}
+
+test("daControllo: Invio su una voce role=button resta suo — non risale come «conferma»", () => {
+  assert.equal(daControllo(eventoDaVoce({ key: "Enter" })), true);
+  assert.equal(daControllo(eventoDaVoce({ key: " " })), true);
+});
+
+test("daControllo: ⌫ su una voce role=button resta suo — lì sopra non si elimina", () => {
+  assert.equal(daControllo(eventoDaVoce({ key: "Backspace" })), true);
+  assert.equal(daControllo(eventoDaVoce({ key: "Delete" })), true);
+});
+
+// L'altra metà, e senza di lei tornerebbe la guardia larga: una voce a fuoco non è un campo
+// di testo, quindi le lettere devono continuare a passare — `N` da lì apre il comando.
+test("daControllo: su una voce role=button le lettere passano — N apre il campo lo stesso", () => {
+  for (const key of ["n", "g", "b", "a", "v", "m", "r"]) {
+    assert.equal(daControllo(eventoDaVoce({ key })), false, key);
+  }
+});
+
+test("daControllo: ⌘S su una voce role=button passa — salvare non è un gesto della voce", () => {
+  assert.equal(daControllo(eventoDaVoce({ key: "s", comando: true })), false);
+});
+
+// La mappa riconosce anche i tasti di chi non lavora su un Mac: l'etichetta stampata resta
+// `R`, ma su un PC `F2` è il gesto che rinomina — e toglierlo lasciava i test verdi.
+test("F2 rinomina come R: la mappa riconosce anche la tastiera di un PC", () => {
+  const evento = (key) => ({ key, metaKey: false, ctrlKey: false, altKey: false });
+  assert.equal(voceDaEvento(evento("F2")).codice, "rinomina");
+  assert.equal(voceDaEvento(evento("r")).codice, "rinomina");
+  assert.equal(voceDaEvento(evento("Delete")).codice, "elimina");
+});
+
 test("daControllo: il corpo della pagina non tiene per sé niente", () => {
   assert.equal(daControllo({ key: "Backspace", target: { closest: () => null } }), false);
 });

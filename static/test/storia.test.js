@@ -30,6 +30,22 @@ test("disegna: una cronologia con una voce sola la mostra attiva, non uno spazio
   assert.equal(elenco._figli[0].getAttribute("aria-current"), "true");
 });
 
+// --- 11c/F: le voci sono raggiungibili da tastiera, e lo dicono ---------------
+// Togliere `tabIndex = 0` e il `role` lasciava i 277 test verdi e la Storia irraggiungibile
+// con ⇥: un elenco che si apre solo al clic è un comando che chi usa la tastiera non ha
+// (WCAG 2.1.1). Il `role` porta anche la seconda metà: è lui che `daControllo` riconosce,
+// e senza di lui l'Invio che salta a uno snapshot risale al listener globale come «conferma».
+
+test("ogni voce è raggiungibile con ⇥ e si dichiara un bottone", () => {
+  const elenco = elementoFinto();
+  const s = creaStoria(elenco, { suSalto: () => {} });
+  s.disegna([{ etichetta: "a", attiva: true }, { etichetta: "b", attiva: false }]);
+  for (const li of elenco._figli) {
+    assert.equal(li.tabIndex, 0, "la voce deve stare nell'ordine di tabulazione");
+    assert.equal(li.getAttribute("role"), "button");
+  }
+});
+
 // --- mutante 3: la voce attiva è marcata solo dal colore --------------------
 
 test("la voce attiva porta un segno anche fuori dal colore: aria-current e «▸», non il solo class", () => {

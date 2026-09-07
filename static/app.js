@@ -75,6 +75,11 @@ const storia = creaStoria($("storia-elenco"), {
 const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
+    // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
+    // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
+    // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
+    // sul file di prima confermava sul nodo 3 del file appena aperto.
+    chiudiComando();
     selezione = null; modo = null;
     percorso = p; impronta = i;
     dì(null);
@@ -315,9 +320,18 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
 
-  // Col campo aperto il gesto è la scrittura. Da dentro il campo qui non arriva niente
-  // (`daControllo` filtra sopra), ma il fuoco può uscirne con un clic nel piano: da lì un
-  // tasto aprirebbe un secondo comando e lascerebbe due anteprime appese. Torna nel campo.
+  // Apri e salva stanno con disfa e rifai, e **sopra** la guardia del campo: `daControllo`
+  // lascia passare il modificatore di comando apposta (è così che ⌘Z funziona mentre si
+  // scrive), quindi ⌘S da dentro il campo arriva fin qui — e sotto la guardia finiva a
+  // rimettere il fuoco dove già stava, con il `preventDefault` già fatto. Salvare mentre si
+  // scrive un nome non faceva niente e non diceva niente.
+  if (voce.codice === "apri") { file.apri(); return; }
+  if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
+
+  // Col campo aperto il gesto è la scrittura. Da dentro il campo qui arrivano solo le
+  // combinazioni col modificatore, già servite qui sopra; ma il fuoco può uscire dal campo
+  // con un clic nel piano, e da lì un tasto aprirebbe un secondo comando lasciando due
+  // anteprime appese. Torna nel campo.
   if (comando) { campoComando.focus(); return; }
 
   // Qui sotto il modo può essere solo l'asta: l'estrusione vive con il campo aperto, e col
@@ -327,9 +341,6 @@ window.addEventListener("keydown", (ev) => {
     dì("scegli il secondo nodo, poi Invio — Esc per annullare");
     return;
   }
-
-  if (voce.codice === "apri") { file.apri(); return; }
-  if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
 
   // `N` non chiede più niente: apre il campo, e da lì in poi il ghost segue i tasti.
   // Con un modo già in corso non ci arriva mai — lo ferma la guardia qui sopra, che dice

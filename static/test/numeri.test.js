@@ -32,15 +32,39 @@ test("stampa con la virgola decimale", () => {
   assert.equal(stampaNumero(2.5), "2,5");
 });
 
-test("stampa le migliaia col punto solo se richiesto", () => {
-  assert.equal(stampaNumero(1234.5, { migliaia: true }), "1.234,5");
+// 11c/D: il separatore stampato è lo spazio fine unificatore, non il punto. Col punto
+// «3.000» rientrava da `leggiNumero` come **3** — mille volte meno, e in silenzio.
+const SF = "\u202F";
+
+test("stampa le migliaia con lo spazio fine solo se richiesto, mai col punto", () => {
+  assert.equal(stampaNumero(1234.5, { migliaia: true }), `1${SF}234,5`);
   assert.equal(stampaNumero(1234.5), "1234,5");
+  assert.ok(!stampaNumero(1234.5, { migliaia: true }).includes("."), "il punto non è più il separatore");
 });
 
 test("le migliaia senza decimali non lasciano una coda vuota", () => {
-  assert.equal(stampaNumero(5000, { decimali: 0, migliaia: true }), "5.000");
-  assert.equal(stampaNumero(-5000, { decimali: 0, migliaia: true }), "-5.000");
+  assert.equal(stampaNumero(5000, { decimali: 0, migliaia: true }), `5${SF}000`);
+  assert.equal(stampaNumero(-5000, { decimali: 0, migliaia: true }), `-5${SF}000`);
   assert.equal(stampaNumero(0, { decimali: 0, migliaia: true }), "0");
+});
+
+// --- ingresso degenere: quel che il piano stampa, riletto dal campo -------------
+// Il contratto che mancava: l'uscita di `stampaNumero` deve rientrare dalla propria porta.
+// Prima non ci rientrava mai con `migliaia: true`, perché la virgola non compare con
+// `decimali: 0` e il punto resta decimale (`leggiNumero`, regola in testa al modulo).
+test("quel che stampaNumero scrive, leggiNumero lo rilegge identico", () => {
+  for (const v of [3000, 12500, 1234.5, -5000, 0, 999, 1000000]) {
+    for (const decimali of [0, 1]) {
+      const scritto = stampaNumero(v, { migliaia: true, decimali });
+      assert.equal(leggiNumero(scritto), Number(v.toFixed(decimali)),
+        `«${scritto}» (da ${v}, ${decimali} decimali) non rientra dalla propria porta`);
+    }
+  }
+});
+
+test("e ci rientra anche passando dal campo, che legge espressioni e unità", () => {
+  assert.equal(leggiLunghezza(`${stampaNumero(12500, { migliaia: true, decimali: 0 })} mm`), 12500);
+  assert.equal(leggiEspressione(stampaNumero(3000, { migliaia: true, decimali: 0 })), 3000);
 });
 
 test("un numero che non è finito si stampa come trattino, mai NaN", () => {
@@ -161,4 +185,17 @@ test("espressione: un segno senza operando resta null", () => {
   for (const t of ["-", "+", "3*-", "-)"]) {
     assert.equal(leggiEspressione(t), null, `«${t}» doveva essere null`);
   }
+});
+
+// --- 11c/C: la moltiplicazione per l'unità sta **dopo** la guardia sul finito ---
+// `leggiEspressione` guarda il proprio risultato, non i millimetri: «1e306 m» arriva finito
+// e ne esce `Infinity`, che diventa un `viewBox` di `NaN` e svuota il piano mentre si scrive.
+test("lunghezza: un valore che eccede il finito è null, non Infinity", () => {
+  const enorme = "1" + "0".repeat(306);      // 1e306: finito, finché non lo si porta in mm
+  const enormissimo = "1" + "0".repeat(308); // 1e308: finito, e ×10 non lo è più
+  assert.equal(leggiLunghezza(`${enorme}m`), null);
+  assert.equal(leggiLunghezza(`${enormissimo}cm`), null);
+  assert.equal(leggiLunghezza(`-${enorme}m`), null);
+  // e la stessa cifra in millimetri, che finita lo è, continua a passare
+  assert.equal(leggiLunghezza(`${enorme}mm`), Number(enorme));
 });

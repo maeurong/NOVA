@@ -58,13 +58,26 @@ const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", 
  *  Un campo di testo si tiene le lettere nude (ci si sta scrivendo) e le frecce (muovono il
  *  cursore), mai il modificatore di comando: `⌘S` e `⌘O` in un campo non scrivono niente.
  *  Un bottone o una casella si tengono solo ciò che li attiva — Spazio, Invio, ⌫ — e lasciano
- *  passare le lettere. `?.` regge un evento senza target, o un target senza `closest`. */
+ *  passare le lettere.
+ *
+ *  **Bottone qui vuol dire anche `role="button"`**, non solo il tag: l'albero e la Storia
+ *  costruiscono le voci come `<li tabindex=0 role="button">`, e cercare i soli tag le lasciava
+ *  fuori. L'Invio che salta a uno snapshot risaliva **anche** al listener globale, che lo
+ *  leggeva come «conferma»: il comando eseguito lì potava la coda del rifà e gli snapshot
+ *  dopo il salto sparivano senza che nessun annulla li riportasse. Stessa strada per ⌫, che
+ *  su una voce a fuoco eliminava il nodo selezionato.
+ *
+ *  `?.` regge un evento senza target, o un target senza `closest`. */
 export function daControllo(evento) {
-  const elemento = evento?.target?.closest?.("input, button, select, textarea");
+  const elemento = evento?.target?.closest?.('input, button, select, textarea, [role="button"]');
   if (!elemento) return false;
   if (evento.metaKey || evento.ctrlKey) return false;
   const tag = String(elemento.tagName ?? "").toLowerCase();
-  const testuale = tag !== "button" && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
+  // Il ruolo conta quanto il tag, e per la stessa ragione: un `<li role="button">` che si
+  // tenesse anche le lettere spegnerebbe dodici comandi ogni volta che il fuoco sta su una
+  // voce — `N` da lì deve continuare ad aprire il campo.
+  const bottone = tag === "button" || elemento.getAttribute?.("role") === "button";
+  const testuale = !bottone && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
   return testuale || ATTIVANO.has(String(evento.key).toLowerCase());
 }
 
