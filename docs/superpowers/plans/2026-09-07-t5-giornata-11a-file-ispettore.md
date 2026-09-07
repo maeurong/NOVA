@@ -532,6 +532,11 @@ Voci nuove:
 
 Il contesto `asta` è nuovo: quando si sta scegliendo il secondo nodo, la barra mostra `⇥`, `Invio`, `Esc` — e **non** i comandi che il modo blocca.
 
+**Tre test della giornata 10 vanno sostituiti, non solo integrati** — misurato eseguendo il modulo nuovo contro i test vecchi:
+- «con un modificatore non si intercetta niente» — la regola è cambiata: ora due voci *vogliono* il modificatore;
+- «la barra mostra le voci del contesto più quelle di sempre» — i contesti non sono più gli stessi;
+- «ogni voce si raggiunge davvero da un evento» — **questo fallisce davvero**: prova i tasti senza modificatori, e `apri` non si raggiunge più. La sostituzione è più forte dell'originale, perché deriva la sonda da `TASTI` invece che da un elenco scritto a mano che va alla deriva.
+
 **Ingressi degeneri:**
 - `⌘O` → torna la voce `apri`; `Ctrl+O` → la stessa voce
 - `O` senza modificatore → `null`: non deve aprire per sbaglio
@@ -593,6 +598,19 @@ test("scegliendo il secondo nodo la barra mostra solo quel che serve", () => {
 test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
   const chiavi = TASTI.map((v) => `${v.tasto}|${v.modificatore ?? ""}`);
   assert.equal(new Set(chiavi).size, chiavi.length, `doppione in: ${chiavi.join(" ")}`);
+});
+
+// Sostituisce «ogni voce si raggiunge davvero da un evento» della giornata 10, che provava
+// i tasti senza modificatori e con `⌘O`/`⌘S` nella mappa fallirebbe. La sonda si deriva da
+// `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
+test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
+  const KEY = { "⇥": "Tab", "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s" };
+  for (const v of TASTI) {
+    const comando = v.modificatore === "comando";
+    const key = KEY[v.tasto] ?? v.tasto.toLowerCase();
+    const trovata = voceDaEvento({ key, metaKey: comando, ctrlKey: false, altKey: false, shiftKey: false });
+    assert.equal(trovata?.codice, v.codice, `${v.codice} non si raggiunge con «${v.tasto}»`);
+  }
 });
 ```
 
