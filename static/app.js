@@ -1,43 +1,60 @@
-// La cucitura. Due sole cose di stato: la cronologia (da cui esce il modello corrente) e
-// la selezione. Tutto il resto è derivato e si ridisegna intero a ogni cambio: con un
-// telaio da qualche decina di aste il ridisegno costa meno di un aggiornamento parziale
-// sbagliato. `ponytail: ridisegno intero; si passa a un diff quando un modello vero lo
-// rende lento, non prima.`
+// La cucitura. Due modi di disegno oltre alla selezione libera: l'estrusione, dove la
+// selezione resta ferma mentre si conferma un ghost, e l'asta fra due nodi, dove la
+// selezione **è** il gesto — la stessa guardia renderebbe impossibile scegliere il
+// secondo nodo. `ponytail: ridisegno intero; si passa a un diff quando un modello vero
+// lo rende lento, non prima.`
 
 import { modelloVuoto, nodo } from "./modello.js";
-import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
+import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
 import { nuovaCronologia, applica, corrente } from "./cronologia.js";
 import { voceDaEvento, vociDellaBarra, daControllo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
+import { creaFile } from "./file.js";
+import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
-let ghost = null;  // {da, dx, dz} mentre si digita: non entra nel modello finché non si conferma
-
-// Stesso messaggio del blocco da tastiera qui sotto: un ghost aperto blocca anche il clic,
-// non solo N/M/R, altrimenti selezionare un altro nodo con il mouse sposta silenziosamente
-// "da" del ghost mentre lo schermo mostra ancora il tratteggio dal nodo vecchio.
-const GHOST_APERTO = "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla";
+// null · {tipo:"estrusione", da, dx, dz} · {tipo:"asta", da, a}
+// Due modi e non un ghost solo: in estrusione la selezione è ferma, in asta la selezione
+// **è** il gesto. La stessa guardia per entrambi renderebbe l'asta impossibile.
+let modo = null;
+let percorso = null, impronta = null, modificato = false;
 
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
+function dì(testo) { messaggio.textContent = testo ?? ""; }
 
-function suSelezione(tipo, id) {
-  if (ghost) { dì(GHOST_APERTO); return; }
+// Il ghost che il piano disegna ha sempre la stessa forma, qualunque sia il modo.
+function ghostDisegnabile(m) {
+  if (!modo) return null;
+  if (modo.tipo === "estrusione") return { da: modo.da, dx: modo.dx, dz: modo.dz };
+  const da = nodo(m, modo.da), a = modo.a === null ? null : nodo(m, modo.a);
+  if (!da || !a) return null;
+  return { da: modo.da, dx: a.x - da.x, dz: a.z - da.z };
+}
+
+function scegli(tipo, id) {
+  if (modo?.tipo === "estrusione") {
+    dì("c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
+    return;
+  }
+  if (modo?.tipo === "asta") {
+    // Scegliendo il secondo nodo, un'asta non è un bersaglio: accettarla lascerebbe
+    // `modo.a` fermo su quello di prima, e Invio costruirebbe verso un nodo che non è
+    // quello evidenziato — lo stesso difetto silenzioso del ghost, di lato.
+    if (tipo !== "nodo") { dì("scegli un nodo, non un'asta — Esc per annullare"); return; }
+    modo = { ...modo, a: id };
+  }
   selezione = { tipo, id };
   ridisegna();
 }
 
-const piano = creaPiano($("piano"), {
-  suSelezione,
-  suSfondo: () => { selezione = null; ridisegna(); },
-});
-const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione });
-const spazio = await creaSpazio($("spazio"));
+const piano = creaPiano($("piano"), { suSelezione: scegli, suSfondo: () => { if (!modo) { selezione = null; ridisegna(); } } });
+const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione: scegli });
 const pannello = creaPannello(
   { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-vincolo") },
   { suVincolo: (id, vincolo) => {
@@ -45,12 +62,25 @@ const pannello = creaPannello(
     ridisegna();
   } },
 );
-
-function dì(testo) { messaggio.textContent = testo ?? ""; }
+const spazio = await creaSpazio($("spazio"));
+const file = creaFile(document, {
+  suApertura: (p, m, i) => {
+    cronologia = nuovaCronologia(m, `aperto ${p}`);
+    selezione = null; modo = null;
+    percorso = p; impronta = i; modificato = false;
+    dì(null);
+    ridisegna();
+  },
+  // Salvare non tocca né il modello né la cronologia: cambia solo l'impronta di riferimento.
+  suSalvataggio: (p, i) => { percorso = p; impronta = i; modificato = false; dì(null); ridisegna(); },
+  suErrore: (msg) => dì(msg),
+});
+$("file-salva").addEventListener("click", () => file.salva(null, corrente(cronologia)));
 
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
+    modificato = true;
     dì(null);
     return true;
   } catch (e) {
@@ -66,19 +96,21 @@ function ridisegna() {
   if (selezione && !(selezione.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === selezione.id)) {
     selezione = null;
   }
-  // Un ghost che parte da un nodo sparito è nella stessa condizione di una selezione sparita.
-  if (ghost && !m.nodi.some((n) => n.id === ghost.da)) {
-    ghost = null;
-  }
+  // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
+  if (modo && !m.nodi.some((n) => n.id === modo.da)) modo = null;
+  if (modo?.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) modo = { ...modo, a: null };
+
+  const ghost = ghostDisegnabile(m);
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
   pannello.disegna(m, selezione);
+  file.disegna({ percorso, impronta, modificato });
   disegnaBarra();
 }
 
 function disegnaBarra() {
-  const contesto = ghost ? "ghost" : (selezione ? "selezione" : "sempre");
+  const contesto = modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (selezione ? "selezione" : "sempre");
   $("barra").replaceChildren(...vociDellaBarra(contesto).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
@@ -110,15 +142,18 @@ window.addEventListener("keydown", (ev) => {
   if (!voce) return;
   ev.preventDefault();
 
-  if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
+  if (voce.codice === "annulla") { modo = null; dì(null); ridisegna(); return; }
 
-  // Con un ghost aperto passano solo conferma e le frecce (secondo listener, sotto):
-  // un secondo `B` sovrascriverebbe il ghost in silenzio, buttando via la direzione già
-  // scelta, e `M`/`R` aprirebbero un prompt mentre l'estrusione resta appesa sul piano.
-  if (ghost && voce.codice !== "conferma") {
-    dì(GHOST_APERTO);
+  // Con un modo aperto passano solo conferma, annulla e — in modo asta — la selezione.
+  if (modo && voce.codice !== "conferma" && !(modo.tipo === "asta" && voce.codice === "seleziona")) {
+    dì(modo.tipo === "asta"
+      ? "scegli il secondo nodo, poi Invio — Esc per annullare"
+      : "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
     return;
   }
+
+  if (voce.codice === "apri") { file.apri(); return; }
+  if (voce.codice === "salva") { file.salva(null, corrente(cronologia)); return; }
 
   if (voce.codice === "nodo") {
     const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
@@ -137,16 +172,13 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "seleziona") {
-    // G gira fra i nodi in ordine di identificatore. È l'unico modo di avere una selezione
-    // senza mouse, e senza selezione metà dei comandi non parte. Non è più ⇥ (A2): quello
-    // resta sempre del browser, `daControllo` sopra copre già i controlli che i tasti se li
-    // gestiscono da sé.
+    // G gira fra i nodi in ordine di identificatore. In modo asta è il gesto stesso: passa
+    // da `scegli`, che aggiorna anche `modo.a`, non solo `selezione`.
     const m = corrente(cronologia);
     if (m.nodi.length === 0) { dì("nessun nodo da selezionare: premi N"); return; }
     const ids = m.nodi.map((n) => n.id);
     const dove = selezione?.tipo === "nodo" ? ids.indexOf(selezione.id) : -1;
-    selezione = { tipo: "nodo", id: ids[(dove + 1) % ids.length] };
-    ridisegna();
+    scegli("nodo", ids[(dove + 1) % ids.length]);
     return;
   }
 
@@ -156,7 +188,7 @@ window.addEventListener("keydown", (ev) => {
     if (t === null) return;
     const l = leggiNumero(t);
     if (l === null || l <= 0) { dì("lunghezza non letta: scrivi un numero maggiore di zero"); return; }
-    ghost = { da: selezione.id, dx: 0, dz: l };  // in su di default; le frecce la girano
+    modo = { tipo: "estrusione", da: selezione.id, dx: 0, dz: l };  // in su di default; le frecce la girano
     // La barra già dice "Invio conferma" / "Esc annulla" col contesto "ghost" (tastiera.js):
     // un secondo avviso qui sarebbe rosso senza essere un'attenzione, contro PRODUCT.md.
     dì(null);
@@ -164,11 +196,40 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
 
+  if (voce.codice === "asta") {
+    if (selezione?.tipo !== "nodo") { dì("un'asta parte da un nodo: selezionane uno"); return; }
+    modo = { tipo: "asta", da: selezione.id, a: null };
+    ridisegna();
+    return;
+  }
+
+  if (voce.codice === "vincolo") {
+    if (selezione?.tipo !== "nodo") { dì("il vincolo è di un nodo: selezionane uno"); return; }
+    const n = nodo(corrente(cronologia), selezione.id);
+    const id = selezione.id;
+    // `V` alterna fra incastro e libero **dichiarato**: spegnere l'ultimo grado acceso
+    // dichiara il nodo libero, non cancella il campo — sono due stati diversi per
+    // `nova/check.py:274` (vedi la correzione C3 del brief). Le altre preimpostazioni e i
+    // gradi singoli stanno nel pannello, dove si vedono.
+    const libero = !GRADI.some((g) => n.vincolo?.[g]);
+    esegui((m) => impostaVincolo(m, { id, vincolo: libero ? { ...PREIMPOSTAZIONI.incastro } : vincoloVuoto() }),
+           `vincolo del nodo ${id}`);
+    ridisegna();
+    return;
+  }
+
   if (voce.codice === "conferma") {
-    if (!ghost) return;
-    const g = ghost;
+    if (!modo) return;
+    if (modo.tipo === "asta") {
+      if (modo.a === null) { dì("scegli il secondo nodo, poi Invio"); return; }
+      const { da, a } = modo;
+      if (esegui((m) => collega(m, { da, a }), `asta ${da} → ${a}`)) { modo = null; selezione = { tipo: "nodo", id: a }; }
+      ridisegna();
+      return;
+    }
+    const g = { da: modo.da, dx: modo.dx, dz: modo.dz };
     if (esegui((m) => estrudi(m, g), `asta da ${g.da}`)) {
-      ghost = null;
+      modo = null;
       // La punta è il `nodo_j` dell'asta appena nata, non l'ultimo nodo dell'elenco:
       // quando l'estrusione arriva su un nodo che c'era già, di nodi non ne nasce nessuno.
       const m = corrente(cronologia);
@@ -211,14 +272,15 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
-// Le frecce girano il ghost: la lunghezza è già digitata, resta la direzione (story 2).
+// Le frecce girano il ghost dell'estrusione: la lunghezza è già digitata, resta la
+// direzione (story 2). In modo asta il ghost segue il secondo nodo, non le frecce.
 window.addEventListener("keydown", (ev) => {
-  if (!ghost) return;
-  const l = Math.hypot(ghost.dx, ghost.dz);
+  if (modo?.tipo !== "estrusione") return;
+  const l = Math.hypot(modo.dx, modo.dz);
   const verso = { ArrowUp: [0, l], ArrowDown: [0, -l], ArrowRight: [l, 0], ArrowLeft: [-l, 0] }[ev.key];
   if (!verso) return;
   ev.preventDefault();
-  ghost = { ...ghost, dx: verso[0], dz: verso[1] };
+  modo = { ...modo, dx: verso[0], dz: verso[1] };
   ridisegna();
 });
 
