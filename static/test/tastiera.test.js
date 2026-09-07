@@ -103,3 +103,16 @@ test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
     assert.equal(trovata?.codice, v.codice, `${v.codice} non si raggiunge con «${v.tasto}»`);
   }
 });
+
+test("le voci di sempre restano nei contesti reali, non solo nel proprio", () => {
+  for (const contesto of ["sempre", "selezione"]) {
+    const codici = vociDellaBarra(contesto).map((v) => v.codice);
+    for (const atteso of ["nodo", "seleziona", "apri", "salva"]) {
+      assert.ok(codici.includes(atteso), `${atteso} manca nel contesto ${contesto}`);
+    }
+  }
+});
+
+test("lo shift da solo non blocca: ⇧N crea un nodo", () => {
+  assert.equal(voceDaEvento({ key: "N", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true }).codice, "nodo");
+});

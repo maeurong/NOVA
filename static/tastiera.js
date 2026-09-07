@@ -17,9 +17,9 @@ export const TASTI = [
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
 ];
 
-// `key` dell'evento → codice, separati per modificatore. I tasti **stampati** sono quelli
-// di questa tastiera, che è un Mac; chi ha un PC preme Ctrl e Canc lo stesso, ed è solo
-// l'etichetta a scegliere.
+// `key` dell'evento → codice, separati per modificatore. Le **etichette** stampate sono
+// quelle di questa tastiera, che è un Mac (`⌫`, `R`); la mappa riconosce comunque `delete`
+// e `f2` per chi lavora su un PC — è solo l'etichetta a scegliere.
 const SENZA_MODIFICATORE = new Map([
   ["n", "nodo"], ["tab", "seleziona"], ["b", "estrudi"], ["a", "asta"], ["v", "vincolo"],
   ["m", "sposta"], ["r", "rinomina"], ["f2", "rinomina"],
@@ -29,11 +29,13 @@ const SENZA_MODIFICATORE = new Map([
 const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"]]);
 
 export function voceDaEvento(evento) {
-  // ⌘ sul Mac, Ctrl sul PC: lo stesso modificatore di comando. `alt` e `shift` non lo sono
-  // mai, e una combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
-  // `⌘⇧S` è «salva con nome» in mezzo mondo: non è nostra.
-  if (evento.altKey || evento.shiftKey) return null;
+  // ⌘ sul Mac, Ctrl sul PC: lo stesso modificatore di comando. `alt` non lo è mai, e una
+  // combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
+  if (evento.altKey) return null;
   const comando = Boolean(evento.metaKey || evento.ctrlKey);
+  // `⇧` conta solo col comando: `⌘⇧S` è «salva con nome» del browser. Da solo no —
+  // chi preme `⇧N` per la maiuscola manda `shiftKey: true`, e deve creare un nodo lo stesso.
+  if (comando && evento.shiftKey) return null;
   const tavola = comando ? CON_COMANDO : SENZA_MODIFICATORE;
   const codice = tavola.get(String(evento.key).toLowerCase());
   return codice ? TASTI.find((v) => v.codice === codice) : null;
