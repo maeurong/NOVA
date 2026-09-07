@@ -61,6 +61,11 @@ export function leggiEspressione(testo) {
     function fattore() {
       const t = avanza();
       if (t === undefined) throw new Error("atteso un numero");
+      // Segno unario. `leggiNumero` accetta già «-5» da solo, e senza questo un'espressione
+      // sarebbe **più povera** del campo che sostituisce: una coordinata negativa è normale
+      // quanto una positiva. Ricorsivo perché «3*-2» e «(-5)*2» sono la stessa regola.
+      if (t.tipo === "-") return -fattore();
+      if (t.tipo === "+") return fattore();
       if (t.tipo === "num") {
         const v = leggiNumero(t.testo);
         if (v === null) throw new Error("numero non valido");

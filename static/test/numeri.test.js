@@ -125,3 +125,40 @@ test("un ingresso che non è una stringa è null anche per la lunghezza", () => 
     assert.equal(leggiLunghezza(v), null);
   }
 });
+
+// --- segno unario ---
+// `leggiNumero("-5")` funziona da sempre: senza questi casi l'espressione accetterebbe **meno**
+// del campo che sostituisce, e una coordinata negativa è normale quanto una positiva.
+
+test("espressione: il meno unario, da solo e dentro un'operazione", () => {
+  assert.equal(leggiEspressione("-5"), -5);
+  assert.equal(leggiEspressione("3*-2"), -6);
+  assert.equal(leggiEspressione("-5+3"), -2);
+  assert.equal(leggiEspressione("(-5)*2"), -10);
+});
+
+test("espressione: il più unario non cambia il segno", () => {
+  assert.equal(leggiEspressione("+5"), 5);
+  assert.equal(leggiEspressione("2*+3"), 6);
+});
+
+test("espressione: due meno di fila si annullano, come in aritmetica", () => {
+  assert.equal(leggiEspressione("2--3"), 5);
+  assert.equal(leggiEspressione("--5"), 5);
+});
+
+test("espressione: il segno unario coerente con leggiNumero, che lo accetta da sempre", () => {
+  assert.equal(leggiEspressione("-1.234,5"), leggiNumero("-1.234,5"));
+  assert.equal(leggiEspressione("-2,5"), -2.5);
+});
+
+test("lunghezza: una quota negativa con l'unità", () => {
+  assert.equal(leggiLunghezza("-30cm"), -300);
+  assert.equal(leggiLunghezza("-2,5m"), -2500);
+});
+
+test("espressione: un segno senza operando resta null", () => {
+  for (const t of ["-", "+", "3*-", "-)"]) {
+    assert.equal(leggiEspressione(t), null, `«${t}» doveva essere null`);
+  }
+});
