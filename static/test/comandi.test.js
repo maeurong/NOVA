@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { modelloVuoto } from "../modello.js";
-import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina } from "../comandi.js";
+import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, collega, impostaVincolo } from "../comandi.js";
 
 test("crea un nodo con l'identificatore 1 e le coordinate date", () => {
   const m = creaNodo(modelloVuoto(), { x: 1200, z: 3400 });
@@ -163,4 +163,63 @@ test("rinomina non tocca il modello che riceve", () => {
   const snapshot = structuredClone(prima);
   rinomina(prima, { tipo: "nodo", id: 1, nome: "piede" });
   assert.deepEqual(prima, snapshot);
+});
+
+test("collega crea l'asta fra due nodi scelti", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaNodo(m, { x: 5000, z: 0 });
+  m = collega(m, { da: 1, a: 2 });
+  assert.deepEqual(m.aste[0], { id: 1, nome: null, nodo_i: 1, nodo_j: 2, sezione: null });
+});
+
+test("collega non tocca il modello che riceve", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaNodo(m, { x: 5000, z: 0 });
+  const prima = structuredClone(m);
+  collega(m, { da: 1, a: 2 });
+  assert.deepEqual(m, prima);
+});
+
+test("collega un nodo a sé stesso si rifiuta", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  assert.throws(() => collega(m, { da: 1, a: 1 }), ErroreComando);
+});
+
+test("collega nomina il nodo che non esiste", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  assert.throws(() => collega(m, { da: 1, a: 9 }), /9/);
+  assert.throws(() => collega(m, { da: 9, a: 1 }), /9/);
+});
+
+test("collega due nodi già uniti si rifiuta, in tutti e due i versi", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaNodo(m, { x: 5000, z: 0 });
+  m = collega(m, { da: 1, a: 2 });
+  assert.throws(() => collega(m, { da: 1, a: 2 }), ErroreComando);
+  assert.throws(() => collega(m, { da: 2, a: 1 }), ErroreComando);
+});
+
+test("impostaVincolo scrive i sei gradi e nient'altro", () => {
+  const m = impostaVincolo(creaNodo(modelloVuoto(), { x: 0, z: 0 }),
+    { id: 1, vincolo: { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true, pinguino: true } });
+  assert.deepEqual(m.nodi[0].vincolo, { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true });
+});
+
+test("impostaVincolo con null libera il nodo e toglie il campo", () => {
+  let m = impostaVincolo(creaNodo(modelloVuoto(), { x: 0, z: 0 }),
+    { id: 1, vincolo: { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true } });
+  m = impostaVincolo(m, { id: 1, vincolo: null });
+  assert.equal("vincolo" in m.nodi[0], false);
+});
+
+test("impostaVincolo non tocca il modello che riceve", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const prima = structuredClone(m);
+  impostaVincolo(m, { id: 1, vincolo: { ux: true } });
+  assert.deepEqual(m, prima);
+});
+
+test("impostaVincolo su un nodo che non esiste si rifiuta", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  assert.throws(() => impostaVincolo(m, { id: 9, vincolo: null }), ErroreComando);
 });
