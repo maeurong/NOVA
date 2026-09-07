@@ -11,6 +11,8 @@ export const TASTI = [
   { codice: "seleziona", tasto: "G",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "disfa",     tasto: "⌘Z",    etichetta: "annulla",   aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "rifai",     tasto: "⇧⌘Z",   etichetta: "rifai",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione" },
   { codice: "asta",      tasto: "A",     etichetta: "asta",      aiuto: "poi il secondo nodo",    contesto: "selezione" },
   { codice: "vincolo",   tasto: "V",     etichetta: "vincolo",   aiuto: null,              contesto: "selezione" },
@@ -36,7 +38,9 @@ const SENZA_MODIFICATORE = new Map([
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
   ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
-const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"]]);
+const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"]]);
+// Solo ⇧⌘Z ha un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
+const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"]]);
 
 // Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
@@ -66,10 +70,12 @@ export function voceDaEvento(evento) {
   // combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
   if (evento.altKey) return null;
   const comando = Boolean(evento.metaKey || evento.ctrlKey);
-  // `⇧` conta solo col comando: `⌘⇧S` è «salva con nome» del browser. Da solo no —
-  // chi preme `⇧N` per la maiuscola manda `shiftKey: true`, e deve creare un nodo lo stesso.
-  if (comando && evento.shiftKey) return null;
-  const tavola = comando ? CON_COMANDO : SENZA_MODIFICATORE;
+  // `⇧` conta solo col comando: `⌘⇧S` resta «salva con nome» del browser, `⌘⇧O` non è
+  // nostro — nessuna delle due è in `CON_COMANDO_E_SHIFT`. `⌘⇧Z` sì: rifà, non annulla.
+  // Chi preme `⇧N` per la maiuscola manda `shiftKey: true` senza comando, e crea un nodo lo stesso.
+  const tavola = comando && evento.shiftKey ? CON_COMANDO_E_SHIFT
+    : comando ? CON_COMANDO
+    : SENZA_MODIFICATORE;
   const codice = tavola.get(String(evento.key).toLowerCase());
   return codice ? TASTI.find((v) => v.codice === codice) : null;
 }

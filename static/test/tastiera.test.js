@@ -55,9 +55,24 @@ test("senza modificatore quelle lettere non fanno niente", () => {
 });
 
 test("una combinazione non mappata resta al browser", () => {
-  for (const key of ["n", "p", "w", "b", "z", "k"]) {
+  // "z" non c'è più qui: dalla giornata 11c ⌘Z è mappato (disfa), vedi sotto.
+  for (const key of ["n", "p", "w", "b", "k"]) {
     assert.equal(voceDaEvento({ key, metaKey: true, ctrlKey: false, altKey: false }), null, key);
   }
+});
+
+// --- disfa/rifai (giornata 11c, P4) -----------------------------------------
+// Mutante 2 del brief: ⇧⌘Z fa annulla invece di rifà.
+
+test("⌘Z è disfa, ⇧⌘Z è rifai — non si scambiano", () => {
+  assert.equal(voceDaEvento({ key: "z", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }).codice, "disfa");
+  assert.equal(voceDaEvento({ key: "z", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }).codice, "rifai");
+  assert.equal(voceDaEvento({ key: "Z", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }).codice, "rifai");
+});
+
+test("⇧⌘S e ⇧⌘O restano al browser anche dopo aver aperto la porta a ⇧⌘Z", () => {
+  assert.equal(voceDaEvento({ key: "s", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }), null);
+  assert.equal(voceDaEvento({ key: "o", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }), null);
 });
 
 test("alt non è mai il modificatore di comando", () => {
@@ -98,11 +113,12 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
   const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s",
-                "← ↑ → ↓": "ArrowUp" };
+                "⌘Z": "z", "⇧⌘Z": "z", "← ↑ → ↓": "ArrowUp" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
+    const shift = v.tasto.startsWith("⇧");
     const key = KEY[v.tasto] ?? v.tasto.toLowerCase();
-    const trovata = voceDaEvento({ key, metaKey: comando, ctrlKey: false, altKey: false, shiftKey: false });
+    const trovata = voceDaEvento({ key, metaKey: comando, ctrlKey: false, altKey: false, shiftKey: shift });
     assert.equal(trovata?.codice, v.codice, `${v.codice} non si raggiunge con «${v.tasto}»`);
   }
 });

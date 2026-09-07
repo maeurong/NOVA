@@ -149,3 +149,13 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #file-recenti button:hover .cartella { color: var(--inchiostro); }
 #file-recenti button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
+/* La cronologia visibile (P4): stesso linguaggio dell'albero — riga cliccabile, fuoco
+   visibile, doppio canale sulla voce attiva (storia.js). */
+#storia-elenco { margin: 0; padding: 0; list-style: none; }
+#storia-elenco li { padding: 2px 4px; cursor: pointer; border-radius: 2px; font-family: var(--mono); font-size: 11px; }
+#storia-elenco li:hover { background: var(--pannello); }
+#storia-elenco li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+.storia-attiva { color: var(--rosso); font-weight: 700; }
+/* Il futuro rifacibile: un comando nuovo lo cancella, e va previsto — non solo trovato dopo. */
+.storia-futuro { color: var(--testo-tenue); font-style: italic; }

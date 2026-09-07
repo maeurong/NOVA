@@ -6,14 +6,15 @@
 
 import { modelloVuoto, nodo } from "./modello.js";
 import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
-import { nuovaCronologia, applica, corrente } from "./cronologia.js";
+import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
 import { voceDaEvento, vociDellaBarra, daControllo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile } from "./file.js";
-import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "./modo.js";
+import { creaStoria } from "./storia.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido, AVVISO_ESTRUSIONE } from "./modo.js";
 import { alternaIncastro } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
@@ -51,6 +52,13 @@ const pannello = creaPannello(
   } },
 );
 const spazio = await creaSpazio($("spazio"));
+const storia = creaStoria($("storia-elenco"), {
+  suSalto: (i) => {
+    if (i === cronologia.indice) return;  // già lì: nessun ridisegno inutile
+    cronologia = vaiA(cronologia, i);
+    ridisegna();
+  },
+});
 const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
@@ -96,8 +104,7 @@ function ridisegna() {
     selezione = null;
   }
   // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
-  if (modo && !m.nodi.some((n) => n.id === modo.da)) modo = null;
-  if (modo?.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) modo = { ...modo, a: null };
+  modo = modoValido(m, modo);
 
   const ghost = ghostDisegnabile(m, modo);
   piano.disegna(m, { selezione, ghost });
@@ -105,6 +112,7 @@ function ridisegna() {
   albero.disegna(m, { selezione });
   pannello.disegna(m, selezione);
   file.disegna({ percorso, impronta, modello: m });
+  storia.disegna(etichette(cronologia));
   disegnaBarra();
 }
 
@@ -157,6 +165,19 @@ window.addEventListener("keydown", (ev) => {
   ev.preventDefault();
 
   if (voce.codice === "annulla") { modo = null; dì(null); ridisegna(); return; }
+
+  // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
+  // appesi a un nodo appena disfatto si chiudono da soli in `ridisegna` (`modoValido`).
+  if (voce.codice === "disfa") {
+    const nuova = indietro(cronologia);
+    if (nuova !== cronologia) { cronologia = nuova; dì(null); ridisegna(); }
+    return;
+  }
+  if (voce.codice === "rifai") {
+    const nuova = avanti(cronologia);
+    if (nuova !== cronologia) { cronologia = nuova; dì(null); ridisegna(); }
+    return;
+  }
 
   // Con un modo aperto passano solo conferma, annulla e — in modo asta — la selezione.
   if (modo && voce.codice !== "conferma" && !(modo.tipo === "asta" && voce.codice === "seleziona")) {

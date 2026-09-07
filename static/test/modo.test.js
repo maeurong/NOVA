@@ -1,8 +1,32 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "../modo.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido, AVVISO_ESTRUSIONE } from "../modo.js";
 
 const m = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 1000, y: 0, z: 2000 }] };
+
+// --- modoValido (giornata 11c: un annulla non lascia un modo appeso) --------
+// Mutante 5 del brief: annullare non chiude un modo aperto, che resta appeso a un nodo
+// sparito. Estratta da `app.js` (già inline in `ridisegna`) per lo stesso motivo di
+// `ghostDisegnabile` & co.: testabile in Node solo fuori dal modulo che tocca il DOM.
+
+test("modoValido: nessun modo resta nessun modo", () => {
+  assert.equal(modoValido(m, null), null);
+});
+
+test("modoValido: il nodo di partenza sparito chiude il modo, non lo lascia appeso", () => {
+  const modo = { tipo: "estrusione", da: 99, dx: 0, dz: 3000 };
+  assert.equal(modoValido(m, modo), null);
+});
+
+test("modoValido: in asta, il secondo nodo sparito torna a `a: null` invece di restare appeso", () => {
+  const modo = { tipo: "asta", da: 1, a: 99 };
+  assert.deepEqual(modoValido(m, modo), { tipo: "asta", da: 1, a: null });
+});
+
+test("modoValido: coi nodi ancora tutti presenti il modo non cambia", () => {
+  const modo = { tipo: "asta", da: 1, a: 2 };
+  assert.deepEqual(modoValido(m, modo), modo);
+});
 
 // --- ghostDisegnabile -------------------------------------------------------
 

@@ -15,6 +15,19 @@ export function ghostDisegnabile(m, modo) {
   return { da: modo.da, dx: a.x - da.x, dz: a.z - da.z };
 }
 
+/** Il modo dopo un cambio di modello (un comando, o un salto della cronologia): sparisce se
+ *  il nodo di partenza non c'è più, e in asta perde il secondo nodo se è lui a sparire —
+ *  un annulla che cancella il nodo dietro un ghost o un'asta non deve lasciarlo appeso
+ *  (giornata 11c, P4). */
+export function modoValido(m, modo) {
+  if (!modo) return null;
+  if (!m.nodi.some((n) => n.id === modo.da)) return null;
+  if (modo.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) {
+    return { ...modo, a: null };
+  }
+  return modo;
+}
+
 /** Il modo dopo una freccia, o `null` se la freccia non è nostra. Le frecce girano il ghost
  *  dell'estrusione (story 2): la lunghezza è già digitata, resta la direzione. In modo asta
  *  il ghost segue il secondo nodo, e senza nessun modo aperto la freccia resta del browser,
