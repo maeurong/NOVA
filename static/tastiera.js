@@ -55,7 +55,7 @@ export function voceDaEvento(evento) {
 }
 
 // `salvo-ghost` vuol dire «sempre, tranne mentre c'è un modo aperto». `seleziona` fa
-// eccezione: mentre si sceglie il secondo nodo di un'asta, `⇥` **è** il gesto.
+// eccezione: mentre si sceglie il secondo nodo di un'asta, `G` **è** il gesto.
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
     if (v.codice === "seleziona") return contesto !== "ghost";
