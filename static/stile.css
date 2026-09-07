@@ -56,6 +56,17 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #pannello-dati dt:first-child { margin-top: 0; }
 #pannello-dati dd { margin: 0; }        /* il default UA è 40px: dentro 220px taglia */
 
+.vincolo-preimpostazioni { display: flex; gap: 4px; flex-wrap: wrap; margin-top: var(--passo); }
+.vincolo-preimpostazioni button { font: inherit; font-size: 11px; cursor: pointer; padding: 2px 8px;
+                                  background: var(--pannello); color: var(--inchiostro);
+                                  border: 1px solid var(--tratto-forte); border-radius: 2px; }
+/* Premuto è uno stato, non una tinta: il bordo cambia spessore oltre al colore. */
+.vincolo-preimpostazioni button[aria-pressed="true"] { border-color: var(--rosso); border-width: 2px;
+                                                       padding: 1px 7px; font-weight: 700; }
+.vincolo-preimpostazioni button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+.vincolo-gradi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 6px; margin-top: 6px; }
+.vincolo-gradi label { font-family: var(--mono); font-size: 11px; display: flex; gap: 4px; align-items: center; }
+
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
 #albero li:hover { background: var(--pannello); }

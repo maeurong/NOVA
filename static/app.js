@@ -5,12 +5,13 @@
 // rende lento, non prima.`
 
 import { modelloVuoto, nodo } from "./modello.js";
-import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina } from "./comandi.js";
+import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
 import { nuovaCronologia, applica, corrente } from "./cronologia.js";
 import { voceDaEvento, vociDellaBarra } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
+import { creaPannello } from "./pannello.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
@@ -37,6 +38,12 @@ const piano = creaPiano($("piano"), {
 });
 const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione });
 const spazio = await creaSpazio($("spazio"));
+const pannello = creaPannello($("pannello-dati"), $("pannello-vuoto"), $("pannello-vincolo"), {
+  suVincolo: (id, vincolo) => {
+    esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`);
+    ridisegna();
+  },
+});
 
 function dì(testo) { messaggio.textContent = testo ?? ""; }
 
@@ -65,34 +72,8 @@ function ridisegna() {
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
-  disegnaPannello(m);
+  pannello.disegna(m, selezione);
   disegnaBarra();
-}
-
-function disegnaPannello(m) {
-  const dati = $("pannello-dati"), vuoto = $("pannello-vuoto");
-  vuoto.hidden = selezione !== null;
-  dati.hidden = selezione === null;
-  if (!selezione) return;
-  const righe = [];
-  if (selezione.tipo === "nodo") {
-    const n = nodo(m, selezione.id);
-    righe.push(["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
-               ["x", `${stampaNumero(n.x, { decimali: 0, migliaia: true })} mm`],
-               ["z", `${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`]);
-  } else {
-    const a = m.aste.find((k) => k.id === selezione.id);
-    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
-    righe.push(["identificatore", String(a.id)], ["nome", a.nome ?? "—"],
-               ["da → a", `${a.nodo_i} → ${a.nodo_j}`],
-               ["lunghezza", `${stampaNumero(Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z), { decimali: 0, migliaia: true })} mm`],
-               ["sezione", a.sezione === null ? "non assegnata (giornata 11)" : String(a.sezione)]);
-  }
-  dati.replaceChildren(...righe.flatMap(([k, v]) => {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v; dd.className = "numero";
-    return [dt, dd];
-  }));
 }
 
 function disegnaBarra() {
