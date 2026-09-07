@@ -2,8 +2,11 @@
 // stampate siano quelle che funzionano: due elenchi separati divergono al primo cambio,
 // quindi ce n'è uno solo e la barra lo legge.
 
+// `esempio` è il segnaposto del campo di comando (`app.js:apriComando`), e sta qui perché è
+// la stessa cosa che `aiuto` dice nella barra, detta col formato invece che a parole: due
+// elenchi divergerebbero al primo ripensamento, come già la barra e le scorciatoie.
 export const TASTI = [
-  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "salvo-ghost" },
+  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z in mm",      contesto: "salvo-ghost", esempio: "0; 3000" },
   // Non più ⇥: quello resta del browser (fix round 1, A2). ⇥ da pagina appena caricata
   // restava sempre su `body` — mai passato a un vero controllo — perché questo codice lo
   // intercettava e faceva `preventDefault` a ogni pressione, pure quella che avrebbe dovuto
@@ -13,11 +16,11 @@ export const TASTI = [
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "disfa",     tasto: "⌘Z",    etichetta: "annulla",   aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "rifai",     tasto: "⇧⌘Z",   etichetta: "rifai",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
-  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione" },
+  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione", esempio: "3000" },
   { codice: "asta",      tasto: "A",     etichetta: "asta",      aiuto: "poi il secondo nodo",    contesto: "selezione" },
   { codice: "vincolo",   tasto: "V",     etichetta: "vincolo",   aiuto: null,              contesto: "selezione" },
-  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z",            contesto: "selezione" },
-  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: null,              contesto: "selezione" },
+  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z in mm",      contesto: "selezione", esempio: "0; 3000" },
+  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
@@ -87,8 +90,13 @@ export function voceDaEvento(evento) {
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
     // Col campo di comando aperto restano due tasti soli: le lettere le prende il campo, e
-    // le frecce muovono il cursore nel testo, non il ghost.
-    if (contesto === "comando") return v.codice === "conferma" || v.codice === "annulla";
+    // le frecce muovono il cursore nel testo, non il ghost. Estrudendo no: lì la freccia è
+    // il gesto che manca — la lunghezza si sta scrivendo, la direzione la dà solo lei —
+    // quindi il campo gliela lascia (`app.js`) e la barra la promette.
+    if (contesto === "comando" || contesto === "comando-direzione") {
+      return v.codice === "conferma" || v.codice === "annulla" ||
+             (contesto === "comando-direzione" && v.codice === "direzione");
+    }
     if (v.codice === "seleziona") return contesto !== "ghost";
     if (v.codice === "direzione") return contesto === "ghost";
     if (v.contesto === "salvo-ghost") return contesto !== "ghost" && contesto !== "asta";

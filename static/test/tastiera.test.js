@@ -110,6 +110,23 @@ test("col campo di comando aperto la barra promette solo Invio ed Esc", () => {
   assert.deepEqual(codici.sort(), ["annulla", "conferma"].sort());
 });
 
+// Estrudendo la freccia non è una comodità, è il gesto che resta da fare: la lunghezza si
+// sta scrivendo, la direzione la danno solo ←↑→↓. Mutante 3 del brief.
+test("col campo aperto su `estrudi` la barra promette anche le frecce", () => {
+  const codici = vociDellaBarra("comando-direzione").map((v) => v.codice);
+  assert.deepEqual(codici.sort(), ["annulla", "conferma", "direzione"].sort());
+});
+
+// Ogni comando che apre il campo porta il suo esempio: il segnaposto è la sola cosa che
+// dice *come* si scrive prima che ci sia scritto qualcosa.
+test("i quattro comandi del campo hanno un esempio da mettere nel segnaposto", () => {
+  for (const codice of ["nodo", "estrudi", "sposta", "rinomina"]) {
+    const voce = TASTI.find((v) => v.codice === codice);
+    assert.equal(typeof voce.esempio, "string", codice);
+    assert.notEqual(voce.esempio.trim(), "", codice);
+  }
+});
+
 test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
   const chiavi = TASTI.map((v) => `${v.tasto}|${v.modificatore ?? ""}`);
   assert.equal(new Set(chiavi).size, chiavi.length, `doppione in: ${chiavi.join(" ")}`);

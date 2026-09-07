@@ -88,10 +88,44 @@ export function esitoComando(testo) {
   return { punto: null, messaggio: AVVISO_COORDINATE };
 }
 
+export const AVVISO_LUNGHEZZA = "lunghezza non letta: scrivi un numero maggiore di zero";
+
+/** La decisione di Invio mentre si estrude, gemella di `esitoComando`: tre esiti, e il campo
+ *  vuoto non è un testo sbagliato. Zero e negativa cadono qui e non in `comandi.js` perché
+ *  la direzione la danno le frecce — un meno nella lunghezza le contraddirebbe in silenzio. */
+export function esitoLunghezza(testo) {
+  const l = leggiLunghezza(String(testo ?? ""));
+  if (l !== null && l > 0) return { lunghezza: l, messaggio: null };
+  if (String(testo ?? "").trim() === "") return { lunghezza: null, messaggio: null };
+  return { lunghezza: null, messaggio: AVVISO_LUNGHEZZA };
+}
+
+/** Il ghost mentre il campo di comando è aperto, o `null` finché il testo non si legge —
+ *  che mentre si scrive è la norma, non un guasto.
+ *
+ *  Tre grammatiche e un campo solo: `nodo` e `sposta` disegnano il punto in anteprima (la
+ *  stessa forma: dicono entrambi dove una coordinata finirà), `estrudi` stende la lunghezza
+ *  scritta lungo la direzione che tengono le frecce — il `modo` porta il verso, il campo la
+ *  misura, e il ghost normalizza per non moltiplicare due volte quel che si è scritto.
+ *  `rinomina` è testuale: un'anteprima disegnata direbbe una cosa che il comando non fa. */
+export function ghostDelComando(comando, modo) {
+  if (!comando) return null;
+  if (comando.tipo === "rinomina") return null;
+  if (comando.tipo === "estrudi") {
+    const { lunghezza } = esitoLunghezza(comando.testo);
+    if (lunghezza === null || modo?.tipo !== "estrusione") return null;
+    const modulo = Math.hypot(modo.dx, modo.dz) || 1;
+    return { da: modo.da, dx: (modo.dx / modulo) * lunghezza, dz: (modo.dz / modulo) * lunghezza };
+  }
+  const punto = puntoDelComando(comando.testo);
+  return punto ? { punto } : null;
+}
+
 /** Il contesto che decide quali voci della barra mostrare (`tastiera.js:vociDellaBarra`).
  *  Il campo aperto viene prima di tutto: lì dentro `N` scrive una lettera e non apre un
- *  comando, quindi una barra che promettesse ancora `N nodo` mentirebbe (story 14). */
+ *  comando, quindi una barra che promettesse ancora `N nodo` mentirebbe (story 14).
+ *  Estrudendo però le frecce restano nostre, e sono il gesto che manca: la barra le nomina. */
 export function contestoBarra(modo, selezione, comando = null) {
-  if (comando) return "comando";
+  if (comando) return comando.tipo === "estrudi" ? "comando-direzione" : "comando";
   return modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (selezione ? "selezione" : "sempre");
 }
