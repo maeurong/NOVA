@@ -1,5 +1,8 @@
 # Confronto telaio NOVA (OpenSees) — solido CalculiX, MURO 1
 
+**SUPERATO da [`confronto-2026-09-07.md`](confronto-2026-09-07.md): questo file è la corsa a
+interasse 2262, non più la geometria corrente (2000, decisione di Mario del 06/09/2026).**
+
 Generato il 05/09/2026, **rigenerato il 05/09/2026 dopo il fix #25** e di nuovo a fine T4
 (branch `feat/non-lineare`, `.superpowers/sdd/2026-09-06-t4-non-lineare/`): il ramo elastico del
 deck itera con `Newton` invece di `Linear`, e gli **spostamenti** del telaio cambiano. Reazioni,

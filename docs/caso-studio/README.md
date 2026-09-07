@@ -61,11 +61,12 @@ casi del deck e la modale sono l'oggetto del confronto (#11).
 ## Modello NOVA (T2, task 4)
 
 File: [`muro_1.nova.json`](muro_1.nova.json), impronta
-`0137e564e923ec1e62688bfa9e12591acb4ae6125d3a6e1b1dfefdcfe2169bb0` (codice `fa3b2e3`; da fine T4
-l'impronta esclude i default e porta la versione dei default — vedi `confronto-2026-09-05.md`
-§«Che cosa è cambiato»).
+`f723261ee14a47869eaf9528fbfc28aa27d608aae19a55614349d84104b7d2ec` (interasse 2000, commit
+`c47c9c4`; da fine T4 l'impronta esclude i default e porta la versione dei default — vedi
+`confronto-2026-09-05.md` §«Che cosa è cambiato»).
 Corsa vera su OpenSees 3.8.0 (`chiedi` + `binario_opensees`, `tests/test_caso_studio.py`), esito
-**[M]** misurato il 05/09/2026.
+**[M]** misurato il 07/09/2026 (geometria a interasse 2000; misura precedente del 05/09/2026 a
+interasse 2262).
 
 ### Geometria e assunzioni
 
@@ -180,7 +181,8 @@ discretizzazione — ed è la prova che le due corse descrivono lo stesso telaio
 ai pistoni: nessun numero qui è confrontato con una misura di laboratorio.
 
 File: [`muro_1_pushover.nova.json`](muro_1_pushover.nova.json), impronta
-`8956b5d57e88589307a013dded52a7409555b2602304366dd64a834e387f28ea` — **lo stesso telaio** di
+`7cbe127056d7b9a31ed628a133b5e0dc3e37858d006f46ebedd9c1f08a869d38` (interasse 2000, commit
+`c47c9c4`) — **lo stesso telaio** di
 `muro_1.nova.json`, con altre analisi. Sono due file e non uno per un motivo di codice, non di
 comodità: `deck._legami_dichiarati` sceglie i legami per **tutto** il deck, quindi una statica
 `legami: fibre` dentro `muro_1.nova.json` avrebbe reso a fibre anche i casi C1/C2/C3 del
