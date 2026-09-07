@@ -14,18 +14,21 @@ export const corto = (impronta) => (impronta ? impronta.slice(0, 8) : "—");
 /** Il `motivo` del server se c'è, altrimenti lo stato HTTP — mai «undefined». */
 export const messaggioErrore = (dati, stato) => dati.motivo || `il server ha risposto ${stato}`;
 
-/** La riga di stato sotto i bottoni. */
-export const testoStato = ({ percorso, impronta, modificato }) =>
-  percorso
-    ? `impronta ${corto(impronta)}${modificato ? " · modificato" : ""}`
-    : "nessun modello aperto";
-
 /** Nome del file e cartella che lo contiene. Senza cartella, `cartella` è vuota — non solleva. */
 export function separaPercorso(percorso) {
   const p = typeof percorso === "string" ? percorso : "";
   const i = p.lastIndexOf("/");
   return i === -1 ? { cartella: "", nome: p } : { cartella: p.slice(0, i), nome: p.slice(i + 1) };
 }
+
+/** La riga di stato sotto i bottoni. Nomina il file **aperto**, che dalla fix di `salva` non
+ *  è più per forza quello scritto nel campo: si può digitare un percorso senza aprirlo, e la
+ *  destinazione di un salvataggio resta il modello aperto. Senza il nome qui, l'unico posto
+ *  che mostra un percorso è il campo, e mostrerebbe quello sbagliato senza dirlo. */
+export const testoStato = ({ percorso, impronta, modificato }) =>
+  percorso
+    ? `${separaPercorso(percorso).nome} · impronta ${corto(impronta)}${modificato ? " · modificato" : ""}`
+    : "nessun modello aperto";
 
 // `localStorage` può non solo mancare (`typeof` lo prende) ma anche **sollevare** al primo
 // accesso: dati del sito bloccati (finestra privata rigida) lanciano `SecurityError` sul
@@ -162,7 +165,7 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
     // JS non si ricalcola (vedi in testa al file). Le chiavi in ordine diverso darebbero un
     // «modificato» di troppo; è il verso giusto in cui sbagliare, perché il verso opposto —
     // dire «salvato» a un modello che su disco non c'è — è il lavoro perso.
-    stato.textContent = testoStato({ percorso, impronta, modificato: JSON.stringify(modello) !== salvato });
+    stato.textContent = testoStato({ percorso, impronta, modificato: modello !== undefined && JSON.stringify(modello) !== salvato });
   }
 
   disegnaRecenti();

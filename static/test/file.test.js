@@ -88,9 +88,9 @@ test("testoStato: niente percorso, niente modello aperto", () => {
 
 test("testoStato: percorso aperto mostra l'impronta corta, modificato in coda", () => {
   assert.equal(testoStato({ percorso: "/a", impronta: "0137e564e9...", modificato: false }),
-    "impronta 0137e564");
+    "a · impronta 0137e564");
   assert.equal(testoStato({ percorso: "/a", impronta: "0137e564e9...", modificato: true }),
-    "impronta 0137e564 · modificato");
+    "a · impronta 0137e564 · modificato");
 });
 
 // --- separaPercorso ---
@@ -281,7 +281,7 @@ test("modificato: sul modello davvero spedito il salvataggio pulisce", async (t)
   const f = creaFile(radice, { suApertura() {}, suErrore() {}, suSalvataggio() {} });
   await f.salva("/tmp/A.json", M1);
   f.disegna({ percorso: "/tmp/A.json", impronta: "0137e564", modello: M1 });
-  assert.equal(stato.textContent, "impronta 0137e564");
+  assert.equal(stato.textContent, "A.json · impronta 0137e564");
 });
 
 test("modificato: un salvataggio fallito non dichiara salvato niente", async (t) => {
@@ -306,7 +306,7 @@ test("modificato: appena aperto il modello è quello su disco, non modificato", 
   const f = creaFile(radice, { suApertura() {}, suErrore() {}, suSalvataggio() {} });
   await f.apri();
   f.disegna({ percorso: "/tmp/A.json", impronta: "aaa11122", modello: M2 });
-  assert.equal(stato.textContent, "impronta aaa11122");
+  assert.equal(stato.textContent, "A.json · impronta aaa11122");
   f.disegna({ percorso: "/tmp/A.json", impronta: "aaa11122", modello: M1 });
   assert.match(stato.textContent, /· modificato/);
 });
@@ -418,4 +418,21 @@ test("il campo apre con Invio, e ignora gli altri tasti", async (t) => {
   await radice.elementi["#file-percorso"].dispatch("keydown", { key: "Enter", preventDefault() {} });
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(spia.chiamate, 1);
+});
+
+// La riga di stato nomina il file **aperto**, non quello scritto nel campo. Da quando `salva`
+// usa il percorso aperto invece del campo, i due possono divergere: si digita un percorso e
+// non lo si apre, e senza questo nome l'unico posto che mostra un percorso mostrerebbe quello
+// sbagliato senza dirlo — l'utente crederebbe di aver salvato dove non ha salvato.
+test("stato: nomina il file aperto, non quello digitato nel campo", () => {
+  assert.equal(testoStato({ percorso: "/tmp/aperto.json", impronta: "0137e564e9", modificato: false }),
+    "aperto.json · impronta 0137e564");
+});
+
+test("stato: un modello non ancora definito non è «modificato»", () => {
+  const radice = radiceFinta();
+  const stato = radice.elementi["#file-stato"];
+  const f = creaFile(radice, { suApertura() {}, suErrore() {}, suSalvataggio() {} });
+  f.disegna({ percorso: "/tmp/A.json", impronta: "abc12345", modello: undefined });
+  assert.doesNotMatch(stato.textContent, /· modificato/);
 });

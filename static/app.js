@@ -67,6 +67,16 @@ const file = creaFile(document, {
 // non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
 $("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
 
+// Aprire un modo lo rende il gesto della tastiera globale, quindi il fuoco deve lasciare
+// il controllo su cui si trovava: `pannello.js` lo riporta apposta sul bottone dopo ogni
+// ridisegno, e `Invio` su un bottone a fuoco lo **attiva** invece di confermare il gesto che
+// la barra sta annunciando — si riscriverebbe il vincolo invece di chiudere l'asta.
+function apriModo(nuovo) {
+  modo = nuovo;
+  document.activeElement?.blur?.();
+  ridisegna();
+}
+
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
@@ -192,18 +202,16 @@ window.addEventListener("keydown", (ev) => {
     if (t === null) return;
     const l = leggiNumero(t);
     if (l === null || l <= 0) { dì("lunghezza non letta: scrivi un numero maggiore di zero"); return; }
-    modo = { tipo: "estrusione", da: selezione.id, dx: 0, dz: l };  // in su di default; le frecce la girano
     // La barra già dice "Invio conferma" / "Esc annulla" col contesto "ghost" (tastiera.js):
     // un secondo avviso qui sarebbe rosso senza essere un'attenzione, contro PRODUCT.md.
     dì(null);
-    ridisegna();
+    apriModo({ tipo: "estrusione", da: selezione.id, dx: 0, dz: l });  // in su di default; le frecce la girano
     return;
   }
 
   if (voce.codice === "asta") {
     if (selezione?.tipo !== "nodo") { dì("un'asta parte da un nodo: selezionane uno"); return; }
-    modo = { tipo: "asta", da: selezione.id, a: null };
-    ridisegna();
+    apriModo({ tipo: "asta", da: selezione.id, a: null });
     return;
   }
 
