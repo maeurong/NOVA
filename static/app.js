@@ -13,6 +13,7 @@ import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile } from "./file.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra } from "./modo.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
@@ -28,27 +29,11 @@ const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
 function dì(testo) { messaggio.textContent = testo ?? ""; }
 
-// Il ghost che il piano disegna ha sempre la stessa forma, qualunque sia il modo.
-function ghostDisegnabile(m) {
-  if (!modo) return null;
-  if (modo.tipo === "estrusione") return { da: modo.da, dx: modo.dx, dz: modo.dz };
-  const da = nodo(m, modo.da), a = modo.a === null ? null : nodo(m, modo.a);
-  if (!da || !a) return null;
-  return { da: modo.da, dx: a.x - da.x, dz: a.z - da.z };
-}
-
 function scegli(tipo, id) {
-  if (modo?.tipo === "estrusione") {
-    dì("c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
-    return;
-  }
-  if (modo?.tipo === "asta") {
-    // Scegliendo il secondo nodo, un'asta non è un bersaglio: accettarla lascerebbe
-    // `modo.a` fermo su quello di prima, e Invio costruirebbe verso un nodo che non è
-    // quello evidenziato — lo stesso difetto silenzioso del ghost, di lato.
-    if (tipo !== "nodo") { dì("scegli un nodo, non un'asta — Esc per annullare"); return; }
-    modo = { ...modo, a: id };
-  }
+  const { permesso, messaggio, aggiornaA } = esitoScelta(modo, tipo);
+  if (messaggio) dì(messaggio);
+  if (!permesso) return;
+  if (aggiornaA) modo = { ...modo, a: id };
   selezione = { tipo, id };
   ridisegna();
 }
@@ -100,7 +85,7 @@ function ridisegna() {
   if (modo && !m.nodi.some((n) => n.id === modo.da)) modo = null;
   if (modo?.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) modo = { ...modo, a: null };
 
-  const ghost = ghostDisegnabile(m);
+  const ghost = ghostDisegnabile(m, modo);
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
@@ -110,7 +95,7 @@ function ridisegna() {
 }
 
 function disegnaBarra() {
-  const contesto = modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (selezione ? "selezione" : "sempre");
+  const contesto = contestoBarra(modo, selezione);
   $("barra").replaceChildren(...vociDellaBarra(contesto).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
