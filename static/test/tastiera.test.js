@@ -63,3 +63,10 @@ test("la barra mostra le voci del contesto più quelle di sempre", () => {
 test("un contesto sconosciuto dà le voci di sempre, non un'eccezione", () => {
   assert.deepEqual(vociDellaBarra("pinguino").map((v) => v.codice), vociDellaBarra("sempre").map((v) => v.codice));
 });
+
+test("con un'estrusione aperta la barra non mostra nodo né seleziona: non funzionano dietro un ghost", () => {
+  const conGhost = vociDellaBarra("ghost").map((v) => v.codice);
+  assert.ok(!conGhost.includes("nodo"), "N aprirebbe un prompt mentre app.js blocca i comandi da tastiera");
+  assert.ok(!conGhost.includes("seleziona"), "⇥ cambierebbe la selezione sotto il ghost, bloccato da app.js");
+  assert.deepEqual(conGhost.sort(), ["annulla", "conferma"]);
+});

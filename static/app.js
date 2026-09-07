@@ -17,16 +17,25 @@ let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
 let ghost = null;  // {da, dx, dz} mentre si digita: non entra nel modello finché non si conferma
 
+// Stesso messaggio del blocco da tastiera qui sotto: un ghost aperto blocca anche il clic,
+// non solo N/M/R, altrimenti selezionare un altro nodo con il mouse sposta silenziosamente
+// "da" del ghost mentre lo schermo mostra ancora il tratteggio dal nodo vecchio.
+const GHOST_APERTO = "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla";
+
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
 
+function suSelezione(tipo, id) {
+  if (ghost) { dì(GHOST_APERTO); return; }
+  selezione = { tipo, id };
+  ridisegna();
+}
+
 const piano = creaPiano($("piano"), {
-  suSelezione: (tipo, id) => { selezione = { tipo, id }; ridisegna(); },
+  suSelezione,
   suSfondo: () => { selezione = null; ridisegna(); },
 });
-const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), {
-  suSelezione: (tipo, id) => { selezione = { tipo, id }; ridisegna(); },
-});
+const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione });
 const spazio = await creaSpazio($("spazio"));
 
 function dì(testo) { messaggio.textContent = testo ?? ""; }
@@ -124,7 +133,7 @@ window.addEventListener("keydown", (ev) => {
   // un secondo `B` sovrascriverebbe il ghost in silenzio, buttando via la direzione già
   // scelta, e `M`/`R` aprirebbero un prompt mentre l'estrusione resta appesa sul piano.
   if (ghost && voce.codice !== "conferma") {
-    dì("c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
+    dì(GHOST_APERTO);
     return;
   }
 
@@ -169,7 +178,9 @@ window.addEventListener("keydown", (ev) => {
     const l = leggiNumero(t);
     if (l === null || l <= 0) { dì("lunghezza non letta: scrivi un numero maggiore di zero"); return; }
     ghost = { da: selezione.id, dx: 0, dz: l };  // in su di default; le frecce la girano
-    dì("freccia per la direzione, Invio per confermare, Esc per annullare");
+    // La barra già dice "Invio conferma" / "Esc annulla" col contesto "ghost" (tastiera.js):
+    // un secondo avviso qui sarebbe rosso senza essere un'attenzione, contro PRODUCT.md.
+    dì(null);
     ridisegna();
     return;
   }

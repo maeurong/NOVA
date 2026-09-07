@@ -133,6 +133,13 @@ export async function creaSpazio(contenitore) {
     };
     const scelto = (tipo, id) => selezione?.tipo === tipo && selezione.id === id;
 
+    // `linewidth` di `LineBasicMaterial` non è onorato da WebGL nella maggior parte dei
+    // browser: un'asta selezionata non può ispessirsi. Il secondo canale sono i suoi due
+    // nodi d'estremo, disegnati come i punti rossi già usati per il nodo selezionato — dice
+    // anche *quale* asta, non solo che una è scelta.
+    const astaScelta = selezione?.tipo === "asta" ? m.aste.find((a) => a.id === selezione.id) : null;
+    const estremiAstaScelta = astaScelta ? new Set([astaScelta.nodo_i, astaScelta.nodo_j]) : null;
+
     for (const a of m.aste) {
       const i = m.nodi.find((n) => n.id === a.nodo_i);
       const j = m.nodi.find((n) => n.id === a.nodo_j);
@@ -142,8 +149,9 @@ export async function creaSpazio(contenitore) {
       ]);
       disegnato.add(new THREE.Line(g, scelto("asta", a.id) ? rosso : inchiostro));
     }
-    const normali = m.nodi.filter((n) => !scelto("nodo", n.id));
-    const evidenziati = m.nodi.filter((n) => scelto("nodo", n.id));
+    const evidenziato = (n) => scelto("nodo", n.id) || (estremiAstaScelta?.has(n.id) ?? false);
+    const normali = m.nodi.filter((n) => !evidenziato(n));
+    const evidenziati = m.nodi.filter(evidenziato);
     for (const p of [punti(normali, puntoInchiostro), punti(evidenziati, puntoRosso)]) if (p) disegnato.add(p);
 
     scena.add(disegnato);

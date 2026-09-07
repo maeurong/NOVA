@@ -27,7 +27,7 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     for (const n of m.nodi) {
       righe.push({
         tipo: "nodo", id: n.id,
-        testo: `${n.nome ?? `nodo ${n.id}`} · ${stampaNumero(n.x, { decimali: 0, migliaia: true })}; ${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`,
+        testo: `${n.nome ?? `nodo ${n.id}`} · ${stampaNumero(n.x, { decimali: 0, migliaia: true })} mm; ${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`,
         conta: asteDelNodo(m, n.id).length,
       });
     }

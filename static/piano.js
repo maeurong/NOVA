@@ -40,7 +40,7 @@ const el = (nome, attributi = {}) => {
 /** L'estensione da inquadrare: i nodi **più la punta del ghost**. Senza il ghost, il primo
  *  gesto su un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da
  *  3000 fuori dal riquadro, senza sollevare niente: si vedrebbe solo sparire. */
-function estensione(m, ghost = null) {
+export function estensione(m, ghost = null) {
   const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
   const da = ghost && nodo(m, ghost.da);
   if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
@@ -56,7 +56,7 @@ function estensione(m, ghost = null) {
 
 /** Il verso in cui posare l'etichetta di un nodo: quello più lontano da tutte le sue aste.
  *  Un nodo isolato non ha vincoli e prende il primo, in alto a destra. */
-function versoLibero(m, n) {
+export function versoLibero(m, n) {
   const direzioni = [];
   for (const a of asteDelNodo(m, n.id)) {
     const altro = nodo(m, a.nodo_i === n.id ? a.nodo_j : a.nodo_i);

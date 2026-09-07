@@ -70,7 +70,7 @@ export function estrudi(m, { da, dx, dz, dy = 0, sezione = null }) {
 
 export function spostaNodo(m, { id, x, z, y }) {
   const vecchio = nodo(m, id);
-  if (!vecchio) throw new ErroreComando(`il nodo ${id} non esiste`);
+  if (!vecchio) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
   const nx = x === undefined ? vecchio.x : numero(x, "x");
   const ny = y === undefined ? vecchio.y : numero(y, "y");
   const nz = z === undefined ? vecchio.z : numero(z, "z");
@@ -86,7 +86,7 @@ export function spostaNodo(m, { id, x, z, y }) {
  *  nodo e i carichi su quelle aste. Un riferimento orfano è esattamente il difetto che
  *  `nova/check.py` chiama `riferimenti`, e nessuno vuole scoprirlo alla corsa. */
 export function eliminaNodo(m, { id }) {
-  if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`);
+  if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
   const asteVia = new Set(asteDelNodo(m, id).map((a) => a.id));
   const n = copia(m);
   n.nodi = n.nodi.filter((k) => k.id !== id);
@@ -110,7 +110,7 @@ export function rinomina(m, { tipo, id, nome }) {
   }
   const n = copia(m);
   const bersaglio = n[chiave].find((e) => e.id === id);
-  if (!bersaglio) throw new ErroreComando(`${tipo} ${id} non esiste`);
+  if (!bersaglio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
   bersaglio.nome = nome.trim();
   return n;
 }

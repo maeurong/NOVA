@@ -40,6 +40,12 @@ test("estrudi più corto della tolleranza si rifiuta: niente aste a lunghezza ze
   assert.throws(() => estrudi(uno, { da: 1, dx: 0.5, dz: 0 }), ErroreComando);
 });
 
+test("estrudi al confine esatto della tolleranza: 1,0 mm passa, 0,999 no", () => {
+  const uno = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  assert.doesNotThrow(() => estrudi(uno, { da: 1, dx: 1.0, dz: 0 }));
+  assert.throws(() => estrudi(uno, { da: 1, dx: 0.999, dz: 0 }), ErroreComando);
+});
+
 test("estrudi che arriva su un nodo esistente lo riusa invece di sdoppiarlo", () => {
   let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
   m = creaNodo(m, { x: 5000, z: 0 });
@@ -79,6 +85,27 @@ test("spostaNodo su coordinate che coincidono con un altro nodo si rifiuta", () 
   m = creaNodo(m, { x: 5000, z: 0 });
   assert.throws(() => spostaNodo(m, { id: 1, x: 5000, z: 0 }), ErroreComando);
   assert.deepEqual(m.nodi[0], { id: 1, nome: null, x: 0, y: 0, z: 0 }, "il modello resta intatto");
+});
+
+test("spostaNodo al confine esatto della tolleranza: 1,0 mm passa, 0,999 no", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaNodo(m, { x: 5000, z: 0 });
+  assert.doesNotThrow(() => spostaNodo(m, { id: 1, x: 4999, z: 0 }));       // distanza 1,0 mm
+  assert.throws(() => spostaNodo(m, { id: 1, x: 4999.001, z: 0 }), ErroreComando); // distanza 0,999 mm
+});
+
+test("spostaNodo con coordinata non finita si rifiuta e lascia il modello intatto", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const snapshot = structuredClone(m);
+  assert.throws(() => spostaNodo(m, { id: 1, x: NaN, z: 0 }), ErroreComando);
+  assert.deepEqual(m, snapshot);
+});
+
+test("spostaNodo con la sola x aggiornata lascia z quella di prima", () => {
+  const m = creaNodo(modelloVuoto(), { x: 100, z: 200 });
+  const spostato = spostaNodo(m, { id: 1, x: 300 });
+  assert.equal(spostato.nodi[0].x, 300);
+  assert.equal(spostato.nodi[0].z, 200, "z non passata: deve restare quella di prima, mai undefined");
 });
 
 test("elimina un nodo e con lui aste e carichi che lo nominano", () => {

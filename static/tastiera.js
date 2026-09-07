@@ -3,8 +3,8 @@
 // quindi ce n'è uno solo e la barra lo legge.
 
 export const TASTI = [
-  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "sempre" },
-  { codice: "seleziona", tasto: "⇥",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "sempre" },
+  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "salvo-ghost" },
+  { codice: "seleziona", tasto: "⇥",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "estrudi",  tasto: "B",     etichetta: "estrudi",  aiuto: "lunghezza, poi freccia", contesto: "selezione" },
   { codice: "sposta",   tasto: "M",     etichetta: "sposta",   aiuto: "x; z",                  contesto: "selezione" },
   { codice: "rinomina", tasto: "R",     etichetta: "rinomina", aiuto: null,                    contesto: "selezione" },
@@ -32,5 +32,8 @@ export function voceDaEvento(evento) {
   return codice ? TASTI.find((v) => v.codice === codice) : null;
 }
 
+// "salvo-ghost" è "sempre" tranne quando un'estrusione è aperta: N e ⇥ non funzionano
+// dietro un ghost (app.js li blocca), e la barra non deve promettere un tasto che non fa
+// niente.
 export const vociDellaBarra = (contesto) =>
-  TASTI.filter((v) => v.contesto === "sempre" || v.contesto === contesto);
+  TASTI.filter((v) => v.contesto === contesto || (v.contesto === "salvo-ghost" && contesto !== "ghost"));
