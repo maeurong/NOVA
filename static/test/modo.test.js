@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido, AVVISO_ESTRUSIONE } from "../modo.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
+         puntoDelComando, esitoComando, AVVISO_ESTRUSIONE } from "../modo.js";
 
 const m = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 1000, y: 0, z: 2000 }] };
 
@@ -108,6 +109,11 @@ test("contestoBarra: modo asta → 'asta', non 'ghost' (la barra deve promettere
   assert.equal(contestoBarra({ tipo: "asta", da: 1, a: null }, { tipo: "nodo", id: 1 }), "asta");
 });
 
+test("contestoBarra: col campo aperto → 'comando', e vince su tutto il resto", () => {
+  assert.equal(contestoBarra(null, null, { testo: "" }), "comando");
+  assert.equal(contestoBarra(null, { tipo: "nodo", id: 1 }, { testo: "0; 3" }), "comando");
+});
+
 // --- ruotaGhost (B2) -----------------------------------------------------------
 // La decisione delle frecce sta qui e non in un secondo listener di `app.js`: due `keydown`
 // sulla stessa `window` con regole d'ingresso diverse erano la causa, non il sintomo.
@@ -148,4 +154,72 @@ test("l'avviso dell'estrusione in corso vive in un posto solo", () => {
   assert.equal(esitoScelta({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, "nodo").messaggio,
                AVVISO_ESTRUSIONE);
   assert.match(AVVISO_ESTRUSIONE, /Invio per confermarla, Esc per annullarla/);
+});
+
+// --- F: il campo di comando (giornata 11c, task C1) ----------------------------
+// Il campo sostituisce `window.prompt` per N, e il ghost si muove **a ogni tasto**: per
+// questo la lettura del testo è pura e sta qui, non dentro `app.js`, che il DOM lo tocca
+// già ai primi `const` del modulo. Due funzioni e non una perché le domande sono due, e
+// hanno risposte opposte sullo stesso testo: mentre si scrive «si disegna qualcosa?»
+// (silenziosa), alla conferma «si esegue qualcosa, e se no cosa dico?».
+
+test("puntoDelComando: «x; z» completo dà il punto", () => {
+  assert.deepEqual(puntoDelComando("0; 3000"), { x: 0, z: 3000 });
+});
+
+// Mutante 6 del brief: la conferma esegue anche col campo vuoto.
+test("puntoDelComando: campo vuoto non è un punto — nessun ghost, e Invio non esegue", () => {
+  assert.equal(puntoDelComando(""), null);
+  assert.equal(puntoDelComando("   "), null);
+  assert.deepEqual(esitoComando(""), { punto: null, messaggio: null });
+  assert.deepEqual(esitoComando("   "), { punto: null, messaggio: null });
+});
+
+// Mutante 5 del brief: un testo a metà produce un messaggio d'errore mentre si scrive.
+test("puntoDelComando: il testo a metà non è un ghost e non è un errore — si sta scrivendo", () => {
+  assert.equal(puntoDelComando("0;"), null);
+  assert.equal(puntoDelComando("0; "), null);
+  assert.equal(puntoDelComando("0"), null, "senza il punto e virgola manca la seconda coordinata");
+  // Mentre si scrive il messaggio non esiste come possibilità, non è «esiste ma è vuoto»:
+  // la strada del ghost passa solo di qui, e di qui esce un punto o niente. `esitoComando`,
+  // che un messaggio ce l'ha, la percorre solo Invio.
+  assert.equal(puntoDelComando("0; "), null);
+});
+
+test("esitoComando: il testo non valido parla alla conferma, e dice cosa scrivere", () => {
+  const esito = esitoComando("pippo");
+  assert.equal(esito.punto, null);
+  assert.match(esito.messaggio, /coordinate non lette/);
+  assert.match(esito.messaggio, /x; z/);
+});
+
+test("esitoComando: il testo che si legge torna il punto e nessun messaggio", () => {
+  assert.deepEqual(esitoComando("0; 3000"), { punto: { x: 0, z: 3000 }, messaggio: null });
+});
+
+// Mutante 3 del brief: il campo usa `leggiNumero` invece di `leggiLunghezza`.
+test("puntoDelComando: le unità si leggono — «2,5m» sono 2500 mm", () => {
+  assert.deepEqual(puntoDelComando("0; 2,5m"), { x: 0, z: 2500 });
+  assert.deepEqual(puntoDelComando("1,5m; 30cm"), { x: 1500, z: 300 });
+});
+
+test("puntoDelComando: le espressioni si leggono, con le parentesi", () => {
+  assert.deepEqual(puntoDelComando("0; (1+1)*1500"), { x: 0, z: 3000 });
+});
+
+test("puntoDelComando: il segno unario si legge — una coordinata negativa è normale", () => {
+  assert.deepEqual(puntoDelComando("-2262; 0"), { x: -2262, z: 0 });
+  assert.deepEqual(puntoDelComando("0; -3*1000"), { x: 0, z: -3000 });
+});
+
+// Il ghost mostra solo ciò che c'è scritto: con tre numeri il terzo sparirebbe in
+// silenzio, e l'anteprima direbbe una cosa che il testo non dice.
+test("puntoDelComando: più di due coordinate non si legge, non si tronca", () => {
+  assert.equal(puntoDelComando("0; 1000; 2000"), null);
+});
+
+test("puntoDelComando: un argomento che non è una stringa non solleva", () => {
+  assert.equal(puntoDelComando(null), null);
+  assert.equal(puntoDelComando(undefined), null);
+  assert.equal(puntoDelComando(42), null);
 });

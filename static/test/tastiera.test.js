@@ -103,6 +103,13 @@ test("scegliendo il secondo nodo la barra mostra solo quel che serve", () => {
   assert.deepEqual(codici.sort(), ["annulla", "conferma", "seleziona"].sort());
 });
 
+// Col campo di comando aperto la barra promette due tasti soli: `N` lì dentro scrive una
+// lettera (`daControllo`) e le frecce muovono il cursore nel testo, non il ghost.
+test("col campo di comando aperto la barra promette solo Invio ed Esc", () => {
+  const codici = vociDellaBarra("comando").map((v) => v.codice);
+  assert.deepEqual(codici.sort(), ["annulla", "conferma"].sort());
+});
+
 test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
   const chiavi = TASTI.map((v) => `${v.tasto}|${v.modificatore ?? ""}`);
   assert.equal(new Set(chiavi).size, chiavi.length, `doppione in: ${chiavi.join(" ")}`);

@@ -1,8 +1,9 @@
-// Le tre decisioni pure della cucitura, fuori da `app.js` perché testabili in Node solo se
-// non portano dietro il prezzo del suo caricamento: `app.js` tocca il DOM già ai primi
-// `const` del modulo, quindi importarlo per il test eseguirebbe (e farebbe fallire) tutto.
+// Le decisioni pure della cucitura, fuori da `app.js` perché testabili in Node solo se non
+// portano dietro il prezzo del suo caricamento: `app.js` tocca il DOM già ai primi `const`
+// del modulo, quindi importarlo per il test eseguirebbe (e farebbe fallire) tutto.
 
 import { nodo } from "./modello.js";
+import { leggiLunghezza } from "./numeri.js";
 
 /** Il ghost che `piano.js` disegna per il modo corrente, o `null`: nessun modo, o un'asta
  *  il cui secondo nodo non è ancora scelto, o il cui nodo di partenza (o d'arrivo) è
@@ -61,7 +62,36 @@ export function esitoScelta(modo, tipo) {
   return { permesso: true, messaggio: null, aggiornaA: false };
 }
 
-/** Il contesto che decide quali voci della barra mostrare (`tastiera.js:vociDellaBarra`). */
-export function contestoBarra(modo, selezione) {
+export const AVVISO_COORDINATE = "coordinate non lette: scrivi «x; z», per esempio «0; 3000»";
+
+/** Il punto in anteprima mentre si scrive «x; z» nel campo di comando, o `null` finché il
+ *  testo non si legge — che mentre si scrive è la norma, non un guasto: «0;» è un testo a
+ *  metà, non un testo sbagliato, e un rosso lì sarebbe un rimprovero a chi sta digitando.
+ *
+ *  Passa da `leggiLunghezza` e non da `leggiNumero`, quindi «2,5m» e «(1+1)*1500» valgono
+ *  quanto «3000» (P9). Due coordinate esatte: con tre il terzo numero sparirebbe in
+ *  silenzio e il ghost mostrerebbe una cosa che il testo non dice. */
+export function puntoDelComando(testo) {
+  const parti = String(testo ?? "").split(";");
+  if (parti.length !== 2) return null;
+  const x = leggiLunghezza(parti[0]), z = leggiLunghezza(parti[1]);
+  return x === null || z === null ? null : { x, z };
+}
+
+/** La decisione di Invio nel campo. Tre esiti e non due: a campo vuoto non c'è niente da
+ *  eseguire **e** niente da dire (si è appena aperto, o si è appena cancellato tutto), che
+ *  non è la stessa cosa di un testo che c'è ma non si legge. */
+export function esitoComando(testo) {
+  const punto = puntoDelComando(testo);
+  if (punto) return { punto, messaggio: null };
+  if (String(testo ?? "").trim() === "") return { punto: null, messaggio: null };
+  return { punto: null, messaggio: AVVISO_COORDINATE };
+}
+
+/** Il contesto che decide quali voci della barra mostrare (`tastiera.js:vociDellaBarra`).
+ *  Il campo aperto viene prima di tutto: lì dentro `N` scrive una lettera e non apre un
+ *  comando, quindi una barra che promettesse ancora `N nodo` mentirebbe (story 14). */
+export function contestoBarra(modo, selezione, comando = null) {
+  if (comando) return "comando";
   return modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (selezione ? "selezione" : "sempre");
 }

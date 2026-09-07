@@ -54,6 +54,17 @@
 </aside>
 
 <p id="messaggio" role="status" aria-live="polite"></p>
+<!-- Il campo di comando: una riga sopra la barra, non una finestra che blocca (P2). `hidden`
+     finché non serve, come ogni altro stato della pagina. Un `<form>` perché Invio che
+     conferma è suo di natura, e un bottone in più direbbe quello che la barra dice già. -->
+<form id="comando" hidden>
+  <label for="comando-campo">nodo</label>
+  <input id="comando-campo" class="numero" type="text" spellcheck="false"
+         autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="0; 3000">
+  <!-- Solo il formato: «Invio conferma, Esc annulla» lo dice già la barra qui sotto, che
+       col campo aperto stampa quelle due voci e nient'altro (story 14). -->
+  <span class="aiuto">x; z in mm</span>
+</form>
 <footer id="barra" aria-label="scorciatoie"></footer>
 
 <script type="module" src="/static/app.js"></script>

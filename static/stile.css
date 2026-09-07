@@ -22,11 +22,14 @@ body {
   height: 100vh;
   display: grid;
   grid-template-columns: minmax(180px, 15rem) 1fr minmax(220px, 20rem);
-  /* il messaggio ha la sua riga: dentro quella della barra si sovrapporrebbe ai tasti */
-  grid-template-rows: 1fr auto auto;
+  /* il messaggio ha la sua riga: dentro quella della barra si sovrapporrebbe ai tasti.
+     Il campo di comando ne ha una sua per la stessa ragione, e sta fra i due: sotto
+     l'errore che parla di ciò che si è scritto, sopra la barra che dice come chiudere. */
+  grid-template-rows: 1fr auto auto auto;
   grid-template-areas:
     "albero viste pannello"
     "messaggio messaggio messaggio"
+    "comando comando comando"
     "barra barra barra";
   background: var(--fondo);
   color: var(--inchiostro);
@@ -110,7 +113,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .tasto { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .tasto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
              border-radius: 3px; padding: 0 4px; background: var(--pannello); }
-.tasto .aiuto { color: var(--testo-tenue); }
+.aiuto { color: var(--testo-tenue); }
 
 /* Doppio canale: il rosso non viaggia mai da solo (WCAG 1.4.1) — c'è anche il segno.
    Misurato: #b8321e su #dcdad5 fa 4.28:1, sotto il 4.5:1 di AA per testo normale.
@@ -122,15 +125,33 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #messaggio:empty { display: none; }
 #messaggio::before { content: "▲ "; }
 
+/* La riga del comando. Stessa grammatica della barra che le sta sotto — bordo che stacca,
+   mezzo passo di respiro — perché sono la stessa fascia di controlli, non due mondi. Il
+   cursore è rosso: è la sola cosa che si muove mentre si scrive, e il rosso qui vuol dire
+   «sei qui», che è l'attenzione di sempre. */
+#comando { grid-area: comando; border-top: 1px solid var(--tratto-forte);
+           padding: calc(var(--passo) / 2) var(--passo);
+           display: flex; gap: var(--passo); align-items: baseline; flex-wrap: wrap;
+           background: var(--pannello); }
+/* `display: flex` su un selettore di id batte la regola `[hidden]` del browser, che è una
+   sola parola di specificità: senza questa riga il campo si vede anche da chiuso. */
+#comando[hidden] { display: none; }
+#comando label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+                 color: var(--testo-tenue); font-weight: 600; flex: 0 0 auto; }
+#comando-campo { flex: 1 1 14rem; min-width: 8rem; caret-color: var(--rosso); }
+#comando .aiuto { flex: 0 1 auto; }
+
 .staccato { margin-top: 1.5rem; }
 
 #file { border-bottom: 1px solid var(--tratto); padding-bottom: var(--passo); margin-bottom: var(--passo);
         flex: 0 1 auto; min-height: 0; overflow: auto; }
 #file label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
-#file-percorso { width: 100%; font-family: var(--mono); font-size: 12px;
+#file-percorso, #comando-campo {
+                 width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
-#file-percorso:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#file-percorso:focus-visible, #comando-campo:focus-visible {
+                 outline: 2px solid var(--rosso); outline-offset: 1px; }
 .file-azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .file-azioni button { font: inherit; cursor: pointer; padding: 2px 10px;
                       background: var(--pannello); color: var(--inchiostro);

@@ -86,6 +86,9 @@ export function voceDaEvento(evento) {
 // in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
+    // Col campo di comando aperto restano due tasti soli: le lettere le prende il campo, e
+    // le frecce muovono il cursore nel testo, non il ghost.
+    if (contesto === "comando") return v.codice === "conferma" || v.codice === "annulla";
     if (v.codice === "seleziona") return contesto !== "ghost";
     if (v.codice === "direzione") return contesto === "ghost";
     if (v.contesto === "salvo-ghost") return contesto !== "ghost" && contesto !== "asta";

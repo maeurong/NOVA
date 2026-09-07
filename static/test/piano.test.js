@@ -83,3 +83,21 @@ test("estensione: il ghost entra nell'inquadratura anche se punta fuori dal riqu
   assert.ok(conGhost.larghezza > senzaGhost.larghezza, "la punta del ghost allarga il riquadro");
   assert.ok(conGhost.x0 <= 20000 && 20000 <= conGhost.x0 + conGhost.larghezza, "la punta del ghost sta dentro");
 });
+
+// Mutante 2 del brief (giornata 11c, C1): `estensione` ignora il punto in anteprima e
+// l'inquadratura non si allarga — si digitano coordinate fuori vista e non si vede niente,
+// che è il difetto che il campo di comando doveva chiudere.
+test("estensione: il punto in anteprima entra nell'inquadratura come la punta del ghost", () => {
+  const nodo1 = n(1, 0, 0);
+  const senza = estensione(m([nodo1]));
+  const con = estensione(m([nodo1]), { punto: { x: 20000, z: -8000 } });
+  assert.ok(con.larghezza > senza.larghezza, "il punto in anteprima allarga il riquadro");
+  assert.ok(con.x0 <= 20000 && 20000 <= con.x0 + con.larghezza, "il punto sta dentro in x");
+  assert.ok(con.z0 <= -8000 && -8000 <= con.z0 + con.altezza, "il punto sta dentro in z");
+});
+
+test("estensione: il punto in anteprima non ha bisogno di un nodo di partenza", () => {
+  const box = estensione(m([]), { punto: { x: 5000, z: 5000 } });
+  assert.ok(box.x0 <= 5000 && 5000 <= box.x0 + box.larghezza);
+  assert.ok(box.z0 <= 5000 && 5000 <= box.z0 + box.altezza);
+});

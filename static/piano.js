@@ -37,13 +37,16 @@ const el = (nome, attributi = {}) => {
   return e;
 };
 
-/** L'estensione da inquadrare: i nodi **più la punta del ghost**. Senza il ghost, il primo
- *  gesto su un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da
- *  3000 fuori dal riquadro, senza sollevare niente: si vedrebbe solo sparire. */
+/** L'estensione da inquadrare: i nodi **più il ghost**. Senza il ghost, il primo gesto su
+ *  un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da 3000 fuori
+ *  dal riquadro, senza sollevare niente: si vedrebbe solo sparire. Vale identico per il
+ *  punto in anteprima del campo di comando, che di coordinate fuori vista ne accetta
+ *  quante ne vuole e senza questo le disegnerebbe dove non si guarda. */
 export function estensione(m, ghost = null) {
   const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
   const da = ghost && nodo(m, ghost.da);
   if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
+  if (ghost?.punto) punti.push(ghost.punto);
   if (punti.length === 0) return { x0: -LATO_MINIMO / 2, z0: -LATO_MINIMO / 2, larghezza: LATO_MINIMO, altezza: LATO_MINIMO };
   const xs = punti.map((p) => p.x), zs = punti.map((p) => p.z);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
@@ -124,7 +127,23 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }));
     }
 
-    if (ghost) {
+    // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
+    // una forma sua invece di un `{da, dx, dz}` con un'origine inventata. Cerchio vuoto e
+    // tratteggiato — «c'è, ma non ancora»: il nodo posato è pieno, questo no.
+    if (ghost?.punto) {
+      const p = schermo(ghost.punto);
+      gruppo.append(el("circle", {
+        cx: p.x, cy: p.y, r: RAGGIO * 1.6 * s, fill: "none",
+        stroke: ROSSO, "stroke-width": 2 * s, "stroke-dasharray": `${3 * s} ${3 * s}`,
+      }));
+      const testo = el("text", {
+        x: p.x + OFFSET_ETICHETTA * s, y: p.y - OFFSET_ETICHETTA * s,
+        "font-size": 11 * s, fill: ROSSO, "font-family": MONO,
+      });
+      const q = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
+      testo.textContent = `${q(ghost.punto.x)}; ${q(ghost.punto.z)}`;
+      gruppo.append(testo);
+    } else if (ghost) {
       const da = nodo(m, ghost.da);
       if (da) {  // un ghost su un nodo sparito è solo un ghost che non si disegna
         const p0 = schermo(da);
