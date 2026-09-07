@@ -1823,6 +1823,10 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     const voce = ev.target.closest("[data-tipo]");
     if (!voce) return;
     ev.preventDefault();
+    // Senza questo, l'Invio arriva anche al listener globale di `app.js`, che lo tratta
+    // come «conferma»: con un ghost aperto l'asta nascerebbe dal nodo di prima, non da
+    // quello appena scelto nell'albero.
+    ev.stopPropagation();
     scegli(voce);
   });
 
@@ -1917,6 +1921,9 @@ function ridisegna() {
   if (selezione && !(selezione.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === selezione.id)) {
     selezione = null;
   }
+  // Stesso trattamento per il ghost: se il nodo da cui parte è stato eliminato, il ghost
+  // non ha più un'origine e resterebbe appeso a un identificatore che non esiste.
+  if (ghost && !m.nodi.some((n) => n.id === ghost.da)) ghost = null;
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
@@ -1968,10 +1975,18 @@ function disegnaBarra() {
 
 // Le coordinate e le lunghezze si chiedono con `prompt`: è il campo che non si può
 // sbagliare, e la palette ⌘K con i valori nella query è la giornata 11 (story 8).
+//
+// Il debito, detto per intero perché non se ne perda il conto: `prompt` **blocca la
+// pagina**, quindi la story 2 («il ghost dell'asta mentre digito») oggi è soddisfatta solo
+// a metà — il ghost compare **dopo** la conferma della lunghezza, e solo la rotazione con
+// le frecce è davvero interattiva. Si chiude con la palette, non prima. In più nessun
+// agente può guidare `prompt` in automazione: la prova del telaio si fa a mano, o
+// sostituendo `window.prompt` da console con risposte in coda.
 // `ponytail: prompt oggi, campo nella palette domani.`
 function chiedi(domanda, esempio) {
   const t = window.prompt(`${domanda}  (${esempio})`);
-  return t === null ? null : t;
+  if (t === null) dì(null);  // annullando si pulisce: un errore di prima non resta a schermo
+  return t;
 }
 
 window.addEventListener("keydown", (ev) => {
@@ -1982,6 +1997,14 @@ window.addEventListener("keydown", (ev) => {
   if (voce.codice !== "seleziona") ev.preventDefault();
 
   if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
+
+  // Con un ghost aperto passano solo conferma, annulla e le frecce. Senza questa guardia
+  // un secondo `B` sovrascriverebbe il ghost in silenzio, buttando via la direzione già
+  // scelta, e `M`/`R` aprirebbero un prompt mentre l'estrusione resta appesa sul piano.
+  if (ghost && voce.codice !== "conferma") {
+    dì("c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
+    return;
+  }
 
   if (voce.codice === "nodo") {
     const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
