@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TASTI, voceDaEvento, vociDellaBarra } from "../tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo } from "../tastiera.js";
 
 test("nessun codice compare due volte", () => {
   const codici = TASTI.map((v) => v.codice);
@@ -95,7 +95,7 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // i tasti senza modificatori e con `⌘O`/`⌘S` nella mappa fallirebbe. La sonda si deriva da
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
-  const KEY = { "⇥": "Tab", "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s" };
+  const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const key = KEY[v.tasto] ?? v.tasto.toLowerCase();
@@ -115,4 +115,33 @@ test("le voci di sempre restano nei contesti reali, non solo nel proprio", () =>
 
 test("lo shift da solo non blocca: ⇧N crea un nodo", () => {
   assert.equal(voceDaEvento({ key: "N", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true }).codice, "nodo");
+});
+
+// --- fix round 1, A2: ⇥ non è più mappato, torna del tutto al browser ---
+
+test("⇥ non è più un tasto nostro: nessuna voce lo usa, e non gira più i nodi", () => {
+  assert.equal(voceDaEvento({ key: "Tab", metaKey: false, ctrlKey: false, altKey: false }), null);
+  assert.ok(!TASTI.some((v) => v.tasto === "⇥"));
+});
+
+test("G gira fra i nodi, il tasto che sostituisce ⇥", () => {
+  assert.equal(voceDaEvento({ key: "g", metaKey: false, ctrlKey: false, altKey: false }).codice, "seleziona");
+  assert.equal(voceDaEvento({ key: "G", metaKey: false, ctrlKey: false, altKey: false }).codice, "seleziona");
+});
+
+// --- fix round 1, A1: la guardia della tastiera (mutante: torna a coprire solo input) ---
+
+test("daControllo: un bottone o una casella tengono per sé i tasti — ⌫ lì sopra non elimina niente", () => {
+  assert.equal(daControllo({ closest: (sel) => (sel.includes("button") ? {} : null) }), true);
+  assert.equal(daControllo({ closest: (sel) => (sel.includes("input") ? {} : null) }), true);
+});
+
+test("daControllo: il corpo della pagina non tiene per sé niente", () => {
+  assert.equal(daControllo({ closest: () => null }), false);
+});
+
+test("daControllo: un target senza `closest` (es. il `document`) non solleva, e non è un controllo", () => {
+  assert.equal(daControllo({}), false);
+  assert.equal(daControllo(null), false);
+  assert.equal(daControllo(undefined), false);
 });

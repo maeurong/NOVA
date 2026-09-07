@@ -37,7 +37,10 @@ body {
 #colonna { grid-area: albero; border-right: 1px solid var(--tratto); padding: var(--passo);
            display: flex; flex-direction: column; overflow: hidden; }
 #albero { overflow: auto; flex: 1 1 auto; min-height: 4rem; }
-#viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; min-width: 0; }
+/* Senza `min-height: 0` il canvas three.js dentro #spazio impone la sua altezza in px come
+   min-content di #viste, un pavimento che la riga `1fr` non può mai scendere sotto: la barra
+   finiva tagliata di 21px, a ogni altezza di finestra (fix round 1, E). */
+#viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; min-width: 0; min-height: 0; }
 #pannello { grid-area: pannello; border-left: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
 #barra  { grid-area: barra; border-top: 1px solid var(--tratto); padding: calc(var(--passo) / 2) var(--passo);
           display: flex; gap: calc(var(--passo) * 2); flex-wrap: wrap; align-items: baseline; }
@@ -56,16 +59,34 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #pannello-dati dt:first-child { margin-top: 0; }
 #pannello-dati dd { margin: 0; }        /* il default UA è 40px: dentro 220px taglia */
 
-.vincolo-preimpostazioni { display: flex; gap: 4px; flex-wrap: wrap; margin-top: var(--passo); }
-.vincolo-preimpostazioni button { font: inherit; font-size: 11px; cursor: pointer; padding: 2px 8px;
+/* `<fieldset>`/`<legend>` nativi al posto di due `<div>` costruiti a mano: la legenda dà un
+   nome al gruppo da sola (chiude il ruolo `group` che avrebbe altrimenti servito un
+   `aria-label`), reset a zero perché il bordo/padding di default del browser non è nel
+   linguaggio visivo di questa colonna (fix round 1, D). */
+.vincolo-preimpostazioni, .vincolo-gradi { border: 0; padding: 0; }
+.vincolo-preimpostazioni legend, .vincolo-gradi legend { font-size: 10px; color: var(--testo-tenue);
+                                                         text-transform: uppercase; letter-spacing: 0.04em;
+                                                         padding: 0; margin-bottom: 2px; }
+/* Colonne a larghezza fissa: senza, il grassetto del bottone premuto lo allarga di qualche px
+   e la fila si riassesta a ogni clic (fix round 1, D). */
+.vincolo-preimpostazioni { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+                            margin: var(--passo) 0 0; }
+.vincolo-preimpostazioni button { font: inherit; font-size: 11px; cursor: pointer; padding: 4px 8px;
                                   background: var(--pannello); color: var(--inchiostro);
                                   border: 1px solid var(--tratto-forte); border-radius: 2px; }
 /* Premuto è uno stato, non una tinta: il bordo cambia spessore oltre al colore. */
 .vincolo-preimpostazioni button[aria-pressed="true"] { border-color: var(--rosso); border-width: 2px;
-                                                       padding: 1px 7px; font-weight: 700; }
+                                                       padding: 3px 7px; font-weight: 700; }
 .vincolo-preimpostazioni button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
-.vincolo-gradi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 6px; margin-top: 6px; }
-.vincolo-gradi label { font-family: var(--mono); font-size: 11px; display: flex; gap: 4px; align-items: center; }
+.vincolo-gradi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 6px; margin: 6px 0 0; }
+.vincolo-gradi legend { grid-column: 1 / -1; }
+/* Bersaglio ≥24×24 (WCAG 2.5.8): il padding verticale, non il font, alza l'altezza cliccabile. */
+.vincolo-gradi label { font-family: var(--mono); font-size: 11px; display: flex; gap: 4px; align-items: center;
+                       padding: 3px 0; }
+.vincolo-gradi input:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+/* L'unico colore estraneo alla palette era il blu di sistema delle caselle: un grado bloccato
+   non è un'attenzione, quindi non è il rosso — è inchiostro, come il resto dei segni. */
+.vincolo-gradi input { accent-color: var(--inchiostro); }
 
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }

@@ -17,19 +17,23 @@ function elementoFinto() {
     dispatch(ev) { (listeners[ev] ?? []).forEach((fn) => fn()); },
     append(...figli) { this._figli.push(...figli); },
     replaceChildren(...figli) { this._figli = figli; },
+    // Il fuoco: un `focus()` finto che sposta `document.activeElement`, per provare che
+    // `creaPannello` lo ritrova dopo un `replaceChildren` (fix round 1, A3).
+    focus() { globalThis.document.activeElement = this; },
   };
 }
 
 globalThis.document = {
+  activeElement: null,
   createElement: () => elementoFinto(),
   createTextNode: (t) => ({ nodeType: 3, textContent: t }),
 };
 
-// Naviga dentro il DOM finto costruito da `editorVincolo`: box → [fila, gradi].
+// Naviga dentro il DOM finto costruito da `editorVincolo`: editor → [fila, gradi], ognuno
+// con la legenda come primo figlio (fix round 1, D: `<fieldset>`/`<legend>`).
 function contenutoEditor(editor) {
-  const box = editor._figli[0];
-  const [fila, gradi] = box._figli;
-  return { bottoni: fila._figli, caselle: gradi._figli.map((et) => et._figli[0]) };
+  const [fila, gradi] = editor._figli;
+  return { bottoni: fila._figli.slice(1), caselle: gradi._figli.slice(1).map((et) => et._figli[0]) };
 }
 
 const CON_CERNIERA = () => estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
@@ -52,13 +56,13 @@ test("righe: asta con id inesistente torna null, non solleva", () => {
   assert.equal(righe(m, { tipo: "asta", id: 999 }), null);
 });
 
-test("righe: asta senza sezione la dice non assegnata (giornata 11b)", () => {
+test("righe: asta senza sezione la dice non assegnata, senza il nome della tappa interna", () => {
   const m = CON_CERNIERA();
   const r = righe(m, { tipo: "asta", id: m.aste[0].id });
-  assert.deepEqual(r.find(([k]) => k === "sezione"), ["sezione", "non assegnata (giornata 11b)"]);
+  assert.deepEqual(r.find(([k]) => k === "sezione"), ["sezione", "non assegnata"]);
 });
 
-// --- prossimoVincolo (mutante 3: scrivere solo il proprio grado) ---
+// --- prossimoVincolo (mutante: scrivere solo il proprio grado) ---
 
 test("prossimoVincolo ricostruisce i sei gradi, non solo quello toccato", () => {
   const attuale = { ...PREIMPOSTAZIONI.cerniera };  // ux,uy,uz true; rx,ry,rz false
@@ -71,8 +75,10 @@ test("prossimoVincolo da nessun vincolo accende solo il grado toccato", () => {
     { ux: true, uy: false, uz: false, rx: false, ry: false, rz: false });
 });
 
-test("prossimoVincolo che spegne l'ultimo grado acceso torna null, non un oggetto tutto falso", () => {
-  assert.equal(prossimoVincolo({ ux: true }, "ux", false), null);
+// --- B: "libero" dichiara, non cancella (fix round 1) ---
+
+test("prossimoVincolo che spegne l'ultimo grado acceso dichiara libero (sei falsi), non cancella", () => {
+  assert.deepEqual(prossimoVincolo({ ux: true }, "ux", false), vincoloVuoto());
 });
 
 test("prossimoVincolo ignora chiavi sconosciute nel vincolo attuale: il risultato ne ha solo sei", () => {
@@ -80,7 +86,7 @@ test("prossimoVincolo ignora chiavi sconosciute nel vincolo attuale: il risultat
   assert.deepEqual(Object.keys(risultato).sort(), [...GRADI].sort());
 });
 
-// --- copiaPreimpostazione (mutante 1: per riferimento invece che copiata) ---
+// --- copiaPreimpostazione (mutante: per riferimento invece che copiata) ---
 
 test("copiaPreimpostazione non ritorna la costante congelata per riferimento", () => {
   const copia = copiaPreimpostazione("incastro");
@@ -88,11 +94,11 @@ test("copiaPreimpostazione non ritorna la costante congelata per riferimento", (
   assert.deepEqual(copia, PREIMPOSTAZIONI.incastro);
 });
 
-test("copiaPreimpostazione('libero') è null, per liberare il nodo", () => {
-  assert.equal(copiaPreimpostazione("libero"), null);
+test("copiaPreimpostazione('libero') dichiara libero (sei falsi), non cancella", () => {
+  assert.deepEqual(copiaPreimpostazione("libero"), vincoloVuoto());
 });
 
-// --- presetPremuto (mutante 5: il vincolo vuoto letto come «incastro») ---
+// --- presetPremuto (mutante: il vincolo vuoto letto come «incastro») ---
 
 test("presetPremuto: nessun vincolo, o tutto libero, non preme nessuna preimpostazione", () => {
   for (const nome of Object.keys(PREIMPOSTAZIONI)) {
@@ -113,7 +119,7 @@ test("presetPremuto: la preimpostazione giusta è premuta, le altre no", () => {
 
 function pannelloFinto(suVincolo = () => {}) {
   const dati = elementoFinto(), vuoto = elementoFinto(), editor = elementoFinto();
-  const p = creaPannello(dati, vuoto, editor, { suVincolo });
+  const p = creaPannello({ dati, vuoto, editor }, { suVincolo });
   return { p, dati, vuoto, editor };
 }
 
@@ -134,15 +140,19 @@ test("disegna: selezione su un id sparito non solleva, e si comporta come nessun
   assert.equal(dati.hidden, true);
 });
 
-test("disegna: un'asta selezionata non mostra l'editor del vincolo", () => {
+test("disegna: un'asta selezionata mostra i dati ma non l'editor del vincolo", () => {
   const m = CON_CERNIERA();
-  const { p, editor } = pannelloFinto();
+  const { p, dati, vuoto, editor } = pannelloFinto();
   p.disegna(m, { tipo: "asta", id: m.aste[0].id });
+  // C1: le tre direzioni «visibile», non solo «nascosto» — un mutante che tiene tutto
+  // nascosto passerebbe se si asserisse solo l'assenza dell'editor.
+  assert.equal(vuoto.hidden, true);
+  assert.equal(dati.hidden, false);
   assert.equal(editor.hidden, true);
   assert.deepEqual(editor._figli, []);
 });
 
-// --- mutante 2: campi precedenti non ripuliti al cambio di selezione ---
+// --- mutante: campi precedenti non ripuliti al cambio di selezione ---
 
 test("disegna: passare da un nodo a nessuna selezione svuota l'editor, non solo lo nasconde", () => {
   const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
@@ -164,17 +174,36 @@ test("disegna: passare da un nodo a un'asta svuota l'editor, non solo lo nascond
 
 // --- l'editor per un nodo: tre preimpostazioni + libero, sei caselle ---
 
-test("disegna: un nodo mostra 4 bottoni e 6 caselle coerenti col vincolo", () => {
+test("disegna: un nodo mostra dati ed editor (C1), 4 bottoni e 6 caselle coerenti col vincolo", () => {
   let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
   m.nodi[0].vincolo = { ...PREIMPOSTAZIONI.cerniera };
-  const { p, editor } = pannelloFinto();
+  const { p, dati, vuoto, editor } = pannelloFinto();
   p.disegna(m, { tipo: "nodo", id: 1 });
+  assert.equal(vuoto.hidden, true);
+  assert.equal(dati.hidden, false);
+  assert.equal(editor.hidden, false);
   const { bottoni, caselle } = contenutoEditor(editor);
   assert.equal(bottoni.length, 4);
   assert.deepEqual(bottoni.map((b) => [b.textContent, b.getAttribute("aria-pressed")]),
     [["incastro", "false"], ["cerniera", "true"], ["carrello", "false"], ["libero", "false"]]);
   assert.equal(caselle.length, 6);
   assert.deepEqual(caselle.map((c) => c.checked), [true, true, true, false, false, false]);
+});
+
+// --- C2: il vincolo non-preset, l'ingresso più frequente ---
+
+test("disegna: un vincolo non-preset {ux, rx} non preme nessun bottone e spunta solo le sue caselle", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].vincolo = { ...vincoloVuoto(), ux: true, rx: true };
+  const { p, dati, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "nodo", id: 1 });
+  const { bottoni, caselle } = contenutoEditor(editor);
+  assert.ok(bottoni.every((b) => b.getAttribute("aria-pressed") === "false"), "nessuna preimpostazione combacia");
+  assert.deepEqual(caselle.map((c) => c.checked), [true, false, false, true, false, false]);
+  const riga = dati._figli.find((el) => el.textContent === "vincolo");
+  // la `<dd>` segue la sua `<dt>`: stessa posizione nell'elenco appiattito
+  const indice = dati._figli.indexOf(riga);
+  assert.equal(dati._figli[indice + 1].textContent, "bloccati: ux, rx");
 });
 
 test("disegna: clic su una preimpostazione chiama suVincolo con una copia, non l'originale", () => {
@@ -188,7 +217,7 @@ test("disegna: clic su una preimpostazione chiama suVincolo con una copia, non l
   assert.notEqual(ricevuto, PREIMPOSTAZIONI.incastro);
 });
 
-test("disegna: clic su «libero» chiama suVincolo con null", () => {
+test("disegna: clic su «libero» chiama suVincolo dichiarando libero (sei falsi), non con null", () => {
   let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
   m.nodi[0].vincolo = { ...PREIMPOSTAZIONI.incastro };
   let ricevuto = "non chiamato";
@@ -196,7 +225,7 @@ test("disegna: clic su «libero» chiama suVincolo con null", () => {
   p.disegna(m, { tipo: "nodo", id: 1 });
   const { bottoni } = contenutoEditor(editor);
   bottoni.find((b) => b.textContent === "libero").dispatch("click");
-  assert.equal(ricevuto, null);
+  assert.deepEqual(ricevuto, vincoloVuoto());
 });
 
 test("disegna: spuntare una casella ricostruisce i sei gradi, non solo quello toccato", () => {
@@ -210,4 +239,34 @@ test("disegna: spuntare una casella ricostruisce i sei gradi, non solo quello to
   casellaRx.checked = true;
   casellaRx.dispatch("change");
   assert.deepEqual(ricevuto, { ux: true, uy: true, uz: true, rx: true, ry: false, rz: false });
+});
+
+// --- A3: il fuoco sopravvive a un `replaceChildren` (mutante: fuoco non ripristinato) ---
+
+test("disegna: la casella a fuoco resta a fuoco dopo che il vincolo cambia e l'editor si ricostruisce", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].vincolo = { ...PREIMPOSTAZIONI.cerniera };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "nodo", id: 1 });
+  const primaVolta = contenutoEditor(editor);
+  const indiceRx = GRADI.indexOf("rx");
+  primaVolta.caselle[indiceRx].focus();
+  assert.equal(globalThis.document.activeElement, primaVolta.caselle[indiceRx]);
+
+  // Il vincolo cambia (come farebbe `suVincolo` dopo l'evento reale) e si ridisegna: l'editor
+  // si ricostruisce da zero, ma il fuoco deve seguire l'omologo nuovo, non tornare a `body`.
+  m.nodi[0].vincolo = { ...m.nodi[0].vincolo, rx: true };
+  p.disegna(m, { tipo: "nodo", id: 1 });
+  const dopo = contenutoEditor(editor);
+  assert.notEqual(dopo.caselle[indiceRx], primaVolta.caselle[indiceRx], "l'editor si è ricostruito davvero");
+  assert.equal(globalThis.document.activeElement, dopo.caselle[indiceRx]);
+});
+
+test("disegna: il fuoco altrove non viene rubato quando l'editor si ricostruisce", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const { p, editor } = pannelloFinto();
+  const altrove = elementoFinto();
+  globalThis.document.activeElement = altrove;
+  p.disegna(m, { tipo: "nodo", id: 1 });
+  assert.equal(globalThis.document.activeElement, altrove);
 });

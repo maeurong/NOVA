@@ -7,7 +7,7 @@
 import { modelloVuoto, nodo } from "./modello.js";
 import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
 import { nuovaCronologia, applica, corrente } from "./cronologia.js";
-import { voceDaEvento, vociDellaBarra } from "./tastiera.js";
+import { voceDaEvento, vociDellaBarra, daControllo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
@@ -38,12 +38,13 @@ const piano = creaPiano($("piano"), {
 });
 const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione });
 const spazio = await creaSpazio($("spazio"));
-const pannello = creaPannello($("pannello-dati"), $("pannello-vuoto"), $("pannello-vincolo"), {
-  suVincolo: (id, vincolo) => {
+const pannello = creaPannello(
+  { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-vincolo") },
+  { suVincolo: (id, vincolo) => {
     esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`);
     ridisegna();
-  },
-});
+  } },
+);
 
 function dì(testo) { messaggio.textContent = testo ?? ""; }
 
@@ -102,11 +103,12 @@ function chiedi(domanda, esempio) {
 }
 
 window.addEventListener("keydown", (ev) => {
-  if (ev.target instanceof HTMLInputElement) return;
+  // I bottoni dell'editor del vincolo e le sue caselle gestiscono i propri tasti: senza
+  // questo un ⌫ premuto su «cerniera» elimina il nodo, e l'annulla non c'è ancora (A1).
+  if (daControllo(ev.target)) return;
   const voce = voceDaEvento(ev);
   if (!voce) return;
-  // `seleziona` decide da sé: solo lui può lasciare l'evento al browser (vedi sotto).
-  if (voce.codice !== "seleziona") ev.preventDefault();
+  ev.preventDefault();
 
   if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
 
@@ -135,14 +137,10 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "seleziona") {
-    // ⇥ gira fra i nodi in ordine di identificatore. È l'unico modo di avere una selezione
-    // senza mouse, e senza selezione metà dei comandi non parte.
-    //
-    // Ma solo con il fuoco sul corpo della pagina: dentro l'albero o il pannello, ⇥ resta
-    // il ⇥ del browser. Rubarlo ovunque significherebbe che chi naviga da tastiera non
-    // raggiunge più nulla — un difetto di accessibilità peggiore di quello che risolve.
-    if (document.activeElement !== document.body) return;
-    ev.preventDefault();
+    // G gira fra i nodi in ordine di identificatore. È l'unico modo di avere una selezione
+    // senza mouse, e senza selezione metà dei comandi non parte. Non è più ⇥ (A2): quello
+    // resta sempre del browser, `daControllo` sopra copre già i controlli che i tasti se li
+    // gestiscono da sé.
     const m = corrente(cronologia);
     if (m.nodi.length === 0) { dì("nessun nodo da selezionare: premi N"); return; }
     const ids = m.nodi.map((n) => n.id);
