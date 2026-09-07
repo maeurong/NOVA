@@ -610,6 +610,24 @@ test("⌘⇧S resta al browser: «salva con nome» non è nostra", () => {
   assert.equal(voceDaEvento({ key: "o", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }), null);
 });
 
+test("lo shift da solo non blocca: ⇧N crea un nodo", () => {
+  // Bloccare ogni shift romperebbe le maiuscole, e nessun test della giornata 10 lo
+  // prenderebbe: quelli costruiscono l'evento senza `shiftKey`, che risulta `undefined`.
+  assert.equal(voceDaEvento({ key: "N", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true }).codice, "nodo");
+});
+
+test("le voci di sempre restano nei contesti reali, non solo nel proprio", () => {
+  // `app.js` passa "sempre", "selezione", "ghost" o "asta", mai la stringa "salvo-ghost":
+  // un ramo che rispondesse solo a quest'ultima svuoterebbe la barra in ogni stato vero del
+  // programma, e senza questo test la suite resterebbe tutta verde. Misurato per mutazione.
+  for (const contesto of ["sempre", "selezione"]) {
+    const codici = vociDellaBarra(contesto).map((v) => v.codice);
+    for (const atteso of ["nodo", "seleziona", "apri", "salva"]) {
+      assert.ok(codici.includes(atteso), `${atteso} manca nel contesto ${contesto}`);
+    }
+  }
+});
+
 test("i comandi senza modificatore continuano a rifiutare i modificatori", () => {
   assert.equal(voceDaEvento({ key: "n", metaKey: true, ctrlKey: false, altKey: false }), null);
   assert.equal(voceDaEvento({ key: "a", metaKey: true, ctrlKey: false, altKey: false }), null);
@@ -670,9 +688,10 @@ export const TASTI = [
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
 ];
 
-// `key` dell'evento → codice, separati per modificatore. I tasti **stampati** sono quelli
-// di questa tastiera, che è un Mac; chi ha un PC preme Ctrl e Canc lo stesso, ed è solo
-// l'etichetta a scegliere.
+// `key` dell'evento → codice, separati per modificatore. Le **etichette** in `TASTI` sono
+// quelle di questa tastiera, che è un Mac (`⌫`, `R`); la mappa qui sotto riconosce anche
+// `delete` e `f2`, che sono i tasti equivalenti su un PC. Stampare un tasto che sulla
+// macchina non esiste è la bugia che la story 14 vieta — riconoscerlo in più, no.
 const SENZA_MODIFICATORE = new Map([
   ["n", "nodo"], ["tab", "seleziona"], ["b", "estrudi"], ["a", "asta"], ["v", "vincolo"],
   ["m", "sposta"], ["r", "rinomina"], ["f2", "rinomina"],
@@ -682,11 +701,16 @@ const SENZA_MODIFICATORE = new Map([
 const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"]]);
 
 export function voceDaEvento(evento) {
-  // ⌘ sul Mac, Ctrl sul PC: lo stesso modificatore di comando. `alt` e `shift` non lo sono
-  // mai, e una combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
-  // `⌘⇧S` è «salva con nome» in mezzo mondo: non è nostra.
-  if (evento.altKey || evento.shiftKey) return null;
+  // ⌘ sul Mac, Ctrl sul PC: lo stesso modificatore di comando. `alt` non lo è mai, e una
+  // combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
+  if (evento.altKey) return null;
   const comando = Boolean(evento.metaKey || evento.ctrlKey);
+  // `⇧` conta **solo** col comando: `⌘⇧S` è «salva con nome» in mezzo mondo e non è nostra.
+  // Da solo no — chi preme `⇧N` per la maiuscola manda `shiftKey: true`, e deve creare un
+  // nodo lo stesso. Bloccare ogni shift romperebbe le maiuscole senza che nessuno se ne
+  // accorga: il test della giornata 10 costruisce l'evento senza `shiftKey`, che risulta
+  // `undefined` e quindi falso.
+  if (comando && evento.shiftKey) return null;
   const tavola = comando ? CON_COMANDO : SENZA_MODIFICATORE;
   const codice = tavola.get(String(evento.key).toLowerCase());
   return codice ? TASTI.find((v) => v.codice === codice) : null;
