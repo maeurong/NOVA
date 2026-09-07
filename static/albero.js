@@ -16,6 +16,9 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     const voce = ev.target.closest("[data-tipo]");
     if (!voce) return;
     ev.preventDefault();
+    // Senza questo, l'Invio che attiva la voce risale al listener globale di `app.js`,
+    // che lo legge come «conferma» e chiude anche un ghost pendente aperto altrove.
+    ev.stopPropagation();
     scegli(voce);
   });
 

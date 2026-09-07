@@ -49,6 +49,10 @@ function ridisegna() {
   if (selezione && !(selezione.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === selezione.id)) {
     selezione = null;
   }
+  // Un ghost che parte da un nodo sparito è nella stessa condizione di una selezione sparita.
+  if (ghost && !m.nodi.some((n) => n.id === ghost.da)) {
+    ghost = null;
+  }
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
@@ -103,7 +107,8 @@ function disegnaBarra() {
 // `ponytail: prompt oggi, campo nella palette domani.`
 function chiedi(domanda, esempio) {
   const t = window.prompt(`${domanda}  (${esempio})`);
-  return t === null ? null : t;
+  if (t === null) dì(null);  // annullando si pulisce: un errore di prima non resta a schermo
+  return t;
 }
 
 window.addEventListener("keydown", (ev) => {
@@ -114,6 +119,14 @@ window.addEventListener("keydown", (ev) => {
   if (voce.codice !== "seleziona") ev.preventDefault();
 
   if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
+
+  // Con un ghost aperto passano solo conferma e le frecce (secondo listener, sotto):
+  // un secondo `B` sovrascriverebbe il ghost in silenzio, buttando via la direzione già
+  // scelta, e `M`/`R` aprirebbero un prompt mentre l'estrusione resta appesa sul piano.
+  if (ghost && voce.codice !== "conferma") {
+    dì("c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
+    return;
+  }
 
   if (voce.codice === "nodo") {
     const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
