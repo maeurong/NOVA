@@ -1541,11 +1541,17 @@ Terna: `x` a destra, `z` in alto, `y` in profondità — la stessa di `nova/mode
 
 - [ ] **Step 1: Vendorizza three.js**
 
+**`three.module.js` non è autonomo**: apre con `import … from './three.core.js'`, e senza quel
+secondo file l'`import` fallisce **sempre** — cadendo nel ramo «vista assente», che è il modo
+peggiore di rompersi perché sembra gestito. Si scaricano tutti e due.
+
 ```bash
 mkdir -p static/vendor
 curl -fsSL -o static/vendor/three.module.js https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js
+curl -fsSL -o static/vendor/three.core.js https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.core.js
 curl -fsSL -o static/vendor/three.LICENSE https://raw.githubusercontent.com/mrdoob/three.js/r185/LICENSE
-shasum -a 256 static/vendor/three.module.js
+shasum -a 256 static/vendor/three.module.js static/vendor/three.core.js
+grep -o "from '\./[a-z.]*'" static/vendor/three.module.js | sort -u   # deve dare solo three.core.js
 ```
 
 Scrivi `static/vendor/PROVENIENZA.md` con l'impronta che il comando ha stampato:
