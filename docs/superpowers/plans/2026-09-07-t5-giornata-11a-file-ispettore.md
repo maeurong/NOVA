@@ -306,6 +306,15 @@ test("le preimpostazioni sono congelate: un modulo non le rompe per gli altri", 
   const prima = { ...PREIMPOSTAZIONI.incastro };
   assert.throws(() => { PREIMPOSTAZIONI.incastro.ux = false; }, TypeError);
   assert.deepEqual(PREIMPOSTAZIONI.incastro, prima);
+  // E il **contenitore**, non solo i suoi valori. Misurato per mutazione: togliendo il solo
+  // `Object.freeze` esterno e lasciando quelli interni, senza queste due righe la suite
+  // restava tutta verde — e `delete PREIMPOSTAZIONI.carrello` da un altro modulo passava.
+  assert.throws(() => { PREIMPOSTAZIONI.pinguino = {}; }, TypeError);
+  assert.throws(() => { delete PREIMPOSTAZIONI.carrello; }, TypeError);
+});
+
+test("un vincolo con chiavi in meno vale come quelle assenti false", () => {
+  assert.equal(nomePreimpostazione({ ux: true, uy: true, uz: true }), "cerniera");
 });
 
 test("la descrizione elenca i gradi nell'ordine di GRADI, non delle chiavi", () => {
