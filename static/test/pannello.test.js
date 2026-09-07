@@ -40,10 +40,28 @@ const CON_CERNIERA = () => estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { d
 
 // --- righe (logica pura) ---
 
-test("righe: nodo senza vincolo mostra «libero», mai «undefined»", () => {
+// C: un nodo appena nato non ha il campo `vincolo` (`comandi.js:creaNodo`), ed è lo stato
+// che il Check Model segnala al piede. Dirlo «libero» lo confonde con la scelta opposta.
+test("righe: nodo mai toccato mostra «non dichiarato», mai «undefined» né «libero»", () => {
   const m = creaNodo(modelloVuoto(), { x: 0, z: 3000 });
   const r = righe(m, { tipo: "nodo", id: 1 });
+  assert.deepEqual(r.find(([k]) => k === "vincolo"), ["vincolo", "non dichiarato"]);
+});
+
+test("righe: nodo dichiarato libero mostra «libero», non «non dichiarato»", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 3000 });
+  m.nodi[0].vincolo = vincoloVuoto();
+  const r = righe(m, { tipo: "nodo", id: 1 });
   assert.deepEqual(r.find(([k]) => k === "vincolo"), ["vincolo", "libero"]);
+});
+
+// --- mutante D5: `mm(n.x)` e `mm(n.z)` scambiati ---
+
+test("righe: x e z non si scambiano, e portano l'unità", () => {
+  const m = creaNodo(modelloVuoto(), { x: 1200, z: 3000 });
+  const r = new Map(righe(m, { tipo: "nodo", id: 1 }));
+  assert.equal(r.get("x"), "1.200 mm");
+  assert.equal(r.get("z"), "3.000 mm");
 });
 
 test("righe: nodo con id inesistente torna null, non solleva", () => {
@@ -60,6 +78,14 @@ test("righe: asta senza sezione la dice non assegnata, senza il nome della tappa
   const m = CON_CERNIERA();
   const r = righe(m, { tipo: "asta", id: m.aste[0].id });
   assert.deepEqual(r.find(([k]) => k === "sezione"), ["sezione", "non assegnata"]);
+});
+
+// --- mutante D6: la lunghezza dell'asta sempre «0 mm» ---
+
+test("righe: la lunghezza dell'asta è quella vera, non zero", () => {
+  const m = CON_CERNIERA();  // nodo 1 in (0,0), estrusione di 3000 mm lungo x
+  const r = new Map(righe(m, { tipo: "asta", id: m.aste[0].id }));
+  assert.equal(r.get("lunghezza"), "3.000 mm");
 });
 
 // --- prossimoVincolo (mutante: scrivere solo il proprio grado) ---
@@ -105,8 +131,20 @@ test("presetPremuto: nessun vincolo, o tutto libero, non preme nessuna preimpost
     assert.equal(presetPremuto(nome, undefined), false);
     assert.equal(presetPremuto(nome, vincoloVuoto()), false);
   }
-  assert.equal(presetPremuto("libero", undefined), true);
+});
+
+// --- C: «libero» premuto è la scelta, non la dimenticanza ---
+// Su un nodo mai toccato il bottone deve restare **da premere**: premerlo è esattamente il
+// rimedio al «nodi al piede senza vincolo dichiarato» del Check Model.
+
+test("presetPremuto: «libero» non è premuto su un nodo mai toccato", () => {
+  assert.equal(presetPremuto("libero", null), false);
+  assert.equal(presetPremuto("libero", undefined), false);
+});
+
+test("presetPremuto: «libero» è premuto su un nodo dichiarato libero", () => {
   assert.equal(presetPremuto("libero", vincoloVuoto()), true);
+  assert.equal(presetPremuto("libero", {}), true);
 });
 
 test("presetPremuto: la preimpostazione giusta è premuta, le altre no", () => {

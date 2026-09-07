@@ -49,6 +49,11 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
   // Uno scatto per comando: due Invio di fila non devono aprire due richieste in corsa,
   // dove vince chi risponde per ultimo invece di chi è partito per ultimo.
   let inCorso = false;
+  // Il modello finito su disco, nella forma esatta in cui è stato spedito. Da qui si
+  // **deriva** «modificato», invece di tenerlo come una variabile che qualcuno deve
+  // ricordarsi di alzare a ogni comando e di abbassare al momento giusto: una variabile
+  // così è già bugiarda oggi, e con l'annulla della 11c lo diventerebbe di più.
+  let salvato = null;
 
   async function chiedi(rotta, corpo) {
     const r = await fetch(rotta, {
@@ -87,20 +92,27 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
         spanCartella.textContent = cartella;
         b.append(spanCartella);
       }
-      b.addEventListener("click", () => { campo.value = p; apri(p); });
+      // Il campo lo scrive `apri`, e solo **se** riesce: scriverlo qui lo faceva divergere
+      // dal percorso aperto al primo 404, e il ⌘S dopo finiva nel file che aveva fallito.
+      b.addEventListener("click", () => apri(p));
       li.append(b);
       return li;
     }));
   }
 
+  // Rifiutare in silenzio è peggio che rifiutare: su un disco lento il secondo clic non fa
+  // niente e non spiega niente, e l'utente ripete finché non pensa che sia rotto.
+  const occupato = () => suErrore("un'operazione sul file è già in corso");
+
   async function apri(percorso) {
-    if (inCorso) return;
+    if (inCorso) return occupato();
     const p = (typeof percorso === "string" ? percorso : campo.value).trim();
     if (p === "") return suErrore("scrivi il percorso di un modello");
     inCorso = true;
     try {
       const { modello, impronta } = await chiedi("/api/modello/apri", { percorso: p });
       campo.value = p;
+      salvato = JSON.stringify(modello);   // appena aperto, memoria e disco coincidono
       ricorda(p);
       suApertura(p, modello, impronta);
     } catch (e) {
@@ -110,13 +122,20 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
     }
   }
 
+  /** Salva `modello` in `percorso`. Senza un percorso esplicito ricade sul campo, e quello è
+   *  l'unico caso in cui il campo è una destinazione: il primo salvataggio di un modello mai
+   *  aperto. Il campo è la sorgente di `apri`, non la destinazione di `salva`. */
   async function salva(percorso, modello) {
-    if (inCorso) return;
+    if (inCorso) return occupato();
     const p = (typeof percorso === "string" ? percorso : campo.value).trim();
     if (p === "") return suErrore("scrivi il percorso dove salvare");
+    // Catturato **alla partenza**, non al ritorno: la risposta arriva dopo, e nel frattempo
+    // un comando da tastiera può aver portato avanti la cronologia. Su disco finisce questo.
+    const inviato = JSON.stringify(modello);
     inCorso = true;
     try {
       const { impronta } = await chiedi("/api/modello/salva", { percorso: p, modello });
+      salvato = inviato;
       ricorda(p);
       // `suSalvataggio` e non `suApertura`: il modello in memoria è già quello giusto, e
       // ricominciare la cronologia qui cancellerebbe l'undo a ogni salvataggio.
@@ -135,9 +154,15 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
   });
   radice.querySelector("#file-apri").addEventListener("click", () => apri());
 
-  function disegna({ percorso, impronta, modificato }) {
+  function disegna({ percorso, impronta, modello }) {
     if (percorso && campo.value === "") campo.value = percorso;
-    stato.textContent = testoStato({ percorso, impronta, modificato });
+    // «Modificato» è una domanda, non un promemoria: *quello che ho in memoria è quello che
+    // è finito su disco?* L'unica risposta esatta che si può dare qui è confrontarlo con ciò
+    // che è stato spedito — la stessa forma su cui il server ha calcolato l'impronta, che in
+    // JS non si ricalcola (vedi in testa al file). Le chiavi in ordine diverso darebbero un
+    // «modificato» di troppo; è il verso giusto in cui sbagliare, perché il verso opposto —
+    // dire «salvato» a un modello che su disco non c'è — è il lavoro perso.
+    stato.textContent = testoStato({ percorso, impronta, modificato: JSON.stringify(modello) !== salvato });
   }
 
   disegnaRecenti();

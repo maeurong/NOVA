@@ -71,9 +71,22 @@ test("la descrizione elenca i gradi nell'ordine di GRADI, non delle chiavi", () 
 
 test("la descrizione dice il nome quando c'è, i gradi quando non c'è", () => {
   assert.equal(descrizione(PREIMPOSTAZIONI.incastro), "incastro");
-  assert.equal(descrizione(null), "libero");
   assert.equal(descrizione(vincoloVuoto()), "libero");
   assert.equal(descrizione({ ...vincoloVuoto(), ux: true, rz: true }), "bloccati: ux, rz");
+});
+
+// --- C: «mai toccato» e «libero dichiarato» sono due stati, non un solo schermo ---
+// `nova/check.py:274` li tratta in modo opposto — il primo lo segnala al piede come vincolo
+// mancante, il secondo è una scelta. L'ispettore che li disegna uguali nasconde il rimedio.
+
+test("descrizione: un nodo mai toccato dice «non dichiarato», non «libero»", () => {
+  assert.equal(descrizione(null), "non dichiarato");
+  assert.equal(descrizione(undefined), "non dichiarato");
+});
+
+test("descrizione: un nodo dichiarato libero continua a dire «libero»", () => {
+  assert.equal(descrizione(vincoloVuoto()), "libero");
+  assert.equal(descrizione({}), "libero");  // chiavi in meno: dichiarato lo stesso, non assente
 });
 
 // --- alternaIncastro: il tasto `V` non deve mai cancellare il campo ---

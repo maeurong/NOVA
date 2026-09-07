@@ -19,6 +19,10 @@ export const TASTI = [
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
+  // Col ghost aperto la freccia non è una comodità, è il gesto obbligatorio: la lunghezza
+  // è già digitata e manca la direzione. Finora era nominata solo dentro il `prompt`, che
+  // è già sparito quando serve — la barra taceva sull'unico tasto che restava da premere.
+  { codice: "direzione", tasto: "← ↑ → ↓", etichetta: "direzione", aiuto: null,            contesto: "ghost" },
 ];
 
 // `key` dell'evento → codice, separati per modificatore. Le **etichette** stampate sono
@@ -29,16 +33,32 @@ const SENZA_MODIFICATORE = new Map([
   ["m", "sposta"], ["r", "rinomina"], ["f2", "rinomina"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
+  ["arrowup", "direzione"], ["arrowdown", "direzione"],
+  ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
 const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"]]);
 
-/** Se l'evento parte da un controllo che i tasti se li gestisce da sé — casella, bottone,
- *  select, area di testo — e va lasciato in pace. Le sei caselle dell'editor del vincolo sono
- *  `input`, coperte anche prima; i quattro bottoni delle preimpostazioni sono `button`, e senza
- *  questo un ⌫ premuto lì sopra elimina il nodo invece di far niente — l'annulla non c'è ancora
- *  (fix round 1, A1). `?.` regge un target senza `closest` (es. il `document` stesso). */
-export function daControllo(target) {
-  return Boolean(target?.closest?.("input, button, select, textarea"));
+// Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
+// Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
+const ATTIVANO = new Set(["enter", " ", "backspace", "delete"]);
+const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"]);
+
+/** Se il controllo a fuoco si tiene **questo** tasto. La domanda non è «l'evento viene da un
+ *  controllo» ma «il controllo lo userebbe»: la guardia larga di prima spegneva tutti e dodici
+ *  i comandi ogni volta che il fuoco stava su un bottone o in un campo — e `pannello.js` il
+ *  fuoco ce lo riporta apposta dopo ogni ricostruzione dell'editor, quindi restava lì.
+ *
+ *  Un campo di testo si tiene le lettere nude (ci si sta scrivendo) e le frecce (muovono il
+ *  cursore), mai il modificatore di comando: `⌘S` e `⌘O` in un campo non scrivono niente.
+ *  Un bottone o una casella si tengono solo ciò che li attiva — Spazio, Invio, ⌫ — e lasciano
+ *  passare le lettere. `?.` regge un evento senza target, o un target senza `closest`. */
+export function daControllo(evento) {
+  const elemento = evento?.target?.closest?.("input, button, select, textarea");
+  if (!elemento) return false;
+  if (evento.metaKey || evento.ctrlKey) return false;
+  const tag = String(elemento.tagName ?? "").toLowerCase();
+  const testuale = tag !== "button" && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
+  return testuale || ATTIVANO.has(String(evento.key).toLowerCase());
 }
 
 export function voceDaEvento(evento) {
@@ -54,11 +74,14 @@ export function voceDaEvento(evento) {
   return codice ? TASTI.find((v) => v.codice === codice) : null;
 }
 
-// `salvo-ghost` vuol dire «sempre, tranne mentre c'è un modo aperto». `seleziona` fa
-// eccezione: mentre si sceglie il secondo nodo di un'asta, `G` **è** il gesto.
+// `salvo-ghost` vuol dire «sempre, tranne mentre c'è un modo aperto». Due eccezioni, opposte
+// e per la stessa ragione — la barra stampa solo ciò che funziona (story 14): `seleziona`
+// compare anche in asta, dove `G` **è** il gesto; `direzione` compare solo col ghost, perché
+// in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
     if (v.codice === "seleziona") return contesto !== "ghost";
+    if (v.codice === "direzione") return contesto === "ghost";
     if (v.contesto === "salvo-ghost") return contesto !== "ghost" && contesto !== "asta";
     if (v.contesto === "ghost") return contesto === "ghost" || contesto === "asta";
     return v.contesto === contesto;

@@ -67,8 +67,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .vincolo-preimpostazioni legend, .vincolo-gradi legend { font-size: 10px; color: var(--testo-tenue);
                                                          text-transform: uppercase; letter-spacing: 0.04em;
                                                          padding: 0; margin-bottom: 2px; }
-/* Colonne a larghezza fissa: senza, il grassetto del bottone premuto lo allarga di qualche px
-   e la fila si riassesta a ogni clic (fix round 1, D). */
+/* Quattro colonne uguali, che seguono la larghezza del pannello: la larghezza non dipende dal
+   contenuto, e senza questo il grassetto del bottone premuto lo allargherebbe di qualche px
+   riassestando la fila a ogni clic (fix round 1, D). */
 .vincolo-preimpostazioni { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
                             margin: var(--passo) 0 0; }
 .vincolo-preimpostazioni button { font: inherit; font-size: 11px; cursor: pointer; padding: 4px 8px;
@@ -94,7 +95,8 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* Il fuoco si deve vedere: chi naviga con ⇥ non ha altro modo di sapere dov'è (WCAG 2.4.7). */
 #albero li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
 
-/* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e quale tasto lo crea. */
+/* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e, quando un tasto ce l'ha, lo
+   nomina — `N` per l'albero, `G` per l'ispettore. I recenti non ne hanno uno e non lo fingono. */
 .vuoto { color: var(--testo-tenue); max-width: 24rem; padding: var(--passo); }
 .vuoto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
              border-radius: 3px; padding: 0 4px; background: var(--pannello); }

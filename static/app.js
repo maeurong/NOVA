@@ -13,7 +13,7 @@ import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile } from "./file.js";
-import { ghostDisegnabile, esitoScelta, contestoBarra } from "./modo.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "./modo.js";
 import { alternaIncastro } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
@@ -23,7 +23,10 @@ let selezione = null;
 // Due modi e non un ghost solo: in estrusione la selezione è ferma, in asta la selezione
 // **è** il gesto. La stessa guardia per entrambi renderebbe l'asta impossibile.
 let modo = null;
-let percorso = null, impronta = null, modificato = false;
+// Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
+// che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
+// per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
+let percorso = null, impronta = null;
 
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
@@ -52,20 +55,21 @@ const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
     selezione = null; modo = null;
-    percorso = p; impronta = i; modificato = false;
+    percorso = p; impronta = i;
     dì(null);
     ridisegna();
   },
   // Salvare non tocca né il modello né la cronologia: cambia solo l'impronta di riferimento.
-  suSalvataggio: (p, i) => { percorso = p; impronta = i; modificato = false; dì(null); ridisegna(); },
+  suSalvataggio: (p, i) => { percorso = p; impronta = i; dì(null); ridisegna(); },
   suErrore: (msg) => dì(msg),
 });
-$("file-salva").addEventListener("click", () => file.salva(null, corrente(cronologia)));
+// Il percorso aperto, non il campo: il campo è la sorgente di `apri`. `null` solo finché
+// non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
+$("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
 
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
-    modificato = true;
     dì(null);
     return true;
   } catch (e) {
@@ -90,7 +94,7 @@ function ridisegna() {
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
   pannello.disegna(m, selezione);
-  file.disegna({ percorso, impronta, modificato });
+  file.disegna({ percorso, impronta, modello: m });
   disegnaBarra();
 }
 
@@ -110,7 +114,7 @@ function disegnaBarra() {
   }));
 }
 
-// Le coordinate e le lunghezze si chiedono con `prompt`: è il campo che non si può
+// Le coordinate, le lunghezze e i nomi si chiedono con `prompt`: è il campo che non si può
 // sbagliare, e la palette ⌘K con i valori nella query è la giornata 11 (story 8).
 // `ponytail: prompt oggi, campo nella palette domani.`
 function chiedi(domanda, esempio) {
@@ -119,12 +123,27 @@ function chiedi(domanda, esempio) {
   return t;
 }
 
+// Un `keydown` solo su `window`, con la guardia in un posto solo: due listener sulla stessa
+// finestra con regole d'ingresso diverse è il difetto, non il sintomo — quello delle frecce
+// non ne aveva nessuna e rubava ↑↓←→ anche a chi stava scrivendo nel campo del percorso.
 window.addEventListener("keydown", (ev) => {
-  // I bottoni dell'editor del vincolo e le sue caselle gestiscono i propri tasti: senza
-  // questo un ⌫ premuto su «cerniera» elimina il nodo, e l'annulla non c'è ancora (A1).
-  if (daControllo(ev.target)) return;
+  // Il controllo a fuoco si tiene i tasti che userebbe — le lettere in un campo, ⌫ e Spazio
+  // su un bottone — e lascia passare gli altri: `daControllo` guarda il tasto, non solo il
+  // bersaglio, altrimenti spegne dodici comandi ogni volta che il fuoco è su un controllo.
+  if (daControllo(ev)) return;
   const voce = voceDaEvento(ev);
   if (!voce) return;
+
+  // Prima del `preventDefault`: senza un'estrusione aperta la freccia non è nostra, e
+  // rubarla vorrebbe dire togliere al browser lo scorrimento della pagina.
+  if (voce.codice === "direzione") {
+    const girato = ruotaGhost(modo, ev.key);
+    if (!girato) return;
+    ev.preventDefault();
+    modo = girato;
+    ridisegna();
+    return;
+  }
   ev.preventDefault();
 
   if (voce.codice === "annulla") { modo = null; dì(null); ridisegna(); return; }
@@ -133,12 +152,12 @@ window.addEventListener("keydown", (ev) => {
   if (modo && voce.codice !== "conferma" && !(modo.tipo === "asta" && voce.codice === "seleziona")) {
     dì(modo.tipo === "asta"
       ? "scegli il secondo nodo, poi Invio — Esc per annullare"
-      : "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla");
+      : AVVISO_ESTRUSIONE);
     return;
   }
 
   if (voce.codice === "apri") { file.apri(); return; }
-  if (voce.codice === "salva") { file.salva(null, corrente(cronologia)); return; }
+  if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
 
   if (voce.codice === "nodo") {
     const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
@@ -239,7 +258,7 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "elimina") {
-    if (selezione?.tipo !== "nodo") { dì("oggi si elimina un nodo; l'asta arriva domani"); return; }
+    if (selezione?.tipo !== "nodo") { dì("si elimina un nodo: selezionane uno (l'asta non ancora)"); return; }
     const id = selezione.id;
     esegui((m) => eliminaNodo(m, { id }), `elimina nodo ${id}`);
     ridisegna();
@@ -254,18 +273,6 @@ window.addEventListener("keydown", (ev) => {
     esegui((m) => rinomina(m, { tipo: s.tipo, id: s.id, nome: t }), `nome di ${s.tipo} ${s.id}`);
     ridisegna();
   }
-});
-
-// Le frecce girano il ghost dell'estrusione: la lunghezza è già digitata, resta la
-// direzione (story 2). In modo asta il ghost segue il secondo nodo, non le frecce.
-window.addEventListener("keydown", (ev) => {
-  if (modo?.tipo !== "estrusione") return;
-  const l = Math.hypot(modo.dx, modo.dz);
-  const verso = { ArrowUp: [0, l], ArrowDown: [0, -l], ArrowRight: [l, 0], ArrowLeft: [-l, 0] }[ev.key];
-  if (!verso) return;
-  ev.preventDefault();
-  modo = { ...modo, dx: verso[0], dz: verso[1] };
-  ridisegna();
 });
 
 ridisegna();

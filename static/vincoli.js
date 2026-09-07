@@ -28,10 +28,15 @@ export function nomePreimpostazione(vincolo) {
   return Object.keys(PREIMPOSTAZIONI).find((nome) => uguali(PREIMPOSTAZIONI[nome], vincolo)) ?? null;
 }
 
+/** Come si legge un vincolo nell'ispettore. «non dichiarato» e «libero» sono due stati, non
+ *  due parole per lo stesso: `nova/check.py:274` segnala al piede il nodo **senza** campo
+ *  `vincolo` e accetta i sei booleani falsi. Scriverli uguali lascia l'utente davanti al
+ *  rifiuto del Check Model senza niente che suggerisca il rimedio — che è dichiararlo. */
 export function descrizione(vincolo) {
+  if (!vincolo) return "non dichiarato";
   const nome = nomePreimpostazione(vincolo);
   if (nome) return nome;
-  const bloccati = vincolo ? GRADI.filter((g) => vincolo[g]) : [];
+  const bloccati = GRADI.filter((g) => vincolo[g]);
   return bloccati.length === 0 ? "libero" : `bloccati: ${bloccati.join(", ")}`;
 }
 

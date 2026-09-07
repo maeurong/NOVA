@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ghostDisegnabile, esitoScelta, contestoBarra } from "../modo.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "../modo.js";
 
 const m = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 1000, y: 0, z: 2000 }] };
 
@@ -82,4 +82,46 @@ test("contestoBarra: modo estrusione → 'ghost', non 'asta'", () => {
 
 test("contestoBarra: modo asta → 'asta', non 'ghost' (la barra deve promettere G, non solo Invio/Esc)", () => {
   assert.equal(contestoBarra({ tipo: "asta", da: 1, a: null }, { tipo: "nodo", id: 1 }), "asta");
+});
+
+// --- ruotaGhost (B2) -----------------------------------------------------------
+// La decisione delle frecce sta qui e non in un secondo listener di `app.js`: due `keydown`
+// sulla stessa `window` con regole d'ingresso diverse erano la causa, non il sintomo.
+
+test("ruotaGhost: ogni freccia gira il ghost tenendone la lunghezza", () => {
+  const modo = { tipo: "estrusione", da: 1, dx: 0, dz: 3000 };
+  assert.deepEqual(ruotaGhost(modo, "ArrowUp"), { ...modo, dx: 0, dz: 3000 });
+  assert.deepEqual(ruotaGhost(modo, "ArrowDown"), { ...modo, dx: 0, dz: -3000 });
+  assert.deepEqual(ruotaGhost(modo, "ArrowRight"), { ...modo, dx: 3000, dz: 0 });
+  assert.deepEqual(ruotaGhost(modo, "ArrowLeft"), { ...modo, dx: -3000, dz: 0 });
+});
+
+test("ruotaGhost: la lunghezza è quella del ghost intero, non di una sua componente", () => {
+  const modo = { tipo: "estrusione", da: 1, dx: 3000, dz: 4000 };
+  assert.deepEqual(ruotaGhost(modo, "ArrowRight"), { ...modo, dx: 5000, dz: 0 });
+});
+
+test("ruotaGhost: senza estrusione aperta la freccia non è nostra — resta al browser", () => {
+  assert.equal(ruotaGhost(null, "ArrowUp"), null);
+  assert.equal(ruotaGhost(undefined, "ArrowUp"), null);
+  assert.equal(ruotaGhost({ tipo: "asta", da: 1, a: null }, "ArrowUp"), null);
+});
+
+test("ruotaGhost: un tasto che non è una freccia non gira niente", () => {
+  assert.equal(ruotaGhost({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, "n"), null);
+  assert.equal(ruotaGhost({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, undefined), null);
+});
+
+test("ruotaGhost: non tocca il modo che riceve", () => {
+  const modo = { tipo: "estrusione", da: 1, dx: 0, dz: 3000 };
+  ruotaGhost(modo, "ArrowRight");
+  assert.deepEqual(modo, { tipo: "estrusione", da: 1, dx: 0, dz: 3000 });
+});
+
+// --- E: l'avviso dell'estrusione in corso, una stringa sola --------------------
+
+test("l'avviso dell'estrusione in corso vive in un posto solo", () => {
+  assert.equal(esitoScelta({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, "nodo").messaggio,
+               AVVISO_ESTRUSIONE);
+  assert.match(AVVISO_ESTRUSIONE, /Invio per confermarla, Esc per annullarla/);
 });

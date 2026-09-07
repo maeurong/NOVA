@@ -47,17 +47,18 @@ export function prossimoVincolo(vincoloAttuale, grado, acceso) {
  *  non deve poter far viaggiare la stessa identità fino a `vincoli.js`. "libero" dichiara il
  *  nodo libero (sei booleani falsi, `vincoloVuoto()`), non lo cancella: `null` resta lo stato
  *  di un nodo **mai toccato** (`nova/modello.py`, «una scelta dell'utente, non una
- *  dimenticanza»), e solo `comandi.js:147` lo produce, da un chiamante che non è più questo. */
+ *  dimenticanza»). Da qui `null` non esce mai, e il ramo che lo cancella in `impostaVincolo`
+ *  (`comandi.js:147`) oggi è raggiungibile solo dai test. */
 export function copiaPreimpostazione(nome) {
   return nome === "libero" ? vincoloVuoto() : { ...PREIMPOSTAZIONI[nome] };
 }
 
-/** Se il bottone `nome` va mostrato premuto per questo vincolo. Il primo congiunto di
- *  "libero è premuto quando attivo === null e nessun grado è acceso" è implicato dal
- *  secondo — `vincoli.js` ritorna già `null` per `!vincolo` e per tutti i gradi falsi — quindi
- *  resta solo il secondo. */
+/** Se il bottone `nome` va mostrato premuto per questo vincolo. «libero» è premuto solo da
+ *  un vincolo **dichiarato**: su un nodo mai toccato il bottone resta da premere, perché
+ *  premerlo è il rimedio al «nodi al piede senza vincolo dichiarato» del Check Model, e un
+ *  bottone già premuto non suggerisce niente. */
 export function presetPremuto(nome, vincolo) {
-  if (nome === "libero") return !GRADI.some((g) => vincolo?.[g]);
+  if (nome === "libero") return Boolean(vincolo) && !GRADI.some((g) => vincolo[g]);
   return nome === nomePreimpostazione(vincolo);
 }
 
