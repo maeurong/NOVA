@@ -780,7 +780,12 @@ git commit -m "feat(interfaccia): modificatore di comando, asta e vincolo nella 
 - file con un campo sconosciuto → **400** con `modello rifiutato — nodi.0.pinguino: campo non previsto`: il campo va **mostrato**, è la story 67
 - `schema_version: 2` → **400** «non supportata: questa NOVA legge fino a 1»
 - salvare un telaio disegnato oggi → **400** `aste.0.sezione: campo obbligatorio`, ed è **atteso** finché il catalogo delle sezioni non esiste (11b)
-- il deposito dei recenti che solleva → l'elenco resta vuoto, apertura e salvataggio funzionano lo stesso
+- il deposito dei recenti che solleva **al primo accesso** → `creaFile` ritorna lo stesso e
+  l'area file esiste; apertura e salvataggio funzionano. Attenzione: `typeof localStorage`
+  non basta — il getter *solleva*, non è irrisolvibile, quindi va avvolto in un `try`
+- il deposito che solleva in scrittura → l'elenco non sopravvive alla sessione, ma **dentro**
+  la sessione mostra i file appena aperti: `scrivi` fallisce in silenzio e l'array in memoria
+  si aggiorna comunque. È il comportamento voluto, non un difetto da correggere
 - risposta del server senza `motivo` → si mostra lo stato HTTP, mai «undefined»
 
 - [ ] **Step 1: Scrivi `static/file.js`**
