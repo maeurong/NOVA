@@ -61,7 +61,9 @@ test("un deposito con più voci del tetto viene tagliato in lettura", () => {
 test("scrivi taglia al tetto, non si fida di chi chiama", () => {
   const d = deposito();
   scrivi(d, Array.from({ length: TETTO + 5 }, (_, i) => `/f${i}`));
-  assert.equal(leggi(d).length, TETTO);
+  // Si guarda il deposito grezzo, non `leggi`: `leggi` taglia a sua volta, quindi passando
+  // di lì uno `scrivi` che non taglia resterebbe invisibile.
+  assert.equal(JSON.parse(d.getItem("nova.recenti")).length, TETTO);
 });
 
 test("lo stesso percorso con spazi attorno non si duplica", () => {
