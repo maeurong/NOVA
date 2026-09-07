@@ -7,26 +7,29 @@
 <link rel="stylesheet" href="/static/stile.css">
 </head>
 <body>
-<nav id="albero" aria-label="albero del modello">
+<div id="colonna">
   <section id="file" aria-label="file del modello">
     <h2>File</h2>
+    <label for="file-percorso">percorso del modello</label>
     <input id="file-percorso" type="text" spellcheck="false"
-           placeholder="percorso del modello .nova.json"
-           aria-label="percorso del modello">
+           placeholder="docs/caso-studio/muro_1.nova.json">
     <div class="file-azioni">
       <button id="file-apri" type="button">apri</button>
       <button id="file-salva" type="button">salva</button>
     </div>
     <p id="file-stato" class="numero"></p>
-    <ul id="file-recenti" aria-label="aperti di recente"></ul>
+    <p class="vuoto" id="file-recenti-vuoto">Niente di recente.</p>
+    <ul id="file-recenti" aria-label="aperti di recente" hidden></ul>
   </section>
-  <h2>Modello</h2>
-  <div class="vuoto" id="albero-vuoto">
-    Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
-    in millimetri.
-  </div>
-  <ul id="albero-elenco" hidden></ul>
-</nav>
+  <nav id="albero" aria-label="albero del modello">
+    <h2>Modello</h2>
+    <div class="vuoto" id="albero-vuoto">
+      Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
+      in millimetri.
+    </div>
+    <ul id="albero-elenco" hidden></ul>
+  </nav>
+</div>
 
 <main id="viste">
   <section id="piano" aria-label="piano di lavoro"></section>

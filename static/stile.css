@@ -34,7 +34,9 @@ body {
   overflow: hidden;
 }
 
-#albero { grid-area: albero; border-right: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
+#colonna { grid-area: albero; border-right: 1px solid var(--tratto); padding: var(--passo);
+           display: flex; flex-direction: column; overflow: hidden; }
+#albero { overflow: auto; flex: 1; min-height: 0; }
 #viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; min-width: 0; }
 #pannello { grid-area: pannello; border-left: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
 #barra  { grid-area: barra; border-top: 1px solid var(--tratto); padding: calc(var(--passo) / 2) var(--passo);
@@ -82,21 +84,28 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 
 .staccato { margin-top: 1.5rem; }
 
-#file { border-bottom: 1px solid var(--tratto); padding-bottom: var(--passo); margin-bottom: var(--passo); }
+#file { border-bottom: 1px solid var(--tratto); padding-bottom: var(--passo); margin-bottom: var(--passo);
+        flex: none; }
+#file label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
 #file-percorso { width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
 #file-percorso:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
-.file-azioni { display: flex; gap: 6px; margin-top: 6px; }
+.file-azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .file-azioni button { font: inherit; cursor: pointer; padding: 2px 10px;
                       background: var(--pannello); color: var(--inchiostro);
                       border: 1px solid var(--tratto-forte); border-radius: 2px; }
 .file-azioni button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
 #file-stato { margin: 6px 0 0; font-size: 11px; color: var(--testo-tenue); }
+#file-recenti-vuoto { margin: 6px 0 0; padding: 0; max-width: none; font-size: 11px; }
 #file-recenti { margin: 6px 0 0; padding: 0; list-style: none; }
-#file-recenti button { font-family: var(--mono); font-size: 11px; background: none; border: 0;
-                       color: var(--testo-tenue); cursor: pointer; padding: 1px 0;
-                       max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-                       white-space: nowrap; display: block; text-align: left; }
-#file-recenti button:hover { color: var(--inchiostro); }
+#file-recenti button { display: block; width: 100%; font-family: var(--mono); background: none;
+                       border: 0; cursor: pointer; padding: 2px 0; text-align: left; }
+/* Il nome distingue, la cartella conferma: due `muro_1`/`muro_2` non paiono identici
+   nell'unico punto che li differenzia — la coda del percorso, dove taglia l'ellissi. */
+#file-recenti .nome { display: block; font-size: 11px; color: var(--inchiostro);
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#file-recenti .cartella { display: block; font-size: 10px; color: var(--testo-tenue);
+                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#file-recenti button:hover .cartella { color: var(--inchiostro); }
 #file-recenti button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
