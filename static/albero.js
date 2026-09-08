@@ -1,8 +1,8 @@
 // L'albero del modello: trovare un'entità per nome senza cercarla nel viewport (story 6).
 // La selezione è la stessa del piano e dello spazio: qui si legge e si scrive, non si copia.
 
-import { asteDelNodo } from "./modello.js";
-import { stampaNumero } from "./numeri.js";
+import { asteDelNodo, asteDellaSezione } from "./modello.js";
+import { millimetri as mm } from "./numeri.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
   const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
@@ -21,21 +21,57 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
 
   function disegna(m, { selezione = null } = {}) {
     const righe = [];
+    // Un gruppo vuoto non compare: la divulgazione progressiva mostra i rami che ci sono, non
+    // l'indice di quelli che non ci sono (P8, `docs/ricerca/07-ux-modellatore.md:149`).
+    const gruppo = (nome, quante) => { if (quante) righe.push({ gruppo: nome }); };
+
+    gruppo("Nodi", m.nodi.length);
     for (const n of m.nodi) {
       righe.push({
         tipo: "nodo", id: n.id,
-        testo: `${n.nome ?? `nodo ${n.id}`} · ${stampaNumero(n.x, { decimali: 0, migliaia: true })} mm; ${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`,
+        testo: `${n.nome ?? `nodo ${n.id}`} · ${mm(n.x)} mm; ${mm(n.z)} mm`,
         conta: asteDelNodo(m, n.id).length,
       });
     }
+    gruppo("Aste", m.aste.length);
     for (const a of m.aste) {
       righe.push({ tipo: "asta", id: a.id, testo: `${a.nome ?? `asta ${a.id}`} · ${a.nodo_i} → ${a.nodo_j}`, conta: null });
+    }
+    gruppo("Sezioni", m.sezioni.length);
+    for (const s of m.sezioni) {
+      // «1 asta», non «1 aste»: zero resta plurale, uno no. Stessa riga in `pannello.js`.
+      const quante = asteDellaSezione(m, s.id).length;
+      // Il nome di default **è** «b × h» (`comandi.js:creaSezione`): stamparlo e poi stampare
+      // le dimensioni dava «300 × 500 · 300 × 500 mm». Le misure compaiono solo quando il
+      // nome non le dice già.
+      const misure = `${mm(s.b)} × ${mm(s.h)}`;
+      const dimensioni = s.nome === misure ? "" : ` · ${misure} mm`;
+      righe.push({
+        tipo: "sezione", id: s.id,
+        testo: `${s.nome}${dimensioni} · ${quante} ${quante === 1 ? "asta" : "aste"}`,
+      });
+    }
+    gruppo("Materiali", m.materiali.length);
+    for (const k of m.materiali) {
+      righe.push({
+        tipo: "materiale", id: k.id,
+        testo: `${k.nome} · ${k.classe}${k.personalizzato ? " · personalizzato" : ""}`,
+      });
     }
 
     vuoto.hidden = righe.length > 0;
     elenco.hidden = righe.length === 0;
     elenco.replaceChildren(...righe.map((r) => {
       const li = document.createElement("li");
+      // L'intestazione di un ramo non è una voce: niente `data-tipo` (quindi `closest` non la
+      // trova e il clic non seleziona), niente fuoco, fuori dall'albero accessibile. Il rosso
+      // vuol dire attenzione e nient'altro: un'intestazione non lo prende mai.
+      if (r.gruppo) {
+        li.textContent = r.gruppo;
+        li.className = "gruppo";
+        li.setAttribute("role", "presentation");
+        return li;
+      }
       li.dataset.tipo = r.tipo;
       li.dataset.id = r.id;
       li.textContent = r.testo;

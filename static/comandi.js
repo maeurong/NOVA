@@ -8,8 +8,10 @@
 // `nodo_su_asta`, i vincoli, le unità — restano al Check Model della giornata 12: rifarle
 // qui vorrebbe dire tenere due oracoli allineati a mano, ed è così che divergono.
 
-import { prossimoId, nodo, asteDelNodo, nodoVicino, TOLLERANZA_MM } from "./modello.js";
+import { prossimoId, nodo, asteDelNodo, nodoVicino, TOLLERANZA_MM, sezione, materiale, asteDellaSezione, sezioniDelMateriale } from "./modello.js";
 import { GRADI } from "./vincoli.js";
+import { LATI, VESTI, geometriaImpossibile } from "./sezione.js";
+import { millimetri } from "./numeri.js";
 
 /** L'errore che l'interfaccia sa mostrare. Tutto il resto è un difetto del programma. */
 export class ErroreComando extends Error {
@@ -26,6 +28,22 @@ const numero = (v, nome) => {
 };
 
 const copia = (m) => structuredClone(m);
+
+// --- story 55: l'editing non cancella l'origine, la marca -------------------------------
+/** Una riga in ogni riduttore che modifica un'entità: se viene dal rilievo, ora è anche
+ *  dell'utente. Senza `origine` non si inventa niente (`nova/modello.py:43-49`). */
+const marcaModificata = (e) => { if (e.origine) e.origine = { ...e.origine, modificata: true }; };
+
+// --- P4: un comando che non cambia niente non è un comando --------------------------------
+/** L'entità dopo la modifica è identica a com'era prima (`docs/ricerca/07-ux-modellatore.md:152`).
+ *  Chi risponde `false` restituisce **il modello ricevuto**, per riferimento: `applica`
+ *  (`cronologia.js`) legge quella identità e non spinge lo snapshot. Il confronto va fatto
+ *  **prima** di `marcaModificata`, che è essa stessa una modifica.
+ *  ponytail: `JSON.stringify` e non un confronto profondo — sono oggetti di soli dati, e la
+ *  copia viene da `structuredClone`, che conserva l'ordine delle chiavi. Un ordine diverso
+ *  (un modello riletto da un file scritto altrove) direbbe «cambiata» quando non lo è: è il
+ *  verso innocuo, una voce in più nella Storia, che è ciò che succedeva a ogni comando. */
+const cambiata = (prima, dopo) => JSON.stringify(prima) !== JSON.stringify(dopo);
 
 export function creaNodo(m, { x, z, y = 0 }) {
   numero(x, "x"); numero(y, "y"); numero(z, "z");
@@ -80,6 +98,8 @@ export function spostaNodo(m, { id, x, z, y }) {
   const n = copia(m);
   const bersaglio = n.nodi.find((k) => k.id === id);
   bersaglio.x = nx; bersaglio.y = ny; bersaglio.z = nz;
+  if (!cambiata(vecchio, bersaglio)) return m;
+  marcaModificata(bersaglio);
   return n;  // le aste referenziano gli identificatori: seguono da sole
 }
 
@@ -109,10 +129,13 @@ export function rinomina(m, { tipo, id, nome }) {
   if (typeof nome !== "string" || nome.trim() === "") {
     throw new ErroreComando("il nome non può essere vuoto", "scrivi un nome, o lascia stare");
   }
+  const vecchio = m[chiave].find((e) => e.id === id);
+  if (!vecchio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona qualcosa che esista e ripeti");
   const n = copia(m);
   const bersaglio = n[chiave].find((e) => e.id === id);
-  if (!bersaglio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
   bersaglio.nome = nome.trim();
+  if (!cambiata(vecchio, bersaglio)) return m;
+  marcaModificata(bersaglio);
   return n;
 }
 
@@ -141,10 +164,243 @@ export function collega(m, { da, a, sezione = null }) {
  *  gradi noti — un campo in più diventerebbe un rifiuto di `/api/modello/salva`, che ha
  *  `extra="forbid"` (`nova/modello.py:39`). */
 export function impostaVincolo(m, { id, vincolo }) {
-  if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
+  const vecchio = nodo(m, id);
+  if (!vecchio) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
   const n = copia(m);
   const bersaglio = n.nodi.find((k) => k.id === id);
   if (vincolo === null || vincolo === undefined) delete bersaglio.vincolo;
   else bersaglio.vincolo = Object.fromEntries(GRADI.map((g) => [g, Boolean(vincolo[g])]));
+  // La preimpostazione già premuta è il caso di tutti i giorni: senza questa riga ogni clic
+  // su «incastro» su un nodo già incastrato scriveva una voce nella Storia.
+  if (!cambiata(vecchio, bersaglio)) return m;
+  marcaModificata(bersaglio);
   return n;
+}
+
+// --- sezioni ------------------------------------------------------------------------------
+export const DEFAULT_CALCESTRUZZO = "C25/30";
+export const DEFAULT_ACCIAIO = "B450C";
+const TIPI_MATERIALE = ["calcestruzzo", "acciaio"];
+/** Le chiavi di `Legame` (`nova/modello.py:164-186`), `lambda` compresa: è l'alias JSON di
+ *  `lambda_`. `Legame` ha `extra="forbid"`, quindi una chiave inventata qui non è un campo
+ *  in più, è un rifiuto di `/api/modello/salva`. Nota: il «legame» di `static/legame.js` è
+ *  un'altra cosa — là sono i punti della curva, qui i parametri che la governano. */
+const CHIAVI_LEGAME = ["confinamento", "epsU_copriferro", "epsU_nucleo", "lambda", "fpcu_su_fpc",
+                       "Es", "fym", "b", "R0", "cR1", "cR2"];
+/** Lo stesso pattern di `nova/modello.py:196`, che non è una convenzione: `deck.py` scrive
+ *  la classe in un commento Tcl, e `\n` `{` `}` là dentro sono un comando. */
+const FORMA_CLASSE = /^[A-Za-z0-9 /_.-]+$/;
+const classeValida = (v) => {
+  const c = String(v ?? "").trim();
+  if (c === "") throw new ErroreComando("la classe non può essere vuota", "per esempio C25/30 o B450C");
+  if (!FORMA_CLASSE.test(c)) throw new ErroreComando("la classe può avere solo lettere, cifre, spazi e / _ . -", "per esempio C25/30 o B450C");
+  return c;
+};
+
+const positivo = (v, nome) => {
+  numero(v, nome);
+  if (v <= 0) throw new ErroreComando(`${nome} deve essere maggiore di zero`, "scrivi una misura in millimetri");
+  return v;
+};
+const materialeDiTipo = (m, id, tipo) => {
+  const k = materiale(m, id);
+  if (!k) throw new ErroreComando(`il materiale ${id} non esiste`, "premi C e scrivi una classe, per esempio C25/30");
+  if (k.tipo !== tipo) throw new ErroreComando(`il materiale ${id} è ${k.tipo}, non ${tipo}`, `scegli un ${tipo}`);
+  return k;
+};
+const sezioneEsistente = (m, id) => {
+  const s = sezione(m, id);
+  if (!s) throw new ErroreComando(`la sezione ${id} non esiste`, "seleziona una sezione dall'albero e ripeti");
+  return s;
+};
+/** La geometria si giudica **dopo** la modifica, sul risultato: è quello che il deck vedrà. */
+const geometriaAccettabile = (s) => {
+  const motivo = geometriaImpossibile(s);
+  if (motivo) throw new ErroreComando(motivo, "riduci il copriferro, il diametro o il numero delle barre");
+};
+const copriferroValido = (v) => {
+  numero(v, "copriferro");
+  if (v < 0) throw new ErroreComando("il copriferro non può essere negativo", "scrivi zero o una misura");
+  return v;
+};
+
+export function creaSezione(m, { nome = null, b, h, calcestruzzo, acciaio, copriferro = 30 }) {
+  positivo(b, "b"); positivo(h, "h"); copriferroValido(copriferro);
+  materialeDiTipo(m, calcestruzzo, "calcestruzzo"); materialeDiTipo(m, acciaio, "acciaio");
+  const n = copia(m);
+  const id = prossimoId(n, "sezione");
+  // `rinomina` rifiuta il nome vuoto; qui vuoto vuol dire «non me ne curo»: il default.
+  const dato = typeof nome === "string" ? nome.trim() : "";
+  n.sezioni.push({ id, nome: dato || `${millimetri(b)} × ${millimetri(h)}`, tipo: "rettangolare", b, h, calcestruzzo, acciaio, copriferro, file: [], staffe: null });
+  n.contatori.sezione = id;
+  return n;
+}
+
+export function modificaSezione(m, { id, ...campi }) {
+  const vecchia = sezioneEsistente(m, id);
+  const n = copia(m);
+  const s = n.sezioni.find((k) => k.id === id);
+  if ("b" in campi) s.b = positivo(campi.b, "b");
+  if ("h" in campi) s.h = positivo(campi.h, "h");
+  if ("copriferro" in campi) s.copriferro = copriferroValido(campi.copriferro);
+  if ("calcestruzzo" in campi) { materialeDiTipo(n, campi.calcestruzzo, "calcestruzzo"); s.calcestruzzo = campi.calcestruzzo; }
+  if ("acciaio" in campi) { materialeDiTipo(n, campi.acciaio, "acciaio"); s.acciaio = campi.acciaio; }
+  if ("staffe" in campi) {
+    if (campi.staffe == null) s.staffe = null;  // `undefined` è «toglile», non un oggetto
+    else {
+      const { diametro, passo, bracci = 2 } = campi.staffe;
+      positivo(diametro, "diametro delle staffe"); positivo(passo, "passo delle staffe");
+      // Due rifiuti, non uno: «2,5» non è «almeno due», e chi legge «almeno due» davanti a
+      // un 2,5 scritto da sé non capisce che il problema è la virgola.
+      if (!Number.isInteger(bracci)) throw new ErroreComando("i bracci delle staffe devono essere un numero intero", "2, 3, 4 — non 2,5");
+      if (bracci < 2) throw new ErroreComando("i bracci delle staffe sono almeno due", "scrivi 2 o più");
+      s.staffe = { diametro, passo, bracci };
+    }
+  }
+  if ("riduzione" in campi) {
+    if (campi.riduzione == null) delete s.riduzione;
+    else {
+      const dato = campi.riduzione;
+      if (typeof dato !== "object" || Array.isArray(dato)) {
+        throw new ErroreComando("la riduzione è un oggetto con i lati", `i lati sono ${LATI.join(", ")}`);
+      }
+      // Una chiave fuori posto diventerebbe uno zero in silenzio, e la sezione resterebbe
+      // intera senza che nessuno lo dica.
+      for (const l of Object.keys(dato)) {
+        if (!LATI.includes(l)) throw new ErroreComando(`la riduzione non ha un lato «${l}»`, `i lati sono ${LATI.join(", ")}`);
+      }
+      const r = Object.fromEntries(LATI.map((l) => [l, dato[l] ?? 0]));
+      for (const l of LATI) { numero(r[l], `riduzione ${l}`); if (r[l] < 0) throw new ErroreComando(`la riduzione ${l} non può essere negativa`, "millimetri mancanti, zero o più"); }
+      s.riduzione = r;
+    }
+  }
+  geometriaAccettabile(s);
+  if (!cambiata(vecchia, s)) return m;
+  marcaModificata(s);
+  return n;
+}
+
+export function impostaFila(m, { id, lato, n: quante, diametro }) {
+  const vecchia = sezioneEsistente(m, id);
+  if (!LATI.includes(lato)) throw new ErroreComando(`lato «${lato}» sconosciuto`, `i lati sono ${LATI.join(", ")}`);
+  if (!Number.isInteger(quante) || quante < 0) throw new ErroreComando("il numero di barre è un intero, zero o più", "zero toglie la fila");
+  const n = copia(m);
+  const s = n.sezioni.find((k) => k.id === id);
+  s.file = s.file.filter((f) => f.lato !== lato);
+  if (quante > 0) { positivo(diametro, "diametro"); s.file.push({ lato, n: quante, diametro }); }
+  s.file.sort((a, b) => LATI.indexOf(a.lato) - LATI.indexOf(b.lato));
+  geometriaAccettabile(s);
+  if (!cambiata(vecchia, s)) return m;
+  marcaModificata(s);
+  return n;
+}
+
+export function assegnaSezione(m, { asta, sezione: idSezione }) {
+  const a = m.aste.find((k) => k.id === asta);
+  if (!a) throw new ErroreComando(`l'asta ${asta} non esiste`, "seleziona un'asta e ripeti");
+  if (idSezione === undefined) throw new ErroreComando("manca la sezione", "scegli una sezione, o null per toglierla");
+  if (idSezione !== null) sezioneEsistente(m, idSezione);
+  const n = copia(m);
+  const b = n.aste.find((k) => k.id === asta);
+  b.sezione = idSezione;
+  if (!cambiata(a, b)) return m;
+  marcaModificata(b);
+  return n;
+}
+
+export function eliminaSezione(m, { id }) {
+  sezioneEsistente(m, id);
+  const usata = asteDellaSezione(m, id).map((a) => a.id);
+  if (usata.length) throw new ErroreComando(`la sezione ${id} la usano le aste ${usata.join(", ")}`, "assegna loro un'altra sezione, poi elimina");
+  const n = copia(m);
+  n.sezioni = n.sezioni.filter((s) => s.id !== id);
+  return n;  // i contatori restano: un identificatore eliminato non si riusa
+}
+
+// --- materiali ----------------------------------------------------------------------------
+export function creaMateriale(m, { tipo, classe, nome = null, classi = null }) {
+  if (!TIPI_MATERIALE.includes(tipo)) throw new ErroreComando(`tipo «${tipo}» sconosciuto`, "calcestruzzo o acciaio");
+  const c = classeValida(classe);
+  if (classi && !classi.some((k) => k.toUpperCase() === c.toUpperCase())) {
+    throw new ErroreComando(`classe «${c}» non a catalogo`, `le classi sono ${classi.join(", ")}`);
+  }
+  const n = copia(m);
+  const id = prossimoId(n, "materiale");
+  n.materiali.push({ id, nome: nome ?? c, tipo, classe: c, valori: {}, personalizzato: false });
+  n.contatori.materiale = id;
+  return n;
+}
+
+export function modificaMateriale(m, { id, ...campi }) {
+  const vecchio = materiale(m, id);
+  if (!vecchio) throw new ErroreComando(`il materiale ${id} non esiste`, "seleziona un materiale dall'albero");
+  const n = copia(m);
+  const k = n.materiali.find((x) => x.id === id);
+  if ("classe" in campi) k.classe = classeValida(campi.classe);
+  if ("personalizzato" in campi) k.personalizzato = Boolean(campi.personalizzato);
+  if ("valori" in campi) {
+    k.valori ??= {};  // un modello importato a mano può non portare il campo
+    for (const [chiave, v] of Object.entries(campi.valori ?? {})) {
+      if (v === null) delete k.valori[chiave];
+      else { numero(v, chiave); k.valori[chiave] = v; }
+    }
+  }
+  if ("legame" in campi) {
+    for (const chiave of Object.keys(campi.legame ?? {})) {
+      if (!CHIAVI_LEGAME.includes(chiave)) throw new ErroreComando(`il legame non ha una chiave «${chiave}»`, `le chiavi sono ${CHIAVI_LEGAME.join(", ")}`);
+    }
+    k.legame = { ...(k.legame ?? {}), ...campi.legame };
+  }
+  if (!cambiata(vecchio, k)) return m;
+  marcaModificata(k);
+  return n;
+}
+
+export function eliminaMateriale(m, { id }) {
+  if (!materiale(m, id)) throw new ErroreComando(`il materiale ${id} non esiste`);
+  const usato = sezioniDelMateriale(m, id).map((s) => s.id);
+  if (usato.length) throw new ErroreComando(`il materiale ${id} lo usano le sezioni ${usato.join(", ")}`, "cambia loro il materiale, poi elimina");
+  const n = copia(m);
+  n.materiali = n.materiali.filter((k) => k.id !== id);
+  return n;
+}
+
+/** I due materiali che una sezione pretende, se mancano. La prima sezione di un modello
+ *  disegnato da zero li porta con sé (decisione 2 del piano): la Storia dice quali. */
+export function materialiDiDefault(m) {
+  const aggiunti = [];
+  let n = copia(m);  // mai la stessa referenza: due snapshot aliasati non sono cronologia
+  for (const [tipo, classe] of [["calcestruzzo", DEFAULT_CALCESTRUZZO], ["acciaio", DEFAULT_ACCIAIO]]) {
+    if (!n.materiali.some((k) => k.tipo === tipo)) { n = creaMateriale(n, { tipo, classe }); aggiunti.push(classe); }
+  }
+  return { modello: n, aggiunti };
+}
+
+// --- danno e veste ------------------------------------------------------------------------
+export function impostaDanno(m, { asta, danno }) {
+  const vecchia = m.aste.find((k) => k.id === asta);
+  if (!vecchia) throw new ErroreComando(`l'asta ${asta} non esiste`, "seleziona un'asta e ripeti");
+  const n = copia(m);
+  const a = n.aste.find((k) => k.id === asta);
+  if (danno === null || danno === undefined) delete a.danno;
+  else {
+    const { fattore_E, fattore_fc, nota = "" } = danno;
+    for (const [v, nome] of [[fattore_E, "fattore su E"], [fattore_fc, "fattore su fc"]]) {
+      numero(v, nome);
+      if (v <= 0 || v > 1) throw new ErroreComando(`${nome} deve stare fra 0 escluso e 1 compreso`, "1 vuol dire integro, 0,8 vuol dire un quinto in meno");
+    }
+    a.danno = { fattore_E, fattore_fc, nota: nota == null ? "" : String(nota) };
+  }
+  if (!cambiata(vecchia, a)) return m;
+  marcaModificata(a);
+  return n;
+}
+
+export function impostaVeste(m, { veste }) {
+  if (!VESTI.includes(veste)) throw new ErroreComando(`veste «${veste}» sconosciuta`, `le vesti sono ${VESTI.join(", ")}`);
+  const n = copia(m);
+  n.impostazioni_analisi = { ...(n.impostazioni_analisi ?? { fibre: 10 }), veste };
+  // La veste già scelta nel menu: sceglierla di nuovo non è un comando. Il campo che prima
+  // non c'era invece sì, anche sulla veste di default — il modello lo porta da adesso.
+  return cambiata(m.impostazioni_analisi, n.impostazioni_analisi) ? n : m;
 }

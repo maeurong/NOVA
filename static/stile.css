@@ -98,11 +98,58 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    non è un'attenzione, quindi non è il rosso — è inchiostro, come il resto dei segni. */
 .vincolo-gradi input { accent-color: var(--inchiostro); }
 
+/* Gli editor della 11b: stessa forma di `.vincolo-gradi` (fieldset nativo, legenda piccola),
+   etichetta e campo su una riga, i numeri in mono. Il rosso compare solo in `.avviso`, come
+   filetto e non come testo, e sempre accanto alla parola «attenzione»: il colore è il
+   secondo canale, mai il primo. */
+.editor { border: 0; padding: 0; margin: 6px 0 0; }
+.editor legend { font-size: 10px; color: var(--testo-tenue); letter-spacing: 0.06em; text-transform: uppercase; padding: 0; }
+/* `wrap` per lo stesso motivo dei bottoni delle preimpostazioni: a testo ingrandito
+   l'etichetta non si stringe sotto il suo min-content, e senza il capo il campo sfonderebbe
+   la colonna invece di scendere sotto (WCAG 1.4.10, niente scorrimento orizzontale). */
+.editor label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; margin-top: 3px; }
+.editor label > input[type="text"], .editor label > select { flex: 1 1 4em; min-width: 3em; font: inherit;
+  font-family: var(--mono); background: var(--pannello); color: var(--inchiostro); border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 1px 4px; }
+/* `minmax(0, 1fr)`, non `1fr`: il pavimento `min-content` di una colonna implicita è la somma
+   di etichetta, campo e unità, e a 1fr le due colonne sfondavano il pannello in orizzontale
+   («passo 40» e «togli staffe» tagliati fuori, misurato sulla pagina servita a 1440×723 con
+   il pannello a 20rem). Stesso difetto già visto sui
+   bottoni delle preimpostazioni, stesso rimedio: togliere la larghezza dal contenuto. */
+.editor-campi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+.editor-campi legend, .editor-campi > .nota { grid-column: 1 / -1; }
+/* Una colonna sola per i valori del materiale: le loro etichette portano il nome di norma
+   («E, modulo elastico», «f_ctm») e l'unità, e a due colonne l'unità andava a capo da sola
+   — misurato a 1440 × 900 col pannello a 20rem. I campi corti (b, h, «inf n», Ø) restano
+   a due, che è dove le due colonne servono davvero. */
+.editor-valori { grid-template-columns: minmax(0, 1fr); }
+.editor button { font: inherit; font-size: 11px; padding: 2px 8px; margin-top: 4px; border: 1px solid var(--tratto-forte);
+  border-radius: 3px; background: var(--pannello); color: var(--inchiostro); }
+.editor input:focus-visible, .editor select:focus-visible, .editor button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+.editor input[type="checkbox"] { accent-color: var(--inchiostro); }
+.sezione-disegno { margin-top: 6px; color: var(--inchiostro); }
+.sezione-disegno svg, .curva svg { max-width: 100%; height: auto; display: block; }
+.curva dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; font-size: 11px; }
+.curva dt { color: var(--testo-tenue); } .curva dd { margin: 0; }
+/* Misurato: `--rosso` su `--fondo` è 4,28:1 (su `--pannello` 3,85:1), sotto la soglia AA
+   4,5:1 per un testo di 11px, e l'inchiostro sullo stesso fondo è 13,19:1. Il rosso non si
+   tocca — un rosso solo, ticket #14 — quindi cambia mestiere: il **testo** passa a
+   inchiostro e il rosso al filetto, che come elemento non testuale ha soglia 3:1 e la
+   supera con quel 4,28. Il segnale resta a tre canali e nessuno dei tre è il solo: il
+   filetto, la parola «attenzione:» in testa alla riga, e il testo che dice cosa non va. */
+.avviso { color: var(--inchiostro); font-size: 11px; margin: 4px 0 0;
+          border-left: 3px solid var(--rosso); padding-left: 6px; }
+.nota { color: var(--testo-tenue); font-size: 11px; margin: 4px 0 0; }
+
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
 #albero li:hover { background: var(--pannello); }
 /* Il fuoco si deve vedere: chi naviga con ⇥ non ha altro modo di sapere dov'è (WCAG 2.4.7). */
 #albero li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+/* L'intestazione di un ramo non è una voce: niente puntatore, niente sfondo al passaggio
+   (`albero.js` le toglie anche `data-tipo` e il fuoco). */
+#albero li.gruppo { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--testo-tenue);
+  margin-top: var(--passo); cursor: default; }
+#albero li.gruppo:hover { background: none; }
 
 /* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e, quando un tasto ce l'ha, lo
    nomina — `N` per l'albero, `G` per l'ispettore. I recenti non ne hanno uno e non lo fingono. */

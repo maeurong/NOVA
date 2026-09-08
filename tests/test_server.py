@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import leggi_fixture
+from meshrec.core import materiali as _materiali
 
 
 @pytest.fixture
@@ -648,3 +649,135 @@ def test_risultati_di_una_pushover_e_il_json_intero(cliente, binario_opensees):
     assert len(r2.content) < 5e6
     # i passi ci sono tutti, uno per uno: nessun campionamento fra il file e la risposta
     assert [p["n"] for p in ris["passi"]] == list(range(1, 11))
+
+
+# --- giornata 11b: catalogo e legame ------------------------------------------
+
+def _cls(**extra):
+    return {"id": 1, "nome": "cls", "tipo": "calcestruzzo", "classe": "C25/30", **extra}
+
+
+def _acc(**extra):
+    return {"id": 2, "nome": "acc", "tipo": "acciaio", "classe": "B450C", **extra}
+
+
+def test_catalogo_elenca_le_classi_e_le_vesti(cliente):
+    r = cliente.get("/api/catalogo")
+    assert r.status_code == 200
+    d = r.json()
+    assert "C25/30" in d["calcestruzzo"] and "B450C" in d["acciaio"]
+    assert "C25/30" not in d["acciaio"] and "B450C" not in d["calcestruzzo"]
+    assert d["vesti"] == ["caratteristica", "media", "progetto", "esistente"]
+    # famiglia, non f_ctm: tutte le voci di CATALOGO stanno in una delle due liste,
+    # e nessuna finisce in entrambe
+    tutte = d["calcestruzzo"] + d["acciaio"]
+    assert len(tutte) == len(_materiali.CATALOGO)
+    assert len(set(d["calcestruzzo"]) & set(d["acciaio"])) == 0
+
+
+def test_legame_del_calcestruzzo_in_veste_media(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "media"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valori"]["fc"] == 33.0 and d["legame"]["tipo"] == "concrete02"
+    assert d["legame"]["fpc"] == -33.0 and d["legame"]["epsc0"] < 0
+    assert d["catalogo"]["fck"] == 25.0 and "densita" in d["catalogo"]
+
+
+def test_legame_dell_acciaio(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc()})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["legame"]["tipo"] == "steel02" and d["legame"]["Fy"] == 450.0
+    assert d["valori"]["veste"] == "media"
+
+
+def test_legame_con_classe_sconosciuta_e_400_con_le_classi(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(classe="C99/99")})
+    assert r.status_code == 400
+    assert "C99/99" in r.json()["motivo"] and "C25/30" in r.json()["motivo"]
+
+
+def test_legame_con_veste_sconosciuta_e_400(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "mediana"})
+    assert r.status_code == 400 and "caratteristica" in r.json()["motivo"]
+
+
+def test_legame_con_campo_in_piu_e_422_con_il_campo(cliente):
+    # `extra="forbid"` su `_CorpoBase` → `RequestValidationError` → 422 dal gestore di `server.py`,
+    # come per gli altri corpi (vedi `solutore_nel_corpo`): non 400, che è il rifiuto del *modello*
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "media", "boh": 1})
+    assert r.status_code == 422 and "boh" in json.dumps(r.json())
+
+
+def test_legame_acciaio_sotto_lo_snervamento_e_400(cliente):
+    r = cliente.post("/api/materiale/legame",
+                     json={"materiale": _acc(personalizzato=True, valori={"epsuk": 0.001})})
+    assert r.status_code == 400 and "snervamento" in r.json()["motivo"]
+
+
+def test_legame_in_veste_progetto_porta_l_avviso(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "progetto"})
+    assert r.status_code == 200 and r.json()["valori"]["avvisi"]
+
+
+# --- fix di fine ramo 11b: la famiglia della classe, e i `type` di pydantic ----
+
+def test_legame_calcestruzzo_con_classe_di_acciaio_e_400_non_500(cliente):
+    # `Materiale` accettava la coppia e `veste_valori` moltiplicava un `None`: TypeError,
+    # che `server.py` non prendeva -> 500 nudo. Ora la coppia si rifiuta a monte.
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(classe="B450C")})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "B450C" in motivo and "acciaio" in motivo and "calcestruzzo" in motivo
+
+
+def test_legame_acciaio_con_classe_di_calcestruzzo_e_400_non_numeri_finti(cliente):
+    # Questa coppia rispondeva 200 con `Fy` = 25: la classe di un calcestruzzo letta come
+    # acciaio. Un numero finto e' peggio di un rifiuto.
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc(classe="C25/30")})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
+
+
+def test_legame_senza_il_campo_legame_nel_corpo_risponde_col_tipo(cliente):
+    # `Materiale.legame` ha un default: il corpo che non lo porta e' il caso normale
+    # dell'interfaccia, e finora era coperto solo per omissione.
+    corpo = _cls()
+    assert "legame" not in corpo
+    r = cliente.post("/api/materiale/legame", json={"materiale": corpo, "veste": "media"})
+    assert r.status_code == 200
+    assert r.json()["legame"]["tipo"] == "concrete02"
+
+
+def test_legame_acciaio_in_veste_progetto(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc(), "veste": "progetto"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valori"]["fy"] == pytest.approx(450.0 / _materiali.GAMMA_S)
+    assert d["valori"]["fy"] < d["valori"]["fyk"]
+    assert d["valori"]["avvisi"]
+
+
+def test_salva_con_sezione_nulla_dice_deve_essere_un_numero_intero(cliente, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["sezione"] = None
+    r = cliente.post("/api/modello/salva",
+                     json={"percorso": str(tmp_path / "t.nova.json"), "modello": m})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "aste.0.sezione" in motivo and "deve essere un numero intero" in motivo
+
+
+def test_legame_personalizzato_non_scavalca_la_famiglia(cliente):
+    # Il gemello del test qui sopra con `personalizzato: true`: la spunta non e' una deroga
+    # sul tipo, e il rifiuto resta in italiano — mai il gergo di un'eccezione Python.
+    r = cliente.post("/api/materiale/legame",
+                     json={"materiale": _acc(classe="C25/30", personalizzato=True,
+                                             valori={"fyk": 450.0})})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
+    for gergo in ("Traceback", "TypeError", "KeyError", "unsupported operand", "NoneType"):
+        assert gergo not in motivo, motivo

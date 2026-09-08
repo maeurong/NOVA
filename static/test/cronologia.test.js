@@ -67,3 +67,23 @@ test("vaiA fuori intervallo torna la cronologia invariata, non solleva", () => {
   assert.deepEqual(vaiA(c, -1), c);
   assert.deepEqual(vaiA(c, c.snapshot.length), c, "la fine esclusa: l'indice valido più alto è length-1");
 });
+
+
+// --- P4 (`docs/ricerca/07-ux-modellatore.md:152`): una voce della Storia per un comando
+// che ha cambiato qualcosa -------------------------------------------------------------
+
+test("un comando che non cambia niente non è un passo della storia", () => {
+  const c = applica(nuovaCronologia(modelloVuoto()), (m) => creaNodo(m, { x: 0, z: 0 }), "nodo 1");
+  const dopo = applica(c, (m) => m, "niente");
+  assert.equal(dopo, c, "la stessa cronologia, per riferimento");
+  assert.equal(etichette(dopo).length, 2, "«niente» non è entrata nell'elenco");
+  assert.equal(dopo.indice, c.indice, "e il presente non si è mosso");
+});
+
+test("un comando che non cambia niente non pota nemmeno la coda del rifà", () => {
+  let c = applica(nuovaCronologia(modelloVuoto()), (m) => creaNodo(m, { x: 0, z: 0 }), "nodo 1");
+  c = applica(c, (m) => creaNodo(m, { x: 5000, z: 0 }), "nodo 2");
+  c = indietro(c);
+  const dopo = applica(c, (m) => m, "niente");
+  assert.equal(corrente(avanti(dopo)).nodi.length, 2, "nodo 2 è ancora lì davanti");
+});

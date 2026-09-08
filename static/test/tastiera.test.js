@@ -49,9 +49,9 @@ test("il modificatore di comando apre e salva, su Mac e su PC", () => {
   assert.equal(voceDaEvento({ key: "s", metaKey: true, ctrlKey: false, altKey: false }).codice, "salva");
 });
 
-test("senza modificatore quelle lettere non fanno niente", () => {
+test("senza modificatore quella lettera non fa niente", () => {
+  // `s` nudo non è più fra queste: dal Task 6 apre `sezione` (vedi i test dedicati sotto).
   assert.equal(voceDaEvento({ key: "o", metaKey: false, ctrlKey: false, altKey: false }), null);
-  assert.equal(voceDaEvento({ key: "s", metaKey: false, ctrlKey: false, altKey: false }), null);
 });
 
 test("una combinazione non mappata resta al browser", () => {
@@ -332,9 +332,58 @@ test("etichettaCampo: senza bersaglio resta il solo sostantivo (N non ha un bers
 
 test("ogni comando che apre il campo ha il sostantivo di ciò che ci si scrive", () => {
   // `<label>` risponde a «cosa va in questa casella», non «che tasto ho premuto»: il verbo
-  // lo dice già la barra. I quattro che aprono il campo sono N, B, M, R.
-  for (const codice of ["nodo", "estrudi", "sposta", "rinomina"]) {
+  // lo dice già la barra. I sette che aprono il campo sono N, B, M, R, S, C, D.
+  for (const codice of ["nodo", "estrudi", "sposta", "rinomina", "sezione", "materiale", "danno"]) {
     const v = TASTI.find((x) => x.codice === codice);
     assert.ok(v.campo && v.campo.trim() !== "", `${codice} senza sostantivo per l'etichetta`);
+  }
+  // I tre della 11b, per esteso: un sostantivo qualunque passerebbe il controllo qui sopra.
+  assert.deepEqual(["sezione", "materiale", "danno"].map((c) => TASTI.find((x) => x.codice === c).campo),
+    ["sezione", "classe", "danno di"]);
+});
+
+test("S nudo è sezione, ⌘S resta salva", () => {
+  assert.equal(voceDaEvento({ key: "s" })?.codice, "sezione");
+  assert.equal(voceDaEvento({ key: "s", metaKey: true })?.codice, "salva");
+  assert.equal(voceDaEvento({ key: "S", shiftKey: true })?.codice, "sezione");
+});
+test("C e D aprono materiale e danno", () => {
+  assert.equal(voceDaEvento({ key: "c" })?.codice, "materiale");
+  assert.equal(voceDaEvento({ key: "d" })?.codice, "danno");
+});
+test("ogni codice a lettera singola è raggiunto da esattamente una lettera", () => {
+  // Un `Set` collasserebbe due lettere sullo stesso codice in una sola voce, lasciando
+  // passare un doppione (`["k", "materiale"]` accanto a `["c", "materiale"]`): si conta,
+  // non si insiema. `f2` (rinomina) e `backspace`/`delete` (elimina) non sono lettere e
+  // non entrano in questo conteggio.
+  const perCodice = new Map();
+  for (const k of "abcdefghijklmnopqrstuvwxyz") {
+    const v = voceDaEvento({ key: k });
+    if (v) perCodice.set(v.codice, (perCodice.get(v.codice) ?? 0) + 1);
+  }
+  const attesi = TASTI.filter((v) => !v.modificatore && /^[A-Z]$/.test(v.tasto)).map((v) => v.codice);
+  for (const codice of attesi) {
+    assert.equal(perCodice.get(codice), 1, `${codice} raggiunto da ${perCodice.get(codice) ?? 0} lettere`);
+  }
+});
+test("col campo aperto la barra resta a due voci", () => {
+  assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
+});
+
+
+// --- fix di fine ramo 11b: la barra non promette un comando che non c'è ---
+// `D` con una sezione selezionata prometteva «danno», e `app.js` rispondeva «vuole un'asta».
+
+test("D compare nella barra solo con un'asta selezionata", () => {
+  assert.ok(vociDellaBarra("selezione", "asta").map((v) => v.codice).includes("danno"));
+  for (const tipo of ["nodo", "sezione", "materiale", null]) {
+    assert.ok(!vociDellaBarra("selezione", tipo).map((v) => v.codice).includes("danno"), String(tipo));
+  }
+});
+
+test("il filtro per tipo non tocca gli altri tasti della selezione", () => {
+  const conSezione = vociDellaBarra("selezione", "sezione").map((v) => v.codice);
+  for (const atteso of ["estrudi", "asta", "vincolo", "sposta", "rinomina", "elimina"]) {
+    assert.ok(conSezione.includes(atteso), atteso);
   }
 });

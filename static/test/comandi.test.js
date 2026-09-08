@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { modelloVuoto } from "../modello.js";
-import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, collega, impostaVincolo } from "../comandi.js";
+import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, collega, impostaVincolo,
+         creaSezione, modificaSezione, impostaFila, assegnaSezione, eliminaSezione, creaMateriale,
+         modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault,
+         DEFAULT_CALCESTRUZZO, DEFAULT_ACCIAIO } from "../comandi.js";
 
 test("crea un nodo con l'identificatore 1 e le coordinate date", () => {
   const m = creaNodo(modelloVuoto(), { x: 1200, z: 3400 });
@@ -222,4 +225,318 @@ test("impostaVincolo non tocca il modello che riceve", () => {
 test("impostaVincolo su un nodo che non esiste si rifiuta", () => {
   const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
   assert.throws(() => impostaVincolo(m, { id: 9, vincolo: null }), ErroreComando);
+});
+
+// --- giornata 11b: sezioni, materiali, danno, veste, origine -------------------------------
+
+/** `assert.throws` con una regex guarda solo «nome: messaggio»; qui certi elenchi stanno nel
+ *  rimedio, che è la seconda riga che l'interfaccia mostra. Si guardano tutti e due. */
+const rifiuta = (fn, atteso) => assert.throws(fn, (e) => {
+  assert.ok(e instanceof ErroreComando, `atteso un ErroreComando, arrivato ${e}`);
+  assert.match(`${e.message} — ${e.rimedio ?? ""}`, atteso);
+  return true;
+});
+
+const conMateriali = () => {
+  let m = creaMateriale(modelloVuoto(), { tipo: "calcestruzzo", classe: "C25/30" });
+  return creaMateriale(m, { tipo: "acciaio", classe: "B450C" });
+};
+const conSezione = () => creaSezione(conMateriali(), { b: 300, h: 500, calcestruzzo: 1, acciaio: 2 });
+const staffate = () => modificaSezione(conSezione(), { id: 1, staffe: { diametro: 8, passo: 150, bracci: 2 } });
+
+test("creaSezione: nome di default «300 × 500», copriferro 30, contatore aggiornato", () => {
+  const m = conSezione();
+  assert.deepEqual(m.sezioni[0], { id: 1, nome: "300 × 500", tipo: "rettangolare", b: 300, h: 500, calcestruzzo: 1, acciaio: 2, copriferro: 30, file: [], staffe: null });
+  assert.equal(m.contatori.sezione, 1);
+});
+
+test("creaSezione rifiuta b e h che non sono misure positive, e dice come rimediare", () => {
+  for (const misure of [{ b: 0, h: 500 }, { b: 300, h: -1 }, { b: NaN, h: 500 }, { b: "300", h: 500 }]) {
+    assert.throws(() => creaSezione(conMateriali(), { ...misure, calcestruzzo: 1, acciaio: 2 }), (e) => {
+      assert.ok(e instanceof ErroreComando, `atteso un ErroreComando, arrivato ${e}`);
+      assert.ok(e.rimedio, "un rifiuto senza rimedio lascia l'utente fermo");
+      return true;
+    });
+  }
+});
+
+test("creaSezione rifiuta un materiale del tipo sbagliato", () => {
+  assert.throws(() => creaSezione(conMateriali(), { b: 300, h: 500, calcestruzzo: 2, acciaio: 1 }), /acciaio, non calcestruzzo/);
+});
+
+test("creaSezione rifiuta un materiale che non esiste", () => {
+  rifiuta(() => creaSezione(conMateriali(), { b: 300, h: 500, calcestruzzo: 9, acciaio: 2 }), /il materiale 9 non esiste/);
+});
+
+test("creaSezione rifiuta un copriferro negativo", () => {
+  rifiuta(() => creaSezione(conMateriali(), { b: 300, h: 500, calcestruzzo: 1, acciaio: 2, copriferro: -1 }),
+          /il copriferro non può essere negativo/);
+});
+
+test("impostaFila poi modificaSezione che schiaccia h: rifiutata col messaggio della geometria", () => {
+  let m = modificaSezione(conSezione(), { id: 1, staffe: { diametro: 8, passo: 150, bracci: 2 }, copriferro: 40 });
+  m = impostaFila(m, { id: 1, lato: "inf", n: 1, diametro: 16 });
+  assert.throws(() => modificaSezione(m, { id: 1, h: 100 }), /copriferri opposti/);
+});
+
+test("modificaSezione: togliere le staffe a una sezione con le file è accettato, non un errore", () => {
+  const m = impostaFila(staffate(), { id: 1, lato: "inf", n: 3, diametro: 16 });
+  const senza = modificaSezione(m, { id: 1, staffe: null });
+  assert.equal(senza.sezioni[0].staffe, null);
+  assert.deepEqual(senza.sezioni[0].file, [{ lato: "inf", n: 3, diametro: 16 }], "le file restano scritte");
+});
+
+test("modificaSezione: una riduzione parziale mette gli altri tre lati a zero, mai undefined", () => {
+  const m = modificaSezione(conSezione(), { id: 1, riduzione: { sup: 20 } });
+  assert.deepEqual(m.sezioni[0].riduzione, { inf: 0, sup: 20, sx: 0, dx: 0 });
+  assert.equal("riduzione" in modificaSezione(m, { id: 1, riduzione: null }).sezioni[0], false);
+});
+
+test("impostaFila: lato ignoto rifiutato con i quattro lati, n = 0 toglie la fila", () => {
+  const m = staffate();
+  rifiuta(() => impostaFila(m, { id: 1, lato: "nord", n: 2, diametro: 16 }), /inf, sup, sx, dx/);
+  const con = impostaFila(m, { id: 1, lato: "inf", n: 3, diametro: 16 });
+  assert.deepEqual(con.sezioni[0].file, [{ lato: "inf", n: 3, diametro: 16 }]);
+  assert.deepEqual(impostaFila(con, { id: 1, lato: "inf", n: 0, diametro: 16 }).sezioni[0].file, []);
+  assert.throws(() => impostaFila(m, { id: 1, lato: "inf", n: 20, diametro: 16 }), /ingombrano/);
+});
+
+test("impostaFila rifiuta un numero di barre non intero e un diametro che non è una misura", () => {
+  const m = staffate();
+  rifiuta(() => impostaFila(m, { id: 1, lato: "inf", n: 2.5, diametro: 16 }), /intero/);
+  rifiuta(() => impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 0 }), /maggiore di zero/);
+});
+
+test("impostaFila sostituisce la fila dello stesso lato e tiene l'ordine dei LATI", () => {
+  let m = impostaFila(staffate(), { id: 1, lato: "sup", n: 2, diametro: 12 });
+  m = impostaFila(m, { id: 1, lato: "inf", n: 3, diametro: 16 });
+  m = impostaFila(m, { id: 1, lato: "sup", n: 4, diametro: 14 });
+  assert.deepEqual(m.sezioni[0].file, [
+    { lato: "inf", n: 3, diametro: 16 },
+    { lato: "sup", n: 4, diametro: 14 },
+  ], "una sola fila per lato, nell'ordine di LATI");
+});
+
+test("assegnaSezione: null toglie, una sezione assente rifiuta", () => {
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = assegnaSezione(m, { asta: 1, sezione: 1 });
+  assert.equal(m.aste[0].sezione, 1);
+  assert.equal(assegnaSezione(m, { asta: 1, sezione: null }).aste[0].sezione, null);
+  assert.throws(() => assegnaSezione(m, { asta: 1, sezione: 9 }), /sezione 9 non esiste/);
+  assert.throws(() => assegnaSezione(m, { asta: 9, sezione: 1 }), /asta 9 non esiste/);
+});
+
+test("eliminaSezione rifiuta se un'asta la usa e nomina le aste", () => {
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = assegnaSezione(m, { asta: 1, sezione: 1 });
+  assert.throws(() => eliminaSezione(m, { id: 1 }), /aste 1/);
+  const via = eliminaSezione(assegnaSezione(m, { asta: 1, sezione: null }), { id: 1 });
+  assert.deepEqual(via.sezioni, []); assert.equal(via.contatori.sezione, 1);
+});
+
+test("creaMateriale: tipo ignoto, classe vuota, classe fuori catalogo", () => {
+  rifiuta(() => creaMateriale(modelloVuoto(), { tipo: "legno", classe: "x" }), /calcestruzzo o acciaio/);
+  rifiuta(() => creaMateriale(modelloVuoto(), { tipo: "acciaio", classe: "  " }), /vuota/);
+  rifiuta(() => creaMateriale(modelloVuoto(), { tipo: "calcestruzzo", classe: "C99/99", classi: ["C25/30"] }), /C25\/30/);
+  const m = creaMateriale(modelloVuoto(), { tipo: "calcestruzzo", classe: "C99/99" });  // senza catalogo: passa, giudica il server
+  assert.equal(m.materiali[0].classe, "C99/99");
+});
+
+test("modificaMateriale fonde i valori, null toglie una chiave, un testo si rifiuta", () => {
+  let m = modificaMateriale(conMateriali(), { id: 1, personalizzato: true, valori: { E: 31000, fck: 28 } });
+  m = modificaMateriale(m, { id: 1, valori: { fck: null, nu: 0.2 } });
+  assert.deepEqual(m.materiali[0].valori, { E: 31000, nu: 0.2 });
+  assert.throws(() => modificaMateriale(m, { id: 1, valori: { E: "x" } }), ErroreComando);
+});
+
+test("modificaMateriale: i valori su un materiale non personalizzato restano scritti", () => {
+  const m = modificaMateriale(conMateriali(), { id: 1, valori: { E: 31000 } });
+  assert.deepEqual(m.materiali[0].valori, { E: 31000 }, "la riga resta: contano solo con personalizzato");
+  assert.equal(m.materiali[0].personalizzato, false);
+});
+
+test("eliminaMateriale rifiuta se una sezione lo usa", () => {
+  assert.throws(() => eliminaMateriale(conSezione(), { id: 1 }), /sezioni 1/);
+  assert.equal(eliminaMateriale(conMateriali(), { id: 1 }).materiali.length, 1);
+});
+
+test("impostaDanno: fuori intervallo rifiutato, nota di default vuota, null toglie", () => {
+  let m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  assert.throws(() => impostaDanno(m, { asta: 1, danno: { fattore_E: 0, fattore_fc: 1 } }), /fra 0 escluso e 1 compreso/);
+  assert.throws(() => impostaDanno(m, { asta: 1, danno: { fattore_E: 1.2, fattore_fc: 1 } }), ErroreComando);
+  m = impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9 } });
+  assert.deepEqual(m.aste[0].danno, { fattore_E: 0.8, fattore_fc: 0.9, nota: "" });
+  assert.equal("danno" in impostaDanno(m, { asta: 1, danno: null }).aste[0], false);
+});
+
+test("impostaVeste: ignota rifiutata, altrimenti scrive le impostazioni anche se mancano", () => {
+  rifiuta(() => impostaVeste(modelloVuoto(), { veste: "mediana" }), /caratteristica, media, progetto, esistente/);
+  const m = modelloVuoto(); delete m.impostazioni_analisi;
+  assert.deepEqual(impostaVeste(m, { veste: "progetto" }).impostazioni_analisi, { fibre: 10, veste: "progetto" });
+});
+
+test("materialiDiDefault non tocca un modello che ha già i due tipi", () => {
+  const m = conMateriali();
+  const { modello, aggiunti } = materialiDiDefault(m);
+  assert.deepEqual(aggiunti, []); assert.deepEqual(modello, m);
+  assert.notEqual(modello, m, "identico sì, la stessa referenza no: la cronologia non aliasa");
+  assert.deepEqual(materialiDiDefault(modelloVuoto()).aggiunti, [DEFAULT_CALCESTRUZZO, DEFAULT_ACCIAIO]);
+});
+
+test("story 55: spostare un nodo importato lo marca modificato, uno disegnato resta senza origine", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  m = spostaNodo(m, { id: 1, x: 10 });
+  assert.equal(m.nodi[0].origine.modificata, true);
+  const n = spostaNodo(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { id: 1, x: 10 });
+  assert.equal("origine" in n.nodi[0], false);
+});
+
+test("story 55: anche rinomina e impostaVincolo marcano l'origine modificata", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  assert.equal(rinomina(m, { tipo: "nodo", id: 1, nome: "piede" }).nodi[0].origine.modificata, true);
+  assert.equal(impostaVincolo(m, { id: 1, vincolo: { ux: true } }).nodi[0].origine.modificata, true);
+  assert.equal(m.nodi[0].origine.modificata, false, "il modello in ingresso resta com'era");
+});
+
+test("nessun riduttore nuovo tocca il modello che riceve", () => {
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = assegnaSezione(m, { asta: 1, sezione: 1 });
+  m = modificaSezione(m, { id: 1, staffe: { diametro: 8, passo: 150 } });
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  const prima = structuredClone(m);
+  modificaSezione(m, { id: 1, b: 400 });
+  impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 16 });
+  assegnaSezione(m, { asta: 1, sezione: null });
+  creaMateriale(m, { tipo: "acciaio", classe: "B450A" });
+  modificaMateriale(m, { id: 1, valori: { E: 31000 } });
+  impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9 } });
+  impostaVeste(m, { veste: "progetto" });
+  materialiDiDefault(m);
+  spostaNodo(m, { id: 1, x: 10 });
+  assert.deepEqual(m, prima);
+  // i due `elimina` vogliono un modello dove nessuno usa ciò che tolgono
+  const conLaSezione = conSezione(); const primaSezione = structuredClone(conLaSezione);
+  eliminaSezione(conLaSezione, { id: 1 });
+  assert.deepEqual(conLaSezione, primaSezione);
+  const soliMateriali = conMateriali(); const primaMateriali = structuredClone(soliMateriali);
+  eliminaMateriale(soliMateriali, { id: 1 });
+  assert.deepEqual(soliMateriali, primaMateriali);
+});
+
+test("story 55: i cinque riduttori marcano modificata l'entità che toccano", () => {
+  const rilievo = () => ({ sorgente: "rilievo", modificata: false });
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = modificaSezione(m, { id: 1, staffe: { diametro: 8, passo: 150 } });
+  m.sezioni[0].origine = rilievo();
+  m.materiali[0].origine = rilievo();
+  m.aste[0].origine = rilievo();
+  assert.equal(modificaSezione(m, { id: 1, b: 400 }).sezioni[0].origine.modificata, true, "modificaSezione");
+  assert.equal(impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 16 }).sezioni[0].origine.modificata, true, "impostaFila");
+  assert.equal(assegnaSezione(m, { asta: 1, sezione: 1 }).aste[0].origine.modificata, true, "assegnaSezione");
+  assert.equal(modificaMateriale(m, { id: 1, valori: { E: 31000 } }).materiali[0].origine.modificata, true, "modificaMateriale");
+  assert.equal(impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9 } }).aste[0].origine.modificata, true, "impostaDanno");
+});
+
+test("modificaMateriale: il legame conosce le sue chiavi, una inventata è un rifiuto che la nomina", () => {
+  rifiuta(() => modificaMateriale(conMateriali(), { id: 2, legame: { pinguino: 7 } }), /pinguino/);
+  assert.deepEqual(modificaMateriale(conMateriali(), { id: 2, legame: { Es: 210000 } }).materiali[1].legame, { Es: 210000 });
+  assert.deepEqual(modificaMateriale(conMateriali(), { id: 1, legame: { lambda: 0.2 } }).materiali[0].legame, { lambda: 0.2 },
+    "«lambda» è l'alias JSON di lambda_, e deve passare");
+});
+
+test("modificaSezione: staffe e riduzione a undefined valgono come null, non un TypeError", () => {
+  const m = impostaFila(staffate(), { id: 1, lato: "inf", n: 2, diametro: 16 });
+  assert.equal(modificaSezione(m, { id: 1, staffe: undefined }).sezioni[0].staffe, null);
+  const con = modificaSezione(m, { id: 1, riduzione: { sup: 20 } });
+  assert.equal("riduzione" in modificaSezione(con, { id: 1, riduzione: undefined }).sezioni[0], false);
+});
+
+test("modificaSezione: una riduzione che non lascia sezione è rifiutata anche senza barre", () => {
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { sup: 300, inf: 300 } }), /non lascia sezione/);
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { sx: 150, dx: 150 } }), /non lascia sezione/);
+});
+
+test("modificaSezione: una riduzione che non è un oggetto coi lati si rifiuta invece di azzerarsi", () => {
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: 5 }), /inf, sup, sx, dx/);
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { nord: 20 } }), /nord/);
+});
+
+test("impostaDanno: una nota null è una nota vuota, non la stringa «null»", () => {
+  const m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  assert.equal(impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: null } }).aste[0].danno.nota, "");
+});
+
+test("modificaMateriale regge un materiale importato senza il campo valori", () => {
+  const m = conMateriali();
+  delete m.materiali[0].valori;
+  assert.deepEqual(modificaMateriale(m, { id: 1, valori: { E: 31000 } }).materiali[0].valori, { E: 31000 });
+});
+
+test("creaSezione: un nome vuoto o di soli spazi prende il default «b × h»", () => {
+  for (const nome of ["", "   "]) {
+    assert.equal(creaSezione(conMateriali(), { nome, b: 300, h: 500, calcestruzzo: 1, acciaio: 2 }).sezioni[0].nome, "300 × 500");
+  }
+});
+
+test("la classe rispetta il pattern anti-injection del deck, in creazione e in modifica", () => {
+  rifiuta(() => creaMateriale(modelloVuoto(), { tipo: "calcestruzzo", classe: "{puts hi}" }), /solo lettere, cifre, spazi/);
+  rifiuta(() => modificaMateriale(conMateriali(), { id: 1, classe: "{puts hi}" }), /solo lettere, cifre, spazi/);
+});
+
+test("assegnaSezione senza sezione dice che manca, non che «undefined» non esiste", () => {
+  const m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  rifiuta(() => assegnaSezione(m, { asta: 1 }), /manca la sezione/);
+});
+
+
+// --- P4 (`docs/ricerca/07-ux-modellatore.md:152`): un comando che non cambia niente non è
+// un comando. Il riduttore lo dice restituendo il modello che ha ricevuto, **per
+// riferimento**, e `cronologia.applica` lo riconosce da lì. ------------------------------
+
+test("P4: rinominare con lo stesso nome torna il modello ricevuto e non marca modificata", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].nome = "piede";
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  assert.equal(rinomina(m, { tipo: "nodo", id: 1, nome: "piede" }), m, "lo stesso oggetto");
+  assert.equal(m.nodi[0].origine.modificata, false, "e l'origine è intatta");
+  // gli spazi intorno non sono un nome diverso: `rinomina` li taglia prima di confrontare
+  assert.equal(rinomina(m, { tipo: "nodo", id: 1, nome: "  piede  " }), m);
+  const diverso = rinomina(m, { tipo: "nodo", id: 1, nome: "piede sinistro" });
+  assert.notEqual(diverso, m);
+  assert.equal(diverso.nodi[0].origine.modificata, true, "un nome nuovo è un comando");
+});
+
+test("P4: gli otto riduttori che marcano modificata tornano il modello ricevuto a vuoto", () => {
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = modificaSezione(m, { id: 1, staffe: { diametro: 8, passo: 150, bracci: 2 } });
+  m = impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 16 });
+  m = assegnaSezione(m, { asta: 1, sezione: 1 });
+  m = impostaVincolo(m, { id: 1, vincolo: { ux: true, uz: true } });
+  m = impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: "" } });
+  m = modificaMateriale(m, { id: 1, valori: { E: 31000 } });
+  for (const [nome, fn] of [
+    ["spostaNodo", (x) => spostaNodo(x, { id: 1, x: 0, z: 0 })],
+    ["rinomina", (x) => rinomina(x, { tipo: "sezione", id: 1, nome: "300 × 500" })],
+    ["impostaVincolo", (x) => impostaVincolo(x, { id: 1, vincolo: { ux: true, uz: true } })],
+    ["modificaSezione", (x) => modificaSezione(x, { id: 1, b: 300 })],
+    ["impostaFila", (x) => impostaFila(x, { id: 1, lato: "inf", n: 2, diametro: 16 })],
+    ["assegnaSezione", (x) => assegnaSezione(x, { asta: 1, sezione: 1 })],
+    ["modificaMateriale", (x) => modificaMateriale(x, { id: 1, valori: { E: 31000 } })],
+    ["impostaDanno", (x) => impostaDanno(x, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: "" } })],
+  ]) {
+    assert.equal(fn(m), m, `${nome} ha spinto uno snapshot che non cambia niente`);
+  }
+});
+
+test("P4: la veste già scelta non è un comando; una veste diversa sì", () => {
+  const m = impostaVeste(conSezione(), { veste: "progetto" });
+  assert.equal(impostaVeste(m, { veste: "progetto" }), m, "la stessa veste, lo stesso modello");
+  assert.notEqual(impostaVeste(m, { veste: "media" }), m);
+  // `modelloVuoto()` porta già `{fibre: 10, veste: "media"}`: il campo assente è di un
+  // modello importato a mano, e lì metterlo è un cambiamento anche sulla veste di default.
+  const importato = conSezione();
+  delete importato.impostazioni_analisi;
+  assert.notEqual(impostaVeste(importato, { veste: "media" }), importato);
 });

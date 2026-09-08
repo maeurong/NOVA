@@ -48,11 +48,11 @@
 <aside id="pannello" aria-label="ispettore">
   <h2>Selezione</h2>
   <div class="vuoto" id="pannello-vuoto">
-    Niente di selezionato. Premi <kbd>G</kbd> per girare fra i nodi, oppure clicca un nodo
-    o un'asta nel piano.
+    Niente di selezionato. Premi <kbd>G</kbd> per girare fra i nodi, <kbd>S</kbd> per una
+    sezione, <kbd>C</kbd> per un materiale, oppure clicca nel piano o nell'albero.
   </div>
   <dl id="pannello-dati" hidden></dl>
-  <div id="pannello-vincolo" hidden></div>
+  <div id="pannello-editor" hidden></div>
   <h2 class="staccato">Unità</h2>
   <p class="numero">mm · N · MPa · t · s</p>
   <h2 class="staccato">Storia</h2>
@@ -64,7 +64,8 @@
      finché non serve, come ogni altro stato della pagina. Un `<form>` perché Invio che
      conferma è suo di natura, e un bottone in più direbbe quello che la barra dice già.
      Etichetta, segnaposto e aiuto li scrive `apriComando` leggendoli dalla tastiera: sono
-     quattro comandi in questa riga (N, B, M, R), e qui sta quello che si apre più spesso. -->
+     sette comandi in questa riga (N, B, M, R, S, C, D), e qui sta quello che si apre più
+     spesso. -->
 <form id="comando" hidden>
   <label for="comando-campo">coordinate</label>
   <input id="comando-campo" class="numero" type="text" spellcheck="false"

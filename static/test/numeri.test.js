@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leggiNumero, stampaNumero, leggiEspressione, leggiLunghezza } from "../numeri.js";
+import { leggiNumero, stampaNumero, leggiEspressione, leggiLunghezza, millimetri } from "../numeri.js";
 
 test("la virgola separa i decimali", () => {
   assert.equal(leggiNumero("2,5"), 2.5);
@@ -46,6 +46,12 @@ test("le migliaia senza decimali non lasciano una coda vuota", () => {
   assert.equal(stampaNumero(5000, { decimali: 0, migliaia: true }), `5${SF}000`);
   assert.equal(stampaNumero(-5000, { decimali: 0, migliaia: true }), `-5${SF}000`);
   assert.equal(stampaNumero(0, { decimali: 0, migliaia: true }), "0");
+});
+
+test("millimetri è la quota come la stampa l'albero", () => {
+  assert.equal(millimetri(1234.6), `1${SF}235`);
+  assert.equal(millimetri(0), "0");
+  assert.equal(millimetri(-1234), `-1${SF}234`);
 });
 
 // --- ingresso degenere: quel che il piano stampa, riletto dal campo -------------

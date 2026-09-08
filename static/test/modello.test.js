@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino } from "../modello.js";
+import {
+  UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino,
+  sezione, materiale, asteDellaSezione, sezioniDelMateriale, vesteDi,
+} from "../modello.js";
 
 const conNodi = () => ({
   ...modelloVuoto(),
@@ -37,6 +40,10 @@ test("le letture su un modello vuoto non sollevano", () => {
   assert.equal(asta(m, 1), null);
   assert.deepEqual(asteDelNodo(m, 1), []);
   assert.equal(nodoVicino(m, 0, 0, 0), null);
+  assert.equal(sezione(m, 1), null);
+  assert.equal(materiale(m, 1), null);
+  assert.deepEqual(asteDellaSezione(m, 1), []);
+  assert.deepEqual(sezioniDelMateriale(m, 1), []);
 });
 
 test("asteDelNodo trova l'asta da entrambe le estremità", () => {
@@ -55,4 +62,25 @@ test("il confine della tolleranza è stretto: a un millimetro esatto il nodo non
   const m = conNodi();
   assert.equal(nodoVicino(m, 1.0, 0, 0), null, "1,0 mm è già fuori, come in nova/check.py");
   assert.equal(nodoVicino(m, 0.999, 0, 0).id, 1, "appena sotto è dentro");
+});
+
+test("il modello vuoto porta le impostazioni dell'analisi con la veste media", () => {
+  assert.deepEqual(modelloVuoto().impostazioni_analisi, { fibre: 10, veste: "media" });
+});
+test("vesteDi regge un modello salvato senza impostazioni", () => {
+  const m = modelloVuoto(); delete m.impostazioni_analisi;
+  assert.equal(vesteDi(m), "media");
+});
+test("sezione e materiale tornano null su un identificatore assente", () => {
+  assert.equal(sezione(modelloVuoto(), 99), null);
+  assert.equal(materiale(modelloVuoto(), 99), null);
+});
+test("asteDellaSezione e sezioniDelMateriale elencano chi referenzia", () => {
+  const m = modelloVuoto();
+  m.materiali.push({ id: 1, nome: "C25/30", tipo: "calcestruzzo", classe: "C25/30", valori: {}, personalizzato: false });
+  m.sezioni.push({ id: 1, nome: "300 × 500", tipo: "rettangolare", b: 300, h: 500, calcestruzzo: 1, acciaio: 2, copriferro: 30, file: [], staffe: null });
+  m.aste.push({ id: 1, nome: null, nodo_i: 7, nodo_j: 2, sezione: 1 }, { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: null });
+  assert.deepEqual(asteDellaSezione(m, 1).map((a) => a.id), [1]);
+  assert.deepEqual(sezioniDelMateriale(m, 1).map((s) => s.id), [1]);
+  assert.deepEqual(sezioniDelMateriale(m, 2).map((s) => s.id), [1]);
 });

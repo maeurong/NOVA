@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { corto, messaggioErrore, testoStato, separaPercorso, depositoSicuro, creaFile }
+import { corto, messaggioErrore, testoStato, separaPercorso, depositoSicuro, creaFile, chiediJson }
   from "../file.js";
 
 // `creaFile` chiama `document.createElement` solo dentro `disegnaRecenti()`, mai
@@ -77,6 +77,33 @@ test("messaggioErrore: usa il motivo del server quando c'è", () => {
 
 test("messaggioErrore: senza motivo dice lo stato, mai «undefined»", () => {
   assert.equal(messaggioErrore({}, 503), "il server ha risposto 503");
+});
+
+// --- chiediJson ---
+
+// Server spento: `fetch` cade con «Failed to fetch», che è inglese e non dice niente. La
+// frase la scrive un posto solo, e la scrive per tutti — l'area file e l'ispettore.
+test("chiediJson: una `fetch` che solleva diventa «il server non risponde»", async (t) => {
+  const originale = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originale; });
+  globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  await assert.rejects(() => chiediJson("/api/catalogo"), /il server non risponde/);
+});
+
+test("chiediJson: senza corpo è una GET — nessun `body` da spedire", async (t) => {
+  const originale = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originale; });
+  let viste = null;
+  globalThis.fetch = async (_, opzioni) => { viste = opzioni; return { ok: true, status: 200, json: async () => ({ a: 1 }) }; };
+  assert.deepEqual(await chiediJson("/api/catalogo"), { a: 1 });
+  assert.deepEqual(viste, {});
+});
+
+test("chiediJson: un rifiuto porta il motivo del server, non lo stato nudo", async (t) => {
+  const originale = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originale; });
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ motivo: "veste «piano» sconosciuta" }) });
+  await assert.rejects(() => chiediJson("/api/materiale/legame", { veste: "piano" }), /veste «piano» sconosciuta/);
 });
 
 // --- testoStato ---

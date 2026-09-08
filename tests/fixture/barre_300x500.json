@@ -1,0 +1,10 @@
+{
+  "sezione": {"id": 1, "nome": "300 × 500", "tipo": "rettangolare", "b": 300, "h": 500,
+              "calcestruzzo": 1, "acciaio": 2, "copriferro": 30,
+              "file": [{"lato": "inf", "n": 3, "diametro": 16}, {"lato": "sup", "n": 2, "diametro": 16},
+                       {"lato": "sx", "n": 1, "diametro": 12}, {"lato": "dx", "n": 1, "diametro": 12}],
+              "staffe": {"diametro": 8, "passo": 150, "bracci": 2}},
+  "barre": [{"y": -104, "z": -204, "diametro": 16}, {"y": 0, "z": -204, "diametro": 16}, {"y": 104, "z": -204, "diametro": 16},
+            {"y": -104, "z": 204, "diametro": 16}, {"y": 104, "z": 204, "diametro": 16},
+            {"y": -106, "z": 0, "diametro": 12}, {"y": 106, "z": 0, "diametro": 12}]
+}

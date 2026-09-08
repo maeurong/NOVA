@@ -23,10 +23,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 import nova
+from nova import catalogo as _catalogo
 from nova import ccx as _ccx
 from nova import corsa as _corsa
+from nova import legami as _legami
 from nova import modello as _modello
 from nova import sidecar as _sidecar
+from meshrec.core import materiali as _materiali
 
 STATICI = Path(__file__).resolve().parent.parent / "static"
 _RUN_ID_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -122,6 +125,11 @@ class ApriReq(_CorpoBase):
 class SalvaReq(_CorpoBase):
     percorso: str
     modello: dict
+
+
+class LegameReq(_CorpoBase):
+    materiale: dict
+    veste: str = "media"
 
 
 class ImportaReq(_CorpoBase):
@@ -247,6 +255,34 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
             except (ValueError, OSError) as e:
                 raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
         raise rifiuta
+
+    @app.get("/api/catalogo")
+    def catalogo():
+        # `VoceMateriale.famiglia` (`meshrec/core/materiali.py:134`) è la riga che divide
+        # le due famiglie: campo esplicito, non il proxy `f_ctm is None` dell'acciaio.
+        voci = list(_materiali.CATALOGO)
+        return {"calcestruzzo": [v.classe for v in voci if v.famiglia == "calcestruzzo"],
+                "acciaio": [v.classe for v in voci if v.famiglia == "acciaio"],
+                "vesti": list(_legami.VESTI)}
+
+    @app.post("/api/materiale/legame")
+    def legame(corpo: LegameReq):
+        try:
+            mat = _modello.Materiale.model_validate(corpo.materiale)
+            # `_catalogo.valori(mat)` gira anche dentro `veste_valori`: `veste_valori` non
+            # prende valori già calcolati, e non è di questo giro toccare `legami.py`.
+            tabella = _catalogo.valori(mat)
+            valori = _legami.veste_valori(mat, corpo.veste)
+            curva = (_legami.legame_copriferro(mat, corpo.veste) if mat.tipo == "calcestruzzo"
+                     else _legami.acciaio(mat, corpo.veste))
+        # Solo `ValueError`. `TypeError` e `KeyError` ci erano finiti quando la coppia
+        # tipo/classe incoerente arrivava fin qui; adesso `Materiale` la rifiuta prima, e
+        # una classe fuori catalogo la rifiuta `catalogo.valori` con un `ValueError` suo.
+        # Prenderle qui non serviva più e portava il gergo di un'eccezione Python nel
+        # `motivo` che l'utente legge.
+        except ValueError as e:  # pydantic.ValidationError è un ValueError
+            raise HTTPException(400, detail={"motivo": str(e)})
+        return {"valori": valori, "catalogo": tabella, "legame": curva}
 
     @app.post("/api/modello/apri")
     def apri(corpo: ApriReq):

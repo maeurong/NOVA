@@ -501,3 +501,25 @@ def test_righe_tcl_rifiuta_un_ramo_incrudente_calante():
     a = dict(legami.acciaio(m.materiale(2), "media")) | {"b": -0.75}
     with pytest.raises(ValueError, match="b = -0.75"):
         legami.righe_tcl(3, a)
+
+
+# --- fix di fine ramo 11b: `veste_valori` dell'acciaio, veste per veste ---
+# `/api/materiale/legame` risponde con questi numeri e nessun test li guardava: la veste
+# «progetto» divide per `GAMMA_S` [§4.1.2.1.1.3], le altre tre restano su `f_yk`.
+
+def test_veste_progetto_dell_acciaio_divide_f_yk_per_gamma_s():
+    from meshrec.core import materiali as _materiali
+    m = _pilastro()
+    v = legami.veste_valori(m.materiale(2), "progetto")
+    assert v["fyk"] == pytest.approx(450.0)
+    assert v["fy"] == pytest.approx(450.0 / _materiali.GAMMA_S)
+    assert v["fy"] < v["fyk"], "un f_yd nudo sarebbe f_yk: il mutante è questo"
+    assert v["avvisi"], "la veste di progetto porta il suo avviso"
+    assert "4.1.2.1.1.3" in v["articolo"]
+
+
+@pytest.mark.parametrize("veste", ["caratteristica", "media", "esistente"])
+def test_le_altre_tre_vesti_dell_acciaio_restano_su_f_yk(veste):
+    m = _pilastro()
+    v = legami.veste_valori(m.materiale(2), veste)
+    assert v["fy"] == pytest.approx(v["fyk"]) == pytest.approx(450.0)

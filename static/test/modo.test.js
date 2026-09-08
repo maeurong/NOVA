@@ -71,10 +71,10 @@ test("esitoScelta: in estrusione, bersaglio nodo → non permesso, messaggio del
   assert.equal(e.aggiornaA, false);
 });
 
-test("esitoScelta: in asta, bersaglio asta → non permesso, messaggio «scegli un nodo, non un'asta»", () => {
+test("esitoScelta: in asta, un bersaglio che non è un nodo → non permesso, e la frase dice cosa serve", () => {
   const e = esitoScelta({ tipo: "asta", da: 1, a: null }, "asta");
   assert.equal(e.permesso, false);
-  assert.match(e.messaggio, /scegli un nodo, non un'asta/);
+  assert.match(e.messaggio, /scegli un nodo: in modo asta serve il secondo nodo/);
   assert.equal(e.aggiornaA, false);
 });
 
@@ -255,6 +255,23 @@ test("ghostDelComando: `rinomina` non ha ghost, nemmeno con un testo che parrebb
   assert.equal(ghostDelComando({ tipo: "rinomina", testo: "0; 3000" }, null), null);
 });
 
+// I tre comandi della 11b hanno un `;` nella loro grammatica come «x; z», e cadevano nel
+// ramo del punto in anteprima: «0,8; 0,9» disegnava un nodo a (0,8; 0,9), che `estensione`
+// metteva nel `viewBox` — il piano si ridimensionava a ogni tasto. Un elenco esplicito, e
+// il testo di ciascuno preso dal suo esempio.
+test("ghostDelComando: `sezione`, `materiale` e `danno` non disegnano niente", () => {
+  for (const [tipo, testo] of [["sezione", "300 × 500"], ["materiale", "C25/30"],
+                               ["danno", "0,8; 0,9"], ["danno", "0,8; 0,9; martinetto 3"]]) {
+    assert.equal(ghostDelComando({ tipo, testo }, null), null, `${tipo}: ${testo}`);
+  }
+});
+
+// La stessa domanda posta dall'altra parte: un tipo che nessuno ha previsto non deve
+// ereditare il punto per il fatto di non essere nell'elenco.
+test("ghostDelComando: un tipo sconosciuto non eredita il punto in anteprima", () => {
+  assert.equal(ghostDelComando({ tipo: "domani", testo: "0; 3000" }, null), null);
+});
+
 // Ingresso degenere: `B` col campo aperto e testo vuoto → nessun ghost.
 test("ghostDelComando: `estrudi` col testo vuoto non disegna niente", () => {
   assert.equal(ghostDelComando({ tipo: "estrudi", testo: "" }, versoSu), null);
@@ -324,7 +341,16 @@ test("contestoBarra: col campo aperto su `estrudi` la barra promette anche le fr
 });
 
 test("contestoBarra: gli altri comandi del campo non hanno nessuna direzione da dare", () => {
-  for (const tipo of ["nodo", "sposta", "rinomina"]) {
+  for (const tipo of ["nodo", "sposta", "rinomina", "sezione", "materiale", "danno"]) {
     assert.equal(contestoBarra(null, { tipo: "nodo", id: 1 }, { tipo, testo: "" }), "comando", tipo);
   }
+});
+
+// Cosa torna **oggi** con i due tipi selezionabili nuovi dell'albero, non cosa dovrebbe
+// tornare: «selezione», lo stesso di un nodo, quindi la barra promette anche `B`, `A`, `V` e
+// `M`, che lì rispondono con un messaggio. Parcheggiato: il contesto per tipo è un cambio di
+// `tastiera.js`, non di questa funzione. Il test è qui perché il giorno che cambia si veda.
+test("contestoBarra: sezione e materiale selezionati danno «selezione», come un nodo (oggi)", () => {
+  assert.equal(contestoBarra(null, { tipo: "sezione", id: 1 }), "selezione");
+  assert.equal(contestoBarra(null, { tipo: "materiale", id: 1 }), "selezione");
 });
