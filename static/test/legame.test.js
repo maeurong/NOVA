@@ -11,6 +11,12 @@ test("la curva del calcestruzzo passa per il picco e finisce alla deformazione u
   assert.ok(p.some(([e, s]) => e === -0.002 && Math.abs(s - -33) < 1e-9));
   assert.deepEqual(p[p.length - 1], [2.6 / 33000, 2.6]);
 });
+test("la parabola non è una retta: il punto a metà strada non è a metà tensione", () => {
+  const p = puntiConcrete02(C25);
+  const meta = p.find(([e]) => Math.abs(e - -0.001) < 1e-12);
+  assert.ok(meta, "manca il punto a r = 0,5");
+  assert.ok(Math.abs(meta[1] - -24.75) < 1e-9);
+});
 test("senza trazione la curva finisce nello zero", () => {
   const p = puntiConcrete02({ ...C25, ft: 0 });
   assert.deepEqual(p[p.length - 1], [0, 0]);

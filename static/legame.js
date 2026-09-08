@@ -22,6 +22,8 @@ export function puntiConcrete02({ fpc, epsc0, fpcu, epsU, ft = 0, Ec = null }, n
 
 /** `Steel02` come lo definisce la norma (§4.1.2.1.2.2 (a)): retta elastica fino a (εy, Fy),
  *  retta incrudente fino a (ε_ud, Fy + b·E·(ε_ud − εy)). La transizione R0 non si disegna. */
+// `E = 0` darebbe `Infinity`/`NaN`: non gestito qui perché impedito a monte da
+// `Legame.Es = Field(gt=0)` (`nova/modello.py:179`), non da un `if` in più qui.
 export function puntiSteel02({ Fy, E, b, eps_ud }) {
   const ey = Fy / E;
   return [[0, 0], [ey, Fy], [eps_ud, Fy + b * E * (eps_ud - ey)]];
@@ -33,6 +35,7 @@ export function valoriDaMostrare(lg) {
             ["f_cu", -lg.fpcu, "MPa"], ["f_t", lg.ft, "MPa"], ["λ", lg.lambda, ""]];
   }
   if (lg.tipo === "steel02") {
+    // R0/cR1/cR2 restano fuori apposta: parametri di transizione della doc OpenSees, non valori di norma.
     return [["f_y", lg.Fy, "MPa"], ["E_s", lg.E, "MPa"], ["b", lg.b, ""], ["ε_ud", lg.eps_ud, ""], ["k", lg.k, ""]];
   }
   throw new Error(`legame sconosciuto: ${lg.tipo}`);
