@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/documentation/security/resolving-common-notarization-issues",
+  "sha256": "457b35f7f0a9b0c09ba03ec62c0b293df47f9352d8662d147f5f12b235f4ded3",
+  "bytes": 12141
+ },
+ "tool": "appledoc.py (API DocC di developer.apple.com)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}
