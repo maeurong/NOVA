@@ -49,9 +49,9 @@ test("il modificatore di comando apre e salva, su Mac e su PC", () => {
   assert.equal(voceDaEvento({ key: "s", metaKey: true, ctrlKey: false, altKey: false }).codice, "salva");
 });
 
-test("senza modificatore quelle lettere non fanno niente", () => {
+test("senza modificatore quella lettera non fa niente", () => {
+  // `s` nudo non è più fra queste: dal Task 6 apre `sezione` (vedi i test dedicati sotto).
   assert.equal(voceDaEvento({ key: "o", metaKey: false, ctrlKey: false, altKey: false }), null);
-  assert.equal(voceDaEvento({ key: "s", metaKey: false, ctrlKey: false, altKey: false }), null);
 });
 
 test("una combinazione non mappata resta al browser", () => {
@@ -337,4 +337,25 @@ test("ogni comando che apre il campo ha il sostantivo di ciò che ci si scrive",
     const v = TASTI.find((x) => x.codice === codice);
     assert.ok(v.campo && v.campo.trim() !== "", `${codice} senza sostantivo per l'etichetta`);
   }
+});
+
+// --- Task 6: S, C, D --------------------------------------------------------------
+
+test("S nudo è sezione, ⌘S resta salva", () => {
+  assert.equal(voceDaEvento({ key: "s" })?.codice, "sezione");
+  assert.equal(voceDaEvento({ key: "s", metaKey: true })?.codice, "salva");
+  assert.equal(voceDaEvento({ key: "S", shiftKey: true })?.codice, "sezione");
+});
+test("C e D aprono materiale e danno", () => {
+  assert.equal(voceDaEvento({ key: "c" })?.codice, "materiale");
+  assert.equal(voceDaEvento({ key: "d" })?.codice, "danno");
+});
+test("nessuna lettera nuda serve due codici", () => {
+  const codici = new Set();
+  for (const k of "abcdefghijklmnopqrstuvwxyz") { const v = voceDaEvento({ key: k }); if (v) codici.add(v.codice); }
+  const attesi = TASTI.filter((v) => !v.modificatore && /^[A-Z]$/.test(v.tasto)).map((v) => v.codice);
+  assert.deepEqual([...codici].sort(), [...new Set(attesi)].sort());
+});
+test("col campo aperto la barra resta a due voci", () => {
+  assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
 });

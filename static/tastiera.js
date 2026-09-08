@@ -27,6 +27,9 @@ export const TASTI = [
   { codice: "vincolo",   tasto: "V",     etichetta: "vincolo",   aiuto: null,              contesto: "selezione" },
   { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z in mm",      contesto: "selezione", esempio: "0; 3000", campo: "coordinate di" },
   { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro", campo: "nome di" },
+  { codice: "sezione",   tasto: "S",     etichetta: "sezione",   aiuto: "b × h in mm, o il nome di una sezione", contesto: "salvo-ghost", esempio: "300 × 500", campo: "sezione" },
+  { codice: "materiale", tasto: "C",     etichetta: "materiale", aiuto: "una classe: C25/30 o B450C", contesto: "salvo-ghost", esempio: "C25/30", campo: "classe" },
+  { codice: "danno",     tasto: "D",     etichetta: "danno",     aiuto: "fattori su E; fc, poi la nota", contesto: "selezione", esempio: "0,8; 0,9; martinetto 3", campo: "danno di" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
@@ -51,6 +54,8 @@ export const etichettaCampo = (voce, bersaglio) =>
 const SENZA_MODIFICATORE = new Map([
   ["n", "nodo"], ["g", "seleziona"], ["b", "estrudi"], ["a", "asta"], ["v", "vincolo"],
   ["m", "sposta"], ["r", "rinomina"], ["f2", "rinomina"],
+  // `s` nudo e `⌘S` stanno in due mappe: il modificatore le separa prima del `get` (`voceDaEvento`).
+  ["s", "sezione"], ["c", "materiale"], ["d", "danno"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
