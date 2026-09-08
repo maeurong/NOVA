@@ -23,10 +23,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 import nova
+from nova import catalogo as _catalogo
 from nova import ccx as _ccx
 from nova import corsa as _corsa
+from nova import legami as _legami
 from nova import modello as _modello
 from nova import sidecar as _sidecar
+from meshrec.core import materiali as _materiali
 
 STATICI = Path(__file__).resolve().parent.parent / "static"
 _RUN_ID_RE = re.compile(r"^[0-9a-f]{12}$")
@@ -122,6 +125,11 @@ class ApriReq(_CorpoBase):
 class SalvaReq(_CorpoBase):
     percorso: str
     modello: dict
+
+
+class LegameReq(_CorpoBase):
+    materiale: dict
+    veste: str = "media"
 
 
 class ImportaReq(_CorpoBase):
@@ -247,6 +255,27 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
             except (ValueError, OSError) as e:
                 raise HTTPException(404, detail={"motivo": f"risultati illeggibili per la corsa {run_id}: {e}"})
         raise rifiuta
+
+    @app.get("/api/catalogo")
+    def catalogo():
+        # `f_ctm` è `None` solo sull'acciaio (`meshrec/core/materiali.py:117-121`): è la riga
+        # che divide le due famiglie senza un campo `tipo` che il catalogo non ha.
+        voci = list(_materiali.CATALOGO)
+        return {"calcestruzzo": [v.classe for v in voci if v.f_ctm is not None],
+                "acciaio": [v.classe for v in voci if v.f_ctm is None],
+                "vesti": list(_legami.VESTI)}
+
+    @app.post("/api/materiale/legame")
+    def legame(corpo: LegameReq):
+        try:
+            mat = _modello.Materiale.model_validate(corpo.materiale)
+            valori = _legami.veste_valori(mat, corpo.veste)
+            curva = (_legami.legame_copriferro(mat, corpo.veste) if mat.tipo == "calcestruzzo"
+                     else _legami.acciaio(mat, corpo.veste))
+            tabella = _catalogo.valori(mat)
+        except ValueError as e:  # pydantic.ValidationError è un ValueError
+            raise HTTPException(400, detail={"motivo": str(e)})
+        return {"valori": valori, "catalogo": tabella, "legame": curva}
 
     @app.post("/api/modello/apri")
     def apri(corpo: ApriReq):

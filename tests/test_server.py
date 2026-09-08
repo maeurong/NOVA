@@ -648,3 +648,68 @@ def test_risultati_di_una_pushover_e_il_json_intero(cliente, binario_opensees):
     assert len(r2.content) < 5e6
     # i passi ci sono tutti, uno per uno: nessun campionamento fra il file e la risposta
     assert [p["n"] for p in ris["passi"]] == list(range(1, 11))
+
+
+# --- giornata 11b: catalogo e legame ------------------------------------------
+
+def _cls(**extra):
+    return {"id": 1, "nome": "cls", "tipo": "calcestruzzo", "classe": "C25/30", **extra}
+
+
+def _acc(**extra):
+    return {"id": 2, "nome": "acc", "tipo": "acciaio", "classe": "B450C", **extra}
+
+
+def test_catalogo_elenca_le_classi_e_le_vesti(cliente):
+    r = cliente.get("/api/catalogo")
+    assert r.status_code == 200
+    d = r.json()
+    assert "C25/30" in d["calcestruzzo"] and "B450C" in d["acciaio"]
+    assert "C25/30" not in d["acciaio"] and "B450C" not in d["calcestruzzo"]
+    assert d["vesti"] == ["caratteristica", "media", "progetto", "esistente"]
+
+
+def test_legame_del_calcestruzzo_in_veste_media(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "media"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valori"]["fc"] == 33.0 and d["legame"]["tipo"] == "concrete02"
+    assert d["legame"]["fpc"] == -33.0 and d["legame"]["epsc0"] < 0
+    assert d["catalogo"]["fck"] == 25.0 and "densita" in d["catalogo"]
+
+
+def test_legame_dell_acciaio(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc()})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["legame"]["tipo"] == "steel02" and d["legame"]["Fy"] == 450.0
+    assert d["valori"]["veste"] == "media"
+
+
+def test_legame_con_classe_sconosciuta_e_400_con_le_classi(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(classe="C99/99")})
+    assert r.status_code == 400
+    assert "C99/99" in r.json()["motivo"] and "C25/30" in r.json()["motivo"]
+
+
+def test_legame_con_veste_sconosciuta_e_400(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "mediana"})
+    assert r.status_code == 400 and "caratteristica" in r.json()["motivo"]
+
+
+def test_legame_con_campo_in_piu_e_422_con_il_campo(cliente):
+    # `extra="forbid"` su `_CorpoBase` → `RequestValidationError` → 422 dal gestore di `server.py`,
+    # come per gli altri corpi (vedi `solutore_nel_corpo`): non 400, che è il rifiuto del *modello*
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "media", "boh": 1})
+    assert r.status_code == 422 and "boh" in json.dumps(r.json())
+
+
+def test_legame_acciaio_sotto_lo_snervamento_e_400(cliente):
+    r = cliente.post("/api/materiale/legame",
+                     json={"materiale": _acc(personalizzato=True, valori={"epsuk": 0.001})})
+    assert r.status_code == 400 and "snervamento" in r.json()["motivo"]
+
+
+def test_legame_in_veste_progetto_porta_l_avviso(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "progetto"})
+    assert r.status_code == 200 and r.json()["valori"]["avvisi"]

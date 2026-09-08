@@ -37,7 +37,8 @@ AVVISO_RIDUZIONE = "la riduzione entra nel nucleo confinato: sezione non confina
 GIOCO_ANGOLO = 5.0
 
 _NOMI_TCL = {"concrete02": "Concrete02", "concrete04": "Concrete04", "steel02": "Steel02"}
-_VESTI = ("caratteristica", "media", "progetto", "esistente")
+VESTI = ("caratteristica", "media", "progetto", "esistente")
+_VESTI = VESTI
 
 
 def veste_valori(materiale: Materiale, veste: str) -> dict:
@@ -218,6 +219,22 @@ def _mander(fc: float, conf: dict, v: dict, epsU: float) -> dict:
             "articolo": f"Mander 1988 (29), (5) con k_e = α [4.1.12.e]; ε_cu [4.1.11] {conf['articolo']}"}
 
 
+def legame_copriferro(materiale: Materiale, veste: str) -> dict:
+    """Il `Concrete02` **non confinato** di un calcestruzzo, senza sezione.
+
+    È la curva «del materiale» che l'ispettore mostra accanto ai valori (story 22): il nucleo
+    dipende dalle staffe e sta in `calcestruzzo(materiale, veste, sezione)`, che da qui prende
+    il copriferro invece di ricalcolarlo — un solo punto in cui `epsc0 = 2 f_c / E_cm`.
+    """
+    if materiale.tipo != "calcestruzzo":
+        raise ValueError(f"materiale «{materiale.nome}» ({materiale.classe}) è di tipo "
+                         f"{materiale.tipo}, non calcestruzzo")
+    v = veste_valori(materiale, veste)
+    fc = v["fc"]
+    return _concrete02(fc, 2 * fc / v["Ecm"], materiale.legame.epsU_copriferro, v, materiale.legame,
+                       f"{v['articolo']}, [11.2.5], §7.4.1")
+
+
 def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     """`{copriferro: {...}, nucleo: {...}}`, i due legami che la Circolare C4.1.2.1.2.1 vuole
     diversi («legami diversi per il nucleo confinato e per le zone esterne alle staffe»).
@@ -238,12 +255,11 @@ def calcestruzzo(materiale: Materiale, veste: str, sezione: Sezione) -> dict:
     if materiale.tipo != "calcestruzzo":
         raise ValueError(f"materiale «{materiale.nome}» ({materiale.classe}) è di tipo "
                          f"{materiale.tipo}, non calcestruzzo")
+    copriferro = legame_copriferro(materiale, veste)
     v = veste_valori(materiale, veste)
     lg = materiale.legame
     fc = v["fc"]
-    epsc0 = 2 * fc / v["Ecm"]
-    copriferro = _concrete02(fc, epsc0, lg.epsU_copriferro, v, lg,
-                             f"{v['articolo']}, [11.2.5], §7.4.1")
+    epsc0 = -copriferro["epsc0"]
     note = list(v["note"])
     conf = None
     avvisi = list(v["avvisi"])
