@@ -14,6 +14,11 @@ test("senza staffe non c'è nessuna barra e nessun giudizio", () => {
   assert.deepEqual(posizioniBarre(SENZA_STAFFE), []);
   assert.equal(geometriaImpossibile(SENZA_STAFFE), null);
 });
+test("con staffe e nessuna fila non c'è nessuna barra", () => {
+  const s = { ...FIXTURE.sezione, file: [] };
+  assert.deepEqual(posizioniBarre(s), []);
+  assert.equal(geometriaImpossibile(s), null);
+});
 test("copriferri opposti che si scavalcano: il messaggio nomina h", () => {
   const s = { ...FIXTURE.sezione, h: 100, copriferro: 40, file: [{ lato: "inf", n: 1, diametro: 16 }] };
   assert.match(geometriaImpossibile(s), /copriferri opposti.*\bh\b/);
