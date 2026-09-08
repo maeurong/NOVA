@@ -667,6 +667,9 @@ def test_catalogo_elenca_le_classi_e_le_vesti(cliente):
     assert "C25/30" in d["calcestruzzo"] and "B450C" in d["acciaio"]
     assert "C25/30" not in d["acciaio"] and "B450C" not in d["calcestruzzo"]
     assert d["vesti"] == ["caratteristica", "media", "progetto", "esistente"]
+    # famiglia, non f_ctm: 19 voci a catalogo, nessuna nelle due liste insieme
+    tutte = d["calcestruzzo"] + d["acciaio"]
+    assert len(tutte) == 19 and len(set(d["calcestruzzo"]) & set(d["acciaio"])) == 0
 
 
 def test_legame_del_calcestruzzo_in_veste_media(cliente):
