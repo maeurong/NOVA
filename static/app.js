@@ -45,6 +45,12 @@ let percorso = null, impronta = null;
 // veste cambia la chiave, e una risposta vecchia non può atterrare sopra una nuova.
 let catalogo = null;
 const legami = new Map();
+// Le chiavi della tabella di norma (`E`, `nu`, `densita`, `fck`, …) dipendono da **tipo e
+// classe**, non dai valori scritti a mano: l'ultima risposta buona per la stessa coppia le
+// porta già, e serve a tenere in piedi il gruppo «valori» mentre la POST successiva viaggia
+// (`pannello.js`). Chiave a parte da quella di `legami`, che invece porta il materiale intero.
+const tabelle = new Map();
+const chiaveTabella = (k) => `${k.tipo}|${k.classe}`;
 
 chiediJson("/api/catalogo").then((c) => { catalogo = c; ridisegna(); })
   .catch(() => { catalogo = null; });  // l'editor regge senza: mostra la classe che c'è (P5)
@@ -65,6 +71,10 @@ function legamePer(m, id) {
   // riseleziona un materiale — non su un disegno.
   const arrivo = (v) => {
     legami.set(chiave, v);
+    // ponytail: la tabella si tiene com'è arrivata, override compresi (`catalogo.valori` li
+    // scrive sopra i numeri di norma). Chi toglie una scrittura a mano vede il numero vecchio
+    // per un giro di POST, poi la risposta nuova lo rimette a posto.
+    if (v.valori) tabelle.set(chiaveTabella(k), v.catalogo);
     ridisegna();
   };
   chiediJson("/api/materiale/legame", { materiale: k, veste: vesteDi(m) })
@@ -418,8 +428,12 @@ function ridisegna() {
   piano.disegna(m, { selezione, ghost });
   spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
   albero.disegna(m, { selezione });
-  pannello.disegna(m, selezione,
-                   { catalogo, legame: selezione?.tipo === "materiale" ? legamePer(m, selezione.id) : null });
+  const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;
+  pannello.disegna(m, selezione, {
+    catalogo,
+    legame: scelto ? legamePer(m, selezione.id) : null,
+    tabella: scelto ? (tabelle.get(chiaveTabella(scelto)) ?? null) : null,
+  });
   file.disegna({ percorso, impronta, modello: m });
   storia.disegna(etichette(cronologia));
   disegnaBarra();

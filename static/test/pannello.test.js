@@ -1049,3 +1049,66 @@ test("editorMateriale: dopo una scrittura a mano il fuoco resta sul suo campo", 
   assert.notEqual(dopo, prima, "l'editor si è ricostruito davvero");
   assert.ok(dopo._attrs["aria-label"].startsWith("f_cm"), dopo._attrs["aria-label"]);
 });
+
+
+// --- round 3: i valori restano a schermo mentre il legame è in volo ---
+// Scrivere un valore cambia il materiale, quindi la chiave della cache di `legamePer`
+// (`app.js`): cache miss, `legame: null`, e il gruppo «valori» spariva per un ridisegno —
+// il campo a fuoco non c'era più e il cursore finiva sul `<select>` della classe. Le chiavi
+// della tabella dipendono da tipo e classe, non dai valori scritti: l'ultima risposta buona
+// per la stessa coppia le porta già, e non è un'anteprima inventata.
+
+const TABELLA_C25 = { E: 31476, nu: 0.2, densita: 2.5e-9, fck: 25, fcm: 33 };
+
+test("editorMateriale: col legame in volo il gruppo «valori» resta, con le chiavi della tabella", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null, tabella: TABELLA_C25 });
+  const val = editor._figli[1];
+  assert.equal(val._figli[0].textContent, "valori");
+  const campi = val._figli.filter((e) => (e._figli ?? []).some((x) => x._attrs?.["aria-label"]));
+  assert.deepEqual(campi.map((e) => e._figli[0].textContent),
+    ["E, modulo elastico", "ν, Poisson", "densità", "f_ck", "f_cm"]);
+  const fcm = campi.find((e) => e._figli[0].textContent === "f_cm")._figli[1];
+  assert.equal(fcm.value, "33", "senza valore a mano si vede quello di tabella");
+});
+
+test("editorMateriale: col legame in volo il valore scritto a mano vince sulla tabella", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  m.materiali[0].valori = { fcm: 40 };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null, tabella: TABELLA_C25 });
+  const campi = editor._figli[1]._figli.filter((e) => (e._figli ?? []).some((x) => x._attrs?.["aria-label"]));
+  const fcm = campi.find((e) => e._figli[0].textContent === "f_cm");
+  assert.equal(fcm._figli[1].value, "40");
+  assert.ok(fcm._figli.some((x) => x.textContent === "scritto a mano"));
+});
+
+// Il sintomo misurato in browser: scritto 40 in `f_cm` e battuto `9`, il `9` finiva nel
+// `<select>` della classe — che con una lettera cambia la classe del materiale.
+test("editorMateriale: il fuoco su f_cm regge il ridisegno col legame in volo", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const lg = { ...LEGAME_C25, catalogo: TABELLA_C25 };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: lg, tabella: TABELLA_C25 });
+  const prima = controlliDi(editor).find((c) => c._attrs["aria-label"].startsWith("f_cm"));
+  prima.focus();
+  // lo scatto vero: il valore entra nel modello e il legame riparte in volo
+  m.materiali[0].valori = { fcm: 40 };
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null, tabella: TABELLA_C25 });
+  const dopo = globalThis.document.activeElement;
+  assert.notEqual(dopo, prima, "l'editor si è ricostruito davvero");
+  assert.ok(dopo._attrs["aria-label"].startsWith("f_cm"), dopo._attrs["aria-label"]);
+});
+
+// Ingresso degenere: la prima risposta non è mai arrivata, nessuna tabella da mostrare.
+test("editorMateriale: senza legame e senza tabella il gruppo «valori» non c'è", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null, tabella: null });
+  assert.ok(!editor._figli.some((e) => e._figli?.[0]?.textContent === "valori"));
+});

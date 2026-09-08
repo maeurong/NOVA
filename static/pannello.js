@@ -374,7 +374,7 @@ function editorSezione(m, s, azioni) {
   return { elementi, controlli };
 }
 
-function editorMateriale(m, k, azioni, { catalogo, legame }) {
+function editorMateriale(m, k, azioni, { catalogo, legame, tabella = null }) {
   const controlli = [];
   // La classe corrente apre sempre l'elenco, anche quando il catalogo non la contiene: con
   // `personalizzato` una classe fuori norma è lecita (`nova/modello.py:202-209`), e un
@@ -396,10 +396,19 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
 
   // P8: i valori a mano compaiono solo con la spunta, non prima.
   const elementi = [cl];
-  if (k.personalizzato && legame?.catalogo) {
+  // Mentre il legame è in volo il gruppo resta, con le chiavi dell'ultima tabella: sparire
+  // per un ridisegno mandava il fuoco al `<select>` della classe — misurato in browser,
+  // scritto «40» in f_cm e battuto «9», il «9» finiva nel select. Senza nemmeno una tabella
+  // (la prima risposta non è mai arrivata) il gruppo non c'è, e il fuoco va al primo
+  // controllo come ha sempre fatto.
+  const daMostrare = legame?.catalogo ?? tabella;
+  if (k.personalizzato && daMostrare) {
     const val = gruppo("valori", "editor editor-campi editor-valori", "sovrascrivono la tabella NTC");
     const aMano = Object.keys(k.valori ?? {});
-    for (const [chiave, v] of Object.entries(legame.catalogo)) {
+    for (const chiave of Object.keys(daMostrare)) {
+      // Col legame arrivato i due rami danno lo stesso numero — `catalogo.valori` gli
+      // override li ha già scritti sopra — ma in volo la tabella non li porta ancora.
+      const v = k.valori?.[chiave] ?? daMostrare[chiave];
       const [etichetta, unita] = NOME_VALORE[chiave] ?? [chiave, ""];
       const scritto = aMano.includes(chiave);
       // WCAG 2.5.3: il nome comincia dal testo visibile. «scritto a mano» resta **fuori**:
@@ -512,7 +521,7 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
   const fuocoAttuale = () =>
     (editorAttuale?.controlli.includes(document.activeElement) ? chiave(document.activeElement) : null);
 
-  function disegna(m, selezione, { catalogo = null, legame = null } = {}) {
+  function disegna(m, selezione, { catalogo = null, legame = null, tabella = null } = {}) {
     const e = selezione ? entitaSelezionata(m, selezione) : null;
     const r = e ? righeDe(m, selezione.tipo, e) : null;
     vuoto.hidden = r !== null;
@@ -532,7 +541,7 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
     // campi dentro una lista di definizioni non sono né un termine né una descrizione, e uno
     // screen reader li leggerebbe come se lo fossero.
     const fuoco = fuocoAttuale();
-    const { elementi, controlli } = EDITORI[selezione.tipo](m, e, azioni, { catalogo, legame });
+    const { elementi, controlli } = EDITORI[selezione.tipo](m, e, azioni, { catalogo, legame, tabella });
     editor.replaceChildren(...elementi);
     editorAttuale = { controlli };
     editor.hidden = false;
