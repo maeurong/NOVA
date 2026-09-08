@@ -221,3 +221,33 @@ Ordine = valore per l'ingegnere che verifica a NTC 2018 × verificabilità ÷ ef
 - Anthropic: https://platform.claude.com/docs/en/about-claude/pricing · https://platform.claude.com/docs/en/manage-claude/api-and-data-retention · https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data · https://privacy.claude.com/en/articles/7996868-is-my-data-used-for-model-training · https://platform.claude.com/docs/en/build-with-claude/structured-outputs · https://modelcontextprotocol.io/
 
 Staleness: prezzi Claude e stato Tech Preview Autodesk/Bentley cambiano per trimestre; letteratura §1 è tutta 2025-2026, benchmark piccoli (8-20 casi): numeri da rileggere se il progetto parte fra >3 mesi.
+
+## Cosa se ne prende
+
+- **URL** https://docs.csiamerica.com/help-files/etabs/Menus/Analyze/Check_Model.htm · [V]
+  **perché conta qui** precedente commerciale citato per C1 «Check Model deterministico pre-solutore» (nodi coincidenti, membrature incrociate, nodi liberi)
+  **cosa se ne prende** C1 diventa il «Check Model deterministico prima di ogni corsa» della spec, coi sedici controlli C1
+
+- **URL** https://openseespydoc.readthedocs.io/en/latest/src/modalProperties.html · [V]
+  **perché conta qui** `modalProperties('-return')` rende un dict Python; il loop «aumenta modi finché cumulata ≥ soglia» è ~15 righe
+  **cosa se ne prende** C2 diventa il numero di modi «automatico che cresce fino all'85% di massa partecipante» della spec (soglia corretta da 90 a 85% da `06-dominio-analisi-verifiche-formati.md`)
+
+- **URL** /Users/mario/GitHub/Tesi/docs/validazione/modi-per-la-normativa.md · [V]
+  **perché conta qui** la curva di massa cumulata sale a gradini; regola robusta = fermarsi al primo pianerottolo con margine
+  **cosa se ne prende** la scelta della modale automatica applicata nella spec (§43-45): «numero di modi… automatico che cresce…»
+
+- **URL** https://www.studiopetrillo.com/files/ntc2018/cap10.pdf · [V]
+  **perché conta qui** NTC §10.2/§10.2.1 chiede riproducibilità e «casi prova interamente risolti… file di input necessari a riprodurre l'elaborazione»
+  **cosa se ne prende** la user story #68: «ogni corsa conservi il deck generato e il registro del solutore… così da ricostruire la corsa senza NOVA come chiede NTC §10.2.1»
+
+- **URL** https://platform.claude.com/docs/en/manage-claude/api-and-data-retention · [V]
+  **perché conta qui** «Offline: non esiste» — nessuna opzione on-prem/air-gapped per i modelli Claude
+  **cosa se ne prende** l'Out of Scope esclude «Funzioni con LLM, funzioni intelligenti C4–C12»: l'app deve reggersi da sola, senza LLM, in v1
+
+- **URL** https://github.com/viktor-platform/opensees-ai-agent · [V]
+  **perché conta qui** README avverte che OpenSeesPy è libero solo per ricerca/interno; la redistribuzione commerciale richiede licenza UC Berkeley
+  **cosa se ne prende** rinforza l'Out of Scope «Incorporare o ridistribuire OpenSees… la ruota OpenSeesPy»
+
+- **URL** https://openseespydoc.readthedocs.io/en/latest/src/reactions.html · [V]
+  **perché conta qui** `reactions()` + `nodeReaction()` per l'equilibrio Σ reazioni vs Σ carichi, base di C3
+  **cosa se ne prende** C3 diventa i «sette controlli sui risultati (Σ reazioni contro Σ carichi, autovalori…)» della spec (§41)

@@ -227,3 +227,24 @@ Ricerche pre-brainstorming: `/Users/mario/GitHub/NOVA/docs/ricerca/{README,02-pa
 Web: https://github.com/ogunc/opensees-studio · https://github.com/madil4/awatif · https://github.com/JWock82/Pynite · https://pypi.org/project/pynite-tools/0.7.0/ · https://github.com/admindev-buildwellai/MCP-Pynite · https://github.com/specklesystems/speckle-sharp (`Objects/Objects/Structural/`) · https://github.com/StructuralAnalysisFormat/StructuralAnalysisFormat-Doc (tag 2.2.0) · https://www.saf.guide/en/stable/structural-analysis-elements/structuralmaterial.html · …/structuralcrosssection.html · …/structuralpointconnection.html · …/structuralcurvemember.html · https://www.saf.guide/en/stable/supports-and-hinges/structuralpointsupport.html · https://www.saf.guide/en/stable/loads/structuralloadcase.html · …/structuralloadcombination.html · …/structuralcurveaction.html · https://www.saf.guide/en/stable/results/resultinternalforce1d.html · https://www.saf.guide/en/stable/annexes/units.html · https://www.saf.guide/en/stable/getting-started/saf-versions.html · https://openseespydoc.readthedocs.io/en/latest/src/printModel.html
 
 Caveat: SAF doc ferma al 13/04/2023 (nessuna 2.3 vista); speckle-sharp `main` fermo a 07/2025 (Speckle v3 ha spostato Objects altrove, non verificato); `printModel` misurato su openseespy 3.8.0 macOS arm64, non sulla 3.5.1.12 pinnata da opensees-studio; SAF segni delle sollecitazioni [NON TROVATO] nella spec.
+
+## Cosa se ne prende
+
+- **URL** https://github.com/ogunc/opensees-studio (`core/_base.py:15-26`) · [V]
+  **perché conta qui** `Entity{id: PositiveInt, name: str}`, id = tag OpenSees per-tipo, mai riusato
+  **cosa se ne prende** identificatori interi per tipo mai riusati, tag OpenSees derivato alla generazione del deck e salvato solo nella mappa dei risultati (spec:157)
+- **URL** https://github.com/ogunc/opensees-studio (`docs/roadmap.md`, AGPL) · [V]
+  **perché conta qui** licenza AGPL del progetto più vicino al vuoto di mercato individuato
+  **cosa se ne prende** decisione di non incorporare/contribuire a `opensees-studio` (spec:243)
+- **URL** https://www.saf.guide/en/stable/loads/structuralloadcase.html · [V]
+  **perché conta qui** `Action type ∈ {Permanent, Variable, Accidental}` + `Load group{Relation}`: natura del carico come dato, non commento
+  **cosa se ne prende** campo `Azione{natura: G1 | G2 | Q{categoria} | E}` nel modello dati (spec:57,172)
+- **URL** https://github.com/ogunc/opensees-studio (`core/_base.py`, `project.py:50-109`) · [V]
+  **perché conta qui** `extra="forbid"`, `schema_version: int = 1 (frozen)`, migrazione in-loader
+  **cosa se ne prende** `.nova.json` con `schema_version`, Pydantic v2 `extra="forbid"`, migrazioni nel caricatore (spec:157)
+- **URL** /Users/mario/GitHub/NOVA/docs/ricerca/05-archeologia-linea-integrata.md · [INF]
+  **perché conta qui** Lezione 6 «Verdetto ≠ numero»: MeshRec aveva `{applicabile, passato, ragione}`, «non applicabile ≠ non passato»
+  **cosa se ne prende** schema `verdetti[]{controllo, oggetto, esito: passato|non_passato|non_applicabile}` (spec:193,201)
+- **URL** https://github.com/JWock82/Pynite (`Node3D.py:28-80`) · [V]
+  **perché conta qui** `name: str` scelto dall'utente separato da `ID: int` assegnato dal programma
+  **cosa se ne prende** id interno stabile e nome libero editabile come campi distinti dell'entità (spec:157)

@@ -291,3 +291,29 @@ Riusabile senza GPL per un'app propria: PyVista/Plotly/matplotlib direttamente; 
 - https://raw.githubusercontent.com/yexiang92/opstool/master/README.md
 - Ricerca web (nessun numero utile): https://arxiv.org/pdf/2312.06060, https://www.mdpi.com/2075-5309/13/4/1078, https://opstool.readthedocs.io/en/latest/index.html, https://designsafe-ci.org/user-guide/tools/simulation/opensees/openseesSP/ (403 alla lettura)
 - Locali: `/Users/mario/GitHub/Tesi/docs/validazione/ricerca-opensees-e-armature.md`, `/Users/mario/GitHub/Tesi/docs/validazione/ricerca-armature-opensees-fibre.md`, `/Users/mario/GitHub/Tesi/docs/validazione/modi-per-la-normativa.md:32-35`, `/Users/mario/GitHub/Tesi/README.md:4-13`, `/Users/mario/GitHub/Tesi/docs/validazione/README.md:3-11`
+
+## Cosa se ne prende
+
+- **URL** https://github.com/OpenSees/OpenSees · [V]
+  **perché conta qui** misurato che `forceBeamColumn`/`elasticBeamColumn` fra due nodi coincidenti terminano il processo con `exit(0)`/`exit(255)` senza eccezione Python
+  **cosa se ne prende** l'architettura «tre processi» della spec: il solutore vive sempre fuori dal processo del server, mai `import openseespy` in-process
+
+- **URL** https://github.com/OpenSees/OpenSees · [V]
+  **perché conta qui** binario Tcl: «il codice di uscita non segnala errore» — `bad.tcl` esce 0 anche su errore fatale, la traccia sta solo su stderr
+  **cosa se ne prende** l'adattamento dichiarato nella spec: «la lettura è da stderr e marcatore di fine, non dal codice d'uscita»
+
+- **URL** https://raw.githubusercontent.com/OpenSees/OpenSeesDocumentation/master/source/developer/license.rst · [V]
+  **perché conta qui** discrepanza fra `COPYRIGHT` (noncommerciale/interno) e `license.rst` (BSD-like, «se vendi devi chiedere licenza»)
+  **cosa se ne prende** l'Out of Scope: «Incorporare o ridistribuire OpenSees, CalculiX o la ruota OpenSeesPy» — OpenSees resta localizzato, mai incorporato
+
+- **URL** https://pypi.org/pypi/openseespymac/json · [M]
+  **perché conta qui** `LICENSE.md` dentro la ruota: «Commercial redistribution of OpenSeesPy… requires a license… contact Dr. Minjie Zhu»
+  **cosa se ne prende** l'estensione esplicita della stessa esclusione alla ruota OpenSeesPy nell'Out of Scope della spec
+
+- **URL** https://pypi.org/pypi/opensees/json · [M]
+  **perché conta qui** `opensees`/`xara` 0.1.31/0.0.33: nessuna ruota macOS arm64, README «experimental», eigen rotto su Windows
+  **cosa se ne prende** l'esclusione in Out of Scope di «openseespy/xara in-process»: resta il binario Tcl `OpenSees` 3.8.0 misurato funzionante
+
+- **URL** https://openseespydoc.readthedocs.io/en/latest/ · [V]
+  **perché conta qui** la doc dichiara «Python 3.12 is required» ma il vincolo reale (metadati ruota) vale solo su Windows/Linux, non su macOS
+  **cosa se ne prende** la scelta dello stack «Python 3.12» come denominatore comune sicuro fra le piattaforme, non solo la versione misurata su macOS

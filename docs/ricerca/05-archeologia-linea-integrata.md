@@ -258,3 +258,33 @@ Tutti nati 26/08 (`d39a8ba`, `40f5566`, `6c3e9af`, `4e3c89b`, `af8b326`), usciti
 - **R5**: se il nuovo progetto legge `12_wall.json`, fissare subito un test di contratto sul prior vero (il vecchio `test_il_prior_vero_arriva_fino_al_tcl` è il modello).
 
 Percorsi chiave: `/Users/mario/GitHub/Tesi` (git, base `9716f6e`). I dump leggibili dei file rimossi stavano nello scratchpad di sessione (effimero): per rileggerli, `git -C /Users/mario/GitHub/Tesi show 9716f6e:meshrec/src/meshrec/core/opensees.py` e analoghi.
+
+## Cosa se ne prende
+
+- **commit** 9716f6e · opensees.py
+  **perché conta qui** decisione #139: «un solutore che aborta non deve portarsi via il programma» — OpenSees Tcl in subprocess, mai in-process
+  **cosa se ne prende** l'Out of Scope esclude «openseespy/xara in-process»; architettura a sidecar Tcl della spec
+
+- **commit** 9716f6e · telaio.py (`costruisci()`)
+  **perché conta qui** `costruisci(prior, regioni) -> Telaio`: una fetta = un'asta, nodo condiviso = stazione più vicina con scostamento mostrato
+  **cosa se ne prende** l'Importatore dal prior della spec riusa «as-is» la costruzione del telaio dal prior
+
+- **commit** 9716f6e · armatura.py (`colloca()`, `verdetti()`)
+  **perché conta qui** collocazione barre per fila da spigolo, verdetti minimi NTC §4.1.6.1.1
+  **cosa se ne prende** «collocazione delle armature e minimi NTC (`armatura.py`)» nel riuso dichiarato dalla spec (Architettura)
+
+- **commit** 9716f6e · solve.py (`CONTROLLI_PER_MODELLO`, `verdetti_per_modello`)
+  **perché conta qui** sette controlli condivisi con verdetto a tre valori; «non applicabile» ≠ «non passato»
+  **cosa se ne prende** i «sette controlli sui risultati… con verdetto a tre valori — passato, non passato, non applicabile» della spec (§41) e la scheda Confronto/lancio CalculiX
+
+- **commit** 9716f6e · opensees.py (docstring, misure 30/08)
+  **perché conta qui** «il codice d'uscita non è il segnale. OpenSees esce con codice 0 anche quando lo script muore su un errore fatale»
+  **cosa se ne prende** l'adattamento dichiarato nella spec: «la lettura è da stderr e marcatore di fine, non dal codice d'uscita»
+
+- **commit** 9716f6e · opensees.py (`_ultima_riga`, `leggi_frequenze`, `leggi_massa_modale`, `conta_avvisi`, `NOME_FINE`, `MARCA_FINE`, `NOME_REGISTRO`, `_costante_torsionale`)
+  **perché conta qui** l'ADR `2026-09-05-deck-scritto-da-nova.md` riusa solo le letture e le costanti, non lo scrittore del deck
+  **cosa se ne prende** il confine esatto del riuso: `nova/deck.py` come unico scrittore del deck, `opensees.scrivi_tcl` lasciato inutilizzato nella copia
+
+- **commit** 9716f6e · R2 (tre caselle «non decise»: materiali non lineari/veste, carichi oltre il peso proprio, modale con spettro)
+  **perché conta qui** l'autore stesso marca queste tre caselle come sospese sulla linea rimossa
+  **cosa se ne prende** la spec le chiude tutte e tre in v1: legami non lineari da classe+veste (§46), azioni raggruppate con natura NTC oltre il peso proprio (§24-25), modale con modi automatici (§43)
