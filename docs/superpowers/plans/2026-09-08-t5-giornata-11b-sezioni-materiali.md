@@ -62,6 +62,116 @@
 2. **La prima sezione porta con sé i materiali.** `S` su un modello senza materiali crea `C25/30` e `B450C` prima della sezione, e la Storia lo dice («sezione 300 × 500, con C25/30 e B450C»). Senza, la prima sezione chiederebbe due passaggi prima di esistere, e il modello disegnato non si salverebbe ancora.
 3. **Una sola veste, in un solo posto.** Il selettore sta nell'editor del materiale con l'etichetta «veste per l'analisi (tutto il modello)» e scrive `impostazioni_analisi.veste`. Cambiarla ricalcola la curva di ogni materiale.
 
+## Annotazione dell'architect (08/09/2026)
+
+Scritta dopo il ledger `/Users/mario/GitHub/NOVA-wt/interfaccia/.superpowers/sdd/2026-09-08-t5-giornata-11b-sezioni-materiali/progress.md`, che ha già scansionato dieci coppie e non va rifatto: qui c'è solo ciò che lì manca.
+
+### 1. Chi esegue, con quale modello, in quale ordine
+
+| task | subagente | modello | skill-gate | gruppo | comincia dopo |
+|---|---|---|---|---|---|
+| 1 — le due rotte | `backend-engineer` | `sonnet` | **sì** | A | — |
+| 2 — `modello.js` | `frontend-engineer` | `sonnet` | **no** — cinque export di una riga, codice per intero nel piano, nessuna scelta d'interfaccia | A | — |
+| 3 — `sezione.js` | `frontend-engineer` | `sonnet` | **sì** | B | 2 |
+| 4 — `legame.js` | `frontend-engineer` | `sonnet` | **sì** | B | 2 |
+| 5 — i riduttori | `frontend-engineer` | `opus` | **sì** | C | 3 |
+| 6 — `tastiera.js` | `frontend-engineer` | `sonnet` | **no** — tre righe in due tabelle, entrambe scritte nel piano | B | — |
+| 7 — `albero.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | B | 2 |
+| 8 — `pannello.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | D | 3, 4, 5, 7 |
+| 9 — `app.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | E | tutti |
+| 10 — la verifica | **il controller**, a mano, col browser | — | — | F | 9 |
+
+Gruppi paralleli: **A** = 1 ‖ 2 ‖ 6; **B** = 3 ‖ 4 ‖ 7; **C** = 5; **D** = 8; **E** = 9; **F** = 10.
+
+`impeccable`: mai «cream palette» — la palette è quella dei Global Constraints (riga 22).
+
+**Nessun implementer in parallelo sullo stesso file.** Verificato file per file: i dieci task hanno insiemi disgiunti, e nessuna coppia parallela condivide una riga.
+
+| file | unico task che lo scrive |
+|---|---|
+| `nova/legami.py`, `nova/server.py`, `tests/test_server.py` | 1 |
+| `static/modello.js`, `static/test/modello.test.js` | 2 |
+| `static/sezione.js`, `static/test/sezione.test.js`, `tests/fixture/barre_300x500.json`, `tests/test_deck_barre_fixture.py` | 3 |
+| `static/legame.js`, `static/test/legame.test.js` | 4 |
+| `static/comandi.js`, `static/test/comandi.test.js` | 5 |
+| `static/tastiera.js`, `static/test/tastiera.test.js` | 6 |
+| `static/albero.js`, `static/test/albero.test.js` | 7 |
+| `static/pannello.js`, `static/index.html`, `static/stile.css`, `static/test/pannello.test.js` | 8 |
+| `static/app.js`, `static/modo.js`, `static/test/modo.test.js` | 9 |
+
+Due sole cose da correggere in quelle liste, dette qui e non riscritte negli step:
+
+- **Il Task 9 tocca `static/modo.js` e il suo test** (riga 1493: «una stringa, in `modo.js`, e il suo test»), ma la riga 1481 elenca il solo `app.js`. Nessun altro task li tocca: nessun conflitto, solo una lista incompleta.
+- **`tests/` è condiviso fra Task 1 e Task 3** — `test_server.py` contro `test_deck_barre_fixture.py` + `fixture/`, file diversi. Ma il conteggio atteso dal Task 1 (riga 357, «681 raccolti») vale solo se la fixture del Task 3 non è ancora atterrata; con dentro anche quella sono **682**. Chi esegue il Task 1 dopo il Task 3 conti 682 e non chiami rosso il verde.
+
+### 2. Le dipendenze vere, un arco per riga
+
+- **4 ← 1** — `legame.js` consuma la forma del dizionario che `POST /api/materiale/legame` restituisce (`fpc`, `epsc0`, `fpcu`, `epsU`, `ft`, `Ec`; `Fy`, `E`, `b`, `eps_ud`, `k`). È l'arco vero del Task 4: **non** dipende dal Task 2. Il piano lo mette dopo il 2 per prudenza; costa niente tenerlo lì, ma il vincolo che conta è il Task 1.
+- **3 ← nessun task** — `sezione.js` consuma `leggiLunghezza`/`stampaNumero` da `numeri.js`, che esiste già, e `nova/deck.py:_barre`, che non cambia. Il Task 3 potrebbe stare nel gruppo A.
+- **5 ← 2** — `sezione`, `materiale`, `asteDellaSezione`, `sezioniDelMateriale`.
+- **5 ← 3** — `LATI`, `VESTI`, `geometriaImpossibile`.
+- **7 ← 2** — `asteDellaSezione(m, s.id).length` nel testo della voce (riga 1219).
+- **8 ← 2** — `vesteDi`; **8 ← 3** — `VESTI`, `LATI`, `svgSezione`, `geometriaImpossibile`; **8 ← 4** — `puntiConcrete02`, `puntiSteel02`, `valoriDaMostrare`, `svgCurva`.
+- **8 ← 7**, ma per il **CSS**, non per il codice: la classe `.gruppo` che il Task 8 stila (riga 1238) è il markup che il Task 7 introduce (riga 1227).
+- **8 ← 5 non esiste come arco di codice.** `pannello.js` non importa niente da `comandi.js`: gli editor chiamano `azioni.*`, e i riduttori li invoca `app.js` (Task 9). Il ledger lo conferma alla riga 22, dove l'elenco degli import mancanti del Task 8 non nomina un solo riduttore. Tenere l'8 dopo il 5 non fa danno; sapere che l'arco non c'è serve se un giorno il gruppo va stretto.
+- **9 ← 1, 2, 3, 4, 5, 6, 7, 8** — è la cucitura: li importa tutti.
+- **10 ← 9** — è la prova a mano.
+
+### 3. I due punti dove il piano si rompe
+
+**R1 — il corpo con un campo in più risponde 422, non 400.** Le righe **209** (ingressi degeneri del Task 1), **204** (`Produces`) e il test **266-268** (`test_legame_con_campo_in_piu_e_400`) pretendono `400`. Ma `_CorpoBase` ha `extra="forbid"`, e un campo estraneo viene rifiutato da FastAPI **prima** che il gestore giri: `RequestValidationError` → il gestore registrato in `nova/server.py:282-285` → `JSONResponse(status_code=422, …)`. Non è un'ipotesi: in questo repo ci sono già tre test che lo asseriscono, e sono verdi (`tests/test_server.py:306-309`, `:312-315`, `:595-599`). `test_legame_con_campo_in_piu_e_400` resterebbe rosso per sempre — e nessuna riga del Task 1 può farlo passare senza smontare il gestore, che è la forma dichiarata alla riga 49. **Rimedio**: portare le tre righe a `422`, sullo stampo di `test_corsa_con_solutore_nel_corpo_e_422`. Resta `400` per tutto il resto (classe sconosciuta, veste sconosciuta, snervamento), che passa da `HTTPException` dentro il gestore ed è giusto così.
+
+**R2 — l'ultimo punto della curva è `-0`, e `deepEqual` in modo strict lo distingue da `0`.** L'implementazione della riga **718** chiude il ciclo a `r = 0` con `[epsc0 * r, fpc * (2 * r - r * r)]`; `epsc0` e `fpc` sono negativi, quindi il punto è `[-0, -0]`. Il test della riga **682** asserisce `assert.deepEqual(p[p.length - 1], [0, 0])`, e la riga 668 importa `assert from "node:assert/strict"`, dove `deepEqual` **è** `deepStrictEqual`: `-0` e `+0` non sono uguali. Misurato con `node -e`, output `[-0, -0]` e `AssertionError`. Cade anche la riga **659** degli ingressi degeneri, che dice «l'ultimo è `(0, 0)`». **Rimedio**, uno dei due: attendere `[-0, -0]`, oppure normalizzare nell'implementazione (`epsc0 * r + 0`, `fpc * (…) + 0`) e lasciare il test com'è. La seconda è la più onesta: un `-0` a schermo non lo vuole nessuno.
+
+**Correzione di un numero di riga, fatta nel piano.** La riga **308** diceva «In `calcestruzzo()` (righe 233-237)»: 233-237 stanno **dentro il docstring**. Le cinque righe da sostituire sono `nova/legami.py:241-246`. Corretta.
+
+**Global Constraint «Backend: solo Task 1» (riga 26): rispettato.** Nessun passo dal Task 2 in poi modifica un file sotto `nova/`. Tutte le occorrenze di `nova/` dopo il Task 1 sono citazioni in commento o in prosa (righe 410, 417, 474, 533, 708, 804, 926, 1526). Il caso di confine è il Task 3: `tests/test_deck_barre_fixture.py` **importa** `nova.modello` e `nova.deck._barre` (righe 514-515), in sola lettura, e vive sotto `tests/`. Non è una violazione — il vincolo dice «nessun altro file sotto `nova/` cambia», e nessuno cambia.
+
+Tre incoerenze minori, che non fermano nessuno:
+
+- Le righe **7** e **186** dicono «otto riduttori»; l'elenco delle righe 781-791 ne porta **undici**. Chi legge il conteggio e non l'elenco ne scrive tre in meno.
+- La riga **322** dice «dopo `class SalvaReq` (122-125)»: `SalvaReq` finisce a 124, la 125 è vuota. Innocuo.
+- La riga **289** lascia `_VESTI = VESTI` come alias: due nomi per una costante, finché qualcuno non riscrive `veste_valori`.
+
+### 4. La ricerca che regge ogni task
+
+| task | riferimento | perché conta qui |
+|---|---|---|
+| 1 | `docs/ricerca/09-legami-costitutivi-ntc.md:59` | i parametri che le rotte espongono |
+| 1 (numeri) | `docs/ricerca/09-legami-costitutivi-ntc.md:69` | `f_cm` 33, `E_cm` 31 476 |
+| 2 | nessun riferimento pertinente | lookup puri; la forma sta in `nova/modello.py:349-352` |
+| 3 | `docs/ricerca/08-modelli-dati-riferimento.md:196` | armatura costruttiva sorgente, fibre derivate |
+| 3 (regola) | `docs/ricerca/08-modelli-dati-riferimento.md:219` | generare `patch`/`layer`, mai salvarli |
+| 4 | `docs/ricerca/09-legami-costitutivi-ntc.md:43` | compressione negativa, `Ec` = 2·`fpc`/`epsc0` |
+| 4 (acciaio) | `docs/ricerca/09-legami-costitutivi-ntc.md:104` | la retta incrudente da `ε_y` a `ε_ud` |
+| 5 | `docs/ricerca/09-legami-costitutivi-ntc.md:235` | la Circolare prevede le tre vesti |
+| 6 | `docs/ricerca/07-ux-modellatore.md:150` | «⌘K, N=nodo, B=asta, S=sezione» |
+| 7 | `docs/ricerca/07-ux-modellatore.md:149` | seleziona poi agisci, niente dialoghi |
+| 8 | `docs/ricerca/07-ux-modellatore.md:148` | ogni numero porta il suo contraddittore |
+| 8 (densità) | `docs/ricerca/07-ux-modellatore.md:155` | divulgazione progressiva, stati vuoti |
+| 9 | `docs/ricerca/07-ux-modellatore.md:152` | attesa parlante, mai percentuale inventata |
+| 10 | `docs/ricerca/14-studio-italiano.md:155` | le verifiche c.a. restano fuori |
+
+Un solo «nessun riferimento pertinente» su dieci task, e le tre ricerche che il piano dichiara in testa (righe 20, 21, 26 dell'indice) tornano tutte con una riga interna, non con la sola riga d'indice. Il piano non sta ignorando le ricerche.
+
+### 5. I debiti, per il ticket di chiusura
+
+Dichiarati dal piano stesso («Fuori da questa seduta», in coda):
+
+1. Azioni, carichi, combinazioni, palette `⌘K` — giornata 11c del calendario.
+2. L'importatore in interfaccia — giornata 11d.
+3. Le verifiche c.a. — blocco T8, ricerca 14.
+4. Il legame `Concrete04`/Mander nell'ispettore: il deck lo fa già, ma la curva del nucleo vuole una sezione — T8 o T10.
+5. L'eliminazione di sezioni e materiali dalla tastiera: i riduttori ci sono, manca il gesto `⌫` sull'albero col fuoco.
+
+Visti qui, e non scritti da nessuna parte:
+
+6. **`VESTI` esiste in due posti.** Il Task 1 la espone in `nova/legami.py` e la serve da `/api/catalogo` (riga 340); il Task 3 la scrive di nuovo in `static/sezione.js` (righe 184, 434). La riga 7 del piano dice che duplicare i valori in JavaScript «sarebbe una seconda verità»: qui la seconda verità è la lista delle vesti. Costa poco oggi — quattro stringhe che nessuno cambia — e scade il giorno in cui una veste si aggiunge o cambia nome, senza che nessun test lo veda.
+7. **`VESTI` sta nel modulo sbagliato.** `sezione.js` è la geometria delle barre; `impostaVeste` (Task 5) e il selettore dell'editor (Task 8) importano quel modulo per leggere un elenco di quattro stringhe che con le barre non c'entra.
+8. **Il Task 9 non ha test automatici** (riga 1508), e porta dodici ingressi degeneri (righe 1496-1506) il cui unico oracolo è la prova a mano del Task 10. È il task più grosso, il più cucito e il meno protetto: il primo posto dove un difetto passa senza fare rumore.
+9. **`veste_valori` gira due volte per richiesta**: una dentro `legame_copriferro` (riga 302) e una nella rotta (riga 346). Innocuo alla scala di una richiesta per materiale, dichiarato qui perché non è misurato.
+10. **`impostazioni_analisi.fibre` compare nel modello (Task 2) e nessuna interfaccia lo mostra.** La veste si cambia dall'editor del materiale (decisione 3); `fibre` resta un campo che solo il file conosce, fino alla giornata 12.
+
 ## Struttura dei file
 
 | file | responsabilità | puro |
@@ -195,7 +305,7 @@ def legame_copriferro(materiale: Materiale, veste: str) -> dict:
                        f"{v['articolo']}, [11.2.5], §7.4.1")
 ```
 
-In `calcestruzzo()` (righe 233-237) le quattro righe `v = …`, `lg = …`, `fc = …`, `epsc0 = …`, `copriferro = _concrete02(…)` diventano:
+In `calcestruzzo()` (righe 241-246) le quattro righe `v = …`, `lg = …`, `fc = …`, `epsc0 = …`, `copriferro = _concrete02(…)` diventano:
 
 ```python
     copriferro = legame_copriferro(materiale, veste)
