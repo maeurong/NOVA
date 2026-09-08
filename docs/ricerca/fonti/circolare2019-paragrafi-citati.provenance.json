@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://www.gazzettaufficiale.it/eli/gu/2019/02/11/35/so/5/sg/pdf",
+  "sha256": "f27413c4fef286117d4d398eed5455e3b21405e0ffc621da0bc281f899f90dfe",
+  "bytes": 36518
+ },
+ "tool": "pdftotext -layout",
+ "tool_version": "26.08.0",
+ "extracted": "2026-09-08"
+}
