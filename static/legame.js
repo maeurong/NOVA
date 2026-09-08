@@ -41,7 +41,15 @@ export function valoriDaMostrare(lg) {
   throw new Error(`legame sconosciuto: ${lg.tipo}`);
 }
 
-const cifre = (v) => stampaNumero(v, { decimali: Math.abs(v) < 1 ? 4 : 0, migliaia: true });
+/** Le cifre di un valore di legame, in un posto solo: le usa la curva qui sotto e la `<dl>`
+ *  dell'ispettore (`pannello.js`), che prima ne teneva una copia divergente. Zero decimali su
+ *  un intero (33 è «33», non «33,00»), due sotto cento (f_t = 2,56 è «2,56», non «3»:
+ *  arrotondarla a un intero cancellava la resistenza a trazione), quattro sotto uno (le
+ *  deformazioni), zero sopra cento con le migliaia. */
+export const cifre = (v) => stampaNumero(v, {
+  decimali: Number.isInteger(v) ? 0 : (Math.abs(v) < 1 ? 4 : (Math.abs(v) < 100 ? 2 : 0)),
+  migliaia: true,
+});
 
 /** Un SVG con la curva, gli assi per lo zero e i due estremi stampati. Inchiostro su niente. */
 export function svgCurva(punti, { larghezza = 220, altezza = 120 } = {}) {

@@ -5,13 +5,16 @@
 import { leggiNumero, stampaNumero } from "./numeri.js";
 import { nodo, asta, sezione, materiale, asteDellaSezione, vesteDi } from "./modello.js";
 import { LATI, VESTI, svgSezione, geometriaImpossibile } from "./sezione.js";
-import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "./legame.js";
+import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "./legame.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
 
 const mmNudo = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
 const mm = (v) => `${mmNudo(v)} mm`;
-// «0,8» e non «0,800»: gli zeri in coda di un fattore di danno non dicono niente in più.
-const conciso = (v) => stampaNumero(v, { decimali: 3 }).replace(/,?0+$/, "");
+/** «0,8» e non «0,800»: gli zeri in coda di un fattore di danno non dicono niente in più.
+ *  Le cifre le sceglie `cifre` (`legame.js`), non una regola scritta un'altra volta qui: a
+ *  tre decimali fissi un fattore di 0,0001 usciva come «0». Si tagliano solo gli zeri **dopo
+ *  la virgola** — `,?0+$` da solo mangiava anche lo zero di «10». */
+const conciso = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
 
 const CERCA = { nodo, asta, sezione, materiale };
 
@@ -126,8 +129,28 @@ export function presetPremuto(nome, vincolo) {
 
 // --- i mattoni comuni ai quattro editor ----------------------------------------------------
 
-const testoNumero = (v) =>
-  (v === null || v === undefined ? "" : stampaNumero(v, { decimali: Number.isInteger(v) ? 0 : 3 }));
+/** Il testo di un campo numerico. Regola d'oro: quel che il campo scrive, `leggiNumero` lo
+ *  deve rileggere uguale — il campo rientra dalla propria porta, come i numeri del piano.
+ *  Perciò **niente notazione esponenziale** sotto la soglia: misurato in questo worktree,
+ *  `leggiNumero("2,549e-9")` è `null`, e anche `toPrecision` la produce, quindi né l'una né
+ *  l'altra si rileggono. Sotto un millesimo si stampano i decimali che servono a tenere
+ *  quattro cifre significative: `2,5e-9` diventa «0,000000002500», lungo ma vero, mentre a
+ *  tre decimali fissi diventava «0,000», cioè uno zero che zero non è.
+ *  ponytail: il tetto è 100 decimali (il massimo di `toFixed`); sotto 1e-97 il campo
+ *  mostrerebbe zero — nessuna grandezza di questo modello ci arriva. */
+const testoNumero = (v) => {
+  if (v === null || v === undefined) return "";
+  if (Number.isInteger(v)) return stampaNumero(v, { decimali: 0 });
+  const piccolo = Math.abs(v) < 0.001;
+  const decimali = piccolo ? Math.min(100, 3 - Math.floor(Math.log10(Math.abs(v)))) : 3;
+  return stampaNumero(v, { decimali });
+};
+
+// WCAG 2.5.3 (livello A): il nome accessibile di ogni campo qui sotto **comincia** dal testo
+// visibile della sua etichetta, mai lo sostituisce. «Ø» a schermo e «diametro delle staffe»
+// nel nome erano due comandi diversi per chi detta a voce: pronunciava quello che leggeva e
+// non succedeva niente. Il nome aggiunge, non rimpiazza. Un test lo verifica su tutti e tre
+// gli editor, così nessun campo nuovo può romperlo in silenzio.
 
 /** Un campo numerico con nome accessibile intero, che legge con `leggiNumero` al `change`
  *  (P9: unità ed espressioni scritte come le scrive una persona). Se il testo non si legge,
@@ -238,7 +261,8 @@ function editorAsta(m, a, azioni) {
   }
   const et = document.createElement("label");
   const nota = document.createElement("input");
-  nota.type = "text"; nota.value = d.nota;
+  // `?? ""`: un `danno` letto da un file senza `nota` scriveva «undefined» nella casella.
+  nota.type = "text"; nota.value = d.nota ?? "";
   nota.setAttribute("aria-label", `nota sul danno dell'asta ${a.id}`);
   nota.addEventListener("change", () => invia("nota", nota.value));
   et.append(document.createTextNode("nota"), nota);
@@ -278,8 +302,8 @@ function editorSezione(m, s, azioni) {
     staffe.append(b); controlli.push(b);
   } else {
     for (const [campo, etichetta, nome, unita] of [
-      ["diametro", "Ø", "diametro delle staffe", " mm"],
-      ["passo", "passo", "passo delle staffe", " mm"],
+      ["diametro", "Ø", "Ø delle staffe, in mm", " mm"],
+      ["passo", "passo", "passo delle staffe, in mm", " mm"],
       ["bracci", "bracci", "bracci delle staffe", ""],
     ]) {
       agg(staffe, num(etichetta, nome, s.staffe[campo],
@@ -289,20 +313,35 @@ function editorSezione(m, s, azioni) {
     staffe.append(via); controlli.push(via);
   }
 
-  // `suFila` vuole numero e diametro insieme: ogni campo manda il proprio valore nuovo e
-  // quello corrente dell'altro, altrimenti cambiare «n» riporterebbe il diametro al default.
+  // `suFila` vuole numero e diametro insieme, e li legge dalle **due caselle**, non dal
+  // modello: il modello è quello del disegno di prima, e su un lato vuoto scrivere Ø 20 e poi
+  // n 3 dava 3Ø16 — il diametro appena scritto spariva.
   const barre = gruppo("barre per lato", "editor editor-campi");
   for (const lato of LATI) {
     const f = s.file.find((k) => k.lato === lato) ?? { n: 0, diametro: 16 };
-    const invia = (n, diametro) => azioni.suFila(s.id, lato, n, diametro);
-    agg(barre, num(`${lato} n`, `numero di barre ${lato}`, f.n, (v) => invia(v, f.diametro), ""));
-    agg(barre, num("Ø", `diametro delle barre ${lato}`, f.diametro, (v) => invia(f.n, v)));
+    const manda = () => {
+      const n = leggiNumero(cN.controllo.value), diametro = leggiNumero(cD.controllo.value);
+      if (n === null || diametro === null) {
+        // la casella *toccata* ha già avvisato da sé: qui parla solo per l'altra
+        azioni.suAvviso(`«${(n === null ? cN : cD).controllo.value}» non è un numero`);
+        return;
+      }
+      // Lato vuoto che resta vuoto: non c'è niente da togliere. Senza questa guardia il solo
+      // fatto di scrivere il diametro mandava `suFila(…, 0, 20)`, `impostaFila` scartava la
+      // fila con `n = 0` e col ridisegno il 20 tornava 16: il difetto di sopra rientrava
+      // dalla porta di servizio.
+      if (n === 0 && f.n === 0) return;
+      azioni.suFila(s.id, lato, n, diametro);
+    };
+    const cN = num(`${lato} n`, `${lato} n, numero di barre sul lato ${lato}`, f.n, manda, "");
+    const cD = num("Ø", `Ø delle barre sul lato ${lato}, in mm`, f.diametro, manda);
+    agg(barre, cN); agg(barre, cD);
   }
 
   const rid = gruppo("riduzione, mm mancanti", "editor editor-campi");
   const r = s.riduzione ?? { sup: 0, inf: 0, sx: 0, dx: 0 };
   for (const lato of LATI) {
-    agg(rid, num(lato, `riduzione ${lato} della sezione ${s.nome}`, r[lato] ?? 0,
+    agg(rid, num(lato, `${lato}, riduzione della sezione ${s.nome}, in mm`, r[lato] ?? 0,
                  (v) => campi({ riduzione: { ...r, [lato]: v } })));
   }
 
@@ -328,18 +367,21 @@ function editorSezione(m, s, azioni) {
 
 function editorMateriale(m, k, azioni, { catalogo, legame }) {
   const controlli = [];
-  // Senza catalogo il select resta **abilitato** con la sola classe corrente: disabilitarlo
-  // direbbe «non si cambia», mentre la verità è «le altre non sono ancora arrivate».
-  const classi = catalogo?.[k.tipo] ?? [k.classe];
+  // La classe corrente apre sempre l'elenco, anche quando il catalogo non la contiene: con
+  // `personalizzato` una classe fuori norma è lecita (`nova/modello.py:202-209`), e un
+  // `<select>` senza la sua `option` mostra la prima voce del catalogo — cioè dice che il
+  // materiale è un altro. Senza catalogo resta la sola corrente, e il select **abilitato**:
+  // disabilitarlo direbbe «non si cambia», mentre la verità è «le altre non sono arrivate».
+  const classi = [...new Set([k.classe, ...(catalogo?.[k.tipo] ?? [])])];
   const cl = gruppo("classe", "editor");
-  const s = scelta({ etichetta: "classe di norma", nome: `classe di ${k.nome}`,
+  const s = scelta({ etichetta: "classe di norma", nome: `classe di norma di ${k.nome}`,
                      opzioni: classi.map((c) => [c, c]), valore: k.classe,
                      alCambio: (v) => azioni.suMateriale(k.id, { classe: v }) });
   cl.append(s.etichetta); controlli.push(s.controllo);
   const et = document.createElement("label");
   const pers = document.createElement("input");
   pers.type = "checkbox"; pers.checked = k.personalizzato;
-  pers.setAttribute("aria-label", "valori personalizzati, sovrascrivono la tabella");
+  pers.setAttribute("aria-label", "personalizzato: i valori scritti a mano sovrascrivono la tabella");
   pers.addEventListener("change", () => azioni.suMateriale(k.id, { personalizzato: pers.checked }));
   et.append(pers, document.createTextNode("personalizzato")); cl.append(et); controlli.push(pers);
 
@@ -371,6 +413,12 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
   } else if (legame.errore) {
     const p = document.createElement("p"); p.className = "avviso";
     p.textContent = `attenzione: ${legame.errore}`; lg.append(p);
+  } else if (legame.legame?.tipo !== "concrete02" && legame.legame?.tipo !== "steel02") {
+    // Un tipo che non sappiamo disegnare si dice, non si solleva: `valoriDaMostrare` lancia,
+    // e da qui l'eccezione ammazzava `ridisegna` — pannello, piano e albero fermi insieme,
+    // senza una riga che spiegasse perché.
+    const p = document.createElement("p"); p.className = "avviso";
+    p.textContent = `attenzione: legame «${legame.legame?.tipo}» non mostrabile`; lg.append(p);
   } else {
     const c = legame.legame;
     const disegno = document.createElement("div");
@@ -379,7 +427,7 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
     for (const [nome, valore, unita] of valoriDaMostrare(c)) {
       const dt = document.createElement("dt"); dt.textContent = nome;
       const dd = document.createElement("dd"); dd.className = "numero";
-      dd.textContent = `${stampaNumero(valore, { decimali: Math.abs(valore) < 1 ? 4 : 0, migliaia: true })}${unita ? ` ${unita}` : ""}`;
+      dd.textContent = `${cifre(valore)}${unita ? ` ${unita}` : ""}`;
       dl.append(dt, dd);
     }
     const art = document.createElement("p"); art.className = "nota"; art.textContent = c.articolo;
@@ -401,13 +449,19 @@ const EDITORI = { nodo: editorVincolo, asta: editorAsta, sezione: editorSezione,
 export function creaPannello({ dati, vuoto, editor }, azioni) {
   // L'editor in piedi ora, per ritrovare il controllo a fuoco dopo un `replaceChildren`:
   // ricostruirlo staccherebbe dal DOM il controllo che l'utente sta usando, e il fuoco
-  // tornerebbe a `body` — sei ripartenze di tabulazione per spuntare sei gradi. Dalla 11b
-  // i controlli sono una lista sola: l'indice basta, perché l'ordine è quello di costruzione
-  // e la ricostruzione lo rifà identico.
+  // tornerebbe a `body` — sei ripartenze di tabulazione per spuntare sei gradi.
+  //
+  // Il controllo si ritrova **per nome**, non per posto nella lista: l'ordine non è stabile.
+  // «aggiungi staffe» fa comparire tre campi e un bottone *prima* delle file, e ogni indice
+  // dopo quel punto slitta — chi stava scrivendo «inf n» si ritrovava dentro «bracci».
+  // Il nome accessibile è unico per controllo e non si sposta con esso; i bottoni non ne
+  // hanno uno e valgono per il loro testo. Se il controllo non c'è più (il bottone «togli
+  // danno» dopo che il danno è andato via) il fuoco va al primo dell'editor, mai a `body`.
   let editorAttuale = null;
 
+  const chiave = (c) => c?.getAttribute?.("aria-label") ?? c?.textContent ?? null;
   const fuocoAttuale = () =>
-    (editorAttuale ? editorAttuale.controlli.indexOf(document.activeElement) : -1);
+    (editorAttuale?.controlli.includes(document.activeElement) ? chiave(document.activeElement) : null);
 
   function disegna(m, selezione, { catalogo = null, legame = null } = {}) {
     const e = selezione ? entitaSelezionata(m, selezione) : null;
@@ -433,7 +487,7 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
     editor.replaceChildren(...elementi);
     editorAttuale = { controlli };
     editor.hidden = false;
-    if (fuoco !== -1) controlli[fuoco]?.focus?.();
+    if (fuoco !== null) (controlli.find((c) => chiave(c) === fuoco) ?? controlli[0])?.focus?.();
   }
 
   return { disegna };

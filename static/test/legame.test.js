@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "../legame.js";
+import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "../legame.js";
 
 const C25 = { tipo: "concrete02", fpc: -33, epsc0: -0.002, fpcu: -6.6, epsU: -0.0035, lambda: 0.1, ft: 2.6, Ets: 1300, Ec: 33000 };
 const B450 = { tipo: "steel02", Fy: 450, E: 200000, b: 0.0052, R0: 18, cR1: 0.925, cR2: 0.15, eps_ud: 0.0675, k: 1.15 };
@@ -36,4 +36,17 @@ test("svgCurva regge la lista vuota e le curve piatte", () => {
   assert.match(svgCurva([]), /<svg/); assert.doesNotMatch(svgCurva([]), /<path/);
   assert.match(svgCurva([[0, 0], [0.01, 0]]), /<path/);
   assert.match(svgCurva(puntiSteel02(B450)), /<path d="M/);
+});
+
+// --- fix round 1, punto 5: le cifre stanno in un posto solo ---
+
+test("cifre: 2,56 non diventa 3, un intero non prende decimali, sopra cento le migliaia", () => {
+  // f_t = 2,56 MPa arrotondata a «3» cancellava la resistenza a trazione dalla `<dl>`.
+  assert.equal(cifre(2.56), "2,56");
+  assert.equal(cifre(33), "33");
+  // lo spazio fine unificatore, quello che `stampaNumero` emette per le migliaia
+  assert.equal(cifre(200000), "200 000");
+  // sotto uno restano quattro decimali: sono le deformazioni della curva
+  assert.equal(cifre(0.0035), "0,0035");
+  assert.equal(cifre(-2.56), "-2,56");
 });

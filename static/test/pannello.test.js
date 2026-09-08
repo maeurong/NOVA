@@ -5,6 +5,7 @@ import { righe, prossimoVincolo, copiaPreimpostazione, presetPremuto, creaPannel
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "../vincoli.js";
 import { creaNodo, estrudi, creaSezione, materialiDiDefault } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
+import { leggiNumero } from "../numeri.js";
 
 function elementoFinto() {
   const listeners = {};
@@ -462,8 +463,10 @@ test("editorMateriale: col catalogo il select elenca le classi del tipo, con la 
   p.disegna(m, { tipo: "materiale", id: 1 },
     { catalogo: { calcestruzzo: ["C20/25", "C25/30", "C30/37"], acciaio: ["B450C"] }, legame: LEGAME_C25 });
   const opzioni = editor._figli[0]._figli[1]._figli[1]._figli;
+  // la classe corrente apre l'elenco: è l'unico modo di mostrarla anche quando è fuori
+  // catalogo (materiale `personalizzato`, `nova/modello.py:202-209`)
   assert.deepEqual(opzioni.map((o) => [o.textContent, o.selected]),
-    [["C20/25", false], ["C25/30", true], ["C30/37", false]]);
+    [["C25/30", true], ["C20/25", false], ["C30/37", false]]);
 });
 
 // --- riga 7: il legame non è ancora arrivato ---
@@ -663,7 +666,9 @@ test("editorSezione: una fila manda a suFila il numero e il diametro correnti in
   assert.deepEqual(chiamate.suFila, [[1, "inf", 4, 16]]);
   const campoDia = barre._figli[2]._figli[1];
   campoDia.value = "20"; campoDia.dispatch("change");
-  assert.deepEqual(chiamate.suFila[1], [1, "inf", 3, 20]);
+  // 4, non 3: senza ridisegno in mezzo, il numero corrente è quello **nella casella**, non
+  // quello del modello. Prima qui c'era `3`, ed era il difetto scritto come se fosse la regola.
+  assert.deepEqual(chiamate.suFila[1], [1, "inf", 4, 20]);
 });
 
 test("editorSezione: il select del calcestruzzo elenca i soli calcestruzzi e manda un numero", () => {
@@ -703,4 +708,207 @@ test("editorMateriale: la veste è del modello intero e manda suVeste", () => {
     [["caratteristica", false], ["media", true], ["progetto", false], ["esistente", false]]);
   sel.value = "progetto"; sel.dispatch("change");
   assert.deepEqual(chiamate.suVeste, ["progetto"]);
+});
+
+// ==========================================================================================
+// Fix round 1
+// ==========================================================================================
+
+// Il testo visibile di un'etichetta e il nome accessibile del suo controllo, per ogni campo
+// dell'editor in piedi. L'ordine dentro la `<label>` non è fisso: la spunta «personalizzato»
+// mette il controllo prima del testo, i campi numerici dopo.
+function nomiDeiCampi(editor) {
+  const coppie = [];
+  for (const gruppo of editor._figli) {
+    for (const et of gruppo._figli ?? []) {
+      const testo = (et._figli ?? []).find((x) => x.nodeType === 3);
+      const c = (et._figli ?? []).find((x) => x._attrs?.["aria-label"]);
+      if (testo && c) coppie.push([testo.textContent, c._attrs["aria-label"]]);
+    }
+  }
+  return coppie;
+}
+
+const controlliDi = (editor) =>
+  editor._figli.flatMap((g) => (g._figli ?? []).flatMap((x) =>
+    x._attrs?.["aria-label"] ? [x] : (x._figli ?? []).filter((y) => y._attrs?.["aria-label"])));
+
+// --- punto 1: la classe fuori catalogo, che `personalizzato` rende lecita ---
+
+test("editorMateriale: una classe fuori catalogo è la prima option ed è scelta, non sparisce", () => {
+  const m = conSezione();
+  m.materiali[0].classe = "C-opera-1";
+  m.materiali[0].personalizzato = true;
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 },
+    { catalogo: { calcestruzzo: ["C20/25", "C25/30"], acciaio: ["B450C"] }, legame: LEGAME_C25 });
+  const opzioni = editor._figli[0]._figli[1]._figli[1]._figli;
+  assert.deepEqual(opzioni.map((o) => [o.textContent, o.selected]),
+    [["C-opera-1", true], ["C20/25", false], ["C25/30", false]]);
+});
+
+test("editorMateriale: una classe già a catalogo non compare due volte", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 },
+    { catalogo: { calcestruzzo: ["C20/25", "C25/30", "C30/37"] }, legame: LEGAME_C25 });
+  const opzioni = editor._figli[0]._figli[1]._figli[1]._figli;
+  assert.deepEqual(opzioni.map((o) => o.textContent), ["C25/30", "C20/25", "C30/37"]);
+  assert.deepEqual(opzioni.filter((o) => o.selected).map((o) => o.textContent), ["C25/30"]);
+});
+
+// --- punto 2: il fuoco si ritrova per nome, non per posto nella lista ---
+
+test("editorSezione: aggiungere le staffe non sposta il fuoco su un altro campo", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const prima = controlliDi(editor);
+  const campoN = prima.find((c) => c._attrs["aria-label"].startsWith("inf n"));
+  const indicePrima = prima.indexOf(campoN);
+  campoN.focus();
+
+  // le staffe compaiono **prima** delle file: tre campi e un bottone in più, gli indici slittano
+  p.disegna(conStaffe(conSezione()), { tipo: "sezione", id: 1 });
+  const dopo = controlliDi(editor);
+  const omologo = dopo.find((c) => c._attrs["aria-label"].startsWith("inf n"));
+  assert.notEqual(dopo.indexOf(omologo), indicePrima, "gli indici sono davvero slittati");
+  assert.equal(globalThis.document.activeElement, omologo);
+});
+
+test("editorAsta: se il controllo a fuoco sparisce il fuoco va al primo, non al body", () => {
+  const m = conSezioneEAsta();
+  m.aste[0].danno = { fattore_E: 0.8, fattore_fc: 0.9, nota: "" };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "asta", id: 1 });
+  const via = editor._figli[1]._figli.find((e) => e.textContent === "togli danno");
+  via.focus();
+  delete m.aste[0].danno;
+  p.disegna(m, { tipo: "asta", id: 1 });
+  assert.ok(!editor._figli[1]._figli.some((e) => e.textContent === "togli danno"),
+    "il bottone è sparito davvero");
+  assert.equal(globalThis.document.activeElement, controlliDi(editor)[0]);
+});
+
+test("disegna: il fuoco fuori dall'editor non viene rubato nemmeno dagli editor nuovi", () => {
+  const { p } = pannelloFinto();
+  const altrove = elementoFinto();
+  globalThis.document.activeElement = altrove;
+  p.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  assert.equal(globalThis.document.activeElement, altrove);
+});
+
+// --- punto 3: `suFila` legge le due caselle, non il modello ---
+
+test("editorSezione: Ø scritto e poi n legge quel Ø, non quello del modello", () => {
+  const m = conStaffe(conSezione());
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const c = controlliDi(editor);
+  const campoDia = c.find((x) => x._attrs["aria-label"].startsWith("Ø delle barre sul lato sup"));
+  const campoN = c.find((x) => x._attrs["aria-label"].startsWith("sup n"));
+  campoDia.value = "20"; campoDia.dispatch("change");
+  // il lato era vuoto e resta vuoto: niente da togliere, nessun comando (e nessuna riga di Storia)
+  assert.deepEqual(chiamate.suFila, []);
+  campoN.value = "3"; campoN.dispatch("change");
+  assert.deepEqual(chiamate.suFila, [[1, "sup", 3, 20]]);
+});
+
+test("editorSezione: azzerare una fila che c'è resta un comando, e toglie la fila", () => {
+  const m = conStaffe(conSezione());
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const campoN = controlliDi(editor).find((x) => x._attrs["aria-label"].startsWith("inf n"));
+  campoN.value = "0"; campoN.dispatch("change");
+  assert.deepEqual(chiamate.suFila, [[1, "inf", 0, 16]]);
+});
+
+test("editorSezione: se l'altra casella non è un numero, avvisa e non manda la fila", () => {
+  const m = conStaffe(conSezione());
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const c = controlliDi(editor);
+  const campoDia = c.find((x) => x._attrs["aria-label"].startsWith("Ø delle barre sul lato inf"));
+  const campoN = c.find((x) => x._attrs["aria-label"].startsWith("inf n"));
+  campoDia.value = "sedici";  // scritto e non ancora confermato
+  campoN.value = "4"; campoN.dispatch("change");
+  assert.deepEqual(chiamate.suFila, []);
+  assert.equal(chiamate.suAvviso[0], "«sedici» non è un numero");
+});
+
+// --- punto 4: WCAG 2.5.3, il nome accessibile comincia da ciò che si vede ---
+
+for (const [nome, selezione] of [["asta", { tipo: "asta", id: 1 }],
+                                 ["sezione", { tipo: "sezione", id: 1 }],
+                                 ["materiale", { tipo: "materiale", id: 1 }]]) {
+  test(`editor${nome}: ogni nome accessibile comincia dal testo visibile (WCAG 2.5.3)`, () => {
+    const m = conStaffe(conSezioneEAsta());
+    m.materiali[0].personalizzato = true;
+    const { p, editor } = pannelloFinto();
+    p.disegna(m, selezione, { catalogo: null, legame: LEGAME_C25 });
+    const coppie = nomiDeiCampi(editor);
+    assert.ok(coppie.length > 0, "l'editor ha almeno un campo etichettato");
+    for (const [visibile, accessibile] of coppie) {
+      assert.ok(accessibile.startsWith(visibile),
+        `«${accessibile}» non comincia da «${visibile}»`);
+    }
+  });
+}
+
+// --- punto 6: `danno` senza `nota` non scrive «undefined» nella casella ---
+
+test("editorAsta: un danno senza nota lascia la casella vuota, non «undefined»", () => {
+  const m = conSezioneEAsta();
+  m.aste[0].danno = { fattore_E: 0.8, fattore_fc: 0.9 };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "asta", id: 1 });
+  assert.equal(editor._figli[1]._figli[3]._figli[1].value, "");
+});
+
+// --- punto 7: un legame di tipo ignoto avvisa, non ammazza il ridisegno ---
+
+test("editorMateriale: un legame di tipo ignoto avvisa e non solleva", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  const ignoto = { valori: { avvisi: [], note: [] }, catalogo: null,
+                   legame: { tipo: "concrete04", articolo: "—" } };
+  assert.doesNotThrow(() => p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: ignoto }));
+  const lg = editor._figli.at(-1);
+  assert.equal(lg._figli[1].className, "avviso");
+  assert.equal(lg._figli[1].textContent, "attenzione: legame «concrete04» non mostrabile");
+  assert.ok(!lg._figli.some((e) => (e.innerHTML ?? "").includes("<svg")), "nessuna curva");
+});
+
+// --- punto 8: un fattore piccolissimo non diventa «0» ---
+
+test("righe: un fattore di danno piccolo resta leggibile, non si arrotonda a zero", () => {
+  const m = CON_CERNIERA();
+  m.aste[0].danno = { fattore_E: 0.0001, fattore_fc: 0.9, nota: "" };
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("danno"), "E ×0,0001 · fc ×0,9");
+});
+
+// --- punto 10: il campo rientra dalla propria porta ---
+
+test("i valori piccolissimi si stampano in modo che `leggiNumero` li rilegga uguali", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const { p, editor } = pannelloFinto();
+  const lg = { ...LEGAME_C25, catalogo: { densita: 2.5e-9, nu: 0.2, E: 31476 } };
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: lg });
+  const campo = controlliDi(editor).find((c) => c._attrs["aria-label"].startsWith("densita"));
+  // niente notazione esponenziale: `leggiNumero` non la legge (misurato), e un campo che
+  // non si rilegge è un campo che mente
+  assert.ok(!campo.value.includes("e"), campo.value);
+  assert.notEqual(leggiNumero(campo.value), 0);
+  assert.equal(leggiNumero(campo.value), 2.5e-9);
+});
+
+test("i valori normali non cambiano forma per colpa dei piccolissimi", () => {
+  const { pannello, editor } = pannelloFinto();
+  pannello.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  const c = controlliDi(editor);
+  assert.equal(c.find((x) => x._attrs["aria-label"].startsWith("b ")).value, "300");
+  assert.equal(c.find((x) => x._attrs["aria-label"].startsWith("copriferro")).value, "30");
 });

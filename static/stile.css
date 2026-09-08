@@ -99,8 +99,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .vincolo-gradi input { accent-color: var(--inchiostro); }
 
 /* Gli editor della 11b: stessa forma di `.vincolo-gradi` (fieldset nativo, legenda piccola),
-   etichetta e campo su una riga, i numeri in mono. Il rosso compare solo in `.avviso`, e
-   sempre dopo la parola «attenzione»: il colore è il secondo canale, mai il primo. */
+   etichetta e campo su una riga, i numeri in mono. Il rosso compare solo in `.avviso`, come
+   filetto e non come testo, e sempre accanto alla parola «attenzione»: il colore è il
+   secondo canale, mai il primo. */
 .editor { border: 0; padding: 0; margin: 6px 0 0; }
 .editor legend { font-size: 10px; color: var(--testo-tenue); letter-spacing: 0.06em; text-transform: uppercase; padding: 0; }
 /* `wrap` per lo stesso motivo dei bottoni delle preimpostazioni: a testo ingrandito
@@ -124,12 +125,14 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .sezione-disegno svg, .curva svg { max-width: 100%; height: auto; display: block; }
 .curva dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; font-size: 11px; }
 .curva dt { color: var(--testo-tenue); } .curva dd { margin: 0; }
-/* Misurato: `--rosso` su `--fondo` è 4,28:1, sotto la soglia AA 4,5:1 per un testo di 11px
-   (su `--pannello` 3,85:1). La palette è una decisione di prodotto — un rosso solo, ticket
-   #14 — e `#albero li` selezionato porta già lo stesso rosso come testo: la scelta va presa
-   per tutta l'app, non solo qui. Nel frattempo il senso non passa dal colore: la parola
-   «attenzione:» apre ogni riga e resta leggibile a chi il rosso non lo distingue. */
-.avviso { color: var(--rosso); font-size: 11px; margin: 4px 0 0; }
+/* Misurato: `--rosso` su `--fondo` è 4,28:1 (su `--pannello` 3,85:1), sotto la soglia AA
+   4,5:1 per un testo di 11px, e l'inchiostro sullo stesso fondo è 13,19:1. Il rosso non si
+   tocca — un rosso solo, ticket #14 — quindi cambia mestiere: il **testo** passa a
+   inchiostro e il rosso al filetto, che come elemento non testuale ha soglia 3:1 e la
+   supera con quel 4,28. Il segnale resta a tre canali e nessuno dei tre è il solo: il
+   filetto, la parola «attenzione:» in testa alla riga, e il testo che dice cosa non va. */
+.avviso { color: var(--inchiostro); font-size: 11px; margin: 4px 0 0;
+          border-left: 3px solid var(--rosso); padding-left: 6px; }
 .nota { color: var(--testo-tenue); font-size: 11px; margin: 4px 0 0; }
 
 #albero ul { margin: 0; padding: 0; list-style: none; }
