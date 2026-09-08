@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "http://www.dhondt.de/ccx_2.22.htm.tar.bz2",
+  "sha256": "e8c6b1502aca07a58667092bc6cc5f89420469055a6df4c0bccb5b18ae4acc7c",
+  "bytes": 62019
+ },
+ "tool": "curl + tar + conversione HTML->testo (tmp-ricerca/fonti.py)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}
