@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://www.svibs.com/resources/ARTeMIS_Modal_Help_v7/UFF%20Data%20Set%20Number%2055.html",
+  "sha256": "094795432ac7b5cfe2db96262454f280fc61a32eed399ea8e316b543991bb56f",
+  "bytes": 2189
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

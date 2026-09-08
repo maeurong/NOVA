@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://www.sintef.no/globalassets/project/evitameeting/2005/lcurve.pdf",
+  "sha256": "75fffcbff0ef36b26ae5e56a5129d0b55c8fa4e2426cb6e4176b5246303f7e59",
+  "bytes": 5511
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1 + pdftotext 26.08.0 (-layout)",
+ "extracted": "2026-09-08"
+}

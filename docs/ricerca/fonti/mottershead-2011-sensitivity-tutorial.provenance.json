@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "http://michael.friswell.com/PDF_Files/J188.pdf",
+  "sha256": "e7a3906b4314854337f6183a374981e309d98986a3e9be3841cd20ce9e09dcf7",
+  "bytes": 20251
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1 + pdftotext 26.08.0 (-layout)",
+ "extracted": "2026-09-08"
+}
