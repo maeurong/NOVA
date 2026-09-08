@@ -9,6 +9,7 @@
 // qui vorrebbe dire tenere due oracoli allineati a mano, ed è così che divergono.
 
 import { prossimoId, nodo, asteDelNodo, nodoVicino, TOLLERANZA_MM } from "./modello.js";
+import { GRADI } from "./vincoli.js";
 
 /** L'errore che l'interfaccia sa mostrare. Tutto il resto è un difetto del programma. */
 export class ErroreComando extends Error {
@@ -112,5 +113,38 @@ export function rinomina(m, { tipo, id, nome }) {
   const bersaglio = n[chiave].find((e) => e.id === id);
   if (!bersaglio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
   bersaglio.nome = nome.trim();
+  return n;
+}
+
+/** L'asta fra due nodi già scelti. Non passa da `estrudi`: gli identificatori sono noti,
+ *  e calcolare uno spostamento per poi sperare che l'arrivo ricada entro la tolleranza
+ *  sarebbe un giro in più con un modo in più di sbagliare. */
+export function collega(m, { da, a, sezione = null }) {
+  if (da === a) throw new ErroreComando("un'asta da un nodo a sé stesso è lunga zero",
+                                        "scegli due nodi diversi");
+  for (const id of [da, a]) {
+    if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`, "scegli un nodo che c'è");
+  }
+  // Due nodi già uniti sono quasi sempre un secondo clic per sbaglio, e un'asta duplicata
+  // il solutore la accetta senza dire niente: la vede solo il Check Model, alla corsa.
+  const gia = m.aste.find((k) => (k.nodo_i === da && k.nodo_j === a) || (k.nodo_i === a && k.nodo_j === da));
+  if (gia) throw new ErroreComando(`i nodi ${da} e ${a} sono già uniti dall'asta ${gia.id}`,
+                                   "scegli un'altra coppia");
+  const n = copia(m);
+  const id = prossimoId(n, "asta");
+  n.aste.push({ id, nome: null, nodo_i: da, nodo_j: a, sezione });
+  n.contatori.asta = id;
+  return n;
+}
+
+/** Il vincolo di un nodo: i sei gradi, o `null` per liberarlo. Si tengono **solo** i sei
+ *  gradi noti — un campo in più diventerebbe un rifiuto di `/api/modello/salva`, che ha
+ *  `extra="forbid"` (`nova/modello.py:39`). */
+export function impostaVincolo(m, { id, vincolo }) {
+  if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
+  const n = copia(m);
+  const bersaglio = n.nodi.find((k) => k.id === id);
+  if (vincolo === null || vincolo === undefined) delete bersaglio.vincolo;
+  else bersaglio.vincolo = Object.fromEntries(GRADI.map((g) => [g, Boolean(vincolo[g])]));
   return n;
 }

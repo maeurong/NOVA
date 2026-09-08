@@ -7,14 +7,32 @@
 <link rel="stylesheet" href="/static/stile.css">
 </head>
 <body>
-<nav id="albero" aria-label="albero del modello">
-  <h2>Modello</h2>
-  <div class="vuoto" id="albero-vuoto">
-    Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
-    in millimetri.
-  </div>
-  <ul id="albero-elenco" hidden></ul>
-</nav>
+<div id="colonna">
+  <section id="file" aria-label="file del modello">
+    <h2>File</h2>
+    <label for="file-percorso">percorso del modello</label>
+    <input id="file-percorso" type="text" spellcheck="false"
+           placeholder="docs/caso-studio/muro_1.nova.json">
+    <div class="file-azioni">
+      <button id="file-apri" type="button">apri</button>
+      <button id="file-salva" type="button">salva</button>
+    </div>
+    <p id="file-stato" class="numero"></p>
+    <!-- `hidden` come ogni altro stato vuoto della pagina: `creaFile` gira dopo l'`await` di
+         three.js, e senza questo «Niente di recente.» lampeggia a ogni caricamento pure con
+         otto percorsi in elenco. Chi lo deve mostrare è `disegnaRecenti`. -->
+    <p class="vuoto" id="file-recenti-vuoto" hidden>Niente di recente.</p>
+    <ul id="file-recenti" aria-label="aperti di recente" hidden></ul>
+  </section>
+  <nav id="albero" aria-label="albero del modello">
+    <h2>Modello</h2>
+    <div class="vuoto" id="albero-vuoto">
+      Nessun nodo. Premi <kbd>N</kbd> e scrivi le coordinate come <span class="numero">x; z</span>,
+      in millimetri.
+    </div>
+    <ul id="albero-elenco" hidden></ul>
+  </nav>
+</div>
 
 <main id="viste">
   <section id="piano" aria-label="piano di lavoro"></section>
@@ -24,9 +42,11 @@
 <aside id="pannello" aria-label="ispettore">
   <h2>Selezione</h2>
   <div class="vuoto" id="pannello-vuoto">
-    Niente di selezionato. Clicca un nodo o un'asta nel piano, oppure scegline uno nell'albero.
+    Niente di selezionato. Premi <kbd>G</kbd> per girare fra i nodi, oppure clicca un nodo
+    o un'asta nel piano.
   </div>
   <dl id="pannello-dati" hidden></dl>
+  <div id="pannello-vincolo" hidden></div>
   <h2 class="staccato">Unità</h2>
   <p class="numero">mm · N · MPa · t · s</p>
 </aside>

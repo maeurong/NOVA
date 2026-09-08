@@ -1,44 +1,81 @@
-// La cucitura. Due sole cose di stato: la cronologia (da cui esce il modello corrente) e
-// la selezione. Tutto il resto è derivato e si ridisegna intero a ogni cambio: con un
-// telaio da qualche decina di aste il ridisegno costa meno di un aggiornamento parziale
-// sbagliato. `ponytail: ridisegno intero; si passa a un diff quando un modello vero lo
-// rende lento, non prima.`
+// La cucitura. Due modi di disegno oltre alla selezione libera: l'estrusione, dove la
+// selezione resta ferma mentre si conferma un ghost, e l'asta fra due nodi, dove la
+// selezione **è** il gesto — la stessa guardia renderebbe impossibile scegliere il
+// secondo nodo. `ponytail: ridisegno intero; si passa a un diff quando un modello vero
+// lo rende lento, non prima.`
 
 import { modelloVuoto, nodo } from "./modello.js";
-import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina } from "./comandi.js";
+import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
 import { nuovaCronologia, applica, corrente } from "./cronologia.js";
-import { voceDaEvento, vociDellaBarra } from "./tastiera.js";
+import { voceDaEvento, vociDellaBarra, daControllo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
+import { creaPannello } from "./pannello.js";
+import { creaFile } from "./file.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "./modo.js";
+import { alternaIncastro } from "./vincoli.js";
 import { leggiNumero, stampaNumero } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
-let ghost = null;  // {da, dx, dz} mentre si digita: non entra nel modello finché non si conferma
-
-// Stesso messaggio del blocco da tastiera qui sotto: un ghost aperto blocca anche il clic,
-// non solo N/M/R, altrimenti selezionare un altro nodo con il mouse sposta silenziosamente
-// "da" del ghost mentre lo schermo mostra ancora il tratteggio dal nodo vecchio.
-const GHOST_APERTO = "c'è un'estrusione in corso: Invio per confermarla, Esc per annullarla";
+// null · {tipo:"estrusione", da, dx, dz} · {tipo:"asta", da, a}
+// Due modi e non un ghost solo: in estrusione la selezione è ferma, in asta la selezione
+// **è** il gesto. La stessa guardia per entrambi renderebbe l'asta impossibile.
+let modo = null;
+// Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
+// che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
+// per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
+let percorso = null, impronta = null;
 
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
+function dì(testo) { messaggio.textContent = testo ?? ""; }
 
-function suSelezione(tipo, id) {
-  if (ghost) { dì(GHOST_APERTO); return; }
+function scegli(tipo, id) {
+  const { permesso, messaggio, aggiornaA } = esitoScelta(modo, tipo);
+  if (messaggio) dì(messaggio);
+  if (!permesso) return;
+  if (aggiornaA) modo = { ...modo, a: id };
   selezione = { tipo, id };
   ridisegna();
 }
 
-const piano = creaPiano($("piano"), {
-  suSelezione,
-  suSfondo: () => { selezione = null; ridisegna(); },
-});
-const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione });
+const piano = creaPiano($("piano"), { suSelezione: scegli, suSfondo: () => { if (!modo) { selezione = null; ridisegna(); } } });
+const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione: scegli });
+const pannello = creaPannello(
+  { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-vincolo") },
+  { suVincolo: (id, vincolo) => {
+    esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`);
+    ridisegna();
+  } },
+);
 const spazio = await creaSpazio($("spazio"));
+const file = creaFile(document, {
+  suApertura: (p, m, i) => {
+    cronologia = nuovaCronologia(m, `aperto ${p}`);
+    selezione = null; modo = null;
+    percorso = p; impronta = i;
+    dì(null);
+    ridisegna();
+  },
+  // Salvare non tocca né il modello né la cronologia: cambia solo l'impronta di riferimento.
+  suSalvataggio: (p, i) => { percorso = p; impronta = i; dì(null); ridisegna(); },
+  suErrore: (msg) => dì(msg),
+});
+// Il percorso aperto, non il campo: il campo è la sorgente di `apri`. `null` solo finché
+// non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
+$("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
 
-function dì(testo) { messaggio.textContent = testo ?? ""; }
+// Aprire un modo lo rende il gesto della tastiera globale, quindi il fuoco deve lasciare
+// il controllo su cui si trovava: `pannello.js` lo riporta apposta sul bottone dopo ogni
+// ridisegno, e `Invio` su un bottone a fuoco lo **attiva** invece di confermare il gesto che
+// la barra sta annunciando — si riscriverebbe il vincolo invece di chiudere l'asta.
+function apriModo(nuovo) {
+  modo = nuovo;
+  document.activeElement?.blur?.();
+  ridisegna();
+}
 
 function esegui(fn, etichetta) {
   try {
@@ -58,45 +95,21 @@ function ridisegna() {
   if (selezione && !(selezione.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === selezione.id)) {
     selezione = null;
   }
-  // Un ghost che parte da un nodo sparito è nella stessa condizione di una selezione sparita.
-  if (ghost && !m.nodi.some((n) => n.id === ghost.da)) {
-    ghost = null;
-  }
+  // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
+  if (modo && !m.nodi.some((n) => n.id === modo.da)) modo = null;
+  if (modo?.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) modo = { ...modo, a: null };
+
+  const ghost = ghostDisegnabile(m, modo);
   piano.disegna(m, { selezione, ghost });
   spazio.disegna(m, { selezione });
   albero.disegna(m, { selezione });
-  disegnaPannello(m);
+  pannello.disegna(m, selezione);
+  file.disegna({ percorso, impronta, modello: m });
   disegnaBarra();
 }
 
-function disegnaPannello(m) {
-  const dati = $("pannello-dati"), vuoto = $("pannello-vuoto");
-  vuoto.hidden = selezione !== null;
-  dati.hidden = selezione === null;
-  if (!selezione) return;
-  const righe = [];
-  if (selezione.tipo === "nodo") {
-    const n = nodo(m, selezione.id);
-    righe.push(["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
-               ["x", `${stampaNumero(n.x, { decimali: 0, migliaia: true })} mm`],
-               ["z", `${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`]);
-  } else {
-    const a = m.aste.find((k) => k.id === selezione.id);
-    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
-    righe.push(["identificatore", String(a.id)], ["nome", a.nome ?? "—"],
-               ["da → a", `${a.nodo_i} → ${a.nodo_j}`],
-               ["lunghezza", `${stampaNumero(Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z), { decimali: 0, migliaia: true })} mm`],
-               ["sezione", a.sezione === null ? "non assegnata (giornata 11)" : String(a.sezione)]);
-  }
-  dati.replaceChildren(...righe.flatMap(([k, v]) => {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v; dd.className = "numero";
-    return [dt, dd];
-  }));
-}
-
 function disegnaBarra() {
-  const contesto = ghost ? "ghost" : (selezione ? "selezione" : "sempre");
+  const contesto = contestoBarra(modo, selezione);
   $("barra").replaceChildren(...vociDellaBarra(contesto).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
@@ -111,7 +124,7 @@ function disegnaBarra() {
   }));
 }
 
-// Le coordinate e le lunghezze si chiedono con `prompt`: è il campo che non si può
+// Le coordinate, le lunghezze e i nomi si chiedono con `prompt`: è il campo che non si può
 // sbagliare, e la palette ⌘K con i valori nella query è la giornata 11 (story 8).
 // `ponytail: prompt oggi, campo nella palette domani.`
 function chiedi(domanda, esempio) {
@@ -120,22 +133,41 @@ function chiedi(domanda, esempio) {
   return t;
 }
 
+// Un `keydown` solo su `window`, con la guardia in un posto solo: due listener sulla stessa
+// finestra con regole d'ingresso diverse è il difetto, non il sintomo — quello delle frecce
+// non ne aveva nessuna e rubava ↑↓←→ anche a chi stava scrivendo nel campo del percorso.
 window.addEventListener("keydown", (ev) => {
-  if (ev.target instanceof HTMLInputElement) return;
+  // Il controllo a fuoco si tiene i tasti che userebbe — le lettere in un campo, ⌫ e Spazio
+  // su un bottone — e lascia passare gli altri: `daControllo` guarda il tasto, non solo il
+  // bersaglio, altrimenti spegne dodici comandi ogni volta che il fuoco è su un controllo.
+  if (daControllo(ev)) return;
   const voce = voceDaEvento(ev);
   if (!voce) return;
-  // `seleziona` decide da sé: solo lui può lasciare l'evento al browser (vedi sotto).
-  if (voce.codice !== "seleziona") ev.preventDefault();
 
-  if (voce.codice === "annulla") { ghost = null; dì(null); ridisegna(); return; }
-
-  // Con un ghost aperto passano solo conferma e le frecce (secondo listener, sotto):
-  // un secondo `B` sovrascriverebbe il ghost in silenzio, buttando via la direzione già
-  // scelta, e `M`/`R` aprirebbero un prompt mentre l'estrusione resta appesa sul piano.
-  if (ghost && voce.codice !== "conferma") {
-    dì(GHOST_APERTO);
+  // Prima del `preventDefault`: senza un'estrusione aperta la freccia non è nostra, e
+  // rubarla vorrebbe dire togliere al browser lo scorrimento della pagina.
+  if (voce.codice === "direzione") {
+    const girato = ruotaGhost(modo, ev.key);
+    if (!girato) return;
+    ev.preventDefault();
+    modo = girato;
+    ridisegna();
     return;
   }
+  ev.preventDefault();
+
+  if (voce.codice === "annulla") { modo = null; dì(null); ridisegna(); return; }
+
+  // Con un modo aperto passano solo conferma, annulla e — in modo asta — la selezione.
+  if (modo && voce.codice !== "conferma" && !(modo.tipo === "asta" && voce.codice === "seleziona")) {
+    dì(modo.tipo === "asta"
+      ? "scegli il secondo nodo, poi Invio — Esc per annullare"
+      : AVVISO_ESTRUSIONE);
+    return;
+  }
+
+  if (voce.codice === "apri") { file.apri(); return; }
+  if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
 
   if (voce.codice === "nodo") {
     const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
@@ -154,20 +186,13 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "seleziona") {
-    // ⇥ gira fra i nodi in ordine di identificatore. È l'unico modo di avere una selezione
-    // senza mouse, e senza selezione metà dei comandi non parte.
-    //
-    // Ma solo con il fuoco sul corpo della pagina: dentro l'albero o il pannello, ⇥ resta
-    // il ⇥ del browser. Rubarlo ovunque significherebbe che chi naviga da tastiera non
-    // raggiunge più nulla — un difetto di accessibilità peggiore di quello che risolve.
-    if (document.activeElement !== document.body) return;
-    ev.preventDefault();
+    // G gira fra i nodi in ordine di identificatore. In modo asta è il gesto stesso: passa
+    // da `scegli`, che aggiorna anche `modo.a`, non solo `selezione`.
     const m = corrente(cronologia);
     if (m.nodi.length === 0) { dì("nessun nodo da selezionare: premi N"); return; }
     const ids = m.nodi.map((n) => n.id);
     const dove = selezione?.tipo === "nodo" ? ids.indexOf(selezione.id) : -1;
-    selezione = { tipo: "nodo", id: ids[(dove + 1) % ids.length] };
-    ridisegna();
+    scegli("nodo", ids[(dove + 1) % ids.length]);
     return;
   }
 
@@ -177,19 +202,45 @@ window.addEventListener("keydown", (ev) => {
     if (t === null) return;
     const l = leggiNumero(t);
     if (l === null || l <= 0) { dì("lunghezza non letta: scrivi un numero maggiore di zero"); return; }
-    ghost = { da: selezione.id, dx: 0, dz: l };  // in su di default; le frecce la girano
     // La barra già dice "Invio conferma" / "Esc annulla" col contesto "ghost" (tastiera.js):
     // un secondo avviso qui sarebbe rosso senza essere un'attenzione, contro PRODUCT.md.
     dì(null);
+    apriModo({ tipo: "estrusione", da: selezione.id, dx: 0, dz: l });  // in su di default; le frecce la girano
+    return;
+  }
+
+  if (voce.codice === "asta") {
+    if (selezione?.tipo !== "nodo") { dì("un'asta parte da un nodo: selezionane uno"); return; }
+    apriModo({ tipo: "asta", da: selezione.id, a: null });
+    return;
+  }
+
+  if (voce.codice === "vincolo") {
+    if (selezione?.tipo !== "nodo") { dì("il vincolo è di un nodo: selezionane uno"); return; }
+    const n = nodo(corrente(cronologia), selezione.id);
+    const id = selezione.id;
+    // `V` alterna fra incastro e libero **dichiarato**: spegnere l'ultimo grado acceso
+    // dichiara il nodo libero, non cancella il campo — sono due stati diversi per
+    // `nova/check.py:274` (vedi la correzione C3 del brief). Le altre preimpostazioni e i
+    // gradi singoli stanno nel pannello, dove si vedono.
+    esegui((m) => impostaVincolo(m, { id, vincolo: alternaIncastro(n.vincolo) }),
+           `vincolo del nodo ${id}`);
     ridisegna();
     return;
   }
 
   if (voce.codice === "conferma") {
-    if (!ghost) return;
-    const g = ghost;
+    if (!modo) return;
+    if (modo.tipo === "asta") {
+      if (modo.a === null) { dì("scegli il secondo nodo, poi Invio"); return; }
+      const { da, a } = modo;
+      if (esegui((m) => collega(m, { da, a }), `asta ${da} → ${a}`)) { modo = null; selezione = { tipo: "nodo", id: a }; }
+      ridisegna();
+      return;
+    }
+    const g = { da: modo.da, dx: modo.dx, dz: modo.dz };
     if (esegui((m) => estrudi(m, g), `asta da ${g.da}`)) {
-      ghost = null;
+      modo = null;
       // La punta è il `nodo_j` dell'asta appena nata, non l'ultimo nodo dell'elenco:
       // quando l'estrusione arriva su un nodo che c'era già, di nodi non ne nasce nessuno.
       const m = corrente(cronologia);
@@ -215,7 +266,7 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "elimina") {
-    if (selezione?.tipo !== "nodo") { dì("oggi si elimina un nodo; l'asta arriva domani"); return; }
+    if (selezione?.tipo !== "nodo") { dì("si elimina un nodo: selezionane uno (l'asta non ancora)"); return; }
     const id = selezione.id;
     esegui((m) => eliminaNodo(m, { id }), `elimina nodo ${id}`);
     ridisegna();
@@ -230,17 +281,6 @@ window.addEventListener("keydown", (ev) => {
     esegui((m) => rinomina(m, { tipo: s.tipo, id: s.id, nome: t }), `nome di ${s.tipo} ${s.id}`);
     ridisegna();
   }
-});
-
-// Le frecce girano il ghost: la lunghezza è già digitata, resta la direzione (story 2).
-window.addEventListener("keydown", (ev) => {
-  if (!ghost) return;
-  const l = Math.hypot(ghost.dx, ghost.dz);
-  const verso = { ArrowUp: [0, l], ArrowDown: [0, -l], ArrowRight: [l, 0], ArrowLeft: [-l, 0] }[ev.key];
-  if (!verso) return;
-  ev.preventDefault();
-  ghost = { ...ghost, dx: verso[0], dz: verso[1] };
-  ridisegna();
 });
 
 ridisegna();
