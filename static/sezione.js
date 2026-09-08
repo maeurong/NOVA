@@ -26,6 +26,10 @@ export function leggiDimensioni(testo) {
  *  `deck._barre` (copriferri opposti su h per tutte le file, su b per sx/dx) e di
  *  `armatura._fila` (n·Ø nella luce fra le staffe, solo inf/sup: sx/dx là non sono verificate). */
 export function geometriaImpossibile(s) {
+  // `deck.py:227-230`: il lato doppio si rifiuta prima di ogni altro conto, anche senza staffe.
+  for (const lato of LATI) {
+    if (s.file.filter((f) => f.lato === lato).length > 1) return `due file sul lato ${lato}: una fila per lato`;
+  }
   if (!s.staffe || s.file.length === 0) return null;  // senza staffe non c'è barra da collocare
   const st = scostamento(s);
   for (const [quota, dim, gruppo] of [["h", s.h, LATI], ["b", s.b, ["sx", "dx"]]]) {

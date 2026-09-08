@@ -19,6 +19,34 @@ test("con staffe e nessuna fila non c'è nessuna barra", () => {
   assert.deepEqual(posizioniBarre(s), []);
   assert.equal(geometriaImpossibile(s), null);
 });
+test("due file sullo stesso lato: il messaggio nomina il lato, come nova/deck.py:227-230", () => {
+  const s = { ...FIXTURE.sezione, file: [...FIXTURE.sezione.file, { lato: "inf", n: 1, diametro: 16 }] };
+  assert.match(geometriaImpossibile(s), /due file sul lato inf/);
+  assert.deepEqual(posizioniBarre(s), []);
+});
+test("sx e dx si distinguono per segno: 2Ø12 sx e 1Ø16 dx sulla 300×500 (uccide il mutante che scambia i segni)", () => {
+  const s = { ...FIXTURE.sezione, file: [{ lato: "sx", n: 2, diametro: 12 }, { lato: "dx", n: 1, diametro: 16 }] };
+  const barre = posizioniBarre(s);
+  const sx = barre.filter((b) => b.y < 0);
+  const dx = barre.filter((b) => b.y > 0);
+  assert.equal(sx.length, 2);
+  assert.equal(dx.length, 1);
+  for (const b of sx) assert.equal(b.y, -106);
+  const passo = 412 / 3;
+  const zSx = sx.map((b) => b.z).sort((a, b) => a - b);
+  assert.ok(Math.abs(zSx[0] - (-206 + passo)) < 1e-9, `z atteso ${-206 + passo}, avuto ${zSx[0]}`);
+  assert.ok(Math.abs(zSx[1] - (-206 + 2 * passo)) < 1e-9, `z atteso ${-206 + 2 * passo}, avuto ${zSx[1]}`);
+  assert.equal(dx[0].y, 104);
+  assert.equal(dx[0].z, 0);
+});
+test("sup senza inf: 2Ø16 sole sulla 300×500 stanno in alto, specchiate come deck.py:260-263", () => {
+  const s = { ...FIXTURE.sezione, file: [{ lato: "sup", n: 2, diametro: 16 }] };
+  const barre = posizioniBarre(s).sort((a, b) => a.y - b.y);
+  assert.deepEqual(barre, [
+    { y: -104, z: 204, diametro: 16 },
+    { y: 104, z: 204, diametro: 16 },
+  ]);
+});
 test("copriferri opposti che si scavalcano: il messaggio nomina h", () => {
   const s = { ...FIXTURE.sezione, h: 100, copriferro: 40, file: [{ lato: "inf", n: 1, diametro: 16 }] };
   assert.match(geometriaImpossibile(s), /copriferri opposti.*\bh\b/);
