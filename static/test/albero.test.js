@@ -141,3 +141,19 @@ test("con un nome suo la sezione porta anche le dimensioni", () => {
   albero.disegna(m, {});
   assert.ok(testi(elenco).includes("colonna · 300 × 500 mm · 2 aste"), JSON.stringify(testi(elenco)));
 });
+
+
+// Solo Invio e Spazio attivano una voce (WCAG 2.1.1). `N` su una voce a fuoco deve arrivare
+// al comando globale, non selezionare la voce sotto il cursore; le frecce muovono il fuoco,
+// che è del browser. Un `keydown` che non guardasse `key` le prenderebbe tutte.
+test("una lettera o una freccia su una voce a fuoco non chiama suSelezione", () => {
+  const { albero, elenco, scelte } = alberoFinto();
+  albero.disegna(conSezione(), {});
+  const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
+  for (const key of ["n", "d", "r", "ArrowDown", "ArrowRight", "Escape", "Tab"]) {
+    elenco.dispatch("keydown", { key, target: voce });
+  }
+  assert.deepEqual(scelte, []);
+  elenco.dispatch("keydown", { key: " ", target: voce });
+  assert.deepEqual(scelte, [["sezione", 1]], "Spazio invece attiva, come Invio");
+});

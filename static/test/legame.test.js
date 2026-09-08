@@ -50,3 +50,18 @@ test("cifre: 2,56 non diventa 3, un intero non prende decimali, sopra cento le m
   assert.equal(cifre(0.0035), "0,0035");
   assert.equal(cifre(-2.56), "-2,56");
 });
+
+
+// --- fix di fine ramo 11b: i nomi accanto alla curva, per intero e nell'ordine ---
+// `valoriDaMostrare` scrive le etichette della `<dl>` dell'ispettore: un nome tolto o
+// scambiato non lo vedeva nessuno, perché il test guardava solo il primo e due a campione.
+
+test("valoriDaMostrare: i sette nomi del concrete02, nell'ordine", () => {
+  assert.deepEqual(valoriDaMostrare(C25).map(([n]) => n),
+    ["f_c", "E_c", "ε_c0", "ε_U", "f_cu", "f_t", "λ"]);
+});
+
+test("valoriDaMostrare: i cinque nomi dello steel02, nell'ordine", () => {
+  assert.deepEqual(valoriDaMostrare(B450).map(([n]) => n),
+    ["f_y", "E_s", "b", "ε_ud", "k"]);
+});

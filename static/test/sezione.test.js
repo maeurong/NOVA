@@ -77,3 +77,19 @@ test("una riduzione che non lascia sezione si rifiuta anche senza staffe, come n
   assert.match(geometriaImpossibile({ ...s, riduzione: { sup: 0, inf: 0, sx: 150, dx: 150 } }), /su b=300/);
   assert.equal(geometriaImpossibile({ ...s, riduzione: { sup: 20, inf: 20, sx: 0, dx: 0 } }), null);
 });
+
+
+// --- fix di fine ramo 11b: la guardia su `b`, che nessun test toccava ---
+// Il ciclo di `geometriaImpossibile` gira su due quote, «h» e «b»: quella su h era coperta,
+// quella su b no. Una sezione stretta — 60 mm di anima, una barra sul lato sx — la fa
+// scattare: copriferro 30 + staffa 8 + mezza barra 8 = 46, e 2·46 ≥ 60.
+test("una sezione stretta con una barra di lato: i copriferri opposti si sovrappongono su b", () => {
+  const s = { b: 60, h: 500, copriferro: 30, staffe: { diametro: 8, passo: 150, bracci: 2 },
+              file: [{ lato: "sx", n: 1, diametro: 16 }] };
+  const motivo = geometriaImpossibile(s);
+  assert.match(motivo, /copriferri opposti/);
+  assert.match(motivo, /su b/);
+  assert.deepEqual(posizioniBarre(s), [], "e il deck non ne colloca nessuna");
+  // la stessa fila su una sezione larga passa: la guardia è su `b`, non sulla fila
+  assert.equal(geometriaImpossibile({ ...s, b: 300 }), null);
+});
