@@ -350,11 +350,20 @@ test("C e D aprono materiale e danno", () => {
   assert.equal(voceDaEvento({ key: "c" })?.codice, "materiale");
   assert.equal(voceDaEvento({ key: "d" })?.codice, "danno");
 });
-test("nessuna lettera nuda serve due codici", () => {
-  const codici = new Set();
-  for (const k of "abcdefghijklmnopqrstuvwxyz") { const v = voceDaEvento({ key: k }); if (v) codici.add(v.codice); }
+test("ogni codice a lettera singola è raggiunto da esattamente una lettera", () => {
+  // Un `Set` collasserebbe due lettere sullo stesso codice in una sola voce, lasciando
+  // passare un doppione (`["k", "materiale"]` accanto a `["c", "materiale"]`): si conta,
+  // non si insiema. `f2` (rinomina) e `backspace`/`delete` (elimina) non sono lettere e
+  // non entrano in questo conteggio.
+  const perCodice = new Map();
+  for (const k of "abcdefghijklmnopqrstuvwxyz") {
+    const v = voceDaEvento({ key: k });
+    if (v) perCodice.set(v.codice, (perCodice.get(v.codice) ?? 0) + 1);
+  }
   const attesi = TASTI.filter((v) => !v.modificatore && /^[A-Z]$/.test(v.tasto)).map((v) => v.codice);
-  assert.deepEqual([...codici].sort(), [...new Set(attesi)].sort());
+  for (const codice of attesi) {
+    assert.equal(perCodice.get(codice), 1, `${codice} raggiunto da ${perCodice.get(codice) ?? 0} lettere`);
+  }
 });
 test("col campo aperto la barra resta a due voci", () => {
   assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
