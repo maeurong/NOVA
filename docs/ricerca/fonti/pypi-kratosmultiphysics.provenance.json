@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://pypi.org/pypi/KratosMultiphysics/json",
+  "sha256": "87d277887e920684ff1a6c0c64813cd455e54fefa189f302729eb43b120d6510",
+  "bytes": 1409
+ },
+ "tool": "curl",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

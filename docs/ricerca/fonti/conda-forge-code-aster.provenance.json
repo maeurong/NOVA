@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://api.anaconda.org/package/conda-forge/code-aster",
+  "sha256": "ab6a49f38d3a4008916a78652c94b99ba126d3d709aecb76b5705bac459eebd7",
+  "bytes": 1011
+ },
+ "tool": "curl",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

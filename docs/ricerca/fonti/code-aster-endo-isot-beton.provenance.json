@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://codeaster.gitlab.io/doc/docaster/manuals/man_r/r7/r7.01.04/Introduction___Domaine_d_application.html",
+  "sha256": "43de387aa4886d588983ae0546ef1b14ce21f9f59329a7f4da900e8d5e1185a6",
+  "bytes": 3190
+ },
+ "tool": "curl + strip HTML",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

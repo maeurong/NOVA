@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://codeaster.gitlab.io/doc/docaster/manuals/man_r/r7/r7.01.08/index.html",
+  "sha256": "7e19054ce3195d25437e9adb928753ffd9f7de40ecd884717dd088789e98097a",
+  "bytes": 2040
+ },
+ "tool": "curl + strip HTML",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

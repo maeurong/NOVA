@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://opensees.github.io/OpenSeesDocumentation/user/manual/material/ndMaterials/ASDConcrete3D.html",
+  "sha256": "ae45c1b25a879bfd477af08531309323dba6d7810b4b5606fe1a385fa075dae4",
+  "bytes": 14018
+ },
+ "tool": "curl + strip HTML",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}
