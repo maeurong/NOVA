@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/analysis/integrator/EigenIntegrator.cpp",
+  "sha256": "9273a30b370e2a4bc18b84d3e69c13d96d7411b602598444dc34248bd13d124b",
+  "bytes": 6761
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

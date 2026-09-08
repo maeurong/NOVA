@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://portwooddigital.com/2020/11/13/ordinary-eigenvalues/",
+  "sha256": "cd9bb9fffc221020f462e9e04f2dcf9fb3274c3929583b84f624acd6c4442a34",
+  "bytes": 3789
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}

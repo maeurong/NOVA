@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/system_of_eqn/eigenSOE/FullGenEigenSolver.cpp",
+  "sha256": "f94420a8fb2d9c13eedccd6147bc34ddf978570abd19d07ba48ca21818c77dee",
+  "bytes": 10884
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://portwooddigital.com/2021/11/09/eigenvalues-during-an-analysis/",
+  "sha256": "14193296ce1289a9f1796bac73f6fee11200fbc1972642d346b14fca4de7b61f",
+  "bytes": 1887
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}

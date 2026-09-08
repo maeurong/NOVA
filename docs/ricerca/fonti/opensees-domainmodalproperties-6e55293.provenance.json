@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/domain/domain/DomainModalProperties.cpp",
+  "sha256": "1bd58b7c2df8ef885d09f5996481575040f7bc94d6c09f16aab093d882685510",
+  "bytes": 48607
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

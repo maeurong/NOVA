@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/analysis/fe_ele/FE_Element.cpp",
+  "sha256": "94eb87d6b578de8c7e2ac1082327ed10dd534d8557bcaa57a9d8431383a75633",
+  "bytes": 30524
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://portwooddigital.com/2025/12/30/eigen-almost-hear-you-sigh/",
+  "sha256": "c429eda32ed6b503ba5804b31c8a7477ca2eaa278d2fc7cc5d11109bd56d9d96",
+  "bytes": 9577
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}
