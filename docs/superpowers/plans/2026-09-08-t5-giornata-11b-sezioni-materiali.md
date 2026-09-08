@@ -4,7 +4,7 @@
 
 **Goal:** un telaio disegnato da zero si può **salvare**: `S` → «300 × 500» crea la sezione (e, se mancano, C25/30 e B450C), la assegna all'asta, l'ispettore la disegna con le barre dove il deck le metterà davvero; un materiale mostra la sua curva con i valori usati accanto; un'asta porta il danno del rilievo; ogni modifica a un'entità importata la marca «modificata».
 
-**Architecture:** due rotte di sola lettura sul server (catalogo e legame di un materiale) perché i valori nascono in `nova/legami.py` e duplicarli in JavaScript sarebbe una seconda verità; tre moduli puri nuovi (`sezione.js` per la geometria delle barre, `legame.js` per la curva, otto riduttori in `comandi.js`); l'ispettore guadagna tre editor con la forma di `editorVincolo`; l'albero due rami; il campo di comando tre lettere. La regola di collocazione delle barre è **una** e sta in `nova/deck.py:_barre`: il disegno JS la ricopia riga per riga e una fixture condivisa fra `pytest` e `node --test` prova che non divergono.
+**Architecture:** due rotte di sola lettura sul server (catalogo e legame di un materiale) perché i valori nascono in `nova/legami.py` e duplicarli in JavaScript sarebbe una seconda verità; tre moduli puri nuovi (`sezione.js` per la geometria delle barre, `legame.js` per la curva, undici riduttori in `comandi.js`); l'ispettore guadagna tre editor con la forma di `editorVincolo`; l'albero due rami; il campo di comando tre lettere. La regola di collocazione delle barre è **una** e sta in `nova/deck.py:_barre`: il disegno JS la ricopia riga per riga e una fixture condivisa fra `pytest` e `node --test` prova che non divergono.
 
 **Tech Stack:** moduli ES nativi, `node --test` per i moduli puri, `pytest` con `TestClient` per le due rotte, il server FastAPI di T1.
 
@@ -183,7 +183,7 @@ Visti qui, e non scritti da nessuna parte:
 | `static/modello.js` | `impostazioni_analisi`, `sezione`, `materiale`, `asteDellaSezione`, `sezioniDelMateriale`, `vesteDi` | sì |
 | `static/sezione.js` | `LATI`, `VESTI`, `leggiDimensioni`, `geometriaImpossibile`, `posizioniBarre`, `contornoRidotto`, `svgSezione` | sì |
 | `static/legame.js` | `puntiConcrete02`, `puntiSteel02`, `valoriDaMostrare`, `svgCurva` | sì |
-| `static/comandi.js` | `marcaModificata`; `+8` riduttori: `creaSezione`, `modificaSezione`, `impostaFila`, `assegnaSezione`, `eliminaSezione`, `creaMateriale`, `modificaMateriale`, `eliminaMateriale`, `impostaDanno`, `impostaVeste`, `materialiDiDefault` | sì |
+| `static/comandi.js` | `marcaModificata`; `+11` riduttori: `creaSezione`, `modificaSezione`, `impostaFila`, `assegnaSezione`, `eliminaSezione`, `creaMateriale`, `modificaMateriale`, `eliminaMateriale`, `impostaDanno`, `impostaVeste`, `materialiDiDefault` | sì |
 | `static/tastiera.js` | `S` sezione, `C` materiale, `D` danno | sì |
 | `static/albero.js` | rami «Sezioni» e «Materiali» | no |
 | `static/pannello.js` | `editorAsta`, `editorSezione`, `editorMateriale`; righe per sezione e materiale | no |
@@ -201,12 +201,12 @@ Visti qui, e non scritti da nessuna parte:
 
 **Interfaces:**
 - Consumes: `legami.veste_valori`, `legami._concrete02`, `legami.acciaio`, `catalogo.valori`, `meshrec.core.materiali.CATALOGO`.
-- Produces: `GET /api/catalogo → {calcestruzzo: [classe…], acciaio: [classe…], vesti: [4]}`; `POST /api/materiale/legame {materiale, veste="media"} → {valori, catalogo, legame}` con `valori` = `veste_valori`, `catalogo` = `catalogo.valori` (le chiavi sovrascrivibili), `legame` = i parametri di `Concrete02` del copriferro o di `Steel02`; **400** `{motivo}` su classe sconosciuta, veste sconosciuta, materiale malformato, acciaio con `ε_ud ≤ f_y/E_s`.
+- Produces: `GET /api/catalogo → {calcestruzzo: [classe…], acciaio: [classe…], vesti: [4]}`; `POST /api/materiale/legame {materiale, veste="media"} → {valori, catalogo, legame}` con `valori` = `veste_valori`, `catalogo` = `catalogo.valori` (le chiavi sovrascrivibili), `legame` = i parametri di `Concrete02` del copriferro o di `Steel02`; **400** `{motivo}` su classe sconosciuta, veste sconosciuta, materiale malformato, acciaio con `ε_ud ≤ f_y/E_s`; **422** (gestore esistente) su un campo in più nel corpo.
 
 **Ingressi degeneri:**
 - materiale con `classe` non a catalogo e `personalizzato: false` → 400, `motivo` nomina la classe ed elenca quelle che esistono
 - veste `«mediana»` → 400, `motivo` elenca le quattro vesti
-- corpo con un campo in più (`{"materiale": …, "veste": "media", "boh": 1}`) → 400 (`extra="forbid"` di `_CorpoBase`)
+- corpo con un campo in più (`{"materiale": …, "veste": "media", "boh": 1}`) → **422** (`extra="forbid"` di `_CorpoBase` → `RequestValidationError` → il gestore di `nova/server.py:282-285`, misurato dall'architect sui test `solutore_nel_corpo`/`cartella_nel_corpo` già verdi), con il campo nominato nella risposta
 - acciaio personalizzato con `valori.epsuk = 0.001` → 400, `motivo` contiene «snervamento»
 - calcestruzzo con veste `progetto` → 200 e `valori.avvisi` non vuoto (l'avviso di `veste_valori`)
 - materiale senza `legame` nel corpo → 200 con i default di `Legame()`
@@ -263,9 +263,11 @@ def test_legame_con_veste_sconosciuta_e_400(cliente):
     assert r.status_code == 400 and "caratteristica" in r.json()["motivo"]
 
 
-def test_legame_con_campo_in_piu_e_400(cliente):
+def test_legame_con_campo_in_piu_e_422_con_il_campo(cliente):
+    # `extra="forbid"` su `_CorpoBase` → `RequestValidationError` → 422 dal gestore di `server.py`,
+    # come per gli altri corpi (vedi `solutore_nel_corpo`): non 400, che è il rifiuto del *modello*
     r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "media", "boh": 1})
-    assert r.status_code == 400
+    assert r.status_code == 422 and "boh" in json.dumps(r.json())
 
 
 def test_legame_acciaio_sotto_lo_snervamento_e_400(cliente):
@@ -354,7 +356,7 @@ Import in testa, accanto a `_modello`: `from nova import legami as _legami, cata
 
 - [ ] **Step 5: Esegui tutti i pytest**
 
-Expected: 681 raccolti (678 pass + 3 skip), exit 0. Contare con `tr -cd '.sFEx' | wc -c`.
+Expected: 681 raccolti (678 pass + 3 skip), exit 0 — 682 se la fixture del Task 3 è già atterrata. Contare con `tr -cd '.sFEx' | wc -c`.
 
 - [ ] **Step 6: Commit**
 
@@ -711,11 +713,15 @@ import { stampaNumero } from "./numeri.js";
 
 /** `Concrete02`: parabola di Kent-Park fino al picco, retta fino a (εU, fpcu); trazione lineare
  *  fino a `ft` con `Ec`. Segni di OpenSees: compressione negativa. Ordinati per ε crescente. */
+// `−0` non è un numero da mostrare né da confrontare: `epsc0 · 0` con `epsc0` negativo dà
+// `-0`, e `assert/strict` lo distingue da `0` (misurato dall'architect). Si normalizza qui.
+const zero = (v) => (v === 0 ? 0 : v);
+
 export function puntiConcrete02({ fpc, epsc0, fpcu, epsU, ft = 0, Ec = null }, n = 24) {
   const punti = [[epsU, fpcu]];
   for (let i = n; i >= 0; i--) {
     const r = i / n;               // r = ε/ε0 in [0, 1], ε0 negativo
-    punti.push([epsc0 * r, fpc * (2 * r - r * r)]);
+    punti.push([zero(epsc0 * r), zero(fpc * (2 * r - r * r))]);
   }
   if (ft > 0 && Ec) punti.push([ft / Ec, ft]);
   return punti;
@@ -1479,6 +1485,7 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
 
 **Files:**
 - Modify: `static/app.js` (import, stato, fetch del catalogo e del legame, callback degli editor, tre comandi nel campo, `esiste`, rami di `voce.codice`)
+- Modify: `static/modo.js:70` (una stringa) e `static/test/modo.test.js` (il suo test)
 
 **Interfaces:**
 - Consumes: tutto quanto sopra. `fetch` con lo stampo di `file.js:62`.
