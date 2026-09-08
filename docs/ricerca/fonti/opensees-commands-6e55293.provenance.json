@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/tcl/commands.cpp",
+  "sha256": "82b1146f635b3d0a969da19145dd0445a05b9be59329e7e59c40b82b28ebccf1",
+  "bytes": 319120
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

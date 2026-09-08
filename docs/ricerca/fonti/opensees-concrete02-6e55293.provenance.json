@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/material/uniaxial/Concrete02.cpp",
+  "sha256": "2ba26762660e609407667d6411425070a64c505c876390b915772376aaa26acc",
+  "bytes": 13022
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

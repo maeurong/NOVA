@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://portwooddigital.com/2022/11/11/another-way-to-get-bad-eigenvalues/",
+  "sha256": "21554c8dfb45e04836e8a26aed78151fdd2e71f250afc3c1e053e7f97729a0cf",
+  "bytes": 2600
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}
