@@ -108,9 +108,11 @@ export function svgSezione(s, { lato = 180 } = {}) {
   }
   if (s.staffe) {
     const k = s.copriferro;
-    // Lo spessore della staffa è in scala, ma limitato a 2: su una sezione stretta la scala
-    // cresce e un Ø8 diventava un tratto di sei pixel, più marcato del contorno.
-    parti.push(rect(-s.b / 2 + k, s.b / 2 - k, -s.h / 2 + k, s.h / 2 - k, `rx="${s.staffe.diametro * scala}" stroke-width="${Math.min(2, Math.max(1, s.staffe.diametro * scala))}"`));
+    // Lo spessore della staffa è in scala, ma limitato a 1,5: su una sezione stretta la
+    // scala cresce e un Ø8 diventava un tratto di sei pixel. Il tetto sta **sotto** il 2 del
+    // contorno, che è il perimetro della sezione: a pari spessore il disegno diceva che il
+    // perimetro e la gabbia sono la stessa cosa.
+    parti.push(rect(-s.b / 2 + k, s.b / 2 - k, -s.h / 2 + k, s.h / 2 - k, `rx="${s.staffe.diametro * scala}" stroke-width="${Math.min(1.5, Math.max(1, s.staffe.diametro * scala))}"`));
   }
   for (const b of posizioniBarre(s)) {
     parti.push(`<circle cx="${X(b.y)}" cy="${Y(b.z)}" r="${(b.diametro / 2) * scala}" fill="currentColor"/>`);

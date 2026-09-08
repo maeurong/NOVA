@@ -332,11 +332,14 @@ test("etichettaCampo: senza bersaglio resta il solo sostantivo (N non ha un bers
 
 test("ogni comando che apre il campo ha il sostantivo di ciò che ci si scrive", () => {
   // `<label>` risponde a «cosa va in questa casella», non «che tasto ho premuto»: il verbo
-  // lo dice già la barra. I quattro che aprono il campo sono N, B, M, R.
-  for (const codice of ["nodo", "estrudi", "sposta", "rinomina"]) {
+  // lo dice già la barra. I sette che aprono il campo sono N, B, M, R, S, C, D.
+  for (const codice of ["nodo", "estrudi", "sposta", "rinomina", "sezione", "materiale", "danno"]) {
     const v = TASTI.find((x) => x.codice === codice);
     assert.ok(v.campo && v.campo.trim() !== "", `${codice} senza sostantivo per l'etichetta`);
   }
+  // I tre della 11b, per esteso: un sostantivo qualunque passerebbe il controllo qui sopra.
+  assert.deepEqual(["sezione", "materiale", "danno"].map((c) => TASTI.find((x) => x.codice === c).campo),
+    ["sezione", "classe", "danno di"]);
 });
 
 test("S nudo è sezione, ⌘S resta salva", () => {

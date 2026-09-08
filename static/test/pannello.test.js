@@ -1015,3 +1015,37 @@ test("editorMateriale: sotto la curva del calcestruzzo c'è la nota sui segni", 
   assert.ok(note.some((t) => t.includes("compressione negativa") && t.includes("in modulo")),
     JSON.stringify(note));
 });
+
+
+// --- round 2: «scritto a mano» fuori dal nome accessibile ---
+// Il nome accessibile e' la **chiave del fuoco** (`creaPannello`): infilarci «, scritto a
+// mano» la cambiava alla prima scrittura, la chiave vecchia non si ritrovava e il fuoco
+// scappava al `<select>` della classe — dove una lettera cambia la classe.
+
+test("editorMateriale: l'aria-label dei valori non cambia quando il valore è scritto a mano", () => {
+  const nomi = (m) => {
+    const { p, editor } = pannelloFinto();
+    p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+    return controlliDi(editor).map((c) => c._attrs["aria-label"]);
+  };
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const prima = nomi(m);
+  m.materiali[0].valori = { fck: 28 };
+  assert.deepEqual(nomi(m), prima, "la chiave del fuoco non si muove");
+});
+
+test("editorMateriale: dopo una scrittura a mano il fuoco resta sul suo campo", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const lg = { ...LEGAME_C25, catalogo: { ...LEGAME_C25.catalogo, fcm: 33 } };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: lg });
+  const prima = controlliDi(editor).find((c) => c._attrs["aria-label"].startsWith("f_cm"));
+  prima.focus();
+  m.materiali[0].valori = { fcm: 40 };
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: lg });
+  const dopo = globalThis.document.activeElement;
+  assert.notEqual(dopo, prima, "l'editor si è ricostruito davvero");
+  assert.ok(dopo._attrs["aria-label"].startsWith("f_cm"), dopo._attrs["aria-label"]);
+});

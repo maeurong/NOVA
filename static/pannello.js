@@ -56,8 +56,6 @@ function righeDiAsta(m, a) {
           ["origine", testoOrigine(a.origine)]];
 }
 
-const nomeMateriale = (m, id) => materiale(m, id)?.nome ?? "—";
-
 /** Le quattro righe che l'editor qui sotto **non** dice. Dimensioni, copriferro, materiali,
  *  staffe, barre e riduzione hanno già il loro campo: nella `<dl>` erano sette righe scritte
  *  due volte sullo stesso schermo, e spingevano il disegno della sezione fuori dai 900 pixel
@@ -404,9 +402,14 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
     for (const [chiave, v] of Object.entries(legame.catalogo)) {
       const [etichetta, unita] = NOME_VALORE[chiave] ?? [chiave, ""];
       const scritto = aMano.includes(chiave);
-      const c = campoNumero({ etichetta, unita, valore: v,
-                              // WCAG 2.5.3: il nome comincia dal testo visibile e aggiunge
-                              nome: `${etichetta} di ${k.nome}${scritto ? ", scritto a mano" : ""}`,
+      // WCAG 2.5.3: il nome comincia dal testo visibile. «scritto a mano» resta **fuori**:
+      // questo nome è anche la chiave con cui `creaPannello` ritrova il fuoco dopo il
+      // ridisegno, e infilarcelo la cambiava alla prima scrittura — la chiave vecchia non si
+      // ritrovava più e il cursore saltava al `<select>` della classe, dove una lettera
+      // cambia la classe.
+      // ponytail: lo stato resta visibile ma fuori dal nome accessibile; se deve entrarci,
+      // la via è un `aria-describedby` sullo `<span>`, che ha bisogno di un id per campo.
+      const c = campoNumero({ etichetta, unita, valore: v, nome: `${etichetta} di ${k.nome}`,
                               alCambio: (x) => azioni.suMateriale(k.id, { valori: { [chiave]: x } }),
                               suAvviso: azioni.suAvviso });
       // Il valore che vince sulla tabella si vede: senza, la casella col numero misurato e

@@ -93,3 +93,13 @@ test("una sezione stretta con una barra di lato: i copriferri opposti si sovrapp
   // la stessa fila su una sezione larga passa: la guardia è su `b`, non sulla fila
   assert.equal(geometriaImpossibile({ ...s, b: 300 }), null);
 });
+
+
+// La staffa non pareggia il contorno: il contorno è il perimetro della sezione, la staffa
+// una gabbia dentro. A 2 contro 2 il disegno diceva che sono la stessa cosa.
+test("la staffa resta più leggera del contorno anche su una sezione stretta", () => {
+  const stretta = { ...FIXTURE.sezione, b: 80, h: 500, file: [] };
+  const spessori = [...svgSezione(stretta).matchAll(/stroke-width="([\d.]+)"/g)].map((x) => Number(x[1]));
+  assert.equal(spessori[0], 2, "il contorno");
+  assert.ok(spessori.slice(1).every((s) => s < 2), `staffa ${spessori.slice(1)}`);
+});
