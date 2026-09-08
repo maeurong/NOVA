@@ -29,6 +29,11 @@ const numero = (v, nome) => {
 
 const copia = (m) => structuredClone(m);
 
+// --- story 55: l'editing non cancella l'origine, la marca -------------------------------
+/** Una riga in ogni riduttore che modifica un'entità: se viene dal rilievo, ora è anche
+ *  dell'utente. Senza `origine` non si inventa niente (`nova/modello.py:43-49`). */
+const marcaModificata = (e) => { if (e.origine) e.origine = { ...e.origine, modificata: true }; };
+
 export function creaNodo(m, { x, z, y = 0 }) {
   numero(x, "x"); numero(y, "y"); numero(z, "z");
   const esistente = nodoVicino(m, x, y, z);
@@ -154,15 +159,25 @@ export function impostaVincolo(m, { id, vincolo }) {
   return n;
 }
 
-// --- story 55: l'editing non cancella l'origine, la marca -------------------------------
-/** Una riga in ogni riduttore che modifica un'entità: se viene dal rilievo, ora è anche
- *  dell'utente. Senza `origine` non si inventa niente (`nova/modello.py:43-49`). */
-const marcaModificata = (e) => { if (e.origine) e.origine = { ...e.origine, modificata: true }; };
-
 // --- sezioni ------------------------------------------------------------------------------
 export const DEFAULT_CALCESTRUZZO = "C25/30";
 export const DEFAULT_ACCIAIO = "B450C";
 const TIPI_MATERIALE = ["calcestruzzo", "acciaio"];
+/** Le chiavi di `Legame` (`nova/modello.py:164-186`), `lambda` compresa: è l'alias JSON di
+ *  `lambda_`. `Legame` ha `extra="forbid"`, quindi una chiave inventata qui non è un campo
+ *  in più, è un rifiuto di `/api/modello/salva`. Nota: il «legame» di `static/legame.js` è
+ *  un'altra cosa — là sono i punti della curva, qui i parametri che la governano. */
+const CHIAVI_LEGAME = ["confinamento", "epsU_copriferro", "epsU_nucleo", "lambda", "fpcu_su_fpc",
+                       "Es", "fym", "b", "R0", "cR1", "cR2"];
+/** Lo stesso pattern di `nova/modello.py:196`, che non è una convenzione: `deck.py` scrive
+ *  la classe in un commento Tcl, e `\n` `{` `}` là dentro sono un comando. */
+const FORMA_CLASSE = /^[A-Za-z0-9 /_.-]+$/;
+const classeValida = (v) => {
+  const c = String(v ?? "").trim();
+  if (c === "") throw new ErroreComando("la classe non può essere vuota", "per esempio C25/30 o B450C");
+  if (!FORMA_CLASSE.test(c)) throw new ErroreComando("la classe può avere solo lettere, cifre, spazi e / _ . -", "per esempio C25/30 o B450C");
+  return c;
+};
 
 const positivo = (v, nome) => {
   numero(v, nome);
@@ -197,7 +212,9 @@ export function creaSezione(m, { nome = null, b, h, calcestruzzo, acciaio, copri
   const n = copia(m);
   const id = prossimoId(n, "sezione");
   const mm = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
-  n.sezioni.push({ id, nome: nome ?? `${mm(b)} × ${mm(h)}`, tipo: "rettangolare", b, h, calcestruzzo, acciaio, copriferro, file: [], staffe: null });
+  // `rinomina` rifiuta il nome vuoto; qui vuoto vuol dire «non me ne curo»: il default.
+  const dato = typeof nome === "string" ? nome.trim() : "";
+  n.sezioni.push({ id, nome: dato || `${mm(b)} × ${mm(h)}`, tipo: "rettangolare", b, h, calcestruzzo, acciaio, copriferro, file: [], staffe: null });
   n.contatori.sezione = id;
   return n;
 }
@@ -212,7 +229,7 @@ export function modificaSezione(m, { id, ...campi }) {
   if ("calcestruzzo" in campi) { materialeDiTipo(n, campi.calcestruzzo, "calcestruzzo"); s.calcestruzzo = campi.calcestruzzo; }
   if ("acciaio" in campi) { materialeDiTipo(n, campi.acciaio, "acciaio"); s.acciaio = campi.acciaio; }
   if ("staffe" in campi) {
-    if (campi.staffe === null) s.staffe = null;
+    if (campi.staffe == null) s.staffe = null;  // `undefined` è «toglile», non un oggetto
     else {
       const { diametro, passo, bracci = 2 } = campi.staffe;
       positivo(diametro, "diametro delle staffe"); positivo(passo, "passo delle staffe");
@@ -221,9 +238,18 @@ export function modificaSezione(m, { id, ...campi }) {
     }
   }
   if ("riduzione" in campi) {
-    if (campi.riduzione === null) delete s.riduzione;
+    if (campi.riduzione == null) delete s.riduzione;
     else {
-      const r = Object.fromEntries(LATI.map((l) => [l, campi.riduzione[l] ?? 0]));
+      const dato = campi.riduzione;
+      if (typeof dato !== "object" || Array.isArray(dato)) {
+        throw new ErroreComando("la riduzione è un oggetto con i lati", `i lati sono ${LATI.join(", ")}`);
+      }
+      // Una chiave fuori posto diventerebbe uno zero in silenzio, e la sezione resterebbe
+      // intera senza che nessuno lo dica.
+      for (const l of Object.keys(dato)) {
+        if (!LATI.includes(l)) throw new ErroreComando(`la riduzione non ha un lato «${l}»`, `i lati sono ${LATI.join(", ")}`);
+      }
+      const r = Object.fromEntries(LATI.map((l) => [l, dato[l] ?? 0]));
       for (const l of LATI) { numero(r[l], `riduzione ${l}`); if (r[l] < 0) throw new ErroreComando(`la riduzione ${l} non può essere negativa`, "millimetri mancanti, zero o più"); }
       s.riduzione = r;
     }
@@ -250,6 +276,7 @@ export function impostaFila(m, { id, lato, n: quante, diametro }) {
 export function assegnaSezione(m, { asta, sezione: idSezione }) {
   const a = m.aste.find((k) => k.id === asta);
   if (!a) throw new ErroreComando(`l'asta ${asta} non esiste`, "seleziona un'asta e ripeti");
+  if (idSezione === undefined) throw new ErroreComando("manca la sezione", "scegli una sezione, o null per toglierla");
   if (idSezione !== null) sezioneEsistente(m, idSezione);
   const n = copia(m);
   const b = n.aste.find((k) => k.id === asta);
@@ -270,8 +297,7 @@ export function eliminaSezione(m, { id }) {
 // --- materiali ----------------------------------------------------------------------------
 export function creaMateriale(m, { tipo, classe, nome = null, classi = null }) {
   if (!TIPI_MATERIALE.includes(tipo)) throw new ErroreComando(`tipo «${tipo}» sconosciuto`, "calcestruzzo o acciaio");
-  const c = String(classe ?? "").trim();
-  if (c === "") throw new ErroreComando("la classe non può essere vuota", "per esempio C25/30 o B450C");
+  const c = classeValida(classe);
   if (classi && !classi.some((k) => k.toUpperCase() === c.toUpperCase())) {
     throw new ErroreComando(`classe «${c}» non a catalogo`, `le classi sono ${classi.join(", ")}`);
   }
@@ -286,15 +312,21 @@ export function modificaMateriale(m, { id, ...campi }) {
   if (!materiale(m, id)) throw new ErroreComando(`il materiale ${id} non esiste`, "seleziona un materiale dall'albero");
   const n = copia(m);
   const k = n.materiali.find((x) => x.id === id);
-  if ("classe" in campi) { const c = String(campi.classe ?? "").trim(); if (c === "") throw new ErroreComando("la classe non può essere vuota"); k.classe = c; }
+  if ("classe" in campi) k.classe = classeValida(campi.classe);
   if ("personalizzato" in campi) k.personalizzato = Boolean(campi.personalizzato);
   if ("valori" in campi) {
+    k.valori ??= {};  // un modello importato a mano può non portare il campo
     for (const [chiave, v] of Object.entries(campi.valori ?? {})) {
       if (v === null) delete k.valori[chiave];
       else { numero(v, chiave); k.valori[chiave] = v; }
     }
   }
-  if ("legame" in campi) k.legame = { ...(k.legame ?? {}), ...campi.legame };
+  if ("legame" in campi) {
+    for (const chiave of Object.keys(campi.legame ?? {})) {
+      if (!CHIAVI_LEGAME.includes(chiave)) throw new ErroreComando(`il legame non ha una chiave «${chiave}»`, `le chiavi sono ${CHIAVI_LEGAME.join(", ")}`);
+    }
+    k.legame = { ...(k.legame ?? {}), ...campi.legame };
+  }
   marcaModificata(k);
   return n;
 }
@@ -312,7 +344,7 @@ export function eliminaMateriale(m, { id }) {
  *  disegnato da zero li porta con sé (decisione 2 del piano): la Storia dice quali. */
 export function materialiDiDefault(m) {
   const aggiunti = [];
-  let n = m;
+  let n = copia(m);  // mai la stessa referenza: due snapshot aliasati non sono cronologia
   for (const [tipo, classe] of [["calcestruzzo", DEFAULT_CALCESTRUZZO], ["acciaio", DEFAULT_ACCIAIO]]) {
     if (!n.materiali.some((k) => k.tipo === tipo)) { n = creaMateriale(n, { tipo, classe }); aggiunti.push(classe); }
   }
@@ -331,7 +363,7 @@ export function impostaDanno(m, { asta, danno }) {
       numero(v, nome);
       if (v <= 0 || v > 1) throw new ErroreComando(`${nome} deve stare fra 0 escluso e 1 compreso`, "1 vuol dire integro, 0,8 vuol dire un quinto in meno");
     }
-    a.danno = { fattore_E, fattore_fc, nota: String(nota) };
+    a.danno = { fattore_E, fattore_fc, nota: nota == null ? "" : String(nota) };
   }
   marcaModificata(a);
   return n;

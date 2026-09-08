@@ -70,3 +70,10 @@ test("svgSezione disegna un cerchio per barra e niente cerchi senza staffe", () 
   assert.match(svgSezione(SENZA_STAFFE), /<rect/);
 });
 test("LATI è l'ordine del deck", () => assert.deepEqual(LATI, ["inf", "sup", "sx", "dx"]));
+test("una riduzione che non lascia sezione si rifiuta anche senza staffe, come nova/deck.py:396-400", () => {
+  const s = { ...SENZA_STAFFE, file: [], riduzione: { sup: 300, inf: 300, sx: 0, dx: 0 } };
+  assert.match(geometriaImpossibile(s), /non lascia sezione/);
+  assert.match(geometriaImpossibile(s), /su h=500/);
+  assert.match(geometriaImpossibile({ ...s, riduzione: { sup: 0, inf: 0, sx: 150, dx: 150 } }), /su b=300/);
+  assert.equal(geometriaImpossibile({ ...s, riduzione: { sup: 20, inf: 20, sx: 0, dx: 0 } }), null);
+});

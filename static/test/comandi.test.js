@@ -379,6 +379,7 @@ test("materialiDiDefault non tocca un modello che ha già i due tipi", () => {
   const m = conMateriali();
   const { modello, aggiunti } = materialiDiDefault(m);
   assert.deepEqual(aggiunti, []); assert.deepEqual(modello, m);
+  assert.notEqual(modello, m, "identico sì, la stessa referenza no: la cronologia non aliasa");
   assert.deepEqual(materialiDiDefault(modelloVuoto()).aggiunti, [DEFAULT_CALCESTRUZZO, DEFAULT_ACCIAIO]);
 });
 
@@ -415,4 +416,78 @@ test("nessun riduttore nuovo tocca il modello che riceve", () => {
   materialiDiDefault(m);
   spostaNodo(m, { id: 1, x: 10 });
   assert.deepEqual(m, prima);
+  // i due `elimina` vogliono un modello dove nessuno usa ciò che tolgono
+  const conLaSezione = conSezione(); const primaSezione = structuredClone(conLaSezione);
+  eliminaSezione(conLaSezione, { id: 1 });
+  assert.deepEqual(conLaSezione, primaSezione);
+  const soliMateriali = conMateriali(); const primaMateriali = structuredClone(soliMateriali);
+  eliminaMateriale(soliMateriali, { id: 1 });
+  assert.deepEqual(soliMateriali, primaMateriali);
+});
+
+// --- fix round 1 --------------------------------------------------------------------------
+
+test("story 55: i cinque riduttori marcano modificata l'entità che toccano", () => {
+  const rilievo = () => ({ sorgente: "rilievo", modificata: false });
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = modificaSezione(m, { id: 1, staffe: { diametro: 8, passo: 150 } });
+  m.sezioni[0].origine = rilievo();
+  m.materiali[0].origine = rilievo();
+  m.aste[0].origine = rilievo();
+  assert.equal(modificaSezione(m, { id: 1, b: 400 }).sezioni[0].origine.modificata, true, "modificaSezione");
+  assert.equal(impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 16 }).sezioni[0].origine.modificata, true, "impostaFila");
+  assert.equal(assegnaSezione(m, { asta: 1, sezione: 1 }).aste[0].origine.modificata, true, "assegnaSezione");
+  assert.equal(modificaMateriale(m, { id: 1, valori: { E: 31000 } }).materiali[0].origine.modificata, true, "modificaMateriale");
+  assert.equal(impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9 } }).aste[0].origine.modificata, true, "impostaDanno");
+});
+
+test("modificaMateriale: il legame conosce le sue chiavi, una inventata è un rifiuto che la nomina", () => {
+  rifiuta(() => modificaMateriale(conMateriali(), { id: 2, legame: { pinguino: 7 } }), /pinguino/);
+  assert.deepEqual(modificaMateriale(conMateriali(), { id: 2, legame: { Es: 210000 } }).materiali[1].legame, { Es: 210000 });
+  assert.deepEqual(modificaMateriale(conMateriali(), { id: 1, legame: { lambda: 0.2 } }).materiali[0].legame, { lambda: 0.2 },
+    "«lambda» è l'alias JSON di lambda_, e deve passare");
+});
+
+test("modificaSezione: staffe e riduzione a undefined valgono come null, non un TypeError", () => {
+  const m = impostaFila(staffate(), { id: 1, lato: "inf", n: 2, diametro: 16 });
+  assert.equal(modificaSezione(m, { id: 1, staffe: undefined }).sezioni[0].staffe, null);
+  const con = modificaSezione(m, { id: 1, riduzione: { sup: 20 } });
+  assert.equal("riduzione" in modificaSezione(con, { id: 1, riduzione: undefined }).sezioni[0], false);
+});
+
+test("modificaSezione: una riduzione che non lascia sezione è rifiutata anche senza barre", () => {
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { sup: 300, inf: 300 } }), /non lascia sezione/);
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { sx: 150, dx: 150 } }), /non lascia sezione/);
+});
+
+test("modificaSezione: una riduzione che non è un oggetto coi lati si rifiuta invece di azzerarsi", () => {
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: 5 }), /inf, sup, sx, dx/);
+  rifiuta(() => modificaSezione(conSezione(), { id: 1, riduzione: { nord: 20 } }), /nord/);
+});
+
+test("impostaDanno: una nota null è una nota vuota, non la stringa «null»", () => {
+  const m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  assert.equal(impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: null } }).aste[0].danno.nota, "");
+});
+
+test("modificaMateriale regge un materiale importato senza il campo valori", () => {
+  const m = conMateriali();
+  delete m.materiali[0].valori;
+  assert.deepEqual(modificaMateriale(m, { id: 1, valori: { E: 31000 } }).materiali[0].valori, { E: 31000 });
+});
+
+test("creaSezione: un nome vuoto o di soli spazi prende il default «b × h»", () => {
+  for (const nome of ["", "   "]) {
+    assert.equal(creaSezione(conMateriali(), { nome, b: 300, h: 500, calcestruzzo: 1, acciaio: 2 }).sezioni[0].nome, "300 × 500");
+  }
+});
+
+test("la classe rispetta il pattern anti-injection del deck, in creazione e in modifica", () => {
+  rifiuta(() => creaMateriale(modelloVuoto(), { tipo: "calcestruzzo", classe: "{puts hi}" }), /solo lettere, cifre, spazi/);
+  rifiuta(() => modificaMateriale(conMateriali(), { id: 1, classe: "{puts hi}" }), /solo lettere, cifre, spazi/);
+});
+
+test("assegnaSezione senza sezione dice che manca, non che «undefined» non esiste", () => {
+  const m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  rifiuta(() => assegnaSezione(m, { asta: 1 }), /manca la sezione/);
 });

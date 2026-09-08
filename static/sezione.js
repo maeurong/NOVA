@@ -30,6 +30,12 @@ export function geometriaImpossibile(s) {
   for (const lato of LATI) {
     if (s.file.filter((f) => f.lato === lato).length > 1) return `due file sul lato ${lato}: una fila per lato`;
   }
+  // `deck.py:396-400`: una riduzione che non lascia sezione la corsa la rifiuta, e il
+  // giudizio non dipende dalle barre — per questo sta **sopra** la guardia delle staffe.
+  const r = s.riduzione;
+  if (r && ((r.sup ?? 0) + (r.inf ?? 0) >= s.h || (r.sx ?? 0) + (r.dx ?? 0) >= s.b)) {
+    return `la riduzione (${mm(r.sup ?? 0)}+${mm(r.inf ?? 0)} su h=${mm(s.h)}, ${mm(r.sx ?? 0)}+${mm(r.dx ?? 0)} su b=${mm(s.b)}) non lascia sezione`;
+  }
   if (!s.staffe || s.file.length === 0) return null;  // senza staffe non c'è barra da collocare
   const st = scostamento(s);
   for (const [quota, dim, gruppo] of [["h", s.h, LATI], ["b", s.b, ["sx", "dx"]]]) {
