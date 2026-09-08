@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { modelloVuoto } from "../modello.js";
 import { ErroreComando, creaNodo } from "../comandi.js";
-import { nuovaCronologia, applica, corrente, indietro, avanti, etichette } from "../cronologia.js";
+import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "../cronologia.js";
 
 test("la cronologia nasce con il modello ricevuto e una sola voce", () => {
   const c = nuovaCronologia(modelloVuoto());
@@ -48,4 +48,22 @@ test("un comando dopo un indietro taglia il futuro invece di biforcarlo", () => 
   assert.equal(c.snapshot.length, etichette(c).length, "stessa lunghezza, nessun disallineamento");
   c = indietro(c);
   assert.equal(corrente(c).nodi.length, 1, "indietro dopo il taglio torna a nodo 1, non a nodo 2");
+});
+
+// --- vaiA (giornata 11c: la cronologia cliccabile) --------------------------
+// Mutante 1 del brief: vaiA accetta un indice fuori intervallo e produce una cronologia
+// con `corrente` indefinito.
+
+test("vaiA salta esattamente all'indice chiesto", () => {
+  let c = applica(nuovaCronologia(modelloVuoto()), (m) => creaNodo(m, { x: 0, z: 0 }), "nodo 1");
+  c = applica(c, (m) => creaNodo(m, { x: 5000, z: 0 }), "nodo 2");
+  assert.equal(corrente(vaiA(c, 0)).nodi.length, 0);
+  assert.equal(corrente(vaiA(c, 1)).nodi.length, 1);
+  assert.equal(corrente(vaiA(c, 2)).nodi.length, 2);
+});
+
+test("vaiA fuori intervallo torna la cronologia invariata, non solleva", () => {
+  const c = applica(nuovaCronologia(modelloVuoto()), (m) => creaNodo(m, { x: 0, z: 0 }), "nodo 1");
+  assert.deepEqual(vaiA(c, -1), c);
+  assert.deepEqual(vaiA(c, c.snapshot.length), c, "la fine esclusa: l'indice valido più alto è length-1");
 });

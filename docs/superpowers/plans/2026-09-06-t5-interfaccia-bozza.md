@@ -66,3 +66,39 @@ Tre decisioni:
 ## Cosa NON è in questa bozza
 
 Codice, test, step: arrivano giornata per giornata dal brainstorming con Mario. La bozza serve a non ricominciare da zero il giorno 10 e a tenere l'ordine delle consegne allineato alle story e ai tagli.
+
+## Collocato l'08/09/2026, dall'inventario previsto-contro-fatto
+
+L'inventario (`docs/superpowers/specs/2026-09-08-inventario-previsto-fatto.md`) ha trovato **otto
+voci senza una giornata né un'esclusione scritta**. L'autore ha chiesto di collocarle tutte. Questa
+tabella è la fonte: chi pianifica una giornata la legge insieme alla tabella delle sei giornate
+sopra, e le story qui elencate si **aggiungono** a quelle già assegnate.
+
+La giornata 11 è divisa in quattro — 11a, 11b, 11c, 11d — perché l'importatore, riaperto dall'autore
+il 07/09 dopo essere stato messo nel cassetto il giorno 10, non entra in nessuna delle tre senza
+schiacciarle. Le story della 11c originale (25-27, 8) restano nella 11c.
+
+| giornata | story aggiunte | cosa, e perché qui |
+|---|---|---|
+| **11a** ✓ chiusa | — | file, ispettore col vincolo, cucitura. PR #30. |
+| **11b** | 15-22 (già assegnate) + **55** | sezioni, barre, materiali. La 55 — `origine.modificata` che oggi nessuno alza — entra qui perché è dove i comandi che modificano sezioni e materiali vengono scritti: **una riga in ognuno**. |
+| **11c** | 25-27, **8** (palette `⌘K`), P3 | azioni, carichi, combinazioni; `⌘Z` è già fatto (giornata chiusa a metà il 07/09). La palette è l'ultimo «a metà» dei dieci principi. |
+| **11d** *(nuova)* | **51, 52, 53, 54** | **l'importatore in interfaccia, come rendiconto**. Il brief di design esiste già (`docs/superpowers/specs/2026-09-07-shape-ux-modellazione.md`, §3): il caso principale è il rifiuto, le righe scartate hanno valore/soglia/spiegazione, `mancano` è un elenco di decisioni. Va **prima** della 12 perché usa la stessa grammatica dei verdetti del Check Model, e farla prima significa che la 12 la riusa invece di inventarne un'altra. |
+| **12** | 29-32, 35, 41, 42 (già assegnate) + **6-7 parte corsa** | il pannello guadagna i controlli della corsa; l'albero non cambia. |
+| **13** | 36-40, 63 (già assegnate) | invariata. |
+| **14** | 45, 48, 49, 56 (già assegnate) + **43, 44, 46, 47** + **7 parte modi** | **l'interfaccia della modale** (modi fisso o «auto», masse con coefficiente) e **del non lineare** (fibre, pushover in controllo di spostamento) entrano qui, accanto ai modi animati e alla curva: sono le impostazioni di ciò che questa giornata mostra, e senza non si può lanciare la corsa che produce i risultati da animare. |
+| **15** | 62, P10 (già assegnate) | invariata. |
+
+**Fuori dal calendario della tesi, con la ragione:**
+
+- **5** — più piani di lavoro. La giornata 10 è stata chiusa con un solo piano x–z, e il telaio della
+  tesi è piano: un secondo piano non cambia nessun numero dell'appendice. **Dopo la tesi.**
+- **60** — PNG/SVG e piccoli multipli del confronto. La bozza li elenca già nei tagli della 14 (riga
+  63). Restano lì; se l'appendice ne ha bisogno, si esportano a mano dal JSON. **Dopo la tesi.**
+- **66** — `MIGRAZIONI` vuoto. **Non è un buco**: la story è provabile solo quando lo schema passerà
+  a 2, e oggi è a 1. Si chiude da sé alla prima migrazione.
+
+**Per wayfinder:** ogni riga qui sopra è un ticket in potenza. Le story hanno il loro testo nella
+spec (`docs/superpowers/specs/2026-09-05-nova-v1-design.md`, righe 27-124); la 11d ha già il brief
+di design; le 43-47 hanno il backend pronto e testato (`nova/modale.py`, `nova/legami.py`,
+`nova/deck.py`), quindi sono lavoro di sola superficie.

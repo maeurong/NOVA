@@ -1,8 +1,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "../modo.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
+         puntoDelComando, esitoComando, AVVISO_ESTRUSIONE,
+         ghostDelComando, esitoLunghezza } from "../modo.js";
 
 const m = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 1000, y: 0, z: 2000 }] };
+
+// --- modoValido (giornata 11c: un annulla non lascia un modo appeso) --------
+// Mutante 5 del brief: annullare non chiude un modo aperto, che resta appeso a un nodo
+// sparito. Estratta da `app.js` (già inline in `ridisegna`) per lo stesso motivo di
+// `ghostDisegnabile` & co.: testabile in Node solo fuori dal modulo che tocca il DOM.
+
+test("modoValido: nessun modo resta nessun modo", () => {
+  assert.equal(modoValido(m, null), null);
+});
+
+test("modoValido: il nodo di partenza sparito chiude il modo, non lo lascia appeso", () => {
+  const modo = { tipo: "estrusione", da: 99, dx: 0, dz: 3000 };
+  assert.equal(modoValido(m, modo), null);
+});
+
+test("modoValido: in asta, il secondo nodo sparito torna a `a: null` invece di restare appeso", () => {
+  const modo = { tipo: "asta", da: 1, a: 99 };
+  assert.deepEqual(modoValido(m, modo), { tipo: "asta", da: 1, a: null });
+});
+
+test("modoValido: coi nodi ancora tutti presenti il modo non cambia", () => {
+  const modo = { tipo: "asta", da: 1, a: 2 };
+  assert.deepEqual(modoValido(m, modo), modo);
+});
 
 // --- ghostDisegnabile -------------------------------------------------------
 
@@ -84,6 +110,11 @@ test("contestoBarra: modo asta → 'asta', non 'ghost' (la barra deve promettere
   assert.equal(contestoBarra({ tipo: "asta", da: 1, a: null }, { tipo: "nodo", id: 1 }), "asta");
 });
 
+test("contestoBarra: col campo aperto → 'comando', e vince su tutto il resto", () => {
+  assert.equal(contestoBarra(null, null, { testo: "" }), "comando");
+  assert.equal(contestoBarra(null, { tipo: "nodo", id: 1 }, { testo: "0; 3" }), "comando");
+});
+
 // --- ruotaGhost (B2) -----------------------------------------------------------
 // La decisione delle frecce sta qui e non in un secondo listener di `app.js`: due `keydown`
 // sulla stessa `window` con regole d'ingresso diverse erano la causa, non il sintomo.
@@ -124,4 +155,176 @@ test("l'avviso dell'estrusione in corso vive in un posto solo", () => {
   assert.equal(esitoScelta({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, "nodo").messaggio,
                AVVISO_ESTRUSIONE);
   assert.match(AVVISO_ESTRUSIONE, /Invio per confermarla, Esc per annullarla/);
+});
+
+// --- F: il campo di comando (giornata 11c, task C1) ----------------------------
+// Il campo sostituisce `window.prompt` per N, e il ghost si muove **a ogni tasto**: per
+// questo la lettura del testo è pura e sta qui, non dentro `app.js`, che il DOM lo tocca
+// già ai primi `const` del modulo. Due funzioni e non una perché le domande sono due, e
+// hanno risposte opposte sullo stesso testo: mentre si scrive «si disegna qualcosa?»
+// (silenziosa), alla conferma «si esegue qualcosa, e se no cosa dico?».
+
+test("puntoDelComando: «x; z» completo dà il punto", () => {
+  assert.deepEqual(puntoDelComando("0; 3000"), { x: 0, z: 3000 });
+});
+
+// Mutante 6 del brief: la conferma esegue anche col campo vuoto.
+test("puntoDelComando: campo vuoto non è un punto — nessun ghost, e Invio non esegue", () => {
+  assert.equal(puntoDelComando(""), null);
+  assert.equal(puntoDelComando("   "), null);
+  assert.deepEqual(esitoComando(""), { punto: null, messaggio: null });
+  assert.deepEqual(esitoComando("   "), { punto: null, messaggio: null });
+});
+
+// Mutante 5 del brief: un testo a metà produce un messaggio d'errore mentre si scrive.
+test("puntoDelComando: il testo a metà non è un ghost e non è un errore — si sta scrivendo", () => {
+  assert.equal(puntoDelComando("0;"), null);
+  assert.equal(puntoDelComando("0; "), null);
+  assert.equal(puntoDelComando("0"), null, "senza il punto e virgola manca la seconda coordinata");
+  // Mentre si scrive il messaggio non esiste come possibilità, non è «esiste ma è vuoto»:
+  // la strada del ghost passa solo di qui, e di qui esce un punto o niente. `esitoComando`,
+  // che un messaggio ce l'ha, la percorre solo Invio.
+  assert.equal(puntoDelComando("0; "), null);
+});
+
+test("esitoComando: il testo non valido parla alla conferma, e dice cosa scrivere", () => {
+  const esito = esitoComando("pippo");
+  assert.equal(esito.punto, null);
+  assert.match(esito.messaggio, /coordinate non lette/);
+  assert.match(esito.messaggio, /x; z/);
+});
+
+test("esitoComando: il testo che si legge torna il punto e nessun messaggio", () => {
+  assert.deepEqual(esitoComando("0; 3000"), { punto: { x: 0, z: 3000 }, messaggio: null });
+});
+
+// Mutante 3 del brief: il campo usa `leggiNumero` invece di `leggiLunghezza`.
+test("puntoDelComando: le unità si leggono — «2,5m» sono 2500 mm", () => {
+  assert.deepEqual(puntoDelComando("0; 2,5m"), { x: 0, z: 2500 });
+  assert.deepEqual(puntoDelComando("1,5m; 30cm"), { x: 1500, z: 300 });
+});
+
+test("puntoDelComando: le espressioni si leggono, con le parentesi", () => {
+  assert.deepEqual(puntoDelComando("0; (1+1)*1500"), { x: 0, z: 3000 });
+});
+
+test("puntoDelComando: il segno unario si legge — una coordinata negativa è normale", () => {
+  assert.deepEqual(puntoDelComando("-2262; 0"), { x: -2262, z: 0 });
+  assert.deepEqual(puntoDelComando("0; -3*1000"), { x: 0, z: -3000 });
+});
+
+// Il ghost mostra solo ciò che c'è scritto: con tre numeri il terzo sparirebbe in
+// silenzio, e l'anteprima direbbe una cosa che il testo non dice.
+test("puntoDelComando: più di due coordinate non si legge, non si tronca", () => {
+  assert.equal(puntoDelComando("0; 1000; 2000"), null);
+});
+
+test("puntoDelComando: un argomento che non è una stringa non solleva", () => {
+  assert.equal(puntoDelComando(null), null);
+  assert.equal(puntoDelComando(undefined), null);
+  assert.equal(puntoDelComando(42), null);
+});
+
+// --- C2: lo stesso campo per B, M e R --------------------------------------------
+// Tre grammatiche, un campo solo: `estrudi` legge una lunghezza e la stende lungo la
+// direzione che danno le frecce, `sposta` legge lo stesso «x; z» di `nodo`, `rinomina`
+// legge un nome e non ha nessuna geometria da mostrare.
+
+const versoSu = { tipo: "estrusione", da: 1, dx: 0, dz: 1 };
+
+test("ghostDelComando: campo chiuso → nessun ghost, non solleva", () => {
+  assert.equal(ghostDelComando(null, null), null);
+  assert.equal(ghostDelComando(undefined, versoSu), null);
+});
+
+test("ghostDelComando: `nodo` mostra il punto in anteprima, come prima del task", () => {
+  assert.deepEqual(ghostDelComando({ tipo: "nodo", testo: "0; 3000" }, null),
+                   { punto: { x: 0, z: 3000 } });
+});
+
+// `M` mostra dove il nodo finirà, con la stessa forma di `N`: la grammatica del testo è la
+// stessa, e una seconda anteprima sarebbe una cosa in più da imparare per lo stesso gesto.
+test("ghostDelComando: `sposta` mostra il punto in anteprima, la stessa forma di `nodo`", () => {
+  assert.deepEqual(ghostDelComando({ tipo: "sposta", testo: "1000; 2000", bersaglio: { tipo: "nodo", id: 1 } }, null),
+                   { punto: { x: 1000, z: 2000 } });
+});
+
+// Mutante 4 del brief: `R` guadagna un ghost che non deve avere.
+test("ghostDelComando: `rinomina` non ha ghost, nemmeno con un testo che parrebbe un punto", () => {
+  assert.equal(ghostDelComando({ tipo: "rinomina", testo: "piede sinistro" }, null), null);
+  assert.equal(ghostDelComando({ tipo: "rinomina", testo: "0; 3000" }, null), null);
+});
+
+// Ingresso degenere: `B` col campo aperto e testo vuoto → nessun ghost.
+test("ghostDelComando: `estrudi` col testo vuoto non disegna niente", () => {
+  assert.equal(ghostDelComando({ tipo: "estrudi", testo: "" }, versoSu), null);
+  assert.equal(ghostDelComando({ tipo: "estrudi", testo: "   " }, versoSu), null);
+});
+
+// Ingresso degenere: la lunghezza a metà («30» mentre si scrive «3000») è un ghost buono,
+// non un errore — si aggiorna a ogni tasto e nessuno rimprovera chi sta ancora digitando.
+test("ghostDelComando: `estrudi` stende la lunghezza scritta lungo la direzione delle frecce", () => {
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "30" }, versoSu), { da: 1, dx: 0, dz: 30 });
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "3000" }, versoSu), { da: 1, dx: 0, dz: 3000 });
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "3000" }, ruotaGhost(versoSu, "ArrowRight")),
+                   { da: 1, dx: 3000, dz: 0 });
+});
+
+// Il modo tiene la direzione, il campo la lunghezza: il ghost normalizza, così una direzione
+// di modulo qualunque non moltiplica due volte quel che si è scritto.
+test("ghostDelComando: `estrudi` normalizza la direzione — la lunghezza è quella del testo", () => {
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "1000" }, { tipo: "estrusione", da: 1, dx: 0, dz: 5 }),
+                   { da: 1, dx: 0, dz: 1000 });
+});
+
+// Mutante 2 del brief: `B` usa `leggiNumero` invece di `leggiLunghezza`.
+test("ghostDelComando: `estrudi` legge unità ed espressioni — «(1+1)*1,5m» sono 3000 mm", () => {
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "(1+1)*1,5m" }, versoSu), { da: 1, dx: 0, dz: 3000 });
+  assert.deepEqual(ghostDelComando({ tipo: "estrudi", testo: "2,5m" }, versoSu), { da: 1, dx: 0, dz: 2500 });
+});
+
+// Ingresso degenere: lunghezza zero o negativa. L'asta lunga zero il modello la rifiuta, e
+// una negativa girerebbe il ghost al contrario della freccia — l'unico gesto che resta.
+test("ghostDelComando: `estrudi` non disegna una lunghezza zero o negativa", () => {
+  assert.equal(ghostDelComando({ tipo: "estrudi", testo: "0" }, versoSu), null);
+  assert.equal(ghostDelComando({ tipo: "estrudi", testo: "-3000" }, versoSu), null);
+});
+
+test("ghostDelComando: `estrudi` senza un modo da cui prendere la direzione → null, non solleva", () => {
+  assert.equal(ghostDelComando({ tipo: "estrudi", testo: "3000" }, null), null);
+});
+
+// --- esitoLunghezza: la decisione di Invio mentre si estrude ----------------------
+
+test("esitoLunghezza: campo vuoto non estrude e non parla — si è appena aperto", () => {
+  assert.deepEqual(esitoLunghezza(""), { lunghezza: null, messaggio: null });
+  assert.deepEqual(esitoLunghezza("   "), { lunghezza: null, messaggio: null });
+});
+
+test("esitoLunghezza: zero, negativa e testo illeggibile parlano alla conferma", () => {
+  for (const t of ["0", "-3000", "pippo"]) {
+    const esito = esitoLunghezza(t);
+    assert.equal(esito.lunghezza, null, t);
+    assert.match(esito.messaggio, /maggiore di zero/, t);
+  }
+});
+
+test("esitoLunghezza: la lunghezza che si legge torna in millimetri, unità comprese", () => {
+  assert.deepEqual(esitoLunghezza("3000"), { lunghezza: 3000, messaggio: null });
+  assert.deepEqual(esitoLunghezza("1,5m"), { lunghezza: 1500, messaggio: null });
+});
+
+// --- la barra col campo aperto ---------------------------------------------------
+// Mutante 3 del brief: le frecce durante `B` se le mangia il campo. La barra è il primo
+// posto dove la promessa si vede, e story 14 vuole stampato solo ciò che funziona.
+
+test("contestoBarra: col campo aperto su `estrudi` la barra promette anche le frecce", () => {
+  assert.equal(contestoBarra(versoSu, { tipo: "nodo", id: 1 }, { tipo: "estrudi", testo: "" }),
+               "comando-direzione");
+});
+
+test("contestoBarra: gli altri comandi del campo non hanno nessuna direzione da dare", () => {
+  for (const tipo of ["nodo", "sposta", "rinomina"]) {
+    assert.equal(contestoBarra(null, { tipo: "nodo", id: 1 }, { tipo, testo: "" }), "comando", tipo);
+  }
 });

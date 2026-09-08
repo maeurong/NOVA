@@ -2,8 +2,17 @@
 // stampate siano quelle che funzionano: due elenchi separati divergono al primo cambio,
 // quindi ce n'è uno solo e la barra lo legge.
 
+// `esempio` è il segnaposto del campo di comando (`app.js:apriComando`), e sta qui perché è
+// la stessa cosa che `aiuto` dice nella barra, detta col formato invece che a parole: due
+// elenchi divergerebbero al primo ripensamento, come già la barra e le scorciatoie.
+//
+// `campo` è l'etichetta del campo di comando, e non è `etichetta`: quella è il **verbo** del
+// tasto, e la barra la stampa già; una `<label>` risponde invece a «cosa va in questa
+// casella», che è un sostantivo. Porta con sé la preposizione quando il comando ha un
+// bersaglio da nominare (`etichettaCampo` qui sotto), perché è lì che cambia: `N` non ha
+// nessun bersaglio, `B` parte **da** un nodo, `M` e `R` agiscono **di**/su un nodo.
 export const TASTI = [
-  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z",            contesto: "salvo-ghost" },
+  { codice: "nodo",      tasto: "N",     etichetta: "nodo",      aiuto: "x; z in mm",      contesto: "salvo-ghost", esempio: "0; 3000", campo: "coordinate" },
   // Non più ⇥: quello resta del browser (fix round 1, A2). ⇥ da pagina appena caricata
   // restava sempre su `body` — mai passato a un vero controllo — perché questo codice lo
   // intercettava e faceva `preventDefault` a ogni pressione, pure quella che avrebbe dovuto
@@ -11,19 +20,30 @@ export const TASTI = [
   { codice: "seleziona", tasto: "G",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
-  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione" },
+  { codice: "disfa",     tasto: "⌘Z",    etichetta: "annulla",   aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "rifai",     tasto: "⇧⌘Z",   etichetta: "rifai",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione", esempio: "3000", campo: "lunghezza da" },
   { codice: "asta",      tasto: "A",     etichetta: "asta",      aiuto: "poi il secondo nodo",    contesto: "selezione" },
   { codice: "vincolo",   tasto: "V",     etichetta: "vincolo",   aiuto: null,              contesto: "selezione" },
-  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z",            contesto: "selezione" },
-  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: null,              contesto: "selezione" },
+  { codice: "sposta",    tasto: "M",     etichetta: "sposta",    aiuto: "x; z in mm",      contesto: "selezione", esempio: "0; 3000", campo: "coordinate di" },
+  { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro", campo: "nome di" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
   // Col ghost aperto la freccia non è una comodità, è il gesto obbligatorio: la lunghezza
-  // è già digitata e manca la direzione. Finora era nominata solo dentro il `prompt`, che
-  // è già sparito quando serve — la barra taceva sull'unico tasto che restava da premere.
+  // è già digitata e manca la direzione. Prima della barra non la nominava nessuno — l'unico
+  // tasto che restava da premere, e a schermo non c'era scritto da nessuna parte.
   { codice: "direzione", tasto: "← ↑ → ↓", etichetta: "direzione", aiuto: null,            contesto: "ghost" },
 ];
+
+/** L'etichetta del campo di comando: il sostantivo, e il bersaglio quando ce n'è uno.
+ *
+ *  Il bersaglio è congelato all'apertura (`app.js:apriComando`) mentre la selezione resta
+ *  viva: senza nominarlo, `R` col nodo 1 e un clic sul nodo 6 rinominava il nodo 1 e niente
+ *  a schermo diceva quale dei due. `${tipo} ${id}` è la stessa forma che le etichette della
+ *  cronologia usano («nome di nodo 1»), non una seconda convenzione. */
+export const etichettaCampo = (voce, bersaglio) =>
+  bersaglio ? `${voce.campo} ${bersaglio.tipo} ${bersaglio.id}` : voce.campo;
 
 // `key` dell'evento → codice, separati per modificatore. Le **etichette** stampate sono
 // quelle di questa tastiera, che è un Mac (`⌫`, `R`); la mappa riconosce comunque `delete`
@@ -36,7 +56,9 @@ const SENZA_MODIFICATORE = new Map([
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
   ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
-const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"]]);
+const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"]]);
+// Solo ⇧⌘Z ha un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
+const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"]]);
 
 // Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
@@ -51,13 +73,26 @@ const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", 
  *  Un campo di testo si tiene le lettere nude (ci si sta scrivendo) e le frecce (muovono il
  *  cursore), mai il modificatore di comando: `⌘S` e `⌘O` in un campo non scrivono niente.
  *  Un bottone o una casella si tengono solo ciò che li attiva — Spazio, Invio, ⌫ — e lasciano
- *  passare le lettere. `?.` regge un evento senza target, o un target senza `closest`. */
+ *  passare le lettere.
+ *
+ *  **Bottone qui vuol dire anche `role="button"`**, non solo il tag: l'albero e la Storia
+ *  costruiscono le voci come `<li tabindex=0 role="button">`, e cercare i soli tag le lasciava
+ *  fuori. L'Invio che salta a uno snapshot risaliva **anche** al listener globale, che lo
+ *  leggeva come «conferma»: il comando eseguito lì potava la coda del rifà e gli snapshot
+ *  dopo il salto sparivano senza che nessun annulla li riportasse. Stessa strada per ⌫, che
+ *  su una voce a fuoco eliminava il nodo selezionato.
+ *
+ *  `?.` regge un evento senza target, o un target senza `closest`. */
 export function daControllo(evento) {
-  const elemento = evento?.target?.closest?.("input, button, select, textarea");
+  const elemento = evento?.target?.closest?.('input, button, select, textarea, [role="button"]');
   if (!elemento) return false;
   if (evento.metaKey || evento.ctrlKey) return false;
   const tag = String(elemento.tagName ?? "").toLowerCase();
-  const testuale = tag !== "button" && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
+  // Il ruolo conta quanto il tag, e per la stessa ragione: un `<li role="button">` che si
+  // tenesse anche le lettere spegnerebbe dodici comandi ogni volta che il fuoco sta su una
+  // voce — `N` da lì deve continuare ad aprire il campo.
+  const bottone = tag === "button" || elemento.getAttribute?.("role") === "button";
+  const testuale = !bottone && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
   return testuale || ATTIVANO.has(String(evento.key).toLowerCase());
 }
 
@@ -66,10 +101,12 @@ export function voceDaEvento(evento) {
   // combinazione non mappata resta al browser — rubarla è peggio che ignorarla.
   if (evento.altKey) return null;
   const comando = Boolean(evento.metaKey || evento.ctrlKey);
-  // `⇧` conta solo col comando: `⌘⇧S` è «salva con nome» del browser. Da solo no —
-  // chi preme `⇧N` per la maiuscola manda `shiftKey: true`, e deve creare un nodo lo stesso.
-  if (comando && evento.shiftKey) return null;
-  const tavola = comando ? CON_COMANDO : SENZA_MODIFICATORE;
+  // `⇧` conta solo col comando: `⌘⇧S` resta «salva con nome» del browser, `⌘⇧O` non è
+  // nostro — nessuna delle due è in `CON_COMANDO_E_SHIFT`. `⌘⇧Z` sì: rifà, non annulla.
+  // Chi preme `⇧N` per la maiuscola manda `shiftKey: true` senza comando, e crea un nodo lo stesso.
+  const tavola = comando && evento.shiftKey ? CON_COMANDO_E_SHIFT
+    : comando ? CON_COMANDO
+    : SENZA_MODIFICATORE;
   const codice = tavola.get(String(evento.key).toLowerCase());
   return codice ? TASTI.find((v) => v.codice === codice) : null;
 }
@@ -80,6 +117,14 @@ export function voceDaEvento(evento) {
 // in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
 export const vociDellaBarra = (contesto) =>
   TASTI.filter((v) => {
+    // Col campo di comando aperto restano due tasti soli: le lettere le prende il campo, e
+    // le frecce muovono il cursore nel testo, non il ghost. Estrudendo no: lì la freccia è
+    // il gesto che manca — la lunghezza si sta scrivendo, la direzione la dà solo lei —
+    // quindi il campo gliela lascia (`app.js`) e la barra la promette.
+    if (contesto === "comando" || contesto === "comando-direzione") {
+      return v.codice === "conferma" || v.codice === "annulla" ||
+             (contesto === "comando-direzione" && v.codice === "direzione");
+    }
     if (v.codice === "seleziona") return contesto !== "ghost";
     if (v.codice === "direzione") return contesto === "ghost";
     if (v.contesto === "salvo-ghost") return contesto !== "ghost" && contesto !== "asta";

@@ -6,16 +6,18 @@
 
 import { modelloVuoto, nodo } from "./modello.js";
 import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
-import { nuovaCronologia, applica, corrente } from "./cronologia.js";
-import { voceDaEvento, vociDellaBarra, daControllo } from "./tastiera.js";
+import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
+import { voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile } from "./file.js";
-import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, AVVISO_ESTRUSIONE } from "./modo.js";
+import { creaStoria } from "./storia.js";
+import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
+         esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro } from "./vincoli.js";
-import { leggiNumero, stampaNumero } from "./numeri.js";
+import { stampaNumero } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -23,6 +25,11 @@ let selezione = null;
 // Due modi e non un ghost solo: in estrusione la selezione è ferma, in asta la selezione
 // **è** il gesto. La stessa guardia per entrambi renderebbe l'asta impossibile.
 let modo = null;
+// Il campo di comando: `null` quando è chiuso, `{ tipo, testo, bersaglio }` quando è aperto.
+// Fuori da `modo` perché non è un modo — `nodo` non ha un nodo di partenza, e `modoValido`
+// lo chiuderebbe a ogni ridisegno cercandogli un `da` che non ha mai avuto. Un campo solo per
+// quattro comandi: `N`, `B`, `M`, `R`. Da qui `window.prompt` non è più nel programma (P2).
+let comando = null;
 // Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
 // che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
 // per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
@@ -31,6 +38,11 @@ let percorso = null, impronta = null;
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
 function dì(testo) { messaggio.textContent = testo ?? ""; }
+
+// Una quota come la scrive l'albero: migliaia separate e unità sul numero (`albero.js`,
+// PRODUCT.md «unità dichiarate in un punto e su ogni numero»). Non vale per il segnaposto
+// del campo, che è un testo da **ricopiare**: lì l'unità sarebbe da cancellare a mano.
+const quota = (v) => `${stampaNumero(v, { decimali: 0, migliaia: true })} mm`;
 
 function scegli(tipo, id) {
   const { permesso, messaggio, aggiornaA } = esitoScelta(modo, tipo);
@@ -50,10 +62,29 @@ const pannello = creaPannello(
     ridisegna();
   } },
 );
-const spazio = await creaSpazio($("spazio"));
+// Senza `await`, e non per eleganza: `import("./vendor/three.module.js")` sono 2 MB, e con
+// l'attesa qui in cima il `keydown` là in fondo si registrava **dopo**. La pagina pareva
+// pronta — colonna disegnata, «Premi N» negli stati vuoti — e la tastiera era morta: i tasti
+// del primo secondo cadevano nel vuoto senza che niente lo dicesse (P5, «attesa parlante»).
+// Adesso i listener ci sono dal primo disegno e la vista 3D si aggiunge quando arriva; nel
+// frattempo `#spazio` porta scritto che sta caricando, che è l'altra metà di P5.
+let spazio = null;
+creaSpazio($("spazio")).then((s) => { spazio = s; ridisegna(); });
+const storia = creaStoria($("storia-elenco"), {
+  suSalto: (i) => {
+    if (i === cronologia.indice) return;  // già lì: nessun ridisegno inutile
+    cronologia = vaiA(cronologia, i);
+    ridisegna();
+  },
+});
 const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
+    // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
+    // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
+    // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
+    // sul file di prima confermava sul nodo 3 del file appena aperto.
+    chiudiComando();
     selezione = null; modo = null;
     percorso = p; impronta = i;
     dì(null);
@@ -77,6 +108,144 @@ function apriModo(nuovo) {
   ridisegna();
 }
 
+// --- Il campo di comando -------------------------------------------------------------
+// La differenza con `prompt` è tutta qui: mentre è aperto la pagina resta viva, il modello
+// si vede, e il ghost si muove a ogni tasto invece di comparire dopo la conferma (P2, P4).
+
+const rigaComando = $("comando");
+const campoComando = $("comando-campo");
+const etichettaComando = rigaComando.querySelector("label");
+const aiutoComando = rigaComando.querySelector(".aiuto");
+
+/** Apre il campo per una voce della tastiera (`N`, `B`, `M`, `R`). L'etichetta, l'aiuto e il
+ *  segnaposto vengono da lì: la barra e il campo dicono la stessa cosa perché la leggono
+ *  dallo stesso elenco. `bersaglio` è la selezione **al momento del tasto**, congelata: da
+ *  aperto il campo non blocca più la pagina, e un clic nel piano sposterebbe la selezione
+ *  sotto i piedi del comando — con `prompt` era impossibile, adesso no.
+ *
+ *  Congelato **e** scritto: l'etichetta nomina il bersaglio (`etichettaCampo`), perché un
+ *  bersaglio che non si muove mentre la selezione si muove, e non è detto da nessuna parte,
+ *  agisce su un nodo diverso da quello evidenziato a schermo. */
+function apriComando(voce, { bersaglio = null, esempio = voce.esempio } = {}) {
+  comando = { tipo: voce.codice, testo: "", bersaglio };
+  campoComando.value = "";
+  etichettaComando.textContent = etichettaCampo(voce, bersaglio);
+  campoComando.placeholder = esempio;
+  aiutoComando.textContent = voce.aiuto ?? "";
+  dì(null);       // un errore di prima non resta a schermo sopra un campo appena aperto
+  ridisegna();    // prima: il campo è `hidden` finché non serve, e `hidden` non prende fuoco
+  campoComando.focus();
+}
+
+/** Chiude il campo e con lui il modo che gli appartiene: estrudendo il verso sta nel `modo`
+ *  e la misura nel campo, quindi sono un gesto solo e si chiudono insieme — lasciare il modo
+ *  aperto vorrebbe dire un ghost senza più nessuno che gli detti la lunghezza. Non ridisegna:
+ *  chi chiude ridisegna comunque, e `ridisegna` chiude a sua volta quando il bersaglio sparisce. */
+function chiudiComando() {
+  comando = null;
+  modo = null;
+  campoComando.value = "";
+}
+
+// Il testo è la sorgente del ghost, quindi ogni tasto ridisegna. `comando.testo` rispecchia
+// il campo e non il contrario: riscrivere `value` a ogni ridisegno sposterebbe il cursore.
+// `dì(null)` per la stessa ragione per cui lo fa `apriComando`: l'errore di prima parla di un
+// testo che non c'è più, e un rosso sopra un campo che si sta scrivendo è un rimprovero a
+// metà parola (`modo.js`, «un testo a metà non è un testo sbagliato»).
+campoComando.addEventListener("input", () => {
+  comando = { ...comando, testo: campoComando.value };
+  dì(null);
+  ridisegna();
+});
+
+// Esc e le frecce qui e non nel listener globale: `daControllo` si tiene ogni tasto che arriva
+// da un campo di testo — è la stessa regola per cui `n` lì dentro scrive una lettera.
+campoComando.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    chiudiComando();
+    dì(null);
+    ridisegna();
+    return;
+  }
+  // Estrudendo la freccia gira il ghost invece di muovere il cursore: è il gesto obbligatorio
+  // — la lunghezza si sta scrivendo, la direzione non la dà nient'altro — ed è quello che la
+  // barra promette. Il prezzo, dichiarato: mentre si estrude ←→ non spostano il cursore nel
+  // testo. Negli altri comandi la freccia resta del campo, e questo `if` non scatta.
+  const girato = ruotaGhost(modo, ev.key);
+  if (!girato) return;
+  ev.preventDefault();
+  modo = girato;
+  ridisegna();
+});
+
+// Invio conferma perché il campo sta in un `<form>`: è il comportamento della piattaforma,
+// non un tasto da riconoscere a mano. Da qui in poi ogni comando che chiedeva un testo passa
+// di qui, e `window.prompt` non esiste più in nessuna strada del programma (P2).
+rigaComando.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  if (!comando) return;
+  if (comando.tipo === "estrudi") return confermaEstrusione();
+  if (comando.tipo === "rinomina") return confermaNome();
+  confermaPunto();  // `nodo` e `sposta`: la stessa grammatica, «x; z»
+});
+
+// Campo vuoto: niente da eseguire **e** niente da dire. Un testo che c'è ma non si legge
+// parla, e solo adesso — mentre si scriveva era un testo a metà, non uno sbagliato.
+function confermaPunto() {
+  const { punto, messaggio } = esitoComando(comando.testo);
+  if (!punto) { if (messaggio) dì(messaggio); return; }
+  const { x, z } = punto;
+  if (comando.tipo === "sposta") {
+    const id = comando.bersaglio.id;
+    if (!esegui((m) => spostaNodo(m, { id, x, z }), `sposta nodo ${id}`)) { ridisegna(); return; }
+    // Le aste seguono da sole: referenziano l'identificatore, non le coordinate.
+    chiudiComando();
+    ridisegna();
+    return;
+  }
+  // Le stesse cifre dell'albero, e l'unità su ogni numero (PRODUCT.md): la cronologia
+  // scriveva «nodo 1200; 3300» dove l'albero dice «1 200 mm; 3 300 mm» — due convenzioni
+  // per lo stesso nodo, a due dita di distanza nella stessa pagina.
+  const fatto = esegui((m) => creaNodo(m, { x, z }), `nodo ${quota(x)}; ${quota(z)}`);
+  if (!fatto) { ridisegna(); return; }  // rifiutato (un nodo c'era già lì): il campo resta col testo
+  // Il nodo appena posato è selezionato: è da lì che si estrude, e senza questo servirebbe
+  // il mouse per riprenderlo — con il Goal che dice «senza il mouse».
+  const m = corrente(cronologia);
+  selezione = { tipo: "nodo", id: m.nodi[m.nodi.length - 1].id };
+  chiudiComando();
+  ridisegna();
+}
+
+// Estrude **il ghost che si sta guardando**, non un secondo conto sullo stesso testo: se il
+// ghost non c'è non c'è niente da confermare, e il perché lo dice `esitoLunghezza` — che tace
+// sul campo vuoto e parla su zero, negativo e illeggibile.
+function confermaEstrusione() {
+  const g = ghostDelComando(comando, modo);
+  if (!g) {
+    const { messaggio } = esitoLunghezza(comando.testo);
+    if (messaggio) dì(messaggio);
+    return;
+  }
+  if (esegui((m) => estrudi(m, g), `asta da ${g.da}`)) {
+    // La punta è il `nodo_j` dell'asta appena nata, non l'ultimo nodo dell'elenco: quando
+    // l'estrusione arriva su un nodo che c'era già, di nodi non ne nasce nessuno.
+    const m = corrente(cronologia);
+    selezione = { tipo: "nodo", id: m.aste[m.aste.length - 1].nodo_j };
+    chiudiComando();
+  }
+  ridisegna();
+}
+
+// Il nome vuoto e quello di soli spazi li tratta `comandi.js:rinomina`, che è dove la regola
+// stava già: il campo non ne scrive una seconda che diverga alla prima riflessione.
+function confermaNome() {
+  const { tipo, id } = comando.bersaglio;
+  const nome = comando.testo;
+  if (esegui((m) => rinomina(m, { tipo, id, nome }), `nome di ${tipo} ${id}`)) chiudiComando();
+  ridisegna();
+}
+
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
@@ -91,25 +260,32 @@ function esegui(fn, etichetta) {
 
 function ridisegna() {
   const m = corrente(cronologia);
+  const esiste = (s) => (s.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === s.id);
   // Una selezione che punta a un oggetto sparito è peggio di nessuna selezione.
-  if (selezione && !(selezione.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === selezione.id)) {
-    selezione = null;
-  }
+  if (selezione && !esiste(selezione)) selezione = null;
   // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
-  if (modo && !m.nodi.some((n) => n.id === modo.da)) modo = null;
-  if (modo?.tipo === "asta" && modo.a !== null && !m.nodi.some((n) => n.id === modo.a)) modo = { ...modo, a: null };
+  modo = modoValido(m, modo);
+  // E il bersaglio di un comando aperto pure: ⌘Z lavora anche col campo aperto, e un campo
+  // che chiede il nome di un nodo appena disfatto non ha più a chi parlare.
+  if (comando?.bersaglio && !esiste(comando.bersaglio)) chiudiComando();
 
-  const ghost = ghostDisegnabile(m, modo);
+  // Un ghost solo, di due forme: la punta dell'asta — dal modo, o dal campo mentre si scrive
+  // la lunghezza — oppure il punto in anteprima. Il secondo non è un `{da, dx, dz}`, non
+  // parte da nessun nodo, e darglielo vorrebbe dire inventargli un'origine: `piano.js` lo
+  // riconosce da `punto`.
+  const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
+  rigaComando.hidden = !comando;
   piano.disegna(m, { selezione, ghost });
-  spazio.disegna(m, { selezione });
+  spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
   albero.disegna(m, { selezione });
   pannello.disegna(m, selezione);
   file.disegna({ percorso, impronta, modello: m });
+  storia.disegna(etichette(cronologia));
   disegnaBarra();
 }
 
 function disegnaBarra() {
-  const contesto = contestoBarra(modo, selezione);
+  const contesto = contestoBarra(modo, selezione, comando);
   $("barra").replaceChildren(...vociDellaBarra(contesto).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
@@ -122,15 +298,6 @@ function disegnaBarra() {
     }
     return span;
   }));
-}
-
-// Le coordinate, le lunghezze e i nomi si chiedono con `prompt`: è il campo che non si può
-// sbagliare, e la palette ⌘K con i valori nella query è la giornata 11 (story 8).
-// `ponytail: prompt oggi, campo nella palette domani.`
-function chiedi(domanda, esempio) {
-  const t = window.prompt(`${domanda}  (${esempio})`);
-  if (t === null) dì(null);  // annullando si pulisce: un errore di prima non resta a schermo
-  return t;
 }
 
 // Un `keydown` solo su `window`, con la guardia in un posto solo: due listener sulla stessa
@@ -156,34 +323,47 @@ window.addEventListener("keydown", (ev) => {
   }
   ev.preventDefault();
 
-  if (voce.codice === "annulla") { modo = null; dì(null); ridisegna(); return; }
+  if (voce.codice === "annulla") { modo = null; chiudiComando(); dì(null); ridisegna(); return; }
 
-  // Con un modo aperto passano solo conferma, annulla e — in modo asta — la selezione.
-  if (modo && voce.codice !== "conferma" && !(modo.tipo === "asta" && voce.codice === "seleziona")) {
-    dì(modo.tipo === "asta"
-      ? "scegli il secondo nodo, poi Invio — Esc per annullare"
-      : AVVISO_ESTRUSIONE);
+  // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
+  // appesi a un nodo appena disfatto si chiudono da soli in `ridisegna` (`modoValido`).
+  if (voce.codice === "disfa") {
+    const nuova = indietro(cronologia);
+    if (nuova !== cronologia) { cronologia = nuova; dì(null); ridisegna(); }
+    return;
+  }
+  if (voce.codice === "rifai") {
+    const nuova = avanti(cronologia);
+    if (nuova !== cronologia) { cronologia = nuova; dì(null); ridisegna(); }
     return;
   }
 
+  // Apri e salva stanno con disfa e rifai, e **sopra** la guardia del campo: `daControllo`
+  // lascia passare il modificatore di comando apposta (è così che ⌘Z funziona mentre si
+  // scrive), quindi ⌘S da dentro il campo arriva fin qui — e sotto la guardia finiva a
+  // rimettere il fuoco dove già stava, con il `preventDefault` già fatto. Salvare mentre si
+  // scrive un nome non faceva niente e non diceva niente.
   if (voce.codice === "apri") { file.apri(); return; }
   if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
 
-  if (voce.codice === "nodo") {
-    const t = chiedi("Coordinate del nodo, x; z in mm", "0; 3000");
-    if (t === null) return;
-    const [sx, sz] = t.split(";");
-    const x = leggiNumero(sx ?? ""), z = leggiNumero(sz ?? "");
-    if (x === null || z === null) { dì("coordinate non lette: scrivi «x; z», per esempio «0; 3000»"); return; }
-    if (esegui((m) => creaNodo(m, { x, z }), `nodo ${stampaNumero(x, { decimali: 0 })}; ${stampaNumero(z, { decimali: 0 })}`)) {
-      // Il nodo appena posato è selezionato: è da lì che si estrude, e senza questo
-      // servirebbe il mouse per riprenderlo — con il Goal che dice «senza il mouse».
-      const m = corrente(cronologia);
-      selezione = { tipo: "nodo", id: m.nodi[m.nodi.length - 1].id };
-    }
-    ridisegna();
+  // Col campo aperto il gesto è la scrittura. Da dentro il campo qui arrivano solo le
+  // combinazioni col modificatore, già servite qui sopra; ma il fuoco può uscire dal campo
+  // con un clic nel piano, e da lì un tasto aprirebbe un secondo comando lasciando due
+  // anteprime appese. Torna nel campo.
+  if (comando) { campoComando.focus(); return; }
+
+  // Qui sotto il modo può essere solo l'asta: l'estrusione vive con il campo aperto, e col
+  // campo aperto si è già tornati indietro alla riga sopra. Passano conferma, annulla e la
+  // selezione, che dell'asta **è** il gesto.
+  if (modo && voce.codice !== "conferma" && voce.codice !== "seleziona") {
+    dì(AVVISO_SECONDO_NODO);
     return;
   }
+
+  // `N` non chiede più niente: apre il campo, e da lì in poi il ghost segue i tasti.
+  // Con un modo già in corso non ci arriva mai — lo ferma la guardia qui sopra, che dice
+  // di chiudere prima il ghost. Il comando non parte, e nessuno dei due stati resta appeso.
+  if (voce.codice === "nodo") { apriComando(voce); return; }
 
   if (voce.codice === "seleziona") {
     // G gira fra i nodi in ordine di identificatore. In modo asta è il gesto stesso: passa
@@ -197,26 +377,23 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "estrudi") {
-    if (selezione?.tipo !== "nodo") { dì("estrudere parte da un nodo: selezionane uno"); return; }
-    const t = chiedi("Lunghezza in mm, poi la direzione con una freccia", "3000");
-    if (t === null) return;
-    const l = leggiNumero(t);
-    if (l === null || l <= 0) { dì("lunghezza non letta: scrivi un numero maggiore di zero"); return; }
-    // La barra già dice "Invio conferma" / "Esc annulla" col contesto "ghost" (tastiera.js):
-    // un secondo avviso qui sarebbe rosso senza essere un'attenzione, contro PRODUCT.md.
-    dì(null);
-    apriModo({ tipo: "estrusione", da: selezione.id, dx: 0, dz: l });  // in su di default; le frecce la girano
+    if (selezione?.tipo !== "nodo") { dì(serveUnNodo("estrudere")); return; }
+    // Il modo tiene **solo** la direzione, in su di default: un versore, non una lunghezza —
+    // quella la scrive il campo, e il ghost la stende (`ghostDelComando`). Le due metà si
+    // aprono insieme e si chiudono insieme (`chiudiComando`), perché sono un gesto solo.
+    modo = { tipo: "estrusione", da: selezione.id, dx: 0, dz: 1 };
+    apriComando(voce, { bersaglio: { ...selezione } });
     return;
   }
 
   if (voce.codice === "asta") {
-    if (selezione?.tipo !== "nodo") { dì("un'asta parte da un nodo: selezionane uno"); return; }
+    if (selezione?.tipo !== "nodo") { dì(serveUnNodo("un'asta")); return; }
     apriModo({ tipo: "asta", da: selezione.id, a: null });
     return;
   }
 
   if (voce.codice === "vincolo") {
-    if (selezione?.tipo !== "nodo") { dì("il vincolo è di un nodo: selezionane uno"); return; }
+    if (selezione?.tipo !== "nodo") { dì(serveUnNodo("il vincolo")); return; }
     const n = nodo(corrente(cronologia), selezione.id);
     const id = selezione.id;
     // `V` alterna fra incastro e libero **dichiarato**: spegnere l'ultimo grado acceso
@@ -229,57 +406,45 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
 
+  // L'estrusione la conferma Invio nel campo (`confermaEstrusione`): qui arriva solo l'asta.
   if (voce.codice === "conferma") {
     if (!modo) return;
-    if (modo.tipo === "asta") {
-      if (modo.a === null) { dì("scegli il secondo nodo, poi Invio"); return; }
-      const { da, a } = modo;
-      if (esegui((m) => collega(m, { da, a }), `asta ${da} → ${a}`)) { modo = null; selezione = { tipo: "nodo", id: a }; }
-      ridisegna();
-      return;
-    }
-    const g = { da: modo.da, dx: modo.dx, dz: modo.dz };
-    if (esegui((m) => estrudi(m, g), `asta da ${g.da}`)) {
-      modo = null;
-      // La punta è il `nodo_j` dell'asta appena nata, non l'ultimo nodo dell'elenco:
-      // quando l'estrusione arriva su un nodo che c'era già, di nodi non ne nasce nessuno.
-      const m = corrente(cronologia);
-      selezione = { tipo: "nodo", id: m.aste[m.aste.length - 1].nodo_j };
-    }
+    if (modo.a === null) { dì(AVVISO_SECONDO_NODO); return; }
+    const { da, a } = modo;
+    if (esegui((m) => collega(m, { da, a }), `asta ${da} → ${a}`)) { modo = null; selezione = { tipo: "nodo", id: a }; }
     ridisegna();
     return;
   }
 
+  // `M` apre lo stesso campo di `N`, con la stessa grammatica: l'esempio sono le coordinate
+  // di adesso, che dicono da dove si parte meglio di qualunque frase.
   if (voce.codice === "sposta") {
-    if (selezione?.tipo !== "nodo") { dì("si sposta un nodo: selezionane uno"); return; }
-    const id = selezione.id;
-    const n = nodo(corrente(cronologia), id);
-    const t = chiedi(`Nuove coordinate del nodo ${id}, x; z in mm`,
-                     `${stampaNumero(n.x, { decimali: 0 })}; ${stampaNumero(n.z, { decimali: 0 })}`);
-    if (t === null) return;
-    const [sx, sz] = t.split(";");
-    const x = leggiNumero(sx ?? ""), z = leggiNumero(sz ?? "");
-    if (x === null || z === null) { dì("coordinate non lette: scrivi «x; z», per esempio «0; 3000»"); return; }
-    esegui((m) => spostaNodo(m, { id, x, z }), `sposta nodo ${id}`);
-    ridisegna();  // le aste seguono da sole: referenziano l'identificatore, non le coordinate
+    if (selezione?.tipo !== "nodo") { dì(serveUnNodo("spostare")); return; }
+    const n = nodo(corrente(cronologia), selezione.id);
+    const q = (v) => stampaNumero(v, { decimali: 0 });
+    apriComando(voce, { bersaglio: { ...selezione }, esempio: `${q(n.x)}; ${q(n.z)}` });
     return;
   }
 
   if (voce.codice === "elimina") {
-    if (selezione?.tipo !== "nodo") { dì("si elimina un nodo: selezionane uno (l'asta non ancora)"); return; }
+    // L'asta resta fuori davvero (`comandi.js` elimina solo nodi): la frase lo dice, invece
+    // di lasciar credere che basti selezionarne una.
+    if (selezione?.tipo !== "nodo") { dì(`${serveUnNodo("eliminare")} — l'asta non si elimina ancora`); return; }
     const id = selezione.id;
     esegui((m) => eliminaNodo(m, { id }), `elimina nodo ${id}`);
     ridisegna();
     return;
   }
 
+  // `R` è testuale e basta: nessun ghost da mostrare, perché un nome non ha una geometria da
+  // anticipare. L'esempio resta quello della tastiera; chi rinomina lo dice l'etichetta del
+  // campo, che nomina il bersaglio congelato — il pannello no, quello segue la selezione, e
+  // la selezione da qui in poi si può muovere.
+  //
+  // È l'unico comando che accetta anche un'asta, quindi non passa da `serveUnNodo`.
   if (voce.codice === "rinomina") {
-    if (!selezione) { dì("seleziona qualcosa da rinominare"); return; }
-    const t = chiedi(`Nome per ${selezione.tipo} ${selezione.id}`, "piede sinistro");
-    if (t === null) return;
-    const s = { ...selezione };
-    esegui((m) => rinomina(m, { tipo: s.tipo, id: s.id, nome: t }), `nome di ${s.tipo} ${s.id}`);
-    ridisegna();
+    if (!selezione) { dì("rinominare vuole qualcosa di selezionato: premi G per girare fra i nodi, o clicca un'asta"); return; }
+    apriComando(voce, { bersaglio: { ...selezione } });
   }
 });
 

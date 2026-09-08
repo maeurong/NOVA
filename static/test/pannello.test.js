@@ -60,8 +60,10 @@ test("righe: nodo dichiarato libero mostra «libero», non «non dichiarato»", 
 test("righe: x e z non si scambiano, e portano l'unità", () => {
   const m = creaNodo(modelloVuoto(), { x: 1200, z: 3000 });
   const r = new Map(righe(m, { tipo: "nodo", id: 1 }));
-  assert.equal(r.get("x"), "1.200 mm");
-  assert.equal(r.get("z"), "3.000 mm");
+  // Lo spazio fine unificatore, non il punto (11c/D): quel che l'ispettore scrive dev'essere
+  // ricopiabile nel campo di comando senza valere mille volte meno.
+  assert.equal(r.get("x"), "1\u202F200 mm");
+  assert.equal(r.get("z"), "3\u202F000 mm");
 });
 
 test("righe: nodo con id inesistente torna null, non solleva", () => {
@@ -85,7 +87,7 @@ test("righe: asta senza sezione la dice non assegnata, senza il nome della tappa
 test("righe: la lunghezza dell'asta è quella vera, non zero", () => {
   const m = CON_CERNIERA();  // nodo 1 in (0,0), estrusione di 3000 mm lungo x
   const r = new Map(righe(m, { tipo: "asta", id: m.aste[0].id }));
-  assert.equal(r.get("lunghezza"), "3.000 mm");
+  assert.equal(r.get("lunghezza"), "3\u202F000 mm");
 });
 
 // --- prossimoVincolo (mutante: scrivere solo il proprio grado) ---

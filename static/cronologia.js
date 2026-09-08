@@ -21,4 +21,8 @@ export function applica(c, fn, etichetta) {
 export const indietro = (c) => (c.indice > 0 ? { ...c, indice: c.indice - 1 } : c);
 export const avanti = (c) => (c.indice < c.snapshot.length - 1 ? { ...c, indice: c.indice + 1 } : c);
 
+// Il salto diretto per la cronologia cliccabile: stesso contratto di `indietro`/`avanti`,
+// fuori intervallo torna `c` invariata invece di sollevare.
+export const vaiA = (c, i) => (i >= 0 && i < c.snapshot.length ? { ...c, indice: i } : c);
+
 export const etichette = (c) => c.etichetta.map((etichetta, i) => ({ etichetta, attiva: i === c.indice }));

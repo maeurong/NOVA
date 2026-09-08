@@ -22,11 +22,14 @@ body {
   height: 100vh;
   display: grid;
   grid-template-columns: minmax(180px, 15rem) 1fr minmax(220px, 20rem);
-  /* il messaggio ha la sua riga: dentro quella della barra si sovrapporrebbe ai tasti */
-  grid-template-rows: 1fr auto auto;
+  /* il messaggio ha la sua riga: dentro quella della barra si sovrapporrebbe ai tasti.
+     Il campo di comando ne ha una sua per la stessa ragione, e sta fra i due: sotto
+     l'errore che parla di ciò che si è scritto, sopra la barra che dice come chiudere. */
+  grid-template-rows: 1fr auto auto auto;
   grid-template-areas:
     "albero viste pannello"
     "messaggio messaggio messaggio"
+    "comando comando comando"
     "barra barra barra";
   background: var(--fondo);
   color: var(--inchiostro);
@@ -110,7 +113,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .tasto { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .tasto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
              border-radius: 3px; padding: 0 4px; background: var(--pannello); }
-.tasto .aiuto { color: var(--testo-tenue); }
+.aiuto { color: var(--testo-tenue); }
 
 /* Doppio canale: il rosso non viaggia mai da solo (WCAG 1.4.1) — c'è anche il segno.
    Misurato: #b8321e su #dcdad5 fa 4.28:1, sotto il 4.5:1 di AA per testo normale.
@@ -122,15 +125,36 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #messaggio:empty { display: none; }
 #messaggio::before { content: "▲ "; }
 
+/* La riga del comando. Stessa grammatica della barra che le sta sotto — bordo che stacca,
+   mezzo passo di respiro — perché sono la stessa fascia di controlli, non due mondi. Il
+   cursore è rosso: è la sola cosa che si muove mentre si scrive, e il rosso qui vuol dire
+   «sei qui», che è l'attenzione di sempre. */
+#comando { grid-area: comando; border-top: 1px solid var(--tratto-forte);
+           padding: calc(var(--passo) / 2) var(--passo);
+           display: flex; gap: var(--passo); align-items: baseline; flex-wrap: wrap;
+           background: var(--pannello); }
+/* `display: flex` su un selettore di id batte la regola `[hidden]` del browser, che è una
+   sola parola di specificità: senza questa riga il campo si vede anche da chiuso. */
+#comando[hidden] { display: none; }
+#comando label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+                 color: var(--testo-tenue); font-weight: 600; flex: 0 0 auto; }
+/* `grow: 0`: con `1` il campo si mangiava tutto l'avanzo — 1311px a 1440 di finestra, con
+   l'aiuto spinto a 1300px dall'etichetta. Le tre parti sono un controllo solo e devono
+   restare vicine; 14rem di base bastano per «piede sinistro» e per «12 500; 3 000». */
+#comando-campo { flex: 0 1 14rem; min-width: 8rem; caret-color: var(--rosso); }
+#comando .aiuto { flex: 0 1 auto; }
+
 .staccato { margin-top: 1.5rem; }
 
 #file { border-bottom: 1px solid var(--tratto); padding-bottom: var(--passo); margin-bottom: var(--passo);
         flex: 0 1 auto; min-height: 0; overflow: auto; }
 #file label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
-#file-percorso { width: 100%; font-family: var(--mono); font-size: 12px;
+#file-percorso, #comando-campo {
+                 width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
-#file-percorso:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#file-percorso:focus-visible, #comando-campo:focus-visible {
+                 outline: 2px solid var(--rosso); outline-offset: 1px; }
 .file-azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .file-azioni button { font: inherit; cursor: pointer; padding: 2px 10px;
                       background: var(--pannello); color: var(--inchiostro);
@@ -149,3 +173,25 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
                           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #file-recenti button:hover .cartella { color: var(--inchiostro); }
 #file-recenti button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
+/* La cronologia visibile (P4): stesso linguaggio dell'albero — riga cliccabile, fuoco
+   visibile, doppio canale sulla voce attiva (storia.js).
+
+   Scorre per conto suo, con la ricetta dei recenti qui sopra: senza, alla diciassettesima
+   voce l'elenco sfondava il pannello (fondo a 841px su 833) e l'unico contenitore che
+   scorreva era `#pannello` — cercare nella cronologia spingeva fuori campo la sezione
+   «Selezione», e ispettore e Storia si contendevano un solo scorrimento. */
+#storia-elenco { margin: 0; padding: 0; list-style: none; max-height: 11rem; overflow-y: auto; }
+/* Bersaglio ≥24px come le caselle dei gradi, e per la stessa regola (WCAG 2.5.8): 11px di
+   mono a 1,45 fanno 15,94px di riga, che con 2px di padding restavano 19,94. Queste sono le
+   righe più piccole della pagina e sono impilate, quindi l'eccezione della spaziatura non le
+   copre. Il padding, non il corpo del testo: la densità della colonna resta quella. */
+#storia-elenco li { padding: 5px 4px; cursor: pointer; border-radius: 2px; font-family: var(--mono); font-size: 11px; }
+#storia-elenco li:hover { background: var(--pannello); }
+#storia-elenco li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+/* Niente rosso qui: 11px in grassetto è testo normale per WCAG, e #b8321e su #dcdad5 fa
+   4,28:1, sotto il 4,5:1 di AA — l'unica voce della Storia che non passava. Il doppio canale
+   non ne dipendeva già: «▸», il grassetto e `aria-current` (storia.js) restano tutti e tre. */
+.storia-attiva { font-weight: 700; }
+/* Il futuro rifacibile: un comando nuovo lo cancella, e va previsto — non solo trovato dopo. */
+.storia-futuro { color: var(--testo-tenue); font-style: italic; }
