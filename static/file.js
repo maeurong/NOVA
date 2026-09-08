@@ -14,6 +14,24 @@ export const corto = (impronta) => (impronta ? impronta.slice(0, 8) : "—");
 /** Il `motivo` del server se c'è, altrimenti lo stato HTTP — mai «undefined». */
 export const messaggioErrore = (dati, stato) => dati.motivo || `il server ha risposto ${stato}`;
 
+/** L'unica strada verso il server. `corpo` assente è una GET, presente una POST in JSON.
+ *  Sta qui, accanto a `messaggioErrore`, perché era già qui: `app.js` ne aveva una copia, e
+ *  solo la copia traduceva la caduta di `fetch` — a server spento l'area file diceva ancora
+ *  «Failed to fetch», inglese in mezzo all'italiano di tutto il resto.
+ *
+ *  Il `catch` sul `fetch` e non sul corpo: quello è l'unico punto in cui la promessa cade
+ *  senza una risposta da leggere. */
+export async function chiediJson(rotta, corpo) {
+  const r = await fetch(rotta, corpo === undefined ? {} : {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(corpo),
+  }).catch(() => { throw new Error("il server non risponde"); });
+  const dati = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(messaggioErrore(dati, r.status));
+  return dati;
+}
+
 /** Nome del file e cartella che lo contiene. Senza cartella, `cartella` è vuota — non solleva. */
 export function separaPercorso(percorso) {
   const p = typeof percorso === "string" ? percorso : "";
@@ -57,17 +75,6 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
   // ricordarsi di alzare a ogni comando e di abbassare al momento giusto: una variabile
   // così è già bugiarda oggi, e con l'annulla della 11c lo diventerebbe di più.
   let salvato = null;
-
-  async function chiedi(rotta, corpo) {
-    const r = await fetch(rotta, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(corpo),
-    });
-    const dati = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(messaggioErrore(dati, r.status));
-    return dati;
-  }
 
   function ricorda(percorso) {
     recenti = aggiungi(recenti, percorso);
@@ -113,7 +120,7 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
     if (p === "") return suErrore("scrivi il percorso di un modello");
     inCorso = true;
     try {
-      const { modello, impronta } = await chiedi("/api/modello/apri", { percorso: p });
+      const { modello, impronta } = await chiediJson("/api/modello/apri", { percorso: p });
       campo.value = p;
       salvato = JSON.stringify(modello);   // appena aperto, memoria e disco coincidono
       ricorda(p);
@@ -137,7 +144,7 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
     const inviato = JSON.stringify(modello);
     inCorso = true;
     try {
-      const { impronta } = await chiedi("/api/modello/salva", { percorso: p, modello });
+      const { impronta } = await chiediJson("/api/modello/salva", { percorso: p, modello });
       salvato = inviato;
       ricorda(p);
       // `suSalvataggio` e non `suApertura`: il modello in memoria è già quello giusto, e

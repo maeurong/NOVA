@@ -125,13 +125,18 @@ export function esitoLunghezza(testo) {
  *  `rinomina` è testuale: un'anteprima disegnata direbbe una cosa che il comando non fa. */
 export function ghostDelComando(comando, modo) {
   if (!comando) return null;
-  if (comando.tipo === "rinomina") return null;
   if (comando.tipo === "estrudi") {
     const { lunghezza } = esitoLunghezza(comando.testo);
     if (lunghezza === null || modo?.tipo !== "estrusione") return null;
     const modulo = Math.hypot(modo.dx, modo.dz) || 1;
     return { da: modo.da, dx: (modo.dx / modulo) * lunghezza, dz: (modo.dz / modulo) * lunghezza };
   }
+  // Elenco esplicito, non un `default` che raccoglie tutto il resto. `sezione`, `materiale` e
+  // `danno` portano un `;` nella loro grammatica come «x; z», quindi cadendo qui sotto
+  // «0,8; 0,9» diventava il punto (0,8; 0,9): un nodo fantasma all'origine a ogni tasto, con
+  // il piano che si ridimensionava sotto le mani perché `estensione` lo mette nel `viewBox`.
+  // Un comando testuale non ha una geometria da anticipare (P4).
+  if (comando.tipo !== "nodo" && comando.tipo !== "sposta") return null;
   const punto = puntoDelComando(comando.testo);
   return punto ? { punto } : null;
 }

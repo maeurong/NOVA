@@ -15,7 +15,7 @@ import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
-import { creaFile, messaggioErrore } from "./file.js";
+import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
@@ -46,21 +46,6 @@ let percorso = null, impronta = null;
 let catalogo = null;
 const legami = new Map();
 
-// Lo stampo di `file.js:62`, con il suo stesso lettore dell'errore: il server appiattisce
-// `detail` in `motivo` (`server.py:308-311`), e due letture diverse dello stesso corpo
-// divergerebbero al primo ripensamento.
-async function chiediJson(rotta, corpo) {
-  // Il `catch` sul `fetch` e non sul corpo: un server spento lo fa cadere con «Failed to
-  // fetch», che è inglese e non dice niente — e quell'avviso si legge nell'editor, in mezzo
-  // all'italiano di tutto il resto.
-  const r = await fetch(rotta, corpo === undefined ? {} : {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corpo),
-  }).catch(() => { throw new Error("il server non risponde"); });
-  const dati = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(messaggioErrore(dati, r.status));
-  return dati;
-}
-
 chiediJson("/api/catalogo").then((c) => { catalogo = c; ridisegna(); })
   .catch(() => { catalogo = null; });  // l'editor regge senza: mostra la classe che c'è (P5)
 
@@ -74,9 +59,19 @@ function legamePer(m, id) {
   const chiave = JSON.stringify([k, vesteDi(m)]);
   if (legami.has(chiave)) return legami.get(chiave);
   legami.set(chiave, null);  // in volo: «valori in arrivo», e nessuna seconda richiesta
+  // L'errore si mostra e **poi** si dimentica: il server riavviato deve poter rispondere alla
+  // riselezione, e la chiave non cambia da sé. Prima il ridisegno, però — cancellare per primo
+  // farebbe ripartire la richiesta dentro il ridisegno stesso, in tondo.
+  const arrivo = (v) => {
+    legami.set(chiave, v);
+    ridisegna();
+    if (v.errore) legami.delete(chiave);
+  };
   chiediJson("/api/materiale/legame", { materiale: k, veste: vesteDi(m) })
-    .then((d) => { legami.set(chiave, d); ridisegna(); })
-    .catch((e) => { legami.set(chiave, { errore: e.message }); ridisegna(); });
+    // Un 200 con un corpo illeggibile non è un legame: `chiediJson` in quel caso torna `{}`,
+    // e `pannello.js` leggerebbe `legame.legame.tipo` su `undefined`.
+    .then((d) => arrivo(d.valori ? d : { errore: "risposta del server illeggibile" }))
+    .catch((e) => arrivo({ errore: e.message }));
   return null;
 }
 
@@ -330,14 +325,18 @@ function confermaSezione() {
   const etichetta = (dims ? `sezione ${quota(dims.b)} × ${quota(dims.h)}` : `sezione ${esistente.nome}`)
     + (aggiunti.length ? `, con ${aggiunti.join(" e ")}` : "")
     + (asta !== null ? ` → asta ${asta}` : "");
-  const fatto = esegui((mm) => {
-    let n = mm, id;
-    if (dims) {
-      n = materialiDiDefault(n).modello;
-      const cls = n.materiali.find((k) => k.tipo === "calcestruzzo").id, acc = n.materiali.find((k) => k.tipo === "acciaio").id;
-      n = creaSezione(n, { b: dims.b, h: dims.h, calcestruzzo: cls, acciaio: acc });
-      id = n.sezioni[n.sezioni.length - 1].id;
-    } else id = esistente.id;
+  const fatto = esegui((stato) => {
+    // Senza dimensioni resta solo l'assegnazione: il ramo «nome esistente e nessuna asta» è
+    // già uscito qui sopra, quindi qui `asta` c'è per forza.
+    if (!dims) return assegnaSezione(stato, { asta, sezione: esistente.id });
+    // I due `find` non tornano `null` perché i materiali li ha appena messi la riga sopra:
+    // gli id si prendono dal modello che `materialiDiDefault` restituisce, non da uno cercato
+    // altrove dove la dipendenza non si vedrebbe.
+    const conMateriali = materialiDiDefault(stato).modello;
+    const cls = conMateriali.materiali.find((k) => k.tipo === "calcestruzzo").id;
+    const acc = conMateriali.materiali.find((k) => k.tipo === "acciaio").id;
+    const n = creaSezione(conMateriali, { b: dims.b, h: dims.h, calcestruzzo: cls, acciaio: acc });
+    const id = n.sezioni[n.sezioni.length - 1].id;
     return asta === null ? n : assegnaSezione(n, { asta, sezione: id });
   }, etichetta);
   if (!fatto) { ridisegna(); return; }  // rifiutato: il campo resta col testo
