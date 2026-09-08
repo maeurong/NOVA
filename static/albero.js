@@ -2,9 +2,7 @@
 // La selezione è la stessa del piano e dello spazio: qui si legge e si scrive, non si copia.
 
 import { asteDelNodo, asteDellaSezione } from "./modello.js";
-import { stampaNumero } from "./numeri.js";
-
-const mm = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
+import { millimetri as mm } from "./numeri.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
   const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
@@ -31,7 +29,7 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     for (const n of m.nodi) {
       righe.push({
         tipo: "nodo", id: n.id,
-        testo: `${n.nome ?? `nodo ${n.id}`} · ${stampaNumero(n.x, { decimali: 0, migliaia: true })} mm; ${stampaNumero(n.z, { decimali: 0, migliaia: true })} mm`,
+        testo: `${n.nome ?? `nodo ${n.id}`} · ${mm(n.x)} mm; ${mm(n.z)} mm`,
         conta: asteDelNodo(m, n.id).length,
       });
     }

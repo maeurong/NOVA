@@ -11,7 +11,7 @@
 import { prossimoId, nodo, asteDelNodo, nodoVicino, TOLLERANZA_MM, sezione, materiale, asteDellaSezione, sezioniDelMateriale } from "./modello.js";
 import { GRADI } from "./vincoli.js";
 import { LATI, VESTI, geometriaImpossibile } from "./sezione.js";
-import { stampaNumero } from "./numeri.js";
+import { millimetri } from "./numeri.js";
 
 /** L'errore che l'interfaccia sa mostrare. Tutto il resto è un difetto del programma. */
 export class ErroreComando extends Error {
@@ -211,10 +211,9 @@ export function creaSezione(m, { nome = null, b, h, calcestruzzo, acciaio, copri
   materialeDiTipo(m, calcestruzzo, "calcestruzzo"); materialeDiTipo(m, acciaio, "acciaio");
   const n = copia(m);
   const id = prossimoId(n, "sezione");
-  const mm = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
   // `rinomina` rifiuta il nome vuoto; qui vuoto vuol dire «non me ne curo»: il default.
   const dato = typeof nome === "string" ? nome.trim() : "";
-  n.sezioni.push({ id, nome: dato || `${mm(b)} × ${mm(h)}`, tipo: "rettangolare", b, h, calcestruzzo, acciaio, copriferro, file: [], staffe: null });
+  n.sezioni.push({ id, nome: dato || `${millimetri(b)} × ${millimetri(h)}`, tipo: "rettangolare", b, h, calcestruzzo, acciaio, copriferro, file: [], staffe: null });
   n.contatori.sezione = id;
   return n;
 }

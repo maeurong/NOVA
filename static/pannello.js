@@ -2,14 +2,13 @@
 // con i sei gradi, le tre preimpostazioni e i tre editor della 11b (asta, sezione, materiale)
 // raddoppia due volte, e `app.js` ha già i due modi e la cucitura.
 
-import { leggiNumero, stampaNumero } from "./numeri.js";
+import { leggiNumero, stampaNumero, millimetri } from "./numeri.js";
 import { nodo, asta, sezione, materiale, asteDellaSezione, vesteDi } from "./modello.js";
 import { LATI, VESTI, svgSezione, geometriaImpossibile } from "./sezione.js";
 import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "./legame.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
 
-const mmNudo = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
-const mm = (v) => `${mmNudo(v)} mm`;
+const mm = (v) => `${millimetri(v)} mm`;
 /** «0,8» e non «0,800»: gli zeri in coda di un fattore di danno non dicono niente in più.
  *  Le cifre le sceglie `cifre` (`legame.js`), non una regola scritta un'altra volta qui: a
  *  tre decimali fissi un fattore di 0,0001 usciva come «0». Si tagliano solo gli zeri **dopo
@@ -65,15 +64,15 @@ function righeDiSezione(m, s) {
   return [
     ["identificatore", String(s.id)],
     ["nome", s.nome],
-    ["dimensioni", `${mmNudo(s.b)} × ${mmNudo(s.h)} mm`],
+    ["dimensioni", `${millimetri(s.b)} × ${millimetri(s.h)} mm`],
     ["copriferro", mm(s.copriferro)],
     ["calcestruzzo", nomeMateriale(m, s.calcestruzzo)],
     ["acciaio", nomeMateriale(m, s.acciaio)],
-    ["staffe", st ? `Ø${mmNudo(st.diametro)} / ${mmNudo(st.passo)}, ${st.bracci} bracci` : "nessuna"],
+    ["staffe", st ? `Ø${millimetri(st.diametro)} / ${millimetri(st.passo)}, ${st.bracci} bracci` : "nessuna"],
     ["barre", s.file.length
-      ? s.file.map((f) => `${f.lato} ${f.n}Ø${mmNudo(f.diametro)}`).join(" · ") : "nessuna"],
+      ? s.file.map((f) => `${f.lato} ${f.n}Ø${millimetri(f.diametro)}`).join(" · ") : "nessuna"],
     ["riduzione", ridotti.length
-      ? `${ridotti.map((l) => `${l} ${mmNudo(r[l])}`).join(" · ")} mm` : "nessuna"],
+      ? `${ridotti.map((l) => `${l} ${millimetri(r[l])}`).join(" · ")} mm` : "nessuna"],
     // «1 asta», non «1 aste»: il plurale scritto a macchina è il primo segno che nessuno ha
     // riletto la riga. Zero resta plurale, in italiano.
     ["usata da", `${quante} ${quante === 1 ? "asta" : "aste"}`],

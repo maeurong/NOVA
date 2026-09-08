@@ -4,14 +4,13 @@
 // `tests/fixture/barre_300x500.json` la prova da tutti e due i lati. Se divergono, il disegno
 // dell'ispettore mente sul deck — che è peggio di non disegnare.
 
-import { leggiLunghezza, stampaNumero } from "./numeri.js";
+import { leggiLunghezza, stampaNumero, millimetri as mm } from "./numeri.js";
 
 export const LATI = ["inf", "sup", "sx", "dx"];
 export const VESTI = ["caratteristica", "media", "progetto", "esistente"];
 
 /** Scostamento di una barra dal filo esterno: copriferro alla staffa + staffa (`armatura.py:169`). */
 const scostamento = (s) => s.copriferro + s.staffe.diametro;
-const mm = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
 
 /** «b × h» in millimetri, con `x`, `×` o `*` in mezzo e le unità di `leggiLunghezza` (P9).
  *  Esattamente due misure positive, o `null`: con tre la terza sparirebbe in silenzio. */

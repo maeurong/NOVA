@@ -161,3 +161,9 @@ export function stampaNumero(valore, { decimali = 1, migliaia = false } = {}) {
   // con `decimali: 0` la frazione non esiste: senza questo uscirebbe «5 000,undefined»
   return frazione === undefined ? `${segno}${separata}` : `${segno}${separata},${frazione}`;
 }
+
+// La quota come la stampa l'albero: migliaia separate, niente decimali; l'unità la mette
+// chi la stampa, perché il segnaposto del campo di comando la vuole senza.
+export function millimetri(v) {
+  return stampaNumero(v, { decimali: 0, migliaia: true });
+}
