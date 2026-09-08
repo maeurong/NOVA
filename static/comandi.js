@@ -130,7 +130,7 @@ export function rinomina(m, { tipo, id, nome }) {
     throw new ErroreComando("il nome non può essere vuoto", "scrivi un nome, o lascia stare");
   }
   const vecchio = m[chiave].find((e) => e.id === id);
-  if (!vecchio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
+  if (!vecchio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona qualcosa che esista e ripeti");
   const n = copia(m);
   const bersaglio = n[chiave].find((e) => e.id === id);
   bersaglio.nome = nome.trim();
@@ -250,7 +250,10 @@ export function modificaSezione(m, { id, ...campi }) {
     else {
       const { diametro, passo, bracci = 2 } = campi.staffe;
       positivo(diametro, "diametro delle staffe"); positivo(passo, "passo delle staffe");
-      if (!Number.isInteger(bracci) || bracci < 2) throw new ErroreComando("i bracci delle staffe sono almeno due", "scrivi 2 o più");
+      // Due rifiuti, non uno: «2,5» non è «almeno due», e chi legge «almeno due» davanti a
+      // un 2,5 scritto da sé non capisce che il problema è la virgola.
+      if (!Number.isInteger(bracci)) throw new ErroreComando("i bracci delle staffe devono essere un numero intero", "2, 3, 4 — non 2,5");
+      if (bracci < 2) throw new ErroreComando("i bracci delle staffe sono almeno due", "scrivi 2 o più");
       s.staffe = { diametro, passo, bracci };
     }
   }

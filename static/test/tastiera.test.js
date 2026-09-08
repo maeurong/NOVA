@@ -339,8 +339,6 @@ test("ogni comando che apre il campo ha il sostantivo di ciò che ci si scrive",
   }
 });
 
-// --- Task 6: S, C, D --------------------------------------------------------------
-
 test("S nudo è sezione, ⌘S resta salva", () => {
   assert.equal(voceDaEvento({ key: "s" })?.codice, "sezione");
   assert.equal(voceDaEvento({ key: "s", metaKey: true })?.codice, "salva");
@@ -367,4 +365,22 @@ test("ogni codice a lettera singola è raggiunto da esattamente una lettera", ()
 });
 test("col campo aperto la barra resta a due voci", () => {
   assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
+});
+
+
+// --- fix di fine ramo 11b: la barra non promette un comando che non c'è ---
+// `D` con una sezione selezionata prometteva «danno», e `app.js` rispondeva «vuole un'asta».
+
+test("D compare nella barra solo con un'asta selezionata", () => {
+  assert.ok(vociDellaBarra("selezione", "asta").map((v) => v.codice).includes("danno"));
+  for (const tipo of ["nodo", "sezione", "materiale", null]) {
+    assert.ok(!vociDellaBarra("selezione", tipo).map((v) => v.codice).includes("danno"), String(tipo));
+  }
+});
+
+test("il filtro per tipo non tocca gli altri tasti della selezione", () => {
+  const conSezione = vociDellaBarra("selezione", "sezione").map((v) => v.codice);
+  for (const atteso of ["estrudi", "asta", "vincolo", "sposta", "rinomina", "elimina"]) {
+    assert.ok(conSezione.includes(atteso), atteso);
+  }
 });

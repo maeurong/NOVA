@@ -508,8 +508,9 @@ test("editorMateriale: col legame arriva la curva, la dl dei valori e l'articolo
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
   const lg = editor._figli.at(-1);
-  const [disegno, dl, art] = lg._figli.slice(1);
+  const [disegno, segni, dl, art] = lg._figli.slice(1);
   assert.ok(disegno.innerHTML.includes("<path"), disegno.innerHTML.slice(0, 80));
+  assert.match(segni.textContent, /compressione negativa/);
   assert.equal(dl._figli[0].textContent, "f_c");
   assert.equal(dl._figli[1].textContent, "25 MPa");
   assert.equal(art.textContent, "NTC 2018 §4.1.2.1.2.2");
@@ -521,7 +522,8 @@ test("editorMateriale: col legame arriva la curva, la dl dei valori e l'articolo
 test("editorSezione: un testo che non è un numero avvisa, non modifica, e ripristina", () => {
   const { pannello, editor, chiamate } = pannelloFinto();
   pannello.disegna(conSezione(), { tipo: "sezione", id: 1 });
-  const campoB = editor._figli[0]._figli[1]._figli[1];  // fieldset «dimensioni» → label b → input
+  // `_figli[0]` è il disegno: i gruppi di campi partono da 1
+  const campoB = editor._figli[1]._figli[1]._figli[1];  // fieldset «dimensioni» → label b → input
   assert.equal(campoB.value, "300");
   campoB.value = "trecento"; campoB.dispatch("change");
   assert.equal(chiamate.suSezione.length, 0);
@@ -532,7 +534,7 @@ test("editorSezione: un testo che non è un numero avvisa, non modifica, e ripri
 test("editorSezione: un numero scritto all'italiana passa a suSezione letto, non come testo", () => {
   const { pannello, editor, chiamate } = pannelloFinto();
   pannello.disegna(conSezione(), { tipo: "sezione", id: 1 });
-  const campoB = editor._figli[0]._figli[1]._figli[1];
+  const campoB = editor._figli[1]._figli[1]._figli[1];
   campoB.value = "1.234,5"; campoB.dispatch("change");
   assert.deepEqual(chiamate.suSezione, [[1, { b: 1234.5 }]]);
 });
@@ -543,11 +545,11 @@ test("editorSezione: il campo a fuoco resta a fuoco dopo il ridisegno", () => {
   const m = conSezione();
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "sezione", id: 1 });
-  const prima = editor._figli[0]._figli[2]._figli[1];  // il campo h
+  const prima = editor._figli[1]._figli[2]._figli[1];  // il campo h
   prima.focus();
   m.sezioni[0].h = 600;
   p.disegna(m, { tipo: "sezione", id: 1 });
-  const dopo = editor._figli[0]._figli[2]._figli[1];
+  const dopo = editor._figli[1]._figli[2]._figli[1];
   assert.notEqual(dopo, prima, "l'editor si è ricostruito davvero");
   assert.equal(dopo.value, "600");
   assert.equal(globalThis.document.activeElement, dopo);
@@ -599,30 +601,8 @@ test("righe: la sezione usata da una sola asta dice «1 asta», non «1 aste»",
   assert.equal(new Map(righe(m, { tipo: "sezione", id: 1 })).get("usata da"), "1 asta");
 });
 
-// --- le altre righe di `righeDiSezione` e `righeDiMateriale` ---
-
-test("righe: la sezione elenca staffe, barre e origine per esteso", () => {
-  const m = conStaffe(conSezione());
-  const vuota = new Map(righe(m, { tipo: "sezione", id: 1 }));
-  assert.equal(vuota.get("nome"), "300 × 500");
-  assert.equal(vuota.get("dimensioni"), "300 × 500 mm");
-  assert.equal(vuota.get("copriferro"), "30 mm");
-  assert.equal(vuota.get("calcestruzzo"), "C25/30");
-  assert.equal(vuota.get("acciaio"), "B450C");
-  assert.equal(vuota.get("staffe"), "Ø8 / 150, 2 bracci");
-  assert.equal(vuota.get("barre"), "nessuna");
-  assert.equal(vuota.get("riduzione"), "nessuna");
-  assert.equal(vuota.get("origine"), "—");
-
-  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }, { lato: "sup", n: 2, diametro: 16 },
-                       { lato: "sx", n: 1, diametro: 12 }, { lato: "dx", n: 1, diametro: 12 }];
-  m.sezioni[0].riduzione = { sup: 0, inf: 10, sx: 0, dx: 5 };
-  m.sezioni[0].origine = { sorgente: "rilievo", modificata: true };
-  const piena = new Map(righe(m, { tipo: "sezione", id: 1 }));
-  assert.equal(piena.get("barre"), "inf 3Ø16 · sup 2Ø16 · sx 1Ø12 · dx 1Ø12");
-  assert.equal(piena.get("riduzione"), "inf 10 · dx 5 mm");
-  assert.equal(piena.get("origine"), "rilievo, modificata");
-});
+// --- le altre righe di `righeDiMateriale` ---
+// Quelle di `righeDiSezione` stanno in fondo, col fix di fine ramo che le ha ridotte a quattro.
 
 test("righe: il materiale dice tipo, classe, personalizzato e origine", () => {
   const m = conSezione();
@@ -644,13 +624,13 @@ test("editorSezione: senza staffe il bottone le aggiunge Ø8 / 150; con le staff
   const m = conSezione();
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(m, { tipo: "sezione", id: 1 });
-  const staffe = editor._figli[2];
+  const staffe = editor._figli[3];
   assert.equal(staffe._figli[1].textContent, "aggiungi staffe Ø8 / 150");
   staffe._figli[1].dispatch("click");
   assert.deepEqual(chiamate.suSezione, [[1, { staffe: { diametro: 8, passo: 150, bracci: 2 } }]]);
 
   p.disegna(conStaffe(conSezione()), { tipo: "sezione", id: 1 });
-  const via = editor._figli[2]._figli.find((e) => e.textContent === "togli staffe");
+  const via = editor._figli[3]._figli.find((e) => e.textContent === "togli staffe");
   via.dispatch("click");
   assert.deepEqual(chiamate.suSezione[1], [1, { staffe: null }]);
 });
@@ -660,7 +640,7 @@ test("editorSezione: una fila manda a suFila il numero e il diametro correnti in
   m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(m, { tipo: "sezione", id: 1 });
-  const barre = editor._figli[3];
+  const barre = editor._figli[4];
   const campoN = barre._figli[1]._figli[1];
   campoN.value = "4"; campoN.dispatch("change");
   assert.deepEqual(chiamate.suFila, [[1, "inf", 4, 16]]);
@@ -674,7 +654,7 @@ test("editorSezione: una fila manda a suFila il numero e il diametro correnti in
 test("editorSezione: il select del calcestruzzo elenca i soli calcestruzzi e manda un numero", () => {
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(conSezione(), { tipo: "sezione", id: 1 });
-  const sel = editor._figli[1]._figli[1]._figli[1];
+  const sel = editor._figli[2]._figli[1]._figli[1];
   assert.deepEqual(sel._figli.map((o) => o.textContent), ["C25/30"]);
   sel.value = "1"; sel.dispatch("change");
   assert.deepEqual(chiamate.suSezione, [[1, { calcestruzzo: 1 }]]);
@@ -684,7 +664,7 @@ test("editorMateriale: la spunta «personalizzato» apre i valori del catalogo d
   const m = conSezione();
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
-  assert.ok(!editor._figli.some((e) => (e._figli[0]?.textContent ?? "").startsWith("valori (")));
+  assert.ok(!editor._figli.some((e) => (e._figli[0]?.textContent ?? "") === "valori"));
   const spunta = editor._figli[0]._figli[2]._figli[0];
   spunta.checked = true; spunta.dispatch("change");
   assert.deepEqual(chiamate.suMateriale, [[1, { personalizzato: true }]]);
@@ -692,8 +672,11 @@ test("editorMateriale: la spunta «personalizzato» apre i valori del catalogo d
   m.materiali[0].personalizzato = true;
   p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
   const val = editor._figli[1];
-  assert.deepEqual(val._figli.slice(1).map((et) => et._figli[0].textContent), ["E", "nu", "densita", "fck"]);
-  const campoE = val._figli[1]._figli[1];
+  assert.equal(val._figli[0].textContent, "valori");
+  assert.equal(val._figli[1].className, "nota", "la parentesi è una nota sotto la legenda");
+  assert.deepEqual(val._figli.slice(2).map((et) => et._figli[0].textContent),
+    ["E, modulo elastico", "ν, Poisson", "densità", "f_ck"]);
+  const campoE = val._figli[2]._figli[1];
   campoE.value = "30000"; campoE.dispatch("change");
   assert.deepEqual(chiamate.suMateriale[1], [1, { valori: { E: 30000 } }]);
 });
@@ -702,8 +685,9 @@ test("editorMateriale: la veste è del modello intero e manda suVeste", () => {
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(conSezione(), { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
   const ve = editor._figli.at(-2);
-  assert.equal(ve._figli[0].textContent, "veste per l'analisi (tutto il modello)");
-  const sel = ve._figli[1]._figli[1];
+  assert.equal(ve._figli[0].textContent, "veste per l'analisi");
+  assert.equal(ve._figli[1].textContent, "vale per tutto il modello");
+  const sel = ve._figli[2]._figli[1];
   assert.deepEqual(sel._figli.map((o) => [o.textContent, o.selected]),
     [["caratteristica", false], ["media", true], ["progetto", false], ["esistente", false]]);
   sel.value = "progetto"; sel.dispatch("change");
@@ -733,7 +717,7 @@ const controlliDi = (editor) =>
   editor._figli.flatMap((g) => (g._figli ?? []).flatMap((x) =>
     x._attrs?.["aria-label"] ? [x] : (x._figli ?? []).filter((y) => y._attrs?.["aria-label"])));
 
-// --- punto 1: la classe fuori catalogo, che `personalizzato` rende lecita ---
+// --- la classe fuori catalogo, che `personalizzato` rende lecita ---
 
 test("editorMateriale: una classe fuori catalogo è la prima option ed è scelta, non sparisce", () => {
   const m = conSezione();
@@ -757,7 +741,7 @@ test("editorMateriale: una classe già a catalogo non compare due volte", () => 
   assert.deepEqual(opzioni.filter((o) => o.selected).map((o) => o.textContent), ["C25/30"]);
 });
 
-// --- punto 2: il fuoco si ritrova per nome, non per posto nella lista ---
+// --- il fuoco si ritrova per nome, non per posto nella lista ---
 
 test("editorSezione: aggiungere le staffe non sposta il fuoco su un altro campo", () => {
   const m = conSezione();
@@ -798,7 +782,7 @@ test("disegna: il fuoco fuori dall'editor non viene rubato nemmeno dagli editor 
   assert.equal(globalThis.document.activeElement, altrove);
 });
 
-// --- punto 3: `suFila` legge le due caselle, non il modello ---
+// --- `suFila` legge le due caselle, non il modello ---
 
 test("editorSezione: Ø scritto e poi n legge quel Ø, non quello del modello", () => {
   const m = conStaffe(conSezione());
@@ -838,7 +822,7 @@ test("editorSezione: se l'altra casella non è un numero, avvisa e non manda la 
   assert.equal(chiamate.suAvviso[0], "«sedici» non è un numero");
 });
 
-// --- punto 4: WCAG 2.5.3, il nome accessibile comincia da ciò che si vede ---
+// --- WCAG 2.5.3: il nome accessibile comincia da ciò che si vede ---
 
 for (const [nome, selezione] of [["asta", { tipo: "asta", id: 1 }],
                                  ["sezione", { tipo: "sezione", id: 1 }],
@@ -857,7 +841,7 @@ for (const [nome, selezione] of [["asta", { tipo: "asta", id: 1 }],
   });
 }
 
-// --- punto 6: `danno` senza `nota` non scrive «undefined» nella casella ---
+// --- `danno` senza `nota` non scrive «undefined» nella casella ---
 
 test("editorAsta: un danno senza nota lascia la casella vuota, non «undefined»", () => {
   const m = conSezioneEAsta();
@@ -867,7 +851,7 @@ test("editorAsta: un danno senza nota lascia la casella vuota, non «undefined»
   assert.equal(editor._figli[1]._figli[3]._figli[1].value, "");
 });
 
-// --- punto 7: un legame di tipo ignoto avvisa, non ammazza il ridisegno ---
+// --- un legame di tipo ignoto avvisa, non ammazza il ridisegno ---
 
 test("editorMateriale: un legame di tipo ignoto avvisa e non solleva", () => {
   const m = conSezione();
@@ -881,7 +865,7 @@ test("editorMateriale: un legame di tipo ignoto avvisa e non solleva", () => {
   assert.ok(!lg._figli.some((e) => (e.innerHTML ?? "").includes("<svg")), "nessuna curva");
 });
 
-// --- punto 8: un fattore piccolissimo non diventa «0» ---
+// --- un fattore piccolissimo non diventa «0» ---
 
 test("righe: un fattore di danno piccolo resta leggibile, non si arrotonda a zero", () => {
   const m = CON_CERNIERA();
@@ -889,7 +873,7 @@ test("righe: un fattore di danno piccolo resta leggibile, non si arrotonda a zer
   assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("danno"), "E ×0,0001 · fc ×0,9");
 });
 
-// --- punto 10: il campo rientra dalla propria porta ---
+// --- il campo rientra dalla propria porta ---
 
 test("i valori piccolissimi si stampano in modo che `leggiNumero` li rilegga uguali", () => {
   const m = conSezione();
@@ -897,7 +881,7 @@ test("i valori piccolissimi si stampano in modo che `leggiNumero` li rilegga ugu
   const { p, editor } = pannelloFinto();
   const lg = { ...LEGAME_C25, catalogo: { densita: 2.5e-9, nu: 0.2, E: 31476 } };
   p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: lg });
-  const campo = controlliDi(editor).find((c) => c._attrs["aria-label"].startsWith("densita"));
+  const campo = controlliDi(editor).find((c) => c._attrs["aria-label"].startsWith("densità"));
   // niente notazione esponenziale: `leggiNumero` non la legge (misurato), e un campo che
   // non si rilegge è un campo che mente
   assert.ok(!campo.value.includes("e"), campo.value);
@@ -911,4 +895,123 @@ test("i valori normali non cambiano forma per colpa dei piccolissimi", () => {
   const c = controlliDi(editor);
   assert.equal(c.find((x) => x._attrs["aria-label"].startsWith("b ")).value, "300");
   assert.equal(c.find((x) => x._attrs["aria-label"].startsWith("copriferro")).value, "30");
+});
+
+
+// ==========================================================================================
+// Fix di fine ramo 11b: l'ispettore
+// ==========================================================================================
+
+test("righe: nodo e asta portano l'origine, come sezione e materiale (story 55)", () => {
+  const m = CON_CERNIERA();
+  assert.equal(new Map(righe(m, { tipo: "nodo", id: 1 })).get("origine"), "—");
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("origine"), "—");
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  m.aste[0].origine = { sorgente: "rilievo", modificata: true };
+  assert.equal(new Map(righe(m, { tipo: "nodo", id: 1 })).get("origine"), "rilievo");
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("origine"), "rilievo, modificata");
+});
+
+// La `<dl>` ripeteva sette righe che i campi dell'editor mostrano già, e spingeva il disegno
+// fuori schermo a 1440 × 900. Restano le quattro che l'editor non dice.
+test("righe: la sezione dice identificatore, nome, usata da e origine, e nient'altro", () => {
+  const m = conStaffe(conSezione());
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
+  m.sezioni[0].riduzione = { sup: 0, inf: 10, sx: 0, dx: 5 };
+  m.sezioni[0].origine = { sorgente: "rilievo", modificata: true };
+  const r = righe(m, { tipo: "sezione", id: 1 });
+  assert.deepEqual(r.map(([k]) => k), ["identificatore", "nome", "usata da", "origine"]);
+  const v = new Map(r);
+  assert.equal(v.get("nome"), "300 × 500");
+  assert.equal(v.get("usata da"), "0 aste");
+  assert.equal(v.get("origine"), "rilievo, modificata");
+});
+
+test("editorSezione: il disegno è il primo elemento, non l'ultimo", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  assert.equal(editor._figli[0].className, "sezione-disegno");
+  assert.match(editor._figli[0].innerHTML, /<svg/);
+  assert.deepEqual(editor._figli.slice(1).map((f) => f._figli[0].textContent),
+    ["dimensioni", "materiali", "staffe", "barre per lato", "riduzione, mm mancanti"]);
+});
+
+// Le chiavi grezze sono i nomi delle variabili di `nova/catalogo.py`, non quelli della norma.
+test("editorMateriale: le chiavi grezze diventano etichetta e unità", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const campi = editor._figli[1]._figli.filter((e) => (e._figli ?? []).some((x) => x._attrs?.["aria-label"]));
+  assert.deepEqual(campi.map((e) => e._figli[0].textContent),
+    ["E, modulo elastico", "ν, Poisson", "densità", "f_ck"]);
+  const unita = campi.map((e) => e._figli.filter((x) => x.nodeType === 3).slice(1).map((x) => x.textContent).join(""));
+  assert.deepEqual(unita, [" MPa", "", " t/mm³", " MPa"]);
+  for (const e of campi) {
+    const c = e._figli.find((x) => x._attrs?.["aria-label"]);
+    assert.ok(c._attrs["aria-label"].startsWith(e._figli[0].textContent), c._attrs["aria-label"]);
+  }
+});
+
+test("editorMateriale: solo il valore sovrascritto porta «scritto a mano»", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  m.materiali[0].valori = { E: 31000 };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const conMano = editor._figli[1]._figli
+    .filter((e) => (e._figli ?? []).some((x) => x.textContent === "scritto a mano"));
+  assert.equal(conMano.length, 1);
+  assert.equal(conMano[0]._figli[0].textContent, "E, modulo elastico");
+});
+
+test("editorMateriale: «torna ai valori di tabella» compare solo con una chiave scritta a mano", () => {
+  const m = conSezione();
+  m.materiali[0].personalizzato = true;
+  const { p, editor, chiamate } = pannelloFinto();
+  const bottone = () => editor._figli[1]._figli.find((e) => e.textContent === "torna ai valori di tabella");
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  assert.equal(bottone(), undefined, "senza valori a mano non c'è niente a cui tornare");
+  m.materiali[0].valori = { fcm: 40, E: 31000 };
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  bottone().dispatch("click");
+  assert.deepEqual(chiamate.suMateriale, [[1, { valori: { fcm: null, E: null } }]]);
+});
+
+// L'errore del legame arrivava lungo 220 caratteri: la classe e tutto il catalogo dentro
+// l'avviso, mentre le classi stanno già nel select qui sopra.
+test("editorMateriale: l'errore del legame si tronca alla prima «;»", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "materiale", id: 1 },
+    { catalogo: null, legame: { errore: "classe di materiale sconosciuta: 'C99'; il catalogo porta C8/10, C12/15" } });
+  const lg = editor._figli.at(-1);
+  assert.equal(lg._figli[1].textContent, "attenzione: classe di materiale sconosciuta: 'C99'");
+});
+
+test("editorMateriale: l'attesa dei valori è una nota, non uno stato vuoto", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "materiale", id: 1 }, { catalogo: null, legame: null });
+  const lg = editor._figli.at(-1);
+  assert.equal(lg._figli[1].className, "nota");
+  assert.equal(lg._figli[1].textContent, "valori in arrivo dal server…");
+});
+
+// `catalogo.vesti` lo manda `/api/catalogo` (`nova/server.py`) e nessuno lo leggeva.
+test("editorMateriale: le vesti vengono dal catalogo quando c'è, da VESTI quando non c'è", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "materiale", id: 1 },
+    { catalogo: { vesti: ["media", "progetto"] }, legame: LEGAME_C25 });
+  const ve = editor._figli.at(-2);
+  const sel = ve._figli.find((e) => (e._figli ?? []).some((x) => x._attrs?.["aria-label"]))._figli[1];
+  assert.deepEqual(sel._figli.map((o) => o.textContent), ["media", "progetto"]);
+});
+
+// Il verso dei segni: la `<dl>` scrive «f_c 33 MPa», l'asse della curva «-33».
+test("editorMateriale: sotto la curva del calcestruzzo c'è la nota sui segni", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const lg = editor._figli.at(-1);
+  const note = lg._figli.filter((e) => e.className === "nota").map((e) => e.textContent);
+  assert.ok(note.some((t) => t.includes("compressione negativa") && t.includes("in modulo")),
+    JSON.stringify(note));
 });

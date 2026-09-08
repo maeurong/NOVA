@@ -5,7 +5,7 @@
 // Terna: `x` a destra, `z` in alto (l'alzado del telaio). In SVG `y` cresce verso il basso,
 // quindi `z` si specchia una volta sola, qui dentro, e nessun altro modulo se ne accorge.
 
-import { stampaNumero } from "./numeri.js";
+import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -140,8 +140,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         x: p.x + OFFSET_ETICHETTA * s, y: p.y - OFFSET_ETICHETTA * s,
         "font-size": 11 * s, fill: ROSSO, "font-family": MONO,
       });
-      const q = (v) => stampaNumero(v, { decimali: 0, migliaia: true });
-      testo.textContent = `${q(ghost.punto.x)}; ${q(ghost.punto.z)}`;
+      testo.textContent = `${millimetri(ghost.punto.x)}; ${millimetri(ghost.punto.z)}`;
       gruppo.append(testo);
     } else if (ghost) {
       const da = nodo(m, ghost.da);
@@ -157,7 +156,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 - 8 * s,
           "font-size": 12 * s, fill: ROSSO, "text-anchor": "middle", "font-family": MONO,
         });
-        testo.textContent = `${stampaNumero(Math.hypot(ghost.dx, ghost.dz), { decimali: 0, migliaia: true })} mm`;
+        testo.textContent = `${millimetri(Math.hypot(ghost.dx, ghost.dz))} mm`;
         gruppo.append(testo);
       }
     }

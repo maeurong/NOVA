@@ -63,12 +63,17 @@ export function svgCurva(punti, { larghezza = 220, altezza = 120 } = {}) {
   const Y = (s) => altezza - m - ((s - s0) / ds) * (altezza - 2 * m);
   const d = punti.map(([e, s], i) => `${i === 0 ? "M" : "L"}${X(e).toFixed(1)} ${Y(s).toFixed(1)}`).join(" ");
   return `<svg viewBox="0 0 ${larghezza} ${altezza}" width="${larghezza}" height="${altezza}" role="img" aria-label="curva del legame">`
-    + `<line x1="${m}" y1="${Y(0)}" x2="${larghezza - m}" y2="${Y(0)}" stroke="currentColor" stroke-opacity="0.35"/>`
-    + `<line x1="${X(0)}" y1="${m}" x2="${X(0)}" y2="${altezza - m}" stroke="currentColor" stroke-opacity="0.35"/>`
+    // 0,53 e non 0,35: misurato, fa 3,54:1 sul fondo, cioè lo stesso contrasto di
+    // `--tratto-forte` (`stile.css`), che è la soglia AA per un tratto non testuale. A 0,35
+    // l'asse dello zero spariva, e senza asse la curva non dice dov'è lo zero.
+    + `<line x1="${m}" y1="${Y(0)}" x2="${larghezza - m}" y2="${Y(0)}" stroke="currentColor" stroke-opacity="0.53"/>`
+    + `<line x1="${X(0)}" y1="${m}" x2="${X(0)}" y2="${altezza - m}" stroke="currentColor" stroke-opacity="0.53"/>`
     + `<path d="${d}" fill="none" stroke="currentColor" stroke-width="1.5"/>`
-    + `<text x="${m}" y="${altezza - 6}" font-size="9" fill="currentColor">ε ${cifre(e0)}</text>`
-    + `<text x="${larghezza - m}" y="${altezza - 6}" font-size="9" text-anchor="end" fill="currentColor">${cifre(e1)}</text>`
-    + `<text x="2" y="${m}" font-size="9" fill="currentColor">${cifre(s1)} MPa</text>`
-    + `<text x="2" y="${altezza - m}" font-size="9" fill="currentColor">${cifre(s0)}</text>`
+    // L'unità su tutti e quattro gli estremi, o su nessuno: prima stava sul solo estremo alto
+    // di ogni asse, e l'altro pareva un numero puro.
+    + `<text x="${m}" y="${altezza - 6}" font-size="10" fill="currentColor">ε ${cifre(e0)}</text>`
+    + `<text x="${larghezza - m}" y="${altezza - 6}" font-size="10" text-anchor="end" fill="currentColor">ε ${cifre(e1)}</text>`
+    + `<text x="2" y="${m}" font-size="10" fill="currentColor">${cifre(s1)} MPa</text>`
+    + `<text x="2" y="${altezza - m}" font-size="10" fill="currentColor">${cifre(s0)} MPa</text>`
     + `</svg>`;
 }

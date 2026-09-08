@@ -29,7 +29,9 @@ export const TASTI = [
   { codice: "rinomina",  tasto: "R",     etichetta: "rinomina",  aiuto: "un nome libero",  contesto: "selezione", esempio: "piede sinistro", campo: "nome di" },
   { codice: "sezione",   tasto: "S",     etichetta: "sezione",   aiuto: "b × h in mm, o il nome di una sezione", contesto: "salvo-ghost", esempio: "300 × 500", campo: "sezione" },
   { codice: "materiale", tasto: "C",     etichetta: "materiale", aiuto: "una classe: C25/30 o B450C", contesto: "salvo-ghost", esempio: "C25/30", campo: "classe" },
-  { codice: "danno",     tasto: "D",     etichetta: "danno",     aiuto: "fattori su E; fc, poi la nota", contesto: "selezione", esempio: "0,8; 0,9; martinetto 3", campo: "danno di" },
+  // `tipi` restringe la voce ai soli tipi di selezione su cui il comando esiste davvero:
+  // `D` con una sezione selezionata prometteva «danno» e `app.js` rispondeva «vuole un'asta».
+  { codice: "danno",     tasto: "D",     etichetta: "danno",     aiuto: "fattori su E; fc, poi la nota", contesto: "selezione", esempio: "0,8; 0,9; martinetto 3", campo: "danno di", tipi: ["asta"] },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
@@ -120,8 +122,11 @@ export function voceDaEvento(evento) {
 // e per la stessa ragione — la barra stampa solo ciò che funziona (story 14): `seleziona`
 // compare anche in asta, dove `G` **è** il gesto; `direzione` compare solo col ghost, perché
 // in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
-export const vociDellaBarra = (contesto) =>
+export const vociDellaBarra = (contesto, tipoSelezionato = null) =>
   TASTI.filter((v) => {
+    // Prima di tutto il resto: una voce che vale per un solo tipo di selezione non compare
+    // sugli altri, in nessun contesto. La barra stampa ciò che funziona (story 14).
+    if (v.tipi && !v.tipi.includes(tipoSelezionato)) return false;
     // Col campo di comando aperto restano due tasti soli: le lettere le prende il campo, e
     // le frecce muovono il cursore nel testo, non il ghost. Estrudendo no: lì la freccia è
     // il gesto che manca — la lunghezza si sta scrivendo, la direzione la dà solo lei —

@@ -41,9 +41,14 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     for (const s of m.sezioni) {
       // «1 asta», non «1 aste»: zero resta plurale, uno no. Stessa riga in `pannello.js`.
       const quante = asteDellaSezione(m, s.id).length;
+      // Il nome di default **è** «b × h» (`comandi.js:creaSezione`): stamparlo e poi stampare
+      // le dimensioni dava «300 × 500 · 300 × 500 mm». Le misure compaiono solo quando il
+      // nome non le dice già.
+      const misure = `${mm(s.b)} × ${mm(s.h)}`;
+      const dimensioni = s.nome === misure ? "" : ` · ${misure} mm`;
       righe.push({
         tipo: "sezione", id: s.id,
-        testo: `${s.nome} · ${mm(s.b)} × ${mm(s.h)} mm · ${quante} ${quante === 1 ? "asta" : "aste"}`,
+        testo: `${s.nome}${dimensioni} · ${quante} ${quante === 1 ? "asta" : "aste"}`,
       });
     }
     gruppo("Materiali", m.materiali.length);
@@ -60,7 +65,7 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       const li = document.createElement("li");
       // L'intestazione di un ramo non è una voce: niente `data-tipo` (quindi `closest` non la
       // trova e il clic non seleziona), niente fuoco, fuori dall'albero accessibile. Il rosso
-      // vuol dire attenzione e nient'altro: un'intestazione non lo prende mai. Stile: Task 8.
+      // vuol dire attenzione e nient'altro: un'intestazione non lo prende mai.
       if (r.gruppo) {
         li.textContent = r.gruppo;
         li.className = "gruppo";

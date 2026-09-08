@@ -20,7 +20,7 @@ import { creaStoria } from "./storia.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro } from "./vincoli.js";
-import { stampaNumero, leggiEspressione } from "./numeri.js";
+import { stampaNumero, leggiEspressione, millimetri } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -59,13 +59,13 @@ function legamePer(m, id) {
   const chiave = JSON.stringify([k, vesteDi(m)]);
   if (legami.has(chiave)) return legami.get(chiave);
   legami.set(chiave, null);  // in volo: «valori in arrivo», e nessuna seconda richiesta
-  // L'errore si mostra e **poi** si dimentica: il server riavviato deve poter rispondere alla
-  // riselezione, e la chiave non cambia da sé. Prima il ridisegno, però — cancellare per primo
-  // farebbe ripartire la richiesta dentro il ridisegno stesso, in tondo.
+  // L'errore **resta** in cache. Cancellarlo subito dopo il ridisegno lo rimetteva in volo al
+  // ridisegno successivo: la POST ripartiva a ogni disegno e l'avviso lampeggiava. Il server
+  // riavviato si riprova su un gesto — `scegli` svuota le chiavi in errore quando si
+  // riseleziona un materiale — non su un disegno.
   const arrivo = (v) => {
     legami.set(chiave, v);
     ridisegna();
-    if (v.errore) legami.delete(chiave);
   };
   chiediJson("/api/materiale/legame", { materiale: k, veste: vesteDi(m) })
     // Un 200 con un corpo illeggibile non è un legame: `chiediJson` in quel caso torna `{}`,
@@ -82,12 +82,17 @@ function dì(testo) { messaggio.textContent = testo ?? ""; }
 // Una quota come la scrive l'albero: migliaia separate e unità sul numero (`albero.js`,
 // PRODUCT.md «unità dichiarate in un punto e su ogni numero»). Non vale per il segnaposto
 // del campo, che è un testo da **ricopiare**: lì l'unità sarebbe da cancellare a mano.
-const quota = (v) => `${stampaNumero(v, { decimali: 0, migliaia: true })} mm`;
+const quota = (v) => `${millimetri(v)} mm`;
 
 function scegli(tipo, id) {
   const { permesso, messaggio, aggiornaA } = esitoScelta(modo, tipo);
   if (messaggio) dì(messaggio);
   if (!permesso) return;
+  // Il gesto che riporta su un materiale è la richiesta di riprovare: qui, e solo qui, le
+  // chiavi che portano un errore escono dalla cache (`legamePer`).
+  if (tipo === "materiale") {
+    for (const [k, v] of legami) if (v?.errore) legami.delete(k);
+  }
   if (aggiornaA) modo = { ...modo, a: id };
   selezione = { tipo, id };
   ridisegna();
@@ -322,7 +327,7 @@ function confermaSezione() {
   // `materialiDiDefault` è pura e costa niente: qui dice cosa nascerà, dentro il riduttore
   // lo fa davvero sul modello che riceve.
   const { aggiunti } = dims ? materialiDiDefault(m) : { aggiunti: [] };
-  const etichetta = (dims ? `sezione ${quota(dims.b)} × ${quota(dims.h)}` : `sezione ${esistente.nome}`)
+  const etichetta = (dims ? `sezione ${millimetri(dims.b)} × ${millimetri(dims.h)} mm` : `sezione ${esistente.nome}`)
     + (aggiunti.length ? `, con ${aggiunti.join(" e ")}` : "")
     + (asta !== null ? ` → asta ${asta}` : "");
   const fatto = esegui((stato) => {
@@ -422,7 +427,9 @@ function ridisegna() {
 
 function disegnaBarra() {
   const contesto = contestoBarra(modo, selezione, comando);
-  $("barra").replaceChildren(...vociDellaBarra(contesto).map((v) => {
+  // Il tipo della selezione, non solo il contesto: `D` esiste sulla sola asta, e una barra
+  // che lo promette con una sezione selezionata mente (story 14).
+  $("barra").replaceChildren(...vociDellaBarra(contesto, selezione?.tipo ?? null).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
     const kbd = document.createElement("kbd"); kbd.textContent = v.tasto;
@@ -589,7 +596,7 @@ window.addEventListener("keydown", (ev) => {
   //
   // È l'unico comando che accetta anche un'asta, quindi non passa da `serveUnNodo`.
   if (voce.codice === "rinomina") {
-    if (!selezione) { dì("rinominare vuole qualcosa di selezionato: premi G per girare fra i nodi, o clicca un'asta"); return; }
+    if (!selezione) { dì("rinominare vuole qualcosa di selezionato: premi G per girare fra i nodi, o clicca un'asta, una sezione o un materiale nell'albero"); return; }
     apriComando(voce, { bersaglio: { ...selezione } });
     return;
   }

@@ -38,7 +38,7 @@ test("svgCurva regge la lista vuota e le curve piatte", () => {
   assert.match(svgCurva(puntiSteel02(B450)), /<path d="M/);
 });
 
-// --- fix round 1, punto 5: le cifre stanno in un posto solo ---
+// --- le cifre stanno in un posto solo ---
 
 test("cifre: 2,56 non diventa 3, un intero non prende decimali, sopra cento le migliaia", () => {
   // f_t = 2,56 MPa arrotondata a «3» cancellava la resistenza a trazione dalla `<dl>`.

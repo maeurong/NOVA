@@ -53,7 +53,7 @@ test("l'albero elenca sezioni e materiali con i loro gruppi, e i gruppi vuoti no
   const t = testi(elenco);
   assert.ok(t.includes("Sezioni") && t.includes("Materiali"), JSON.stringify(t));
   assert.ok(!t.includes("Nodi") && !t.includes("Aste"), "senza nodi né aste quei gruppi non ci sono");
-  assert.ok(t.includes("300 × 500 · 300 × 500 mm · 0 aste"), JSON.stringify(t));
+  assert.ok(t.includes("300 × 500 · 0 aste"), JSON.stringify(t));
   assert.ok(t.includes("C25/30 · C25/30") && t.includes("B450C · B450C"), JSON.stringify(t));
   const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
   elenco.dispatch("keydown", { key: "Enter", target: voce });
@@ -81,7 +81,7 @@ test("il conteggio delle aste della sezione è quello vero, non sempre zero", ()
   m.aste.push({ id: 1, nome: null, nodo_i: 1, nodo_j: 2, sezione: 1 },
                { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: null });
   albero.disegna(m, {});
-  assert.ok(testi(elenco).includes("300 × 500 · 300 × 500 mm · 1 asta"), JSON.stringify(testi(elenco)));
+  assert.ok(testi(elenco).includes("300 × 500 · 1 asta"), JSON.stringify(testi(elenco)));
 });
 
 test("«personalizzato» compare sul materiale che lo è, e su nessun altro", () => {
@@ -112,10 +112,32 @@ test("una sezione selezionata prende «▸» e il rosso; il suo gruppo non li pr
   const { albero, elenco } = alberoFinto();
   albero.disegna(conSezione(), { selezione: { tipo: "sezione", id: 1 } });
   const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
-  assert.equal(voce.textContent, "▸ 300 × 500 · 300 × 500 mm · 0 aste");
+  assert.equal(voce.textContent, "▸ 300 × 500 · 0 aste");
   assert.equal(voce.style.color, "var(--rosso)");
   assert.equal(voce.getAttribute("aria-pressed"), "true");
   const gruppo = elenco._figli.find((li) => li.textContent === "Sezioni");
   assert.equal(gruppo.style.color, undefined);
   assert.equal(gruppo.getAttribute("aria-pressed"), undefined);
+});
+
+
+// --- fix di fine ramo 11b: le dimensioni non si stampano due volte ---
+// Il nome di default di una sezione **è** «b × h» (`comandi.js:creaSezione`): stamparlo e poi
+// stampare le dimensioni dava «300 × 500 · 300 × 500 mm · 0 aste».
+
+test("l'albero non ripete le dimensioni quando il nome è già «b × h»", () => {
+  const { albero, elenco } = alberoFinto();
+  const m = conSezione();
+  albero.disegna(m, {});
+  assert.ok(testi(elenco).includes("300 × 500 · 0 aste"), JSON.stringify(testi(elenco)));
+});
+
+test("con un nome suo la sezione porta anche le dimensioni", () => {
+  const { albero, elenco } = alberoFinto();
+  const m = conSezione();
+  m.sezioni[0].nome = "colonna";
+  m.aste.push({ id: 1, nome: null, nodo_i: 1, nodo_j: 2, sezione: 1 },
+               { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: 1 });
+  albero.disegna(m, {});
+  assert.ok(testi(elenco).includes("colonna · 300 × 500 mm · 2 aste"), JSON.stringify(testi(elenco)));
 });

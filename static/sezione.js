@@ -101,14 +101,16 @@ export function svgSezione(s, { lato = 180 } = {}) {
   const rect = (y0, y1, z0, z1, extra = "") =>
     `<rect x="${X(y0)}" y="${Y(z1)}" width="${(y1 - y0) * scala}" height="${(z1 - z0) * scala}" fill="none" stroke="currentColor" ${extra}/>`;
   const mezzo = lato / 2 + 10;
-  const parti = [rect(-s.b / 2, s.b / 2, -s.h / 2, s.h / 2, 'stroke-width="1.5"')];
+  const parti = [rect(-s.b / 2, s.b / 2, -s.h / 2, s.h / 2, 'stroke-width="2"')];
   const c = contornoRidotto(s);
   if (s.riduzione && (c.y0 !== -s.b / 2 || c.y1 !== s.b / 2 || c.z0 !== -s.h / 2 || c.z1 !== s.h / 2)) {
     parti.push(rect(c.y0, c.y1, c.z0, c.z1, 'stroke-dasharray="4 3"'));
   }
   if (s.staffe) {
     const k = s.copriferro;
-    parti.push(rect(-s.b / 2 + k, s.b / 2 - k, -s.h / 2 + k, s.h / 2 - k, `rx="${s.staffe.diametro * scala}" stroke-width="${Math.max(1, s.staffe.diametro * scala)}"`));
+    // Lo spessore della staffa è in scala, ma limitato a 2: su una sezione stretta la scala
+    // cresce e un Ø8 diventava un tratto di sei pixel, più marcato del contorno.
+    parti.push(rect(-s.b / 2 + k, s.b / 2 - k, -s.h / 2 + k, s.h / 2 - k, `rx="${s.staffe.diametro * scala}" stroke-width="${Math.min(2, Math.max(1, s.staffe.diametro * scala))}"`));
   }
   for (const b of posizioniBarre(s)) {
     parti.push(`<circle cx="${X(b.y)}" cy="${Y(b.z)}" r="${(b.diametro / 2) * scala}" fill="currentColor"/>`);

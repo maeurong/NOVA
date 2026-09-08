@@ -25,9 +25,14 @@ function entitaSelezionata(m, selezione) {
   return CERCA[selezione.tipo]?.(m, selezione.id) ?? null;
 }
 
+/** «rilievo, modificata» / «utente» / «—». Senza `origine` non si inventa niente: il campo
+ *  manca su tutto ciò che è stato disegnato prima della story 55. */
+const testoOrigine = (o) => (o ? `${o.sorgente}${o.modificata ? ", modificata" : ""}` : "—");
+
 function righeDiNodo(m, n) {
   return [["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
-          ["x", mm(n.x)], ["z", mm(n.z)], ["vincolo", descrizione(n.vincolo)]];
+          ["x", mm(n.x)], ["z", mm(n.z)], ["vincolo", descrizione(n.vincolo)],
+          ["origine", testoOrigine(n.origine)]];
 }
 
 /** «E ×0,8 · fc ×0,9 · martinetto 3», e senza nota niente separatore appeso. */
@@ -38,10 +43,6 @@ function testoDanno(d) {
   return parti.join(" · ");
 }
 
-/** «rilievo, modificata» / «utente» / «—». Senza `origine` non si inventa niente: il campo
- *  manca su tutto ciò che è stato disegnato prima della story 55. */
-const testoOrigine = (o) => (o ? `${o.sorgente}${o.modificata ? ", modificata" : ""}` : "—");
-
 function righeDiAsta(m, a) {
   const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
   const lunghezza = i && j ? mm(Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z)) : "—";
@@ -51,28 +52,21 @@ function righeDiAsta(m, a) {
     ? "non assegnata" : (sezione(m, idSezione)?.nome ?? String(idSezione));
   return [["identificatore", String(a.id)], ["nome", a.nome ?? "—"],
           ["da → a", `${a.nodo_i} → ${a.nodo_j}`], ["lunghezza", lunghezza],
-          ["sezione", nomeSezione], ["danno", testoDanno(a.danno)]];
+          ["sezione", nomeSezione], ["danno", testoDanno(a.danno)],
+          ["origine", testoOrigine(a.origine)]];
 }
 
 const nomeMateriale = (m, id) => materiale(m, id)?.nome ?? "—";
 
+/** Le quattro righe che l'editor qui sotto **non** dice. Dimensioni, copriferro, materiali,
+ *  staffe, barre e riduzione hanno già il loro campo: nella `<dl>` erano sette righe scritte
+ *  due volte sullo stesso schermo, e spingevano il disegno della sezione fuori dai 900 pixel
+ *  di un portatile. Il disegno adesso apre l'editor (`editorSezione`). */
 function righeDiSezione(m, s) {
-  const st = s.staffe;
-  const r = s.riduzione ?? {};
-  const ridotti = LATI.filter((l) => r[l]);
   const quante = asteDellaSezione(m, s.id).length;
   return [
     ["identificatore", String(s.id)],
     ["nome", s.nome],
-    ["dimensioni", `${millimetri(s.b)} × ${millimetri(s.h)} mm`],
-    ["copriferro", mm(s.copriferro)],
-    ["calcestruzzo", nomeMateriale(m, s.calcestruzzo)],
-    ["acciaio", nomeMateriale(m, s.acciaio)],
-    ["staffe", st ? `Ø${millimetri(st.diametro)} / ${millimetri(st.passo)}, ${st.bracci} bracci` : "nessuna"],
-    ["barre", s.file.length
-      ? s.file.map((f) => `${f.lato} ${f.n}Ø${millimetri(f.diametro)}`).join(" · ") : "nessuna"],
-    ["riduzione", ridotti.length
-      ? `${ridotti.map((l) => `${l} ${millimetri(r[l])}`).join(" · ")} mm` : "nessuna"],
     // «1 asta», non «1 aste»: il plurale scritto a macchina è il primo segno che nessuno ha
     // riletto la riga. Zero resta plurale, in italiano.
     ["usata da", `${quante} ${quante === 1 ? "asta" : "aste"}`],
@@ -184,9 +178,15 @@ function scelta({ etichetta, nome = etichetta, opzioni, valore, alCambio }) {
   return { etichetta: et, controllo: s };
 }
 
-function gruppo(legenda, classe) {
+function gruppo(legenda, classe, nota = null) {
   const f = document.createElement("fieldset"); f.className = classe;
   const l = document.createElement("legend"); l.textContent = legenda; f.append(l);
+  // La parentesi dentro la legenda la faceva lunga il doppio del gruppo che intitola. La
+  // legenda resta un'etichetta; ciò che spiega sta sotto, dove si legge una volta sola.
+  if (nota) {
+    const p = document.createElement("p"); p.className = "nota"; p.textContent = nota;
+    f.append(p);
+  }
   return f;
 }
 
@@ -196,6 +196,16 @@ function bottone(testo, alClic) {
   b.addEventListener("click", alClic);
   return b;
 }
+
+/** Chiave di `nova/catalogo.py` → etichetta e unità. Le chiavi grezze («fctm», «epsuk»,
+ *  «densita») sono nomi di variabili: a schermo valgono meno del nome che la norma usa, e
+ *  senza unità un numero non è una grandezza (PRODUCT.md, «unità dichiarate su ogni numero»).
+ *  Stessa forma di `NOME_GRADO`: una tabella, non un `switch` sparso nei campi. */
+const NOME_VALORE = {
+  E: ["E, modulo elastico", " MPa"], nu: ["ν, Poisson", ""], densita: ["densità", " t/mm³"],
+  fck: ["f_ck", " MPa"], fcm: ["f_cm", " MPa"], fctm: ["f_ctm", " MPa"],
+  fyk: ["f_yk", " MPa"], ftk: ["f_tk", " MPa"], epsuk: ["ε_uk", ""],
+};
 
 const NOME_GRADO = {
   ux: "traslazione X (ux)", uy: "traslazione Y (uy)", uz: "traslazione Z (uz)",
@@ -344,10 +354,12 @@ function editorSezione(m, s, azioni) {
                  (v) => campi({ riduzione: { ...r, [lato]: v } })));
   }
 
+  // Il disegno apre l'editor: è la sola cosa che dica in un colpo com'è fatta la sezione, e
+  // in fondo alla colonna, dopo cinque gruppi di campi, restava fuori schermo a 1440 × 900.
   const disegno = document.createElement("div");
   disegno.className = "sezione-disegno";
   disegno.innerHTML = svgSezione(s);
-  const elementi = [dim, mat, staffe, barre, rid, disegno];
+  const elementi = [disegno, dim, mat, staffe, barre, rid];
   // Il rosso non è mai il primo canale: la parola «attenzione» apre la riga, il colore la
   // conferma. Chi non distingue il rosso legge lo stesso che cosa non va.
   const motivo = geometriaImpossibile(s);
@@ -387,19 +399,40 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
   // P8: i valori a mano compaiono solo con la spunta, non prima.
   const elementi = [cl];
   if (k.personalizzato && legame?.catalogo) {
-    const val = gruppo("valori (sovrascrivono la tabella NTC)", "editor editor-campi");
+    const val = gruppo("valori", "editor editor-campi editor-valori", "sovrascrivono la tabella NTC");
+    const aMano = Object.keys(k.valori ?? {});
     for (const [chiave, v] of Object.entries(legame.catalogo)) {
-      const c = campoNumero({ etichetta: chiave, nome: `${chiave} di ${k.nome}`, valore: v,
+      const [etichetta, unita] = NOME_VALORE[chiave] ?? [chiave, ""];
+      const scritto = aMano.includes(chiave);
+      const c = campoNumero({ etichetta, unita, valore: v,
+                              // WCAG 2.5.3: il nome comincia dal testo visibile e aggiunge
+                              nome: `${etichetta} di ${k.nome}${scritto ? ", scritto a mano" : ""}`,
                               alCambio: (x) => azioni.suMateriale(k.id, { valori: { [chiave]: x } }),
                               suAvviso: azioni.suAvviso });
+      // Il valore che vince sulla tabella si vede: senza, la casella col numero misurato e
+      // quella col numero di norma erano la stessa casella.
+      if (scritto) {
+        const segno = document.createElement("span");
+        segno.className = "nota"; segno.textContent = "scritto a mano";
+        c.etichetta.append(segno);
+      }
       val.append(c.etichetta); controlli.push(c.controllo);
+    }
+    // Un bottone solo, non uno per casella: `modificaMateriale` cancella la chiave quando
+    // riceve `null` (`comandi.js`), e ricopiare a mano sei numeri di norma non è un rimedio.
+    if (aMano.length) {
+      const via = bottone("torna ai valori di tabella",
+                          () => azioni.suMateriale(k.id, { valori: Object.fromEntries(aMano.map((x) => [x, null])) }));
+      val.append(via); controlli.push(via);
     }
     elementi.push(val);
   }
 
-  const ve = gruppo("veste per l'analisi (tutto il modello)", "editor");
+  const ve = gruppo("veste per l'analisi", "editor", "vale per tutto il modello");
+  // `/api/catalogo` manda già `vesti` (`nova/server.py`) e nessuno la leggeva: `VESTI` resta
+  // la risposta quando il server non ha risposto, non la prima scelta.
   const v = scelta({ etichetta: "veste", nome: "veste per l'analisi, tutto il modello",
-                     opzioni: VESTI.map((x) => [x, x]), valore: vesteDi(m),
+                     opzioni: (catalogo?.vesti ?? VESTI).map((x) => [x, x]), valore: vesteDi(m),
                      alCambio: (x) => azioni.suVeste(x) });
   ve.append(v.etichetta); controlli.push(v.controllo);
   elementi.push(ve);
@@ -407,11 +440,16 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
   const lg = gruppo("legame", "editor curva");
   if (legame === null || legame === undefined) {
     // Attesa dichiarata, non un riquadro muto (P5): i valori arrivano da `/api/materiale/legame`.
-    const p = document.createElement("p"); p.className = "vuoto";
+    // `.nota` e non `.vuoto`: `.vuoto` è lo stato di una colonna intera senza niente dentro,
+    // con il suo `padding` e la sua misura; qui è una riga dentro un gruppo di campi.
+    const p = document.createElement("p"); p.className = "nota";
     p.textContent = "valori in arrivo dal server…"; lg.append(p);
   } else if (legame.errore) {
+    // Alla prima «;»: il rifiuto del catalogo elenca tutte e diciannove le classi dopo il
+    // punto e virgola, duecentoventi caratteri di avviso — e le classi stanno già nel
+    // `<select>` qui sopra, che è dove si sceglie.
     const p = document.createElement("p"); p.className = "avviso";
-    p.textContent = `attenzione: ${legame.errore}`; lg.append(p);
+    p.textContent = `attenzione: ${legame.errore.split(";")[0]}`; lg.append(p);
   } else if (legame.legame?.tipo !== "concrete02" && legame.legame?.tipo !== "steel02") {
     // Un tipo che non sappiamo disegnare si dice, non si solleva: `valoriDaMostrare` lancia,
     // e da qui l'eccezione ammazzava `ridisegna` — pannello, piano e albero fermi insieme,
@@ -430,7 +468,16 @@ function editorMateriale(m, k, azioni, { catalogo, legame }) {
       dl.append(dt, dd);
     }
     const art = document.createElement("p"); art.className = "nota"; art.textContent = c.articolo;
-    lg.append(disegno, dl, art);
+    lg.append(disegno);
+    // La `<dl>` scrive «f_c 33 MPa» e l'asse della curva «-33»: sono lo stesso numero, letto
+    // con la convenzione di OpenSees. Solo per il calcestruzzo — l'acciaio qui è tutto
+    // positivo, e la nota sarebbe rumore.
+    if (c.tipo === "concrete02") {
+      const segni = document.createElement("p"); segni.className = "nota";
+      segni.textContent = "compressione negativa, come la scrive OpenSees; nella tabella i valori sono in modulo";
+      lg.append(segni);
+    }
+    lg.append(dl, art);
     for (const a of legame.valori?.avvisi ?? []) {
       const p = document.createElement("p"); p.className = "avviso";
       p.textContent = `attenzione: ${a}`; lg.append(p);

@@ -425,8 +425,6 @@ test("nessun riduttore nuovo tocca il modello che riceve", () => {
   assert.deepEqual(soliMateriali, primaMateriali);
 });
 
-// --- fix round 1 --------------------------------------------------------------------------
-
 test("story 55: i cinque riduttori marcano modificata l'entità che toccano", () => {
   const rilievo = () => ({ sorgente: "rilievo", modificata: false });
   let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
