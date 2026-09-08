@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://link.springer.com/article/10.1007/s10518-019-00690-5",
+  "sha256": "6efa48cb052645ffe84aafeeada7823469f30cd5ad29d50c84933776a244abba",
+  "bytes": 2621
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

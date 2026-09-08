@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://www.ceas3.uc.edu/sdrluff/files/55.asc",
+  "sha256": "ebd9c80055a27fa73b04d8ac16c22c21453c2ff805125dfca723971cbbd74603",
+  "bytes": 12495
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

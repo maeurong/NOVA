@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/openmodal/pyuff/master/LICENSE",
+  "sha256": "4c8cdf7a9cdcfce06e5b802c1c9c35b03a723abcc78e5e2c094d7690b920efaf",
+  "bytes": 1423
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

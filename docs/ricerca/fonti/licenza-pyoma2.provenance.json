@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/dagghe/PyOMA2/main/LICENSE",
+  "sha256": "a2e81f09c2232aa0338686c7dab8d8cecab840aec5a26bb8dd209dcf123417f6",
+  "bytes": 1382
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

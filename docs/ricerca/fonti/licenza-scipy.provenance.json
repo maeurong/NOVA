@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/scipy/scipy/main/LICENSE.txt",
+  "sha256": "a49fa1cec2d01e9866ffc1bf9fd99931daef011ffe891ebf1dfa409c5d9c96d4",
+  "bytes": 1898
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1",
+ "extracted": "2026-09-08"
+}

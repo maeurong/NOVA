@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://oa.upm.es/3038/2/INVE_MEM_2008_61505.pdf",
+  "sha256": "1d57bb6e7dd619c94930530c0bad937740ea1aa2ab558c821e5725a085979f46",
+  "bytes": 12155
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1 + pdftotext 26.08.0 (-layout)",
+ "extracted": "2026-09-08"
+}

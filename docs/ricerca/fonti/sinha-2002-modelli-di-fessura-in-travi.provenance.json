@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "http://michael.friswell.com/PDF_Files/J77.pdf",
+  "sha256": "a4218b70c7942df35cd27afe4cdaf3bb7ade360b527f988c3e91d858e7fcb508",
+  "bytes": 6897
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1 + pdftotext 26.08.0 (-layout)",
+ "extracted": "2026-09-08"
+}
