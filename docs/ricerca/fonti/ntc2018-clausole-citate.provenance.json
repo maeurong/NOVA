@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://www.gazzettaufficiale.it/eli/gu/2018/02/20/42/so/8/sg/pdf",
+  "sha256": "fafcd598ddb6046d8cbbd0502d21e4a99a937e6751c546a9a65d83fa5401738e",
+  "bytes": 91312
+ },
+ "tool": "pdftotext -layout",
+ "tool_version": "26.08.0",
+ "extracted": "2026-09-08"
+}

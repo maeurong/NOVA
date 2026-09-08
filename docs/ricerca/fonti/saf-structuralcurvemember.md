@@ -1,0 +1,66 @@
+## StructuralCurveMember
+
+**1D Member (Beam, Column,…)**
+
+A general 1D member is defined by its two end-points (or we can say nodes). Therefore, the 1D member position must be specified by two points: first, the starting or begin point and the last, the end point. A set of properties can also be defined.
+
+Each 1D member has got a unique local coordinate system, the origin of which is located in the starting point of a 1D member. The x-axis is always identical to the longitudinal beam axis and its direction is from the starting point towards the endpoint. The direction of a second axis (either y or z) is determined by the property of the object, the last axis is set by the right-hand rule.
+
+The local co-ordinate system can be rotated around its x-axis if required.
+
+In addition to this local co-ordinate system, also a principal (or main) co-ordinate system can be referred to on a 1D member. The principal co-ordinate system of a 1D member is related to the principal co-ordinate system of the cross-section of a 1D member.
+
+![](https://www.saf.guide/en/stable/_images/11_structuralcurvemember2.png)
+
+![](https://www.saf.guide/en/stable/_images/11_structuralcurvemember3.png)
+
+## Specification in the excel
+
+| Column header | Data type | Example / enum definition | Required | Description |
+| --- | --- | --- | --- | --- |
+| Name | String | B1 | yes | Human readable unique name of the 1D member |
+| Type | String | General | no | The type of the 1D member, used within the analytical model.  E.g. General, Beam, Column, GableColumn, SecondaryColumn, Rafter, Purlin, RoofBracing, WallBracing, Girt, TrussChord, TrussDiagonal, PlateRib, BeamSlab, HollowCoreSlab, CompositePlateRib, CompositeBeamRib |
+| Cross section | String | CS1 | yes | The name reference to the existing, valid name of the StructuralCrossSection object |
+| Arbitrary definition | String | AD1 | no | The reference to Arbitrary/Tapered/Haunched beam definition StructuralCurveMemberVarying |
+| Nodes | String | N2; N3; N4 | yes | All nodes that belong to the curve member and define its geometric shape.  The names of the nodes are separated by; (semicolon) and space. The order of the nodes has to be from beginning to end. The first node is the Begin node, the last one is the End node. |
+| Segments | String | Line; Circular Arc; Bezier; Parabolic arc; Spline | yes | Defines the shape of the curve between two next nodes. The names are separated by; (semicolon) and space. |
+| Internal nodes | String | N77; N78 | no | Internal nodes belonging to StructuralCurveMember defined in StructuralPointConnection.  Internal nodes are not geometry defining The names of the nodes are separated by; (semicolon) and space. |
+| Length \[m\] | Double | 6.425 | no | Distance between begin and end node of the curve member. |
+| Geometrical shape | Enum | Line  Circular Arc  Parabolic Arc  Bezier  Spline  Polyline | no | Description of the geometrical type of curve member in general. If the member consists of more than one segments, Geometrical shape is automatically set to Polyline. |
+| LCS | Enum | y by vector  z by vector  y by point  z by point | yes | Local coordinate system. This item specifies the way the local axes of the 1D member are determined. For further understanding see [Introduction](https://www.saf.guide/en/stable/getting-started/introduction.html) |
+| LCS Rotation \[deg\] | Double | 45.00 | yes | This value defines the rotation of local axes of the 1D member around its x-axis |
+| Coordinate X \[m\] | Double | 0.0 | yes | Coordinate of the point or vector defining the LCS in X direction |
+| Coordinate Y \[m\] | Double | 0.1 | yes | Coordinate of the point or vector defining the LCS in Y direction |
+| Coordinate Z \[m\] | Double | 0.0 | yes | Coordinate of the point or vector defining the LCS in Z direction |
+| System line | Enum | Centre  Top  Bottom  Left  Right  Top left  Top right  Bottom left  Bottom right | yes | The system line is in fact the local x-axis of the member. The attribute of system line applies eccentricities to the member equal to the cross-section dimensions of the member in the specified direction.  Default position of the system line is in the centre of the gravity of the cross-section.  The position of the system line affects results in same way as eccentricities do.  Top - align top surface to center line  Bottom - align bottom surface to center line  Left - align left surface to center line  Right - align right surface to center line  For further explanation see notes below. |
+| Structural Y Eccentricity of Beg Node \[mm\] | Double | \-150 | no | Define the position difference between a physical element and its analytical member representation in Y direction (Beg node).  Used to build up physical (structural body from analysis member).  DOES NOT affect internal forces. |
+| Structural Z Eccentricity of Beg Node \[mm\] | Double | 75 | no | Define the position difference between a physical element and its analytical member representation in Z direction (Beg node).  Used to build up physical (structural body from analysis member).  DOES NOT affect internal forces. |
+| Structural Y Eccentricity of End Node \[mm\] | Double | 75 | no | Define the position difference between a physical element and its analytical member representation in Y direction (End node).  Used to build up physical (structural body from analysis member).  DOES NOT affect internal forces. |
+| Structural Z Eccentricity of End Node \[mm\] | Double | 75 | no | Define the position difference between a physical element and its analytical member representation in Z direction (End node).  Used to build up physical (structural body from analysis member).  DOES NOT affect internal forces. |
+| Analysis Y Eccentricity of Beg Node \[mm\] | Double | 75 | yes | Define the position difference between a physical element and its analytical member representation in Y direction (Beg node).  Used to build up physical (structural body from analysis member).  DO affects internal forces. |
+| Analysis Z Eccentricity of Beg Node \[mm\] | Double | 75 | yes | Define the position difference between a physical element and its analytical member representation in Z direction (Beg node).  Used to build up physical (structural body from analysis member).  DO affects internal forces. |
+| Analysis Y Eccentricity of End Node \[mm\] | Double | 75 | yes | Define the position difference between a physical element and its analytical member representation in Y direction (End node).  Used to build up physical (structural body from analysis member).  DO affects internal forces. |
+| Analysis Z Eccentricity of End Node \[mm\] | Double | 75 | yes | Define the position difference between a physical element and its analytical member representation in Z direction (End node).  Used to build up physical (structural body from analysis member).  DO affects internal forces. |
+| Layer | String | 1st floor | no | Custom created layer.  The layer can thus comprise entities that have something in common (e.g. one floor, columns of one floor, columns of the same length, etc.) |
+| Behaviour in analysis | Enum | Standard  Axial force only  Compression only  Tension only | yes | From the finite element analysis point of view, the 1D member can act like a standard 1D member or like a hinged (pinned) rod. The difference is that the standard 1D member is capable of transferring all the internal forces, while the latter variant only provides for transferring of the axial force. |
+| Color | String | #7FFFFF00 | no | Defines colour and transparency of the object. Colour is defined by Hex format #AARRGGBB. Transparency is controlled by the alpha channel AA. If no colour is set then default colour is used. |
+| Parent ID | String | 67b35d84-3d04-47aa-aa4a-dc1263982320 | no | Is filled for objects created be dividing curved geometry to series of straight line objects. Parent ID will ensure that curved edge is imported as straight parts to nonsupporting application, and back to original supporting application as curved geometry. To ensure successful round trip of segmented objects and their related objects, Parent ID needs to be present in both directions. |
+| Id | String | 39f238a5-01d0-45cf-a2eb-958170fd4f39 | no | Unique attribute designation |
+
+## Notes
+
+> Complete enumeration of the Formcode, Supported shapes of cross-section and Description ID can be found in chapter Annexes. These properties are set in the object [StructuralCrossSection](https://www.saf.guide/en/stable/structural-analysis-elements/structuralcrosssection.html).
+> 
+> Rotation of local co-ordinate system is measured from origin position of local y-axis and the orientation follows positive rotation according to the right-handed rule.
+> 
+> Reference to Alignment enums - examples of alignments.
+> 
+> - pictures below represents view parallel to direction of center line (LCS respects right hand rule)
+> 
+> ![](https://www.saf.guide/en/stable/_images/11_structuralcurvemember_alignment.png)
+
+> An example of use of System line type Bottom right can be seen in the picture below. If the shape of the cross-section is not rectangular then boundary box of the cross-section is considered for position of the system line. The results take in count eccentricities, in example: ey=150 mm, ez=250 mm.
+> 
+> [![../_images/11_structuralcurvemember4.png](https://www.saf.guide/en/stable/_images/11_structuralcurvemember4.png)](https://www.saf.guide/en/stable/_images/11_structuralcurvemember4.png)
+
+> Axis reference is only to illustrate this example, your application can have different cross-section LCS than shown in this example. Alignment of system line should be reflected to your relevant eccentricities based on your cross section LCS.

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/fib-international/structuralcodes/0754aeaeb257d97b79f832e41ab38b9777c82878/structuralcodes/codes/ec2_2004/_section_7_3_crack_control.py",
+  "sha256": "9c3dd1497bfdb2965ad1d081ef1539a879bb59d3d13ff442b8a505cb70881180",
+  "bytes": 32425
+ },
+ "tool": "curl",
+ "tool_version": "8.7.1",
+ "extracted": "2026-09-08"
+}
