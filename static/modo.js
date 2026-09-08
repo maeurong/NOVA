@@ -67,7 +67,10 @@ export function esitoScelta(modo, tipo) {
   }
   if (modo?.tipo === "asta") {
     if (tipo !== "nodo") {
-      return { permesso: false, messaggio: "scegli un nodo, non un'asta — Esc per annullare", aggiornaA: false };
+      // Non più «non un'asta»: dall'albero della 11b si clicca anche una sezione o un
+      // materiale, e la frase nominava l'unico bersaglio sbagliato che esisteva allora.
+      // Dice cosa serve, non cosa non va bene.
+      return { permesso: false, messaggio: "scegli un nodo: in modo asta serve il secondo nodo — Esc per annullare", aggiornaA: false };
     }
     return { permesso: true, messaggio: null, aggiornaA: true };
   }

@@ -71,10 +71,10 @@ test("esitoScelta: in estrusione, bersaglio nodo → non permesso, messaggio del
   assert.equal(e.aggiornaA, false);
 });
 
-test("esitoScelta: in asta, bersaglio asta → non permesso, messaggio «scegli un nodo, non un'asta»", () => {
+test("esitoScelta: in asta, un bersaglio che non è un nodo → non permesso, e la frase dice cosa serve", () => {
   const e = esitoScelta({ tipo: "asta", da: 1, a: null }, "asta");
   assert.equal(e.permesso, false);
-  assert.match(e.messaggio, /scegli un nodo, non un'asta/);
+  assert.match(e.messaggio, /scegli un nodo: in modo asta serve il secondo nodo/);
   assert.equal(e.aggiornaA, false);
 });
 

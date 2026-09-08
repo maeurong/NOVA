@@ -4,20 +4,23 @@
 // secondo nodo. `ponytail: ridisegno intero; si passa a un diff quando un modello vero
 // lo rende lento, non prima.`
 
-import { modelloVuoto, nodo } from "./modello.js";
-import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo } from "./comandi.js";
+import { modelloVuoto, nodo, materiale, vesteDi } from "./modello.js";
+import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo,
+         creaSezione, modificaSezione, impostaFila, assegnaSezione, eliminaSezione, creaMateriale,
+         modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault } from "./comandi.js";
+import { leggiDimensioni } from "./sezione.js";
 import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
 import { voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
-import { creaFile } from "./file.js";
+import { creaFile, messaggioErrore } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro } from "./vincoli.js";
-import { stampaNumero } from "./numeri.js";
+import { stampaNumero, leggiEspressione } from "./numeri.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -28,12 +31,54 @@ let modo = null;
 // Il campo di comando: `null` quando è chiuso, `{ tipo, testo, bersaglio }` quando è aperto.
 // Fuori da `modo` perché non è un modo — `nodo` non ha un nodo di partenza, e `modoValido`
 // lo chiuderebbe a ogni ridisegno cercandogli un `da` che non ha mai avuto. Un campo solo per
-// quattro comandi: `N`, `B`, `M`, `R`. Da qui `window.prompt` non è più nel programma (P2).
+// sette comandi: `N`, `B`, `M`, `R`, `S`, `C`, `D`. Da qui `window.prompt` non è più nel
+// programma (P2).
 let comando = null;
 // Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
 // che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
 // per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
 let percorso = null, impronta = null;
+
+// Il catalogo delle classi e i legami dei materiali vengono dal server, dove i numeri di
+// norma vivono già (`nova/catalogo.py`, `nova/legami.py`): qui non ce n'è nessuno. Il
+// catalogo si chiede una volta; il legame per materiale e veste, con una cache — cambiare
+// veste cambia la chiave, e una risposta vecchia non può atterrare sopra una nuova.
+let catalogo = null;
+const legami = new Map();
+
+// Lo stampo di `file.js:62`, con il suo stesso lettore dell'errore: il server appiattisce
+// `detail` in `motivo` (`server.py:308-311`), e due letture diverse dello stesso corpo
+// divergerebbero al primo ripensamento.
+async function chiediJson(rotta, corpo) {
+  // Il `catch` sul `fetch` e non sul corpo: un server spento lo fa cadere con «Failed to
+  // fetch», che è inglese e non dice niente — e quell'avviso si legge nell'editor, in mezzo
+  // all'italiano di tutto il resto.
+  const r = await fetch(rotta, corpo === undefined ? {} : {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corpo),
+  }).catch(() => { throw new Error("il server non risponde"); });
+  const dati = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(messaggioErrore(dati, r.status));
+  return dati;
+}
+
+chiediJson("/api/catalogo").then((c) => { catalogo = c; ridisegna(); })
+  .catch(() => { catalogo = null; });  // l'editor regge senza: mostra la classe che c'è (P5)
+
+/** Il legame del materiale `id` nella veste corrente, o `null` finché non è arrivato — che
+ *  l'editor dice, invece di lasciare un riquadro muto (P5). La chiave porta **anche** la
+ *  veste: cambiarla fa ripartire le richieste, e la risposta di prima non può atterrare
+ *  sopra quella di adesso. Una chiave già in cache non chiede due volte. */
+function legamePer(m, id) {
+  const k = materiale(m, id);
+  if (!k) return null;
+  const chiave = JSON.stringify([k, vesteDi(m)]);
+  if (legami.has(chiave)) return legami.get(chiave);
+  legami.set(chiave, null);  // in volo: «valori in arrivo», e nessuna seconda richiesta
+  chiediJson("/api/materiale/legame", { materiale: k, veste: vesteDi(m) })
+    .then((d) => { legami.set(chiave, d); ridisegna(); })
+    .catch((e) => { legami.set(chiave, { errore: e.message }); ridisegna(); });
+  return null;
+}
 
 const $ = (id) => document.getElementById(id);
 const messaggio = $("messaggio");
@@ -57,10 +102,18 @@ const piano = creaPiano($("piano"), { suSelezione: scegli, suSfondo: () => { if 
 const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione: scegli });
 const pannello = creaPannello(
   { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-editor") },
-  { suVincolo: (id, vincolo) => {
-    esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`);
-    ridisegna();
-  } },
+  {
+    suVincolo: (id, vincolo) => { esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`); ridisegna(); },
+    suSezione: (id, campi) => { esegui((m) => modificaSezione(m, { id, ...campi }), `sezione ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
+    suFila: (id, lato, n, diametro) => { esegui((m) => impostaFila(m, { id, lato, n, diametro }), `fila ${lato} della sezione ${id}`); ridisegna(); },
+    suAssegna: (asta, sezione) => { esegui((m) => assegnaSezione(m, { asta, sezione }), `sezione dell'asta ${asta}`); ridisegna(); },
+    suDanno: (asta, danno) => { esegui((m) => impostaDanno(m, { asta, danno }), `danno dell'asta ${asta}`); ridisegna(); },
+    suMateriale: (id, campi) => { esegui((m) => modificaMateriale(m, { id, ...campi }), `materiale ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
+    suVeste: (veste) => { esegui((m) => impostaVeste(m, { veste }), `veste ${veste}`); ridisegna(); },
+    // Un numero illeggibile in un campo dell'editor è un avviso, non un comando: non entra
+    // nella Storia e non tocca il modello — il campo si rimette da solo sul valore di prima.
+    suAvviso: dì,
+  },
 );
 // Senza `await`, e non per eleganza: `import("./vendor/three.module.js")` sono 2 MB, e con
 // l'attesa qui in cima il `keydown` là in fondo si registrava **dopo**. La pagina pareva
@@ -187,6 +240,9 @@ rigaComando.addEventListener("submit", (ev) => {
   if (!comando) return;
   if (comando.tipo === "estrudi") return confermaEstrusione();
   if (comando.tipo === "rinomina") return confermaNome();
+  if (comando.tipo === "sezione") return confermaSezione();
+  if (comando.tipo === "materiale") return confermaMateriale();
+  if (comando.tipo === "danno") return confermaDanno();
   confermaPunto();  // `nodo` e `sposta`: la stessa grammatica, «x; z»
 });
 
@@ -246,6 +302,83 @@ function confermaNome() {
   ridisegna();
 }
 
+// `S` fa due cose con una grammatica sola, perché all'utente sono la stessa: dare una
+// sezione a un'asta. «300 × 500» la disegna e gliela dà, il nome di una che c'è già gliela
+// dà e basta — e nella Storia resta **una** voce, che dice tutto quello che è successo
+// (P4: l'annulla è visibile solo se le sue voci sono leggibili).
+function confermaSezione() {
+  const testo = comando.testo.trim();
+  if (testo === "") return;
+  const m = corrente(cronologia);
+  const dims = leggiDimensioni(testo);
+  const esistente = dims ? null : m.sezioni.find((s) => s.nome === testo || String(s.id) === testo);
+  if (!dims && !esistente) { dì(`«${testo}» non è né b × h né il nome di una sezione`); return; }
+  const asta = comando.bersaglio?.id ?? null;
+  // Il nome di una sezione che c'è già, e nessuna asta a cui darla: il modello non cambia.
+  // Selezionarla e basta — una voce della Storia che non ha cambiato niente è una bugia
+  // dentro l'unica lista che dice cosa è successo.
+  if (!dims && asta === null) {
+    selezione = { tipo: "sezione", id: esistente.id };
+    chiudiComando();
+    ridisegna();
+    return;
+  }
+  // L'etichetta della Storia si compone **prima**: `applica` la riceve insieme al riduttore.
+  // `materialiDiDefault` è pura e costa niente: qui dice cosa nascerà, dentro il riduttore
+  // lo fa davvero sul modello che riceve.
+  const { aggiunti } = dims ? materialiDiDefault(m) : { aggiunti: [] };
+  const etichetta = (dims ? `sezione ${quota(dims.b)} × ${quota(dims.h)}` : `sezione ${esistente.nome}`)
+    + (aggiunti.length ? `, con ${aggiunti.join(" e ")}` : "")
+    + (asta !== null ? ` → asta ${asta}` : "");
+  const fatto = esegui((mm) => {
+    let n = mm, id;
+    if (dims) {
+      n = materialiDiDefault(n).modello;
+      const cls = n.materiali.find((k) => k.tipo === "calcestruzzo").id, acc = n.materiali.find((k) => k.tipo === "acciaio").id;
+      n = creaSezione(n, { b: dims.b, h: dims.h, calcestruzzo: cls, acciaio: acc });
+      id = n.sezioni[n.sezioni.length - 1].id;
+    } else id = esistente.id;
+    return asta === null ? n : assegnaSezione(n, { asta, sezione: id });
+  }, etichetta);
+  if (!fatto) { ridisegna(); return; }  // rifiutato: il campo resta col testo
+  // Senza asta la sezione appena nata è il soggetto: l'editor si apre su di lei. Con l'asta
+  // la selezione resta l'asta, che è quella che si sta armando.
+  if (asta === null) { const n = corrente(cronologia); selezione = { tipo: "sezione", id: n.sezioni[n.sezioni.length - 1].id }; }
+  chiudiComando();
+  ridisegna();
+}
+
+// Il tipo lo dice la classe, non un secondo campo da scegliere: «C» e «B» sono le lettere
+// della norma, e chiederlo due volte sarebbe chiedere all'utente di ripetersi.
+function confermaMateriale() {
+  const classe = comando.testo.trim();
+  if (classe === "") return;
+  const tipo = /^c\s*\d/i.test(classe) ? "calcestruzzo" : /^b\s*\d/i.test(classe) ? "acciaio" : null;
+  if (!tipo) { dì("una classe comincia per C (calcestruzzo, C25/30) o per B (acciaio, B450C)"); return; }
+  // `classi` solo se il catalogo è arrivato: senza server la classe si scrive comunque, ed
+  // è il salvataggio a dire di no — meglio che un campo muto che rifiuta tutto (P5).
+  if (esegui((m) => creaMateriale(m, { tipo, classe, classi: catalogo?.[tipo] ?? null }), `materiale ${classe}`)) {
+    const n = corrente(cronologia);
+    selezione = { tipo: "materiale", id: n.materiali[n.materiali.length - 1].id };
+    chiudiComando();
+  }
+  ridisegna();
+}
+
+// «fE; ffc[; nota]», con il `;` di «x; z»: una grammatica sola per tutto il campo. I due
+// fattori passano da `leggiEspressione`, quindi «1/1,25» vale quanto «0,8» (P9); i limiti
+// (fra 0 escluso e 1) restano a `impostaDanno`, che è dove la regola sta già.
+function confermaDanno() {
+  if (comando.testo.trim() === "") return;
+  const parti = comando.testo.split(";").map((p) => p.trim());
+  if (parti.length < 2) { dì("scrivi due fattori, «E; fc», e se vuoi una nota: «0,8; 0,9; martinetto 3»"); return; }
+  const [fattore_E, fattore_fc] = parti.slice(0, 2).map(leggiEspressione);
+  const asta = comando.bersaglio.id;
+  if (esegui((m) => impostaDanno(m, { asta, danno: { fattore_E, fattore_fc, nota: parti.slice(2).join("; ") } }),
+             `danno dell'asta ${asta}`)) chiudiComando();
+  ridisegna();
+}
+
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
@@ -260,7 +393,10 @@ function esegui(fn, etichetta) {
 
 function ridisegna() {
   const m = corrente(cronologia);
-  const esiste = (s) => (s.tipo === "nodo" ? m.nodi : m.aste).some((e) => e.id === s.id);
+  // Quattro tipi selezionabili da quando l'albero porta sezioni e materiali: un tipo che
+  // non è nell'elenco non esiste, e la selezione cade — non solleva.
+  const esiste = (s) => ({ nodo: m.nodi, asta: m.aste, sezione: m.sezioni, materiale: m.materiali }[s.tipo] ?? [])
+    .some((e) => e.id === s.id);
   // Una selezione che punta a un oggetto sparito è peggio di nessuna selezione.
   if (selezione && !esiste(selezione)) selezione = null;
   // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
@@ -278,7 +414,8 @@ function ridisegna() {
   piano.disegna(m, { selezione, ghost });
   spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
   albero.disegna(m, { selezione });
-  pannello.disegna(m, selezione);
+  pannello.disegna(m, selezione,
+                   { catalogo, legame: selezione?.tipo === "materiale" ? legamePer(m, selezione.id) : null });
   file.disegna({ percorso, impronta, modello: m });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
@@ -427,6 +564,16 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "elimina") {
+    // Sezioni e materiali si eliminano come i nodi. Chi è ancora in uso lo rifiuta da sé e
+    // dice **chi** lo usa (`comandi.js:eliminaSezione`, `eliminaMateriale`): una guardia qui
+    // sarebbe un secondo oracolo da tenere allineato a mano.
+    if (selezione?.tipo === "sezione" || selezione?.tipo === "materiale") {
+      const { tipo, id } = selezione;
+      const via = tipo === "sezione" ? eliminaSezione : eliminaMateriale;
+      esegui((m) => via(m, { id }), `elimina ${tipo} ${id}`);
+      ridisegna();
+      return;
+    }
     // L'asta resta fuori davvero (`comandi.js` elimina solo nodi): la frase lo dice, invece
     // di lasciar credere che basti selezionarne una.
     if (selezione?.tipo !== "nodo") { dì(`${serveUnNodo("eliminare")} — l'asta non si elimina ancora`); return; }
@@ -444,6 +591,25 @@ window.addEventListener("keydown", (ev) => {
   // È l'unico comando che accetta anche un'asta, quindi non passa da `serveUnNodo`.
   if (voce.codice === "rinomina") {
     if (!selezione) { dì("rinominare vuole qualcosa di selezionato: premi G per girare fra i nodi, o clicca un'asta"); return; }
+    apriComando(voce, { bersaglio: { ...selezione } });
+    return;
+  }
+
+  // `S` con un'asta selezionata è il gesto più frequente della giornata — disegnare la
+  // sezione e darla all'asta — quindi il bersaglio si congela come per `M` e `R`, e
+  // l'etichetta del campo lo nomina: «sezione di asta 3» dice a chi finirà.
+  if (voce.codice === "sezione") {
+    const bersaglio = selezione?.tipo === "asta" ? { ...selezione } : null;
+    apriComando(bersaglio ? { ...voce, campo: "sezione di" } : voce, { bersaglio });
+    return;
+  }
+
+  // `C` non chiede nessun bersaglio: un materiale non è di nessuno finché una sezione non
+  // lo prende.
+  if (voce.codice === "materiale") { apriComando(voce); return; }
+
+  if (voce.codice === "danno") {
+    if (selezione?.tipo !== "asta") { dì("il danno vuole un'asta: clicca un'asta nel piano o nell'albero"); return; }
     apriComando(voce, { bersaglio: { ...selezione } });
   }
 });
