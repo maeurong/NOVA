@@ -491,3 +491,54 @@ test("assegnaSezione senza sezione dice che manca, non che «undefined» non esi
   const m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
   rifiuta(() => assegnaSezione(m, { asta: 1 }), /manca la sezione/);
 });
+
+
+// --- P4 (`docs/ricerca/07-ux-modellatore.md:152`): un comando che non cambia niente non è
+// un comando. Il riduttore lo dice restituendo il modello che ha ricevuto, **per
+// riferimento**, e `cronologia.applica` lo riconosce da lì. ------------------------------
+
+test("P4: rinominare con lo stesso nome torna il modello ricevuto e non marca modificata", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m.nodi[0].nome = "piede";
+  m.nodi[0].origine = { sorgente: "rilievo", modificata: false };
+  assert.equal(rinomina(m, { tipo: "nodo", id: 1, nome: "piede" }), m, "lo stesso oggetto");
+  assert.equal(m.nodi[0].origine.modificata, false, "e l'origine è intatta");
+  // gli spazi intorno non sono un nome diverso: `rinomina` li taglia prima di confrontare
+  assert.equal(rinomina(m, { tipo: "nodo", id: 1, nome: "  piede  " }), m);
+  const diverso = rinomina(m, { tipo: "nodo", id: 1, nome: "piede sinistro" });
+  assert.notEqual(diverso, m);
+  assert.equal(diverso.nodi[0].origine.modificata, true, "un nome nuovo è un comando");
+});
+
+test("P4: gli otto riduttori che marcano modificata tornano il modello ricevuto a vuoto", () => {
+  let m = estrudi(creaNodo(conSezione(), { x: 0, z: 0 }), { da: 1, dx: 3000, dz: 0 });
+  m = modificaSezione(m, { id: 1, staffe: { diametro: 8, passo: 150, bracci: 2 } });
+  m = impostaFila(m, { id: 1, lato: "inf", n: 2, diametro: 16 });
+  m = assegnaSezione(m, { asta: 1, sezione: 1 });
+  m = impostaVincolo(m, { id: 1, vincolo: { ux: true, uz: true } });
+  m = impostaDanno(m, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: "" } });
+  m = modificaMateriale(m, { id: 1, valori: { E: 31000 } });
+  for (const [nome, fn] of [
+    ["spostaNodo", (x) => spostaNodo(x, { id: 1, x: 0, z: 0 })],
+    ["rinomina", (x) => rinomina(x, { tipo: "sezione", id: 1, nome: "300 × 500" })],
+    ["impostaVincolo", (x) => impostaVincolo(x, { id: 1, vincolo: { ux: true, uz: true } })],
+    ["modificaSezione", (x) => modificaSezione(x, { id: 1, b: 300 })],
+    ["impostaFila", (x) => impostaFila(x, { id: 1, lato: "inf", n: 2, diametro: 16 })],
+    ["assegnaSezione", (x) => assegnaSezione(x, { asta: 1, sezione: 1 })],
+    ["modificaMateriale", (x) => modificaMateriale(x, { id: 1, valori: { E: 31000 } })],
+    ["impostaDanno", (x) => impostaDanno(x, { asta: 1, danno: { fattore_E: 0.8, fattore_fc: 0.9, nota: "" } })],
+  ]) {
+    assert.equal(fn(m), m, `${nome} ha spinto uno snapshot che non cambia niente`);
+  }
+});
+
+test("P4: la veste già scelta non è un comando; una veste diversa sì", () => {
+  const m = impostaVeste(conSezione(), { veste: "progetto" });
+  assert.equal(impostaVeste(m, { veste: "progetto" }), m, "la stessa veste, lo stesso modello");
+  assert.notEqual(impostaVeste(m, { veste: "media" }), m);
+  // `modelloVuoto()` porta già `{fibre: 10, veste: "media"}`: il campo assente è di un
+  // modello importato a mano, e lì metterlo è un cambiamento anche sulla veste di default.
+  const importato = conSezione();
+  delete importato.impostazioni_analisi;
+  assert.notEqual(impostaVeste(importato, { veste: "media" }), importato);
+});

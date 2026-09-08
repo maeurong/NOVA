@@ -34,6 +34,17 @@ const copia = (m) => structuredClone(m);
  *  dell'utente. Senza `origine` non si inventa niente (`nova/modello.py:43-49`). */
 const marcaModificata = (e) => { if (e.origine) e.origine = { ...e.origine, modificata: true }; };
 
+// --- P4: un comando che non cambia niente non è un comando --------------------------------
+/** L'entità dopo la modifica è identica a com'era prima (`docs/ricerca/07-ux-modellatore.md:152`).
+ *  Chi risponde `false` restituisce **il modello ricevuto**, per riferimento: `applica`
+ *  (`cronologia.js`) legge quella identità e non spinge lo snapshot. Il confronto va fatto
+ *  **prima** di `marcaModificata`, che è essa stessa una modifica.
+ *  ponytail: `JSON.stringify` e non un confronto profondo — sono oggetti di soli dati, e la
+ *  copia viene da `structuredClone`, che conserva l'ordine delle chiavi. Un ordine diverso
+ *  (un modello riletto da un file scritto altrove) direbbe «cambiata» quando non lo è: è il
+ *  verso innocuo, una voce in più nella Storia, che è ciò che succedeva a ogni comando. */
+const cambiata = (prima, dopo) => JSON.stringify(prima) !== JSON.stringify(dopo);
+
 export function creaNodo(m, { x, z, y = 0 }) {
   numero(x, "x"); numero(y, "y"); numero(z, "z");
   const esistente = nodoVicino(m, x, y, z);
@@ -87,6 +98,7 @@ export function spostaNodo(m, { id, x, z, y }) {
   const n = copia(m);
   const bersaglio = n.nodi.find((k) => k.id === id);
   bersaglio.x = nx; bersaglio.y = ny; bersaglio.z = nz;
+  if (!cambiata(vecchio, bersaglio)) return m;
   marcaModificata(bersaglio);
   return n;  // le aste referenziano gli identificatori: seguono da sole
 }
@@ -117,10 +129,12 @@ export function rinomina(m, { tipo, id, nome }) {
   if (typeof nome !== "string" || nome.trim() === "") {
     throw new ErroreComando("il nome non può essere vuoto", "scrivi un nome, o lascia stare");
   }
+  const vecchio = m[chiave].find((e) => e.id === id);
+  if (!vecchio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
   const n = copia(m);
   const bersaglio = n[chiave].find((e) => e.id === id);
-  if (!bersaglio) throw new ErroreComando(`${tipo} ${id} non esiste`, "seleziona un nodo o un'asta che esista e ripeti");
   bersaglio.nome = nome.trim();
+  if (!cambiata(vecchio, bersaglio)) return m;
   marcaModificata(bersaglio);
   return n;
 }
@@ -150,11 +164,15 @@ export function collega(m, { da, a, sezione = null }) {
  *  gradi noti — un campo in più diventerebbe un rifiuto di `/api/modello/salva`, che ha
  *  `extra="forbid"` (`nova/modello.py:39`). */
 export function impostaVincolo(m, { id, vincolo }) {
-  if (!nodo(m, id)) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
+  const vecchio = nodo(m, id);
+  if (!vecchio) throw new ErroreComando(`il nodo ${id} non esiste`, "seleziona un nodo e ripeti");
   const n = copia(m);
   const bersaglio = n.nodi.find((k) => k.id === id);
   if (vincolo === null || vincolo === undefined) delete bersaglio.vincolo;
   else bersaglio.vincolo = Object.fromEntries(GRADI.map((g) => [g, Boolean(vincolo[g])]));
+  // La preimpostazione già premuta è il caso di tutti i giorni: senza questa riga ogni clic
+  // su «incastro» su un nodo già incastrato scriveva una voce nella Storia.
+  if (!cambiata(vecchio, bersaglio)) return m;
   marcaModificata(bersaglio);
   return n;
 }
@@ -219,7 +237,7 @@ export function creaSezione(m, { nome = null, b, h, calcestruzzo, acciaio, copri
 }
 
 export function modificaSezione(m, { id, ...campi }) {
-  sezioneEsistente(m, id);
+  const vecchia = sezioneEsistente(m, id);
   const n = copia(m);
   const s = n.sezioni.find((k) => k.id === id);
   if ("b" in campi) s.b = positivo(campi.b, "b");
@@ -254,12 +272,13 @@ export function modificaSezione(m, { id, ...campi }) {
     }
   }
   geometriaAccettabile(s);
+  if (!cambiata(vecchia, s)) return m;
   marcaModificata(s);
   return n;
 }
 
 export function impostaFila(m, { id, lato, n: quante, diametro }) {
-  sezioneEsistente(m, id);
+  const vecchia = sezioneEsistente(m, id);
   if (!LATI.includes(lato)) throw new ErroreComando(`lato «${lato}» sconosciuto`, `i lati sono ${LATI.join(", ")}`);
   if (!Number.isInteger(quante) || quante < 0) throw new ErroreComando("il numero di barre è un intero, zero o più", "zero toglie la fila");
   const n = copia(m);
@@ -268,6 +287,7 @@ export function impostaFila(m, { id, lato, n: quante, diametro }) {
   if (quante > 0) { positivo(diametro, "diametro"); s.file.push({ lato, n: quante, diametro }); }
   s.file.sort((a, b) => LATI.indexOf(a.lato) - LATI.indexOf(b.lato));
   geometriaAccettabile(s);
+  if (!cambiata(vecchia, s)) return m;
   marcaModificata(s);
   return n;
 }
@@ -280,6 +300,7 @@ export function assegnaSezione(m, { asta, sezione: idSezione }) {
   const n = copia(m);
   const b = n.aste.find((k) => k.id === asta);
   b.sezione = idSezione;
+  if (!cambiata(a, b)) return m;
   marcaModificata(b);
   return n;
 }
@@ -308,7 +329,8 @@ export function creaMateriale(m, { tipo, classe, nome = null, classi = null }) {
 }
 
 export function modificaMateriale(m, { id, ...campi }) {
-  if (!materiale(m, id)) throw new ErroreComando(`il materiale ${id} non esiste`, "seleziona un materiale dall'albero");
+  const vecchio = materiale(m, id);
+  if (!vecchio) throw new ErroreComando(`il materiale ${id} non esiste`, "seleziona un materiale dall'albero");
   const n = copia(m);
   const k = n.materiali.find((x) => x.id === id);
   if ("classe" in campi) k.classe = classeValida(campi.classe);
@@ -326,6 +348,7 @@ export function modificaMateriale(m, { id, ...campi }) {
     }
     k.legame = { ...(k.legame ?? {}), ...campi.legame };
   }
+  if (!cambiata(vecchio, k)) return m;
   marcaModificata(k);
   return n;
 }
@@ -352,7 +375,8 @@ export function materialiDiDefault(m) {
 
 // --- danno e veste ------------------------------------------------------------------------
 export function impostaDanno(m, { asta, danno }) {
-  if (!m.aste.some((k) => k.id === asta)) throw new ErroreComando(`l'asta ${asta} non esiste`, "seleziona un'asta e ripeti");
+  const vecchia = m.aste.find((k) => k.id === asta);
+  if (!vecchia) throw new ErroreComando(`l'asta ${asta} non esiste`, "seleziona un'asta e ripeti");
   const n = copia(m);
   const a = n.aste.find((k) => k.id === asta);
   if (danno === null || danno === undefined) delete a.danno;
@@ -364,6 +388,7 @@ export function impostaDanno(m, { asta, danno }) {
     }
     a.danno = { fattore_E, fattore_fc, nota: nota == null ? "" : String(nota) };
   }
+  if (!cambiata(vecchia, a)) return m;
   marcaModificata(a);
   return n;
 }
@@ -372,5 +397,7 @@ export function impostaVeste(m, { veste }) {
   if (!VESTI.includes(veste)) throw new ErroreComando(`veste «${veste}» sconosciuta`, `le vesti sono ${VESTI.join(", ")}`);
   const n = copia(m);
   n.impostazioni_analisi = { ...(n.impostazioni_analisi ?? { fibre: 10 }), veste };
-  return n;
+  // La veste già scelta nel menu: sceglierla di nuovo non è un comando. Il campo che prima
+  // non c'era invece sì, anche sulla veste di default — il modello lo porta da adesso.
+  return cambiata(m.impostazioni_analisi, n.impostazioni_analisi) ? n : m;
 }
