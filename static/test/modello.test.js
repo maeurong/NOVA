@@ -40,6 +40,10 @@ test("le letture su un modello vuoto non sollevano", () => {
   assert.equal(asta(m, 1), null);
   assert.deepEqual(asteDelNodo(m, 1), []);
   assert.equal(nodoVicino(m, 0, 0, 0), null);
+  assert.equal(sezione(m, 1), null);
+  assert.equal(materiale(m, 1), null);
+  assert.deepEqual(asteDellaSezione(m, 1), []);
+  assert.deepEqual(sezioniDelMateriale(m, 1), []);
 });
 
 test("asteDelNodo trova l'asta da entrambe le estremità", () => {
@@ -75,7 +79,7 @@ test("asteDellaSezione e sezioniDelMateriale elencano chi referenzia", () => {
   const m = modelloVuoto();
   m.materiali.push({ id: 1, nome: "C25/30", tipo: "calcestruzzo", classe: "C25/30", valori: {}, personalizzato: false });
   m.sezioni.push({ id: 1, nome: "300 × 500", tipo: "rettangolare", b: 300, h: 500, calcestruzzo: 1, acciaio: 2, copriferro: 30, file: [], staffe: null });
-  m.aste.push({ id: 1, nome: null, nodo_i: 1, nodo_j: 2, sezione: 1 }, { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: null });
+  m.aste.push({ id: 1, nome: null, nodo_i: 7, nodo_j: 2, sezione: 1 }, { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: null });
   assert.deepEqual(asteDellaSezione(m, 1).map((a) => a.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 1).map((s) => s.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 2).map((s) => s.id), [1]);

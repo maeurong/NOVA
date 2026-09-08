@@ -3,7 +3,7 @@
 // `/api/modello/salva` e verso `/api/check`: qualunque rinomina qui diventerebbe un campo
 // rifiutato là (`extra="forbid"` su `_Base`, `nova/modello.py:40`).
 //
-// `impostazioni_analisi` c'è dalla giornata 11b: `nova/modello.py:349-352`, la veste
+// `impostazioni_analisi` c'è dalla giornata 11b: `nova/modello.py:349-351`, la veste
 // è una per modello.
 
 export const UNITA = "mm-N-MPa-t-s";
@@ -49,7 +49,7 @@ export const sezione = (m, id) => m.sezioni.find((s) => s.id === id) ?? null;
 export const materiale = (m, id) => m.materiali.find((k) => k.id === id) ?? null;
 export const asteDellaSezione = (m, id) => m.aste.filter((a) => a.sezione === id);
 export const sezioniDelMateriale = (m, id) => m.sezioni.filter((s) => s.calcestruzzo === id || s.acciaio === id);
-/** La veste dell'analisi, una per modello (`nova/modello.py:349-352`). I file salvati prima
+/** La veste dell'analisi, una per modello (`nova/modello.py:349-351`). I file salvati prima
  *  della 11b non portano il campo: il server lo riempie col default, e qui si fa lo stesso. */
 export const vesteDi = (m) => m.impostazioni_analisi?.veste ?? "media";
 
