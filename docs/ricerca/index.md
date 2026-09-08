@@ -30,3 +30,18 @@ Le ricerche 10-15 nascono con il criterio a tre campi per riferimento (URL · pe
 conta qui · cosa se ne prende); le 01-09 lo precedono e ricevono il campo in una
 sezione «Cosa se ne prende» in coda a ciascuna. Una ricerca nuova aggiunge qui la
 propria riga.
+
+## Riferimenti da usare
+
+Decisi da Mario l'08/09/2026: raccomandati dalle ricerche e mai ripresi a valle, entrano qui
+come riferimenti che il primo piano su verifiche o validazione deve citare. Stessa forma a
+tre campi; il dettaglio sta nelle ricerche, alle righe indicate.
+
+- **URL** https://github.com/fib-international/structuralcodes · [V] sorgente letto — `14-studio-italiano.md:328-346`, `:652-664`; `06-dominio-analisi-verifiche-formati.md:63`, `:153`
+  **perché conta qui** nessuna libreria PyPI implementa le NTC 2018 [NON TROVATO]; le formule NTC del taglio e della fessurazione sono le stesse di EN 1992-1-1 con i parametri dell'Appendice Nazionale gia' nel testo, e `structuralcodes` (fib, Apache-2.0, EC2-2004) e' l'unica libreria viva con Eurocodice e provenienza normativa
+  **cosa se ne prende** il motore per M-N, M-χ, domini d'interazione, taglio e fessurazione — **come motore, non come autorita' normativa**: `alpha_cc=0.85` passato esplicitamente ovunque con un test che fallisce se manca (default 1,0 → f_cd del 17,6 % piu' alta); un guscio NTC sottile che possiede cio' che nessuna libreria ha (Tab. 4.1.IV, `[4.1.15]`-`[4.1.17]`, `[4.1.45]`/`[4.1.46]`, h/200 ≥ 20 mm, verdetti a tre valori); ogni funzione del guscio con l'articolo nel nome o nel docstring; `VRds` provata sul bordo 21,8°-45°
+
+- **URL** https://doi.org/10.1016/j.dib.2017.12.015 · [V] — Morandi, Hak, Magenes 2018, *Data in Brief* 16:886-904, CC BY 4.0 — `06-dominio-analisi-verifiche-formati.md:126`, `:155`
+  **perché conta qui** un telaio in c.a. monopiano monocampata in scala reale provato ciclicamente, stessa tipologia di NOVA: la configurazione TNT (telaio nudo fino a drift 3,5 %) e' un risultato di laboratorio, non un altro calcolo; C28/35 (f_cm 34 MPa), B450C, 400 kN costanti per colonna; geometria in *Eng. Struct.* 156:503-521
+  **cosa se ne prende** l'oracolo sperimentale aperto per la pushover ciclica: curve F-d e materiali dall'xlsx (8,2 MB) da confrontare con la curva che NOVA calcola; in coppia con `RCFrameGravity` di OpenSees, che e' l'oracolo del generatore — uno prova il modello contro la fisica, l'altro il codice contro un risultato noto
+
