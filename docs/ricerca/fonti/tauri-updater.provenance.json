@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://v2.tauri.app/plugin/updater/",
+  "sha256": "d59866a5e2462389d278f41f31702fad39c155857b1b53a8b88d190893ef6f7f",
+  "bytes": 15137
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

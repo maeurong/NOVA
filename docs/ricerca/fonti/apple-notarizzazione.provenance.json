@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution",
+  "sha256": "675e9d134a0cc37aa3c20a07e75a241228bb896ce2584b4a769a2c2057379cc8",
+  "bytes": 11329
+ },
+ "tool": "appledoc.py (API DocC di developer.apple.com)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

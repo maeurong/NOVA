@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation",
+  "sha256": "d8382537c88c0dd4f5b012e6aae8be33af5520bd9339bfb1023b6459c8e2a033",
+  "bytes": 1016
+ },
+ "tool": "appledoc.py (API DocC di developer.apple.com)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

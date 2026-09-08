@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/support/enrollment/",
+  "sha256": "67ffae85645a7f99e41d7245d194be6d7f746e655f718f7b55d60c4040e89579",
+  "bytes": 10786
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

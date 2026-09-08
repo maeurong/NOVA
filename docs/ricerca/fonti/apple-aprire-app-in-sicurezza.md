@@ -1,0 +1,85 @@
+macOS includes a technology called Gatekeeper, that's designed to ensure that only trusted software runs on your Mac.
+
+The safest place to get apps for your Mac is the [App Store](https://support.apple.com/en-us/111105). Apple reviews each app in the App Store before it’s accepted and signs it to ensure that it hasn’t been tampered with or altered. If there’s ever a problem with an app, Apple can quickly remove it from the store.
+
+If you download and install apps from the internet or directly from a developer, macOS continues to protect your Mac.
+
+- When you install Mac apps, plug-ins, and installer packages from outside the App Store, macOS checks the Developer ID signature to verify that the software is from an identified developer and that it has not been altered.
+- By default, macOS Catalina and later also requires software to be notarized, so you can be confident that the software you run on your Mac doesn't contain known malware.An app that has been notarized by Apple indicates that Apple checked it for malicious software and none was detected.
+- Before opening downloaded software for the first time, macOS requests your approval to make sure you aren’t misled into running software you didn’t expect.
+
+Running software that hasn’t been signed and notarized may expose your computer and personal information to malware that can harm your Mac or compromise your privacy.
+
+## If your Mac displays an alert when you open an app
+
+The warning messages displayed below are examples, and it's possible that you could see a similar message that isn't displayed here. Please use caution if you choose to install any software for which your Mac displays an alert.
+
+### Alert that the app was downloaded from the Internet
+
+The first time that you open a new app from an identified developer that you downloaded outside the App Store, your Mac asks if you’re sure that you want to open it.
+
+### Alert that Apple cannot check the app for malicious software
+
+![Alert message stating "Apple cannot check 'Example App' for malicious software" with options to "Move to Trash" or "Done".](https://cdsassets.apple.com/live/7WUAS350/images/macos/sequoia/macos-sequoia-app-not-opened-could-not-verify-free-from-malware.png)
+
+If Apple can't check an app for malicious software:
+
+- [Contact the app developer for more information](https://support.apple.com/en-us/103190)
+- Check the App Store for an updated version or search for an alternative app.
+- If you’re certain that the app is from a trustworthy source and hasn’t been tampered with,
+
+### Alert that the app developer cannot be verified
+
+If the app developer can't be verified and — in macOS Catalina and later — the app hasn't been notarized by Apple, macOS can't verify that the app is free of malware.
+
+- Check the App Store for an updated version or search for an alternative app.
+- If you're certain that the app is from a trustworthy source and hasn't been tampered with,
+
+### Alert that the app wasn't downloaded from the App Store
+
+If your Privacy & Security settings allow apps from only the App Store, macOS won't open an app that wasn't downloaded from the App Store.
+
+- If you're certain that the app is from a trustworthy source and hasn't been tampered with,
+
+### Alert that the app will damage your computer or the app is damaged
+
+![An alert that an app containing malware was blocked from opening and has been moved to Trash. You might be asked to send a copy of the malware to Apple.](https://cdsassets.apple.com/live/7WUAS350/images/macos/sequoia/macos-sequoia-malware-blocked-and-moved-to-trash-app-not-opened-contains-malware-send-to-apple.png)
+- If macOS detects that software has malicious content or its authorization has been revoked for any reason, your Mac notifies you that the app will damage your computer.
+- If macOS detects that software has been modified or damaged, your Mac notifies you that the app can't be opened. The app might be broken or corrupted, or it might have been tampered with.
+- If macOS detects known malware, your Mac notifies you that the app can't be opened and moves it to the Trash. You might be asked to anonymously share a copy of the malware with Apple to help improve macOS security. If you choose to share, macOS uploads only the malware executable itself (or the containing app bundle, if the executable is contained in a bundle) and nothing else.
+
+## If you want to open an app that hasn’t been notarized or is from an unidentified developer
+
+Running software that hasn’t been signed and notarized might expose your computer and personal information to malware that can harm your Mac or compromise your privacy.
+
+If you’re certain that an app that you want to open is from a trustworthy source and hasn’t been tampered with, you might be able to temporarily override your Mac security settings to open it.
+
+After you've tried to open the app, follow these steps:
+
+1. Open System Settings.
+2. Click Privacy & Security, scroll down, and click the Open Anyway button to confirm your intent to open or install the app.
+	![Screenshot of macOS System Settings > Privacy & Security panel, highlighting the "Open Anyway" button for overriding security warnings.](https://cdsassets.apple.com/live/7WUAS350/images/macos/sequoia/macos-sequoia-system-settings-privacy-and-security-open-app-anyway.png)
+3. The warning prompt reappears and, if you're absolutely sure that you want to open the app anyway, you can click Open.
+
+The app is now saved as an exception to your security settings, and you can open it in the future by double-clicking it, just as you can any authorized app.
+
+### Change the app security settings on your Mac
+
+1. In System Settings, click Privacy & Security. Then scroll down to Security.
+2. Under "Allow apps downloaded from," select an option:\*
+	- App Store: Allow only apps that have been downloaded from the App Store
+		- App Store and identified developers: Allow apps that have been downloaded from the App Store and from developers identified by Apple.
+
+\* These settings might not be available if your Mac is managed by a system administrator or IT department.
+
+## Privacy protections
+
+macOS has been designed to keep you and your data safe while respecting your privacy.
+
+Gatekeeper performs online checks to verify if an app contains known malware and whether the developer’s signing certificate is revoked. We have never combined data from these checks with information about Apple users or their devices. We do not use data from these checks to learn what individual users are using on their devices.
+
+Notarization checks if the app contains known malware using an encrypted connection that is resilient to server failures.
+
+These security checks have never included the user’s Apple Account or the identity of their device. To further protect privacy, we don't log IP addresses associated with Developer ID certificate checks, and we make sure that any collected IP addresses are removed from logs.
+
+Published Date: May 27, 2026

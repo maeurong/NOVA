@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://support.apple.com/en-us/102445",
+  "sha256": "91259abc913d82cd4cf69cb695bb6e122e080e5b00103decb2bed9357cd71dbb",
+  "bytes": 7008
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}
