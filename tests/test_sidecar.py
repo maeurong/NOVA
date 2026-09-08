@@ -1573,10 +1573,12 @@ def test_materiale_acciaio_rifiuta_una_classe_di_calcestruzzo():
         Materiale(id=2, nome="acc", tipo="acciaio", classe="C25/30")
 
 
-def test_materiale_personalizzato_fuori_catalogo_non_ha_famiglia_da_confrontare():
+@pytest.mark.parametrize("tipo, valori", [("calcestruzzo", {"fck": 18.0}),
+                                          ("acciaio", {"fyk": 380.0})])
+def test_materiale_personalizzato_fuori_catalogo_non_ha_famiglia_da_confrontare(tipo, valori):
     from nova.modello import Materiale
-    k = Materiale(id=1, nome="cls in opera", tipo="calcestruzzo", classe="C mio",
-                  personalizzato=True, valori={"fck": 18.0})
+    k = Materiale(id=1, nome="in opera", tipo=tipo, classe="C mio",
+                  personalizzato=True, valori=valori)
     assert k.classe == "C mio"
 
 
@@ -1586,3 +1588,14 @@ def test_carica_rifiuta_un_materiale_con_la_classe_dell_altra_famiglia():
     d["materiali"][0]["tipo"] = "acciaio"
     with pytest.raises(ValueError, match=r"non acciaio"):
         carica(d)
+
+
+# `personalizzato` vuol dire «i valori li scrivo io», non «il tipo non conta»: con la classe
+# a catalogo la famiglia c'e' e si legge, e `catalogo.valori` prende comunque i suoi numeri
+# dalla voce di norma — `acciaio` + `C25/30` rispondeva 200 con `f_y` = 25.
+
+def test_materiale_personalizzato_non_scavalca_la_famiglia():
+    from nova.modello import Materiale
+    with pytest.raises(ValueError, match=r"classe C25/30 è calcestruzzo, non acciaio"):
+        Materiale(id=2, nome="acc", tipo="acciaio", classe="C25/30", personalizzato=True,
+                  valori={"fyk": 450.0})

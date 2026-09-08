@@ -768,3 +768,16 @@ def test_salva_con_sezione_nulla_dice_deve_essere_un_numero_intero(cliente, tmp_
     assert r.status_code == 400
     motivo = r.json()["motivo"]
     assert "aste.0.sezione" in motivo and "deve essere un numero intero" in motivo
+
+
+def test_legame_personalizzato_non_scavalca_la_famiglia(cliente):
+    # Il gemello del test qui sopra con `personalizzato: true`: la spunta non e' una deroga
+    # sul tipo, e il rifiuto resta in italiano — mai il gergo di un'eccezione Python.
+    r = cliente.post("/api/materiale/legame",
+                     json={"materiale": _acc(classe="C25/30", personalizzato=True,
+                                             valori={"fyk": 450.0})})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
+    for gergo in ("Traceback", "TypeError", "KeyError", "unsupported operand", "NoneType"):
+        assert gergo not in motivo, motivo

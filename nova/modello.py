@@ -201,10 +201,9 @@ class Materiale(_Base):
 
     @model_validator(mode="after")
     def _la_classe_esiste_nel_catalogo(self):
-        """Se non è un materiale a valori scritti a mano, la classe deve esistere di norma —
-        e deve essere della **famiglia** del `tipo`.
+        """La classe deve esistere di norma, e deve essere della **famiglia** del `tipo`.
 
-        Senza il secondo confronto la coppia passava: `calcestruzzo` + `B450C` arrivava a
+        Senza il confronto la coppia passava: `calcestruzzo` + `B450C` arrivava a
         `legami.veste_valori`, che moltiplicava l'`f_ctm` che l'acciaio non ha (`None`) e
         sollevava `TypeError`, cioè un 500 nudo; `acciaio` + `C25/30` rispondeva 200 con
         `f_y` = 25, la resistenza di un calcestruzzo spacciata per acciaio — un numero finto,
@@ -212,16 +211,20 @@ class Materiale(_Base):
         (`meshrec/core/materiali.py:134`) è la riga che divide le due liste del catalogo,
         la stessa che `/api/catalogo` legge.
 
-        Con `personalizzato` non si confronta niente: la classe può stare fuori catalogo, e
-        fuori catalogo non c'è nessuna famiglia da leggere.
+        `personalizzato` vuol dire «i valori li scrivo io», **non** «il tipo non conta»: la
+        sola deroga è la classe fuori catalogo, dove non c'è nessuna famiglia da leggere. Con
+        una classe a catalogo la famiglia c'è e si confronta comunque, perché `catalogo.valori`
+        anche allora parte dalla voce di norma e solo dopo ci scrive sopra i valori a mano —
+        `acciaio` + `C25/30` + `personalizzato` rispondeva 200 con `f_y` = 25 lo stesso.
         """
-        if not self.personalizzato:
-            try:
-                voce = _materiali.trova(self.classe)
-            except KeyError as e:
-                raise ValueError(str(e.args[0])) from None
-            if voce.famiglia != self.tipo:
-                raise ValueError(f"classe {self.classe} è {voce.famiglia}, non {self.tipo}")
+        try:
+            voce = _materiali.trova(self.classe)
+        except KeyError as e:
+            if self.personalizzato:
+                return self  # fuori catalogo: nessuna voce, quindi nessuna famiglia
+            raise ValueError(str(e.args[0])) from None
+        if voce.famiglia != self.tipo:
+            raise ValueError(f"classe {self.classe} è {voce.famiglia}, non {self.tipo}")
         return self
 
 

@@ -275,10 +275,12 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
             valori = _legami.veste_valori(mat, corpo.veste)
             curva = (_legami.legame_copriferro(mat, corpo.veste) if mat.tipo == "calcestruzzo"
                      else _legami.acciaio(mat, corpo.veste))
-        # `TypeError` e `KeyError` non sono ipotesi: un materiale che arriva qui con una
-        # grandezza assente per la sua famiglia le solleva dentro `legami.py`, e da un 500
-        # nudo chi usa l'interfaccia non ricava niente. Il rifiuto porta il motivo.
-        except (ValueError, TypeError, KeyError) as e:  # pydantic.ValidationError è un ValueError
+        # Solo `ValueError`. `TypeError` e `KeyError` ci erano finiti quando la coppia
+        # tipo/classe incoerente arrivava fin qui; adesso `Materiale` la rifiuta prima, e
+        # una classe fuori catalogo la rifiuta `catalogo.valori` con un `ValueError` suo.
+        # Prenderle qui non serviva più e portava il gergo di un'eccezione Python nel
+        # `motivo` che l'utente legge.
+        except ValueError as e:  # pydantic.ValidationError è un ValueError
             raise HTTPException(400, detail={"motivo": str(e)})
         return {"valori": valori, "catalogo": tabella, "legame": curva}
 
