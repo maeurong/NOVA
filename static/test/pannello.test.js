@@ -3,18 +3,21 @@ import assert from "node:assert/strict";
 import { righe, prossimoVincolo, copiaPreimpostazione, presetPremuto, creaPannello }
   from "../pannello.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "../vincoli.js";
-import { creaNodo, estrudi } from "../comandi.js";
+import { creaNodo, estrudi, creaSezione, materialiDiDefault } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
 
 function elementoFinto() {
   const listeners = {};
   return {
     type: "", textContent: "", checked: false, hidden: false, className: "", id: "",
+    // `value` e `selected` per i campi e le voci dei tre editor della 11b; `innerHTML` perché
+    // il disegno della sezione e la curva del legame arrivano come stringa SVG già fatta.
+    value: "", selected: false, innerHTML: "",
     _figli: [], _attrs: {},
     setAttribute(k, v) { this._attrs[k] = String(v); },
     getAttribute(k) { return this._attrs[k]; },
     addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
-    dispatch(ev) { (listeners[ev] ?? []).forEach((fn) => fn()); },
+    dispatch(ev, bersaglio) { (listeners[ev] ?? []).forEach((fn) => fn(bersaglio ? { target: bersaglio } : undefined)); },
     append(...figli) { this._figli.push(...figli); },
     replaceChildren(...figli) { this._figli = figli; },
     // Il fuoco: un `focus()` finto che sposta `document.activeElement`, per provare che
@@ -157,11 +160,35 @@ test("presetPremuto: la preimpostazione giusta è premuta, le altre no", () => {
 
 // --- creaPannello: wiring DOM ---
 
-function pannelloFinto(suVincolo = () => {}) {
+const AZIONI = ["suVincolo", "suSezione", "suFila", "suAssegna", "suDanno", "suMateriale",
+                "suVeste", "suAvviso"];
+
+// Un registratore per azione: un solo argomento entra com'è (`suAvviso("…")`, `suVeste("media")`),
+// due o più entrano come lista (`suAssegna(1, null)` → `[1, null]`).
+function pannelloFinto(suVincolo = null) {
+  const chiamate = Object.fromEntries(AZIONI.map((k) => [k, []]));
+  const azioni = Object.fromEntries(AZIONI.map((k) =>
+    [k, (...a) => chiamate[k].push(a.length === 1 ? a[0] : a)]));
+  if (suVincolo) azioni.suVincolo = suVincolo;
   const dati = elementoFinto(), vuoto = elementoFinto(), editor = elementoFinto();
-  const p = creaPannello({ dati, vuoto, editor }, { suVincolo });
-  return { p, dati, vuoto, editor };
+  const p = creaPannello({ dati, vuoto, editor }, azioni);
+  return { p, pannello: p, dati, vuoto, editor, chiamate };
 }
+
+// Due nodi, un'asta (id 1), i due materiali di default (1 calcestruzzo, 2 acciaio) e una
+// sezione 300 × 500 (id 1). `conSezione` è lo stesso senza nodi né aste.
+function conSezione() {
+  const { modello } = materialiDiDefault(modelloVuoto());
+  return creaSezione(modello, { b: 300, h: 500, calcestruzzo: 1, acciaio: 2 });
+}
+function conSezioneEAsta() {
+  const { modello } = materialiDiDefault(CON_CERNIERA());
+  return creaSezione(modello, { b: 300, h: 500, calcestruzzo: 1, acciaio: 2 });
+}
+const conStaffe = (m) => {
+  m.sezioni[0].staffe = { diametro: 8, passo: 150, bracci: 2 };
+  return m;
+};
 
 test("disegna: nessuna selezione mostra il vuoto, dati ed editor spariscono davvero", () => {
   const { p, dati, vuoto, editor } = pannelloFinto();
@@ -180,16 +207,19 @@ test("disegna: selezione su un id sparito non solleva, e si comporta come nessun
   assert.equal(dati.hidden, true);
 });
 
-test("disegna: un'asta selezionata mostra i dati ma non l'editor del vincolo", () => {
+test("disegna: un'asta selezionata mostra i dati e il suo editor, non quello del vincolo", () => {
   const m = CON_CERNIERA();
   const { p, dati, vuoto, editor } = pannelloFinto();
   p.disegna(m, { tipo: "asta", id: m.aste[0].id });
   // C1: le tre direzioni «visibile», non solo «nascosto» — un mutante che tiene tutto
-  // nascosto passerebbe se si asserisse solo l'assenza dell'editor.
+  // nascosto passerebbe se si asserisse solo la forma dell'editor.
   assert.equal(vuoto.hidden, true);
   assert.equal(dati.hidden, false);
-  assert.equal(editor.hidden, true);
-  assert.deepEqual(editor._figli, []);
+  assert.equal(editor.hidden, false);
+  // Dalla 11b l'asta ha il suo editor: i due gruppi sono «sezione» e «danno dal rilievo»,
+  // e i sei gradi del vincolo non compaiono (quelli restano dei nodi).
+  assert.deepEqual(editor._figli.map((f) => f._figli[0].textContent), ["sezione", "danno dal rilievo"]);
+  assert.ok(editor._figli.every((f) => !f.className.includes("vincolo")));
 });
 
 // --- mutante: campi precedenti non ripuliti al cambio di selezione ---
@@ -203,13 +233,14 @@ test("disegna: passare da un nodo a nessuna selezione svuota l'editor, non solo 
   assert.deepEqual(editor._figli, []);
 });
 
-test("disegna: passare da un nodo a un'asta svuota l'editor, non solo lo nasconde", () => {
+test("disegna: passare da un nodo a un'asta sostituisce l'editor, non ci accumula sopra", () => {
   const m = CON_CERNIERA();
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "nodo", id: 1 });
-  assert.ok(editor._figli.length > 0);
+  assert.deepEqual(editor._figli.map((f) => f.className),
+    ["vincolo-preimpostazioni", "vincolo-gradi"]);
   p.disegna(m, { tipo: "asta", id: m.aste[0].id });
-  assert.deepEqual(editor._figli, []);
+  assert.deepEqual(editor._figli.map((f) => f._figli[0].textContent), ["sezione", "danno dal rilievo"]);
 });
 
 // --- l'editor per un nodo: tre preimpostazioni + libero, sei caselle ---
@@ -309,4 +340,367 @@ test("disegna: il fuoco altrove non viene rubato quando l'editor si ricostruisce
   globalThis.document.activeElement = altrove;
   p.disegna(m, { tipo: "nodo", id: 1 });
   assert.equal(globalThis.document.activeElement, altrove);
+});
+
+// ==========================================================================================
+// 11b: gli editor di asta, sezione e materiale
+// ==========================================================================================
+
+// Il legame come lo consegna il server (Task 1 → Task 9): `{valori, catalogo, legame}`.
+const LEGAME_C25 = {
+  valori: { avvisi: [], note: ["valori medi, §C8.5.4"] },
+  catalogo: { E: 31476, nu: 0.2, densita: 2.5e-9, fck: 25 },
+  legame: { tipo: "concrete02", fpc: -25, epsc0: -0.002, fpcu: -5, epsU: -0.0035,
+            ft: 2.5, Ec: 31476, lambda: 0.1, articolo: "NTC 2018 §4.1.2.1.2.2" },
+};
+
+// --- riga 1: la sezione selezionata sparisce sotto i piedi (⌘Z dopo S) ---
+
+test("righe: selezione su una sezione sparita torna null, editor vuoto, nessuna eccezione", () => {
+  const m = conSezione();
+  const { p, dati, vuoto, editor } = pannelloFinto();
+  assert.equal(righe(m, { tipo: "sezione", id: 99 }), null);
+  assert.doesNotThrow(() => p.disegna(m, { tipo: "sezione", id: 99 }));
+  assert.equal(vuoto.hidden, false);
+  assert.equal(dati.hidden, true);
+  assert.equal(editor.hidden, true);
+  assert.deepEqual(editor._figli, []);
+});
+
+// --- riga extra del controller: un tipo che l'ispettore non conosce ---
+
+test("righe: una selezione di tipo ignoto torna null e non solleva", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  assert.equal(righe(m, { tipo: "azione", id: 1 }), null);
+  assert.doesNotThrow(() => p.disegna(m, { tipo: "azione", id: 1 }));
+  assert.deepEqual(editor._figli, []);
+});
+
+// --- riga 2: asta senza sezione ---
+
+test("editorAsta: asta senza sezione dice «non assegnata» e tiene il select sulla voce vuota", () => {
+  const m = conSezioneEAsta();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "asta", id: 1 });
+  const r = new Map(righe(m, { tipo: "asta", id: 1 }));
+  assert.equal(r.get("sezione"), "non assegnata");
+  const opzioni = editor._figli[0]._figli[1]._figli[1]._figli;
+  assert.deepEqual(opzioni.map((o) => [o.textContent, o.selected]),
+    [["— non assegnata", true], ["300 × 500", false]]);
+});
+
+test("righe: asta con sezione la dice per nome, non per identificatore", () => {
+  const m = conSezioneEAsta();
+  m.aste[0].sezione = 1;
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("sezione"), "300 × 500");
+});
+
+// --- riga 3: danno senza nota, niente trattino appeso ---
+
+test("righe: il danno senza nota non appende il separatore", () => {
+  const m = CON_CERNIERA();
+  m.aste[0].danno = { fattore_E: 0.8, fattore_fc: 0.9, nota: "" };
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("danno"), "E ×0,8 · fc ×0,9");
+});
+
+test("righe: il danno con nota la mette in coda, e senza danno dice «nessuno»", () => {
+  const m = CON_CERNIERA();
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("danno"), "nessuno");
+  m.aste[0].danno = { fattore_E: 0.8, fattore_fc: 0.9, nota: "martinetto 3" };
+  assert.equal(new Map(righe(m, { tipo: "asta", id: 1 })).get("danno"),
+    "E ×0,8 · fc ×0,9 · martinetto 3");
+});
+
+// --- riga 4: senza staffe il deck non colloca le barre ---
+
+test("editorSezione: senza staffe e con file non c'è nessun cerchio, e lo dice", () => {
+  const m = conSezione();
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const disegno = editor._figli.find((e) => e.className === "sezione-disegno");
+  assert.ok(disegno.innerHTML.includes("<rect"), "il contorno c'è");
+  assert.ok(!disegno.innerHTML.includes("<circle"), "nessuna barra collocata");
+  const nota = editor._figli.at(-1);
+  assert.equal(nota.className, "nota");
+  assert.equal(nota.textContent, "senza staffe il deck non colloca le barre: aggiungile per vederle");
+});
+
+// --- riga 5: geometria impossibile ---
+
+test("editorSezione: geometria impossibile disegna il contorno, nessun cerchio, e avvisa col motivo", () => {
+  const m = conStaffe(conSezione());
+  m.sezioni[0].file = [{ lato: "inf", n: 20, diametro: 16 }];
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const disegno = editor._figli.find((e) => e.className === "sezione-disegno");
+  assert.ok(disegno.innerHTML.includes("<rect"), "contorno e staffa restano");
+  assert.ok(!disegno.innerHTML.includes("<circle"), "nessuna barra collocata");
+  const avviso = editor._figli.at(-1);
+  assert.equal(avviso.className, "avviso");
+  // Il rosso non è l'unico canale: la parola viene prima del colore.
+  assert.ok(avviso.textContent.startsWith("attenzione: "), avviso.textContent);
+  assert.ok(avviso.textContent.includes("ingombrano"), avviso.textContent);
+});
+
+// --- riga 6: il catalogo delle classi non è arrivato ---
+
+test("editorMateriale: senza catalogo il select della classe ha la sola classe corrente, abilitato", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const sel = editor._figli[0]._figli[1]._figli[1];
+  assert.deepEqual(sel._figli.map((o) => o.textContent), ["C25/30"]);
+  assert.notEqual(sel.disabled, true);
+  assert.equal(sel.getAttribute("disabled"), undefined);
+});
+
+test("editorMateriale: col catalogo il select elenca le classi del tipo, con la corrente scelta", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 },
+    { catalogo: { calcestruzzo: ["C20/25", "C25/30", "C30/37"], acciaio: ["B450C"] }, legame: LEGAME_C25 });
+  const opzioni = editor._figli[0]._figli[1]._figli[1]._figli;
+  assert.deepEqual(opzioni.map((o) => [o.textContent, o.selected]),
+    [["C20/25", false], ["C25/30", true], ["C30/37", false]]);
+});
+
+// --- riga 7: il legame non è ancora arrivato ---
+
+test("editorMateriale: legame null dice che i valori sono in arrivo, e non stampa la dl", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null });
+  const lg = editor._figli.at(-1);
+  assert.equal(lg._figli[1].textContent, "valori in arrivo dal server…");
+  assert.equal(lg._figli.length, 2, "solo la legenda e la riga d'attesa");
+});
+
+// --- riga extra del controller: il terzo argomento manca del tutto ---
+
+test("disegna: senza il terzo argomento vale {catalogo: null, legame: null}", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  assert.doesNotThrow(() => p.disegna(m, { tipo: "materiale", id: 1 }));
+  const sel = editor._figli[0]._figli[1]._figli[1];
+  assert.deepEqual(sel._figli.map((o) => o.textContent), ["C25/30"]);
+  assert.equal(editor._figli.at(-1)._figli[1].textContent, "valori in arrivo dal server…");
+});
+
+// --- riga 8: il server ha risposto con un errore ---
+
+test("editorMateriale: legame con errore mostra l'avviso e nessuna curva", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: { errore: "classe X9 sconosciuta" } });
+  const lg = editor._figli.at(-1);
+  assert.equal(lg._figli[1].className, "avviso");
+  assert.equal(lg._figli[1].textContent, "attenzione: classe X9 sconosciuta");
+  assert.ok(!lg._figli.some((e) => (e.innerHTML ?? "").includes("<svg")), "nessuna curva");
+});
+
+test("editorMateriale: col legame arriva la curva, la dl dei valori e l'articolo", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const lg = editor._figli.at(-1);
+  const [disegno, dl, art] = lg._figli.slice(1);
+  assert.ok(disegno.innerHTML.includes("<path"), disegno.innerHTML.slice(0, 80));
+  assert.equal(dl._figli[0].textContent, "f_c");
+  assert.equal(dl._figli[1].textContent, "25 MPa");
+  assert.equal(art.textContent, "NTC 2018 §4.1.2.1.2.2");
+  assert.equal(lg._figli.at(-1).textContent, "valori medi, §C8.5.4");
+});
+
+// --- riga 9 (e uno dei due test «per intero» del brief) ---
+
+test("editorSezione: un testo che non è un numero avvisa, non modifica, e ripristina", () => {
+  const { pannello, editor, chiamate } = pannelloFinto();
+  pannello.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  const campoB = editor._figli[0]._figli[1]._figli[1];  // fieldset «dimensioni» → label b → input
+  assert.equal(campoB.value, "300");
+  campoB.value = "trecento"; campoB.dispatch("change");
+  assert.equal(chiamate.suSezione.length, 0);
+  assert.equal(chiamate.suAvviso[0], "«trecento» non è un numero");
+  assert.equal(campoB.value, "300");
+});
+
+test("editorSezione: un numero scritto all'italiana passa a suSezione letto, non come testo", () => {
+  const { pannello, editor, chiamate } = pannelloFinto();
+  pannello.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  const campoB = editor._figli[0]._figli[1]._figli[1];
+  campoB.value = "1.234,5"; campoB.dispatch("change");
+  assert.deepEqual(chiamate.suSezione, [[1, { b: 1234.5 }]]);
+});
+
+// --- riga 10: il fuoco per indice in `controlli` ---
+
+test("editorSezione: il campo a fuoco resta a fuoco dopo il ridisegno", () => {
+  const m = conSezione();
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const prima = editor._figli[0]._figli[2]._figli[1];  // il campo h
+  prima.focus();
+  m.sezioni[0].h = 600;
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const dopo = editor._figli[0]._figli[2]._figli[1];
+  assert.notEqual(dopo, prima, "l'editor si è ricostruito davvero");
+  assert.equal(dopo.value, "600");
+  assert.equal(globalThis.document.activeElement, dopo);
+});
+
+// --- riga 11: suDanno manda sempre i tre valori ---
+
+test("editorAsta: cambiare un fattore manda tutti e tre i valori, gli altri due ai default", () => {
+  const m = conSezioneEAsta();
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "asta", id: 1 });
+  const campoE = editor._figli[1]._figli[1]._figli[1];
+  campoE.value = "0,8"; campoE.dispatch("change");
+  assert.deepEqual(chiamate.suDanno, [[1, { fattore_E: 0.8, fattore_fc: 1, nota: "" }]]);
+});
+
+test("editorAsta: il bottone «togli danno» c'è solo se un danno c'è, e manda null", () => {
+  const m = conSezioneEAsta();
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "asta", id: 1 });
+  assert.ok(!editor._figli[1]._figli.some((e) => e.textContent === "togli danno"));
+  m.aste[0].danno = { fattore_E: 0.8, fattore_fc: 0.9, nota: "" };
+  p.disegna(m, { tipo: "asta", id: 1 });
+  const via = editor._figli[1]._figli.find((e) => e.textContent === "togli danno");
+  via.dispatch("click");
+  assert.deepEqual(chiamate.suDanno, [[1, null]]);
+});
+
+// --- l'altro test «per intero» del brief ---
+
+test("editorAsta: scegliere una sezione dal select chiama suAssegna con l'identificatore", () => {
+  const { pannello, editor, chiamate } = pannelloFinto();
+  const m = conSezioneEAsta();
+  pannello.disegna(m, { tipo: "asta", id: 1 });
+  const select = editor._figli[0]._figli[1]._figli[1];  // fieldset «sezione» → label → select
+  select.value = "1"; select.dispatch("change");
+  assert.deepEqual(chiamate.suAssegna, [[1, 1]]);
+  select.value = ""; select.dispatch("change");
+  assert.deepEqual(chiamate.suAssegna[1], [1, null]);
+});
+
+// --- ruling 2: «1 asta», non «1 aste» ---
+
+test("righe: la sezione usata da una sola asta dice «1 asta», non «1 aste»", () => {
+  const m = conSezioneEAsta();
+  const r = new Map(righe(m, { tipo: "sezione", id: 1 }));
+  assert.equal(r.get("usata da"), "0 aste");
+  m.aste[0].sezione = 1;
+  assert.equal(new Map(righe(m, { tipo: "sezione", id: 1 })).get("usata da"), "1 asta");
+});
+
+// --- le altre righe di `righeDiSezione` e `righeDiMateriale` ---
+
+test("righe: la sezione elenca staffe, barre e origine per esteso", () => {
+  const m = conStaffe(conSezione());
+  const vuota = new Map(righe(m, { tipo: "sezione", id: 1 }));
+  assert.equal(vuota.get("nome"), "300 × 500");
+  assert.equal(vuota.get("dimensioni"), "300 × 500 mm");
+  assert.equal(vuota.get("copriferro"), "30 mm");
+  assert.equal(vuota.get("calcestruzzo"), "C25/30");
+  assert.equal(vuota.get("acciaio"), "B450C");
+  assert.equal(vuota.get("staffe"), "Ø8 / 150, 2 bracci");
+  assert.equal(vuota.get("barre"), "nessuna");
+  assert.equal(vuota.get("riduzione"), "nessuna");
+  assert.equal(vuota.get("origine"), "—");
+
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }, { lato: "sup", n: 2, diametro: 16 },
+                       { lato: "sx", n: 1, diametro: 12 }, { lato: "dx", n: 1, diametro: 12 }];
+  m.sezioni[0].riduzione = { sup: 0, inf: 10, sx: 0, dx: 5 };
+  m.sezioni[0].origine = { sorgente: "rilievo", modificata: true };
+  const piena = new Map(righe(m, { tipo: "sezione", id: 1 }));
+  assert.equal(piena.get("barre"), "inf 3Ø16 · sup 2Ø16 · sx 1Ø12 · dx 1Ø12");
+  assert.equal(piena.get("riduzione"), "inf 10 · dx 5 mm");
+  assert.equal(piena.get("origine"), "rilievo, modificata");
+});
+
+test("righe: il materiale dice tipo, classe, personalizzato e origine", () => {
+  const m = conSezione();
+  const k = new Map(righe(m, { tipo: "materiale", id: 1 }));
+  assert.deepEqual([k.get("identificatore"), k.get("nome"), k.get("tipo"), k.get("classe")],
+    ["1", "C25/30", "calcestruzzo", "C25/30"]);
+  assert.equal(k.get("personalizzato"), "no");
+  assert.equal(k.get("origine"), "—");
+  m.materiali[0].personalizzato = true;
+  m.materiali[0].origine = { sorgente: "utente", modificata: false };
+  const p = new Map(righe(m, { tipo: "materiale", id: 1 }));
+  assert.equal(p.get("personalizzato"), "sì");
+  assert.equal(p.get("origine"), "utente");
+});
+
+// --- gli altri comandi degli editor, uno per azione ---
+
+test("editorSezione: senza staffe il bottone le aggiunge Ø8 / 150; con le staffe le toglie", () => {
+  const m = conSezione();
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const staffe = editor._figli[2];
+  assert.equal(staffe._figli[1].textContent, "aggiungi staffe Ø8 / 150");
+  staffe._figli[1].dispatch("click");
+  assert.deepEqual(chiamate.suSezione, [[1, { staffe: { diametro: 8, passo: 150, bracci: 2 } }]]);
+
+  p.disegna(conStaffe(conSezione()), { tipo: "sezione", id: 1 });
+  const via = editor._figli[2]._figli.find((e) => e.textContent === "togli staffe");
+  via.dispatch("click");
+  assert.deepEqual(chiamate.suSezione[1], [1, { staffe: null }]);
+});
+
+test("editorSezione: una fila manda a suFila il numero e il diametro correnti insieme", () => {
+  const m = conStaffe(conSezione());
+  m.sezioni[0].file = [{ lato: "inf", n: 3, diametro: 16 }];
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "sezione", id: 1 });
+  const barre = editor._figli[3];
+  const campoN = barre._figli[1]._figli[1];
+  campoN.value = "4"; campoN.dispatch("change");
+  assert.deepEqual(chiamate.suFila, [[1, "inf", 4, 16]]);
+  const campoDia = barre._figli[2]._figli[1];
+  campoDia.value = "20"; campoDia.dispatch("change");
+  assert.deepEqual(chiamate.suFila[1], [1, "inf", 3, 20]);
+});
+
+test("editorSezione: il select del calcestruzzo elenca i soli calcestruzzi e manda un numero", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "sezione", id: 1 });
+  const sel = editor._figli[1]._figli[1]._figli[1];
+  assert.deepEqual(sel._figli.map((o) => o.textContent), ["C25/30"]);
+  sel.value = "1"; sel.dispatch("change");
+  assert.deepEqual(chiamate.suSezione, [[1, { calcestruzzo: 1 }]]);
+});
+
+test("editorMateriale: la spunta «personalizzato» apre i valori del catalogo del legame", () => {
+  const m = conSezione();
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  assert.ok(!editor._figli.some((e) => (e._figli[0]?.textContent ?? "").startsWith("valori (")));
+  const spunta = editor._figli[0]._figli[2]._figli[0];
+  spunta.checked = true; spunta.dispatch("change");
+  assert.deepEqual(chiamate.suMateriale, [[1, { personalizzato: true }]]);
+
+  m.materiali[0].personalizzato = true;
+  p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const val = editor._figli[1];
+  assert.deepEqual(val._figli.slice(1).map((et) => et._figli[0].textContent), ["E", "nu", "densita", "fck"]);
+  const campoE = val._figli[1]._figli[1];
+  campoE.value = "30000"; campoE.dispatch("change");
+  assert.deepEqual(chiamate.suMateriale[1], [1, { valori: { E: 30000 } }]);
+});
+
+test("editorMateriale: la veste è del modello intero e manda suVeste", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(conSezione(), { tipo: "materiale", id: 1 }, { catalogo: null, legame: LEGAME_C25 });
+  const ve = editor._figli.at(-2);
+  assert.equal(ve._figli[0].textContent, "veste per l'analisi (tutto il modello)");
+  const sel = ve._figli[1]._figli[1];
+  assert.deepEqual(sel._figli.map((o) => [o.textContent, o.selected]),
+    [["caratteristica", false], ["media", true], ["progetto", false], ["esistente", false]]);
+  sel.value = "progetto"; sel.dispatch("change");
+  assert.deepEqual(chiamate.suVeste, ["progetto"]);
 });

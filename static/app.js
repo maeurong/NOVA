@@ -56,7 +56,7 @@ function scegli(tipo, id) {
 const piano = creaPiano($("piano"), { suSelezione: scegli, suSfondo: () => { if (!modo) { selezione = null; ridisegna(); } } });
 const albero = creaAlbero($("albero-elenco"), $("albero-vuoto"), { suSelezione: scegli });
 const pannello = creaPannello(
-  { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-vincolo") },
+  { dati: $("pannello-dati"), vuoto: $("pannello-vuoto"), editor: $("pannello-editor") },
   { suVincolo: (id, vincolo) => {
     esegui((m) => impostaVincolo(m, { id, vincolo }), `vincolo del nodo ${id}`);
     ridisegna();

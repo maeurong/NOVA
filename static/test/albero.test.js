@@ -74,13 +74,14 @@ test("un modello con soli nodi porta «Nodi» e nessun gruppo «Sezioni» o «Ma
 });
 
 // Mutante: il conteggio scritto zero fisso passerebbe l'ingresso degenere «0 aste».
+// E il singolare è singolare: «1 asta», non «1 aste» (zero resta plurale, riga 56).
 test("il conteggio delle aste della sezione è quello vero, non sempre zero", () => {
   const { albero, elenco } = alberoFinto();
   const m = conSezione();
   m.aste.push({ id: 1, nome: null, nodo_i: 1, nodo_j: 2, sezione: 1 },
                { id: 2, nome: null, nodo_i: 2, nodo_j: 3, sezione: null });
   albero.disegna(m, {});
-  assert.ok(testi(elenco).includes("300 × 500 · 300 × 500 mm · 1 aste"), JSON.stringify(testi(elenco)));
+  assert.ok(testi(elenco).includes("300 × 500 · 300 × 500 mm · 1 asta"), JSON.stringify(testi(elenco)));
 });
 
 test("«personalizzato» compare sul materiale che lo è, e su nessun altro", () => {

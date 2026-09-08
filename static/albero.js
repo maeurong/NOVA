@@ -41,9 +41,11 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     }
     gruppo("Sezioni", m.sezioni.length);
     for (const s of m.sezioni) {
+      // «1 asta», non «1 aste»: zero resta plurale, uno no. Stessa riga in `pannello.js`.
+      const quante = asteDellaSezione(m, s.id).length;
       righe.push({
         tipo: "sezione", id: s.id,
-        testo: `${s.nome} · ${mm(s.b)} × ${mm(s.h)} mm · ${asteDellaSezione(m, s.id).length} aste`,
+        testo: `${s.nome} · ${mm(s.b)} × ${mm(s.h)} mm · ${quante} ${quante === 1 ? "asta" : "aste"}`,
       });
     }
     gruppo("Materiali", m.materiali.length);
