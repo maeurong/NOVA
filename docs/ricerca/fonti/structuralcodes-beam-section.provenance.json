@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/fib-international/structuralcodes/0754aeaeb257d97b79f832e41ab38b9777c82878/structuralcodes/sections/_beam_section.py",
+  "sha256": "f0c58e13ca708773a92756e114826894878b9eb0d1c8d00d92a1a46286bc0ebd",
+  "bytes": 73975
+ },
+ "tool": "curl",
+ "tool_version": "8.7.1",
+ "extracted": "2026-09-08"
+}

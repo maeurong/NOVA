@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://opensees.github.io/OpenSeesDocumentation/_sources/user/manual/analysis/eigen.rst.txt",
+  "sha256": "3e23401ca903526e5fa15ff266ba5117c68f45926a30975a868f4e3077fe1651",
+  "bytes": 14185
+ },
+ "tool": "curl",
+ "tool_version": "8.7.1",
+ "extracted": "2026-09-08"
+}

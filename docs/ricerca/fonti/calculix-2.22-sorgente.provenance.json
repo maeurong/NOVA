@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "http://www.dhondt.de/ccx_2.22.src.tar.bz2",
+  "sha256": "8674f0be6729abc396b8ebff896a3975971d9a7f214078565c5cfa9409e1b929",
+  "bytes": 8795
+ },
+ "tool": "curl + tar + sed",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

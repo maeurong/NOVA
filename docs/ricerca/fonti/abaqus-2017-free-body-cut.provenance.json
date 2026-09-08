@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://abaqus-docs.mit.edu/2017/English/SIMACAECAERefMap/simacae-m-Fbd-sb.htm",
+  "sha256": "97b30a1ba9e1ead50955bcc5413c1675fb28f105506aee7c14b233681a720a93",
+  "bytes": 5191
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}

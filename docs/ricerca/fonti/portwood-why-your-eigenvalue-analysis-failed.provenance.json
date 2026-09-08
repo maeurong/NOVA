@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://portwooddigital.com/2026/01/27/why-your-eigenvalue-analysis-failed/",
+  "sha256": "7201ebf167fc87f072c28397846f6996a599119acf5f5028e8859963b574bbcd",
+  "bytes": 10622
+ },
+ "tool": "defuddle",
+ "tool_version": "0.19.1",
+ "extracted": "2026-09-08"
+}

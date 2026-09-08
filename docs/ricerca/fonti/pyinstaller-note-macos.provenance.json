@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://pyinstaller.org/en/stable/feature-notes.html",
+  "sha256": "633d2e0745448f4780bfa1b7a18370cfc4c53a312a4e9c4f3b2c486452812ee4",
+  "bytes": 91390
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

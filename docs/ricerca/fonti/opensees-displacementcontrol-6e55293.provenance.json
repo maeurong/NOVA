@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/analysis/integrator/DisplacementControl.cpp",
+  "sha256": "dc7b11f69115a3ad991cf7fff1b6f1d8d3077a28d32830262117fd78a3245ff0",
+  "bytes": 33553
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

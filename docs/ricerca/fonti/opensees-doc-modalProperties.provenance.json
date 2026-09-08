@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://opensees.github.io/OpenSeesDocumentation/_sources/user/manual/analysis/modalProperties.rst.txt",
+  "sha256": "6aaff2601591761429dfcd99ea71fda726cdae768b74346e3baf1939831c6706",
+  "bytes": 21727
+ },
+ "tool": "curl",
+ "tool_version": "8.7.1",
+ "extracted": "2026-09-08"
+}

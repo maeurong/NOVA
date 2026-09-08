@@ -181,3 +181,33 @@ Commerciali: https://www.aecplustech.com/tools/sap2000 · https://www.csi-italia
 Open source: https://prepomax.fs.um.si/version-2-6-0/ · https://blog.freecad.org/2024/09/28/major-fem-workbench-improvements-for-freecad-1-0/ · https://buy.karamba3d.com/products/pro-license · https://github.com/compas-dev/compas_fea · https://github.com/compas-dev/compas_fea2 · https://github.com/JWock82/Pynite · https://pypi.org/project/pynite-tools/0.7.0/ · https://lobehub.com/mcp/buildwellai-mcp-pynite · https://github.com/anastruct/anaStruct
 
 AI/intelligenti: https://arxiv.org/abs/2504.09754 · https://www.dlubal.com/en/support-and-learning/learning/webinars/002518 · https://skyciv.com/api/v3/docs/s3d-validator/ · https://stru.ai/blog/structural-engineering-ai-tools
+
+## Cosa se ne prende
+
+- **URL** https://www.frontiersin.org/journals/built-environment/articles/10.3389/fbuil.2023.1233116/full · [V]
+  **perché conta qui** 15 GUI OpenSees censite, nessuna con verifiche di norma; nessuno dei 20+ tool copre più di 3 assi su 6 (gratis, UI moderna, multi-OS, telai c.a., verifiche NTC/EC, vivo)
+  **cosa se ne prende** il «vuoto misurato dalla ricerca» citato testualmente nel Problem Statement della spec
+
+- **URL** https://github.com/ogunc/opensees-studio · [M]
+  **perché conta qui** AGPL-3.0, pre-alpha, 1 dev, zero verifiche di norma — il concorrente più vicino
+  **cosa se ne prende** l'Out of Scope: «contribuire a `opensees-studio` (AGPL)» escluso; licenza MIT scelta per NOVA
+
+- **URL** https://www.stko.net/stko-professional · [V]
+  **perché conta qui** unico prodotto che promette verifiche EC/NTC su OpenSees, «coming soon», licenza annuale — il vuoto è riconosciuto dal leader e monetizzato
+  **cosa se ne prende** il posizionamento della Solution: «OpenSees + verifiche NTC/EC su telai c.a. + UI pulita multi-OS», non l'ennesima GUI OpenSees
+
+- **URL** https://docs.csiamerica.com/help-files/etabs/Menus/Analyze/Check_Model.htm · [V]
+  **perché conta qui** raccomandazione: «auto-check deterministico del modello… è la funzione intelligente a costo minimo e valore massimo»
+  **cosa se ne prende** il Check Model (C1) deterministico prima di ogni corsa della spec, coi sedici controlli
+
+- **URL** https://xara.so/ · [V]
+  **perché conta qui** veux/xara sono web-first; nessun concorrente censito è multi-OS
+  **cosa se ne prende** la decisione «Nessuna finestra nativa in v1: si apre il browser» — piattaforma web invece di desktop Qt
+
+- **URL** https://www.ingenio-web.it/articoli/software-strutturale-pro-sap-stop-alle-versioni-gratuite-entry-ed-e-time-cosa-devono-fare-i-progettisti-entro-il-2026/ · [V]
+  **perché conta qui** la fascia gratuita italiana si restringe (PRO_SAP e-TIME spento 2026-07-31), nessun sostituto vivo
+  **cosa se ne prende** rinforza la scelta di licenza MIT/gratuita dichiarata nelle Implementation Decisions della spec
+
+- **URL** https://ingforum.it/community/discussione/consiglio-su-miglior-software-di-calcolo-gratuito-per-iniziare-la-professione.23868/ · [V]
+  **perché conta qui** «relazione di calcolo ed esecutivi sono il deliverable, non l'analisi» — senza relazione esportabile il tool non entra nello studio
+  **cosa se ne prende** l'Out of Scope rinvia esplicitamente «relazione di calcolo §10.2.1» completa allo Studio italiano: esclusione consapevole in v1, non dimenticanza

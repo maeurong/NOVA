@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://briefcase.readthedocs.io/en/stable/reference/platforms/macOS/index.html",
+  "sha256": "859708a15671943fb5e105bb4eb095d418f3bb2f6c759feb22824111c57c5924",
+  "bytes": 19719
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

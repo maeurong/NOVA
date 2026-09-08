@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSeesDocumentation/master/source/user/manual/model/elements/stdBrick.rst",
+  "sha256": "b2b10ecc2c7be5d26e784b8903e9532e3a34293313b23134f2899b2f7358eec4",
+  "bytes": 1852
+ },
+ "tool": "curl",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

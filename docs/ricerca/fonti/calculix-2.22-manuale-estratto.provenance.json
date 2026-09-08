@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "http://www.dhondt.de/ccx_2.22.pdf",
+  "sha256": "0392052a80217df9fdba9243f74728695be75d2d7b22d6a360bcf5c5f545a8a9",
+  "bytes": 18410
+ },
+ "tool": "curl + pdftotext -layout",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

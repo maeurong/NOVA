@@ -233,3 +233,30 @@ Solo snippet motore, pagina non aperta [INF-snippet]:
 - https://digital.ahrq.gov/sites/default/files/docs/survey/systemusabilityscale%2528sus%2529_comp%255B1%255D.pdf
 - https://developer.apple.com/videos/play/wwdc2018/803/ (origine di apple-design, non riaperto)
 - Reddit r/StructuralEngineering: [NON TROVATO] — bloccato, nessuna citazione riportata.
+
+## Cosa se ne prende
+
+- **URL** https://doc.plasticity.xyz/plasticity-essentials/plasticity-interface/command-palette · [V]
+  **perché conta qui** command palette con esecuzione per nome, conflitti evidenziati
+  **cosa se ne prende** palette `⌘K` con valori nella query e scorciatoia visibile su ogni voce (spec:34)
+- **URL** https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html · [V]
+  **perché conta qui** WCAG 1.4.11: parti grafiche necessarie a capire il contenuto richiedono ≥3:1, non solo colore
+  **cosa se ne prende** verdetti mostrati a doppio canale (punto pieno/vuoto/rosso + testo, riga in tabella) (spec:80)
+- **URL** https://www.nngroup.com/articles/response-times-3-important-limits/ · [V]
+  **perché conta qui** soglie 0,1/1/10 s: sopra 10 s serve stato di avanzamento, mai percentuale inventata sotto quella soglia
+  **cosa se ne prende** attesa parlante con fasi nominate e durata misurata a fine corsa (spec:67)
+- **URL** https://docs.csiamerica.com/help-files/sap/Menus/Display/Show_Deformed_Shape.htm · [V]
+  **perché conta qui** SAP2000 stampa sempre il fattore di scala della deformata nel viewport
+  **cosa se ne prende** deformata con scala sempre stampata «×n (auto | a mano)» e ombra indeformata (spec:74,225)
+- **URL** /Users/mario/GitHub/Tesi/PRODUCT.md (76-78, 186-208) · [V]
+  **perché conta qui** P1 «ogni numero mostrato porta il suo contraddittore», P3 scala dichiarata, Accessibility
+  **cosa se ne prende** tema chiaro «colonna tensegrale», un solo rosso, unità in un punto, verdetti a tre stati (spec:225)
+- **URL** http://www.proav.de/video/projectionrules.html · [V]
+  **perché conta qui** «text height at least 4mm per meter of viewing distance» per leggibilità in aula
+  **cosa se ne prende** modo presentazione con soglie di dimensione (etichette ≥46px, testo ≥32px, contrasto ≥3:1) leggibile a 8 m (spec:115)
+- **URL** /Users/mario/.claude/skills/impeccable/reference/operate.md · [V]
+  **perché conta qui** modo Operate: densità e tabelle permesse, modale «di solito è pigrizia»
+  **cosa se ne prende** l'interfaccia vera passa per `impeccable` (critique, layout, polish) invece del prototipo con sovrapposizioni (spec:225)
+- **URL** https://it.discussioni.ingegneria.civile.narkive.com/m07mRa9r/software-strutturali · [V], 2008
+  **perché conta qui** «vorrebbe le singole verifiche col risultato come se le si facesse a mano», non un tasso opaco
+  **cosa se ne prende** verdetto del Check Model con controllo, oggetto, oracolo e azione — mai solo un numero (spec:65)

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/documentation/security/customizing-the-notarization-workflow",
+  "sha256": "80dfd0dad1fe9599066792718b601c43eeb5e0612cefc8979505e5ae066916b0",
+  "bytes": 11744
+ },
+ "tool": "appledoc.py (API DocC di developer.apple.com)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

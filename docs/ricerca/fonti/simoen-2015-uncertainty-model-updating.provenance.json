@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://lirias.kuleuven.be/server/api/core/bitstreams/8b82a5c7-cf19-490c-a3f3-a7a29a1549c0/content",
+  "sha256": "0933365d9ec9f69f2329ffaa9d6a0f666bd30a270cc520b941c80ddc50614d53",
+  "bytes": 14340
+ },
+ "tool": "curl",
+ "tool_version": "curl 8.7.1 + pdftotext 26.08.0 (-layout)",
+ "extracted": "2026-09-08"
+}

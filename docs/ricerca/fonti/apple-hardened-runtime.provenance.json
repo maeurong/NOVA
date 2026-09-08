@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/documentation/security/hardened-runtime",
+  "sha256": "5b6b8abf94c441cfbe579a49577bf9d3e4028f80cd9b4c1ceccf2832ec97f665",
+  "bytes": 5596
+ },
+ "tool": "appledoc.py (API DocC di developer.apple.com)",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSeesDocumentation/master/source/user/manual/model/elements/ASDEmbeddedNodeElement.rst",
+  "sha256": "7325f0b418345ad0623f976002eaef7e3d84247db5e7457e92f679e178fd544a",
+  "bytes": 8946
+ },
+ "tool": "curl",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

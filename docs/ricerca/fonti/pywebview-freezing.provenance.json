@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://pywebview.flowrl.com/guide/freezing.html",
+  "sha256": "b65c47ef824f3914ef991f3c381bb566121dcae0eb8cdaa88e3f2ec7d3d0b087",
+  "bytes": 2465
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://developer.apple.com/news/?id=saqachfa",
+  "sha256": "b25eb44b5498cae6ae20b8b57b65fcbeb57638aff5ce8167d2e3753abb42b3c4",
+  "bytes": 997
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

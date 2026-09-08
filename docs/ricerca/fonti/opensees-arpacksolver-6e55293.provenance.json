@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSees/6e55293513192aa05c7e1205e66a5a1a1ed088c4/SRC/system_of_eqn/eigenSOE/ArpackSolver.cpp",
+  "sha256": "fb979687a9ef548635cbf07a60cdf2e0dc60de6c95541bc9b874fb4004e61084",
+  "bytes": 16754
+ },
+ "tool": "urllib.request",
+ "tool_version": "python 3.12.13",
+ "extracted": "2026-09-08"
+}

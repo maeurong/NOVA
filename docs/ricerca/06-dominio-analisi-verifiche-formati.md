@@ -161,3 +161,24 @@ Repo: `/Users/mario/GitHub/Tesi/docs/validazione/README.md`, `modi-per-la-normat
 Norme (PDF → testo in scratchpad): NTC 2018 cap. 3, 4, 7, 10 https://www.studiopetrillo.com/files/ntc2018/cap{3,4,7,10}.pdf; Circolare 7/2019 cap. 7 https://www.studiopetrillo.com/files/ntc2018/circolare-ntc2018-cap7.pdf; EN 1998-1:2004 https://www.phd.eng.br/wp-content/uploads/2015/02/en.1998.1.2004.pdf.
 OpenSeesPy: responseSpectrumAnalysis, modalProperties, modalDamping, uniformExcitation, displacementControl, geomTransf, printModel su https://openseespydoc.readthedocs.io/en/latest/src/.
 Altri: https://www.saf.guide/ ; https://ifc43-docs.standards.buildingsmart.org/ ; https://opstool.readthedocs.io/ ; https://github.com/nschloe/meshio ; https://raw.githubusercontent.com/Hanlin-Dong/awesome-opensees/master/README.md ; https://pmc.ncbi.nlm.nih.gov/articles/PMC5848065/ ; https://publications.jrc.ec.europa.eu/repository/handle/JRC141264 ; https://biblus.acca.it/eurocodici/ ; https://www.scia.net/en/news/second-generation-eurocodes-approaching ; https://ediltecnico.it/aggiornamento-delle-norme-tecniche-per-le-costruzioni-ntc-2018-in-gazzetta-le-modifiche/ ; https://www.ingenio-web.it/articoli/revisione-ntc-2018-quali-novita-per-il-mondo-delle-costruzioni-i-dettagli-nell-intervista-a-franco-braga/ ; https://wiki.csiamerica.com/pages/viewpage.action?pageId=7635910 ; https://support.midasuser.com/hc/en-us/articles/29104598974873-Export ; PyPI JSON API e GitHub API (04/09/2026).
+
+## Cosa se ne prende
+
+- **URL** https://www.studiopetrillo.com/files/ntc2018/cap7.pdf · [V]
+  **perché conta qui** NTC §7.3.3.1 chiede 85% di massa partecipante (non 90%, correzione della premessa ereditata da Tesi)
+  **cosa se ne prende** soglia `massa_modale ≥ 0,85` nel controllo C3 e nel deck (spec:17,205,211)
+- **URL** https://openseespydoc.readthedocs.io/en/latest/src/ · [V]
+  **perché conta qui** firma e comportamento di `integrator DisplacementControl`
+  **cosa se ne prende** pushover monotona con `DisplacementControl` e scala di algoritmi (spec:90,205; piano T4)
+- **URL** https://www.studiopetrillo.com/files/ntc2018/cap10.pdf · [V]
+  **perché conta qui** §10.2.1/§10.2.2: relazione con «valutazione indipendente con programma diverso»
+  **cosa se ne prende** la scheda «Confronto» telaio/solido come «verifica del codice, non validazione» (spec:17,111,221,274)
+- **URL** /Users/mario/GitHub/Tesi/meshrec/casi/lab_telaio.yaml (fase-4-materiale.md) · [V]
+  **perché conta qui** geometria e carichi dichiarati del provino di laboratorio (spinta 0,10 g, 1200 N in sommità, peso proprio)
+  **cosa se ne prende** gli stessi tre casi statici riusati identici nella scheda Confronto (spec:221)
+- **URL** https://www.saf.guide/ · [V]
+  **perché conta qui** unico formato analitico aperto con risultati e combinazioni, supportato da SCIA/MasterSap
+  **cosa se ne prende** raccomandazione «SAF lettura+scrittura» ripresa come scope dichiarato dello Studio italiano (spec:245)
+- **URL** https://www.studiopetrillo.com/files/ntc2018/cap4.pdf · [V]
+  **perché conta qui** catalogo verifiche SLU/SLE/gerarchia con articolo (§4.1.2.3, §4.1.6)
+  **cosa se ne prende** l'elenco «verifiche SLU/SLE complete, gerarchia delle resistenze» dichiarato esplicitamente fuori perimetro v1 (spec:245)

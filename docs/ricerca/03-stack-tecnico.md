@@ -183,3 +183,33 @@ Locali: `/Users/mario/GitHub/Tesi/README.md`, `AGENTS.md`, `docs/validazione/ric
 Web: https://v2.tauri.app/develop/sidecar/ · https://v2.tauri.app/distribute/sign/macos/ · https://v2.tauri.app/distribute/sign/windows/ · https://v2.tauri.app/distribute/windows-installer/ · https://v2.tauri.app/reference/webview-versions/ · https://v2.tauri.app/concept/inter-process-communication/ · https://v2.tauri.app/develop/calling-frontend/ · https://v2.tauri.app/plugin/file-system/ · https://v2.tauri.app/plugin/ · https://docs.rs/tauri/latest/tauri/ipc/struct.Response.html · https://github.com/tauri-apps/tauri/issues/11992 · https://github.com/tauri-apps/tauri/issues/7706 · https://github.com/tauri-apps/tauri/discussions/11915 · https://www.electronjs.org/docs/latest/tutorial/code-signing · https://releases.electronjs.org/ · https://github.com/astral-sh/python-build-standalone · https://pyinstaller.org/en/v6.3.0/feature-notes.html · https://pypi.org/pypi/openseespy/json · https://pypi.org/pypi/openseespymac/json · https://pypi.org/pypi/openseespywin/json · https://pypi.org/pypi/opensees/json · https://pypi.org/pypi/xara/json · https://pypi.org/pypi/veux/json · https://pypi.org/pypi/PySide6/json · https://pypi.org/pypi/pywebview/json · https://github.com/r0x0r/pywebview · https://xara.so/about/features/index.html · https://github.com/STAIRLab/veux · https://raw.githubusercontent.com/OpenSees/OpenSees/master/SRC/element/elasticBeamColumn/ModElasticBeam2d.cpp · https://openseesdigital.com/2021/10/24/no-exit/ · https://openseesdigital.com/2023/09/10/gotta-catch-em-all/ · https://registry.npmjs.org/three · https://registry.npmjs.org/camera-controls/latest · https://registry.npmjs.org/three-mesh-bvh/latest · https://registry.npmjs.org/@speckle/viewer/latest · https://registry.npmjs.org/@thatopen/components/latest · https://registry.npmjs.org/zundo/latest · https://registry.npmjs.org/@kitware/vtk.js/latest · https://registry.npmjs.org/@babylonjs/core/latest · https://threejs.org/manual/en/webgpurenderer.html · https://threejs.org/docs/pages/TransformControls.html · https://docs.speckle.systems/developers/viewer/overview · https://github.com/madil4/awatif · https://github.com/xiangechen/chili3d · https://kitware.github.io/vtk-js/docs/develop_webgpu.html · https://bugs.webkit.org/show_bug.cgi?id=299237 · https://webkit.org/blog/16993/news-from-wwdc25-web-technology-coming-this-fall-in-safari-26-beta/ · https://caniwebview.com/features/web-feature-webgpu/ · https://github.com/charkour/zundo · https://immerjs.github.io/immer/patches · https://www.sqlite.org/appfileformat.html · https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol · https://github.com/pbakaus/impeccable · https://support.shapr3d.com/hc/en-us/articles/7873882619548-Adaptive-user-interface · https://www.shapr3d.com/blog/behind-the-shapr3d-user-interface-refresh · https://doc.plasticity.xyz/plasticity-essentials/plasticity-interface/command-palette · https://cad.onshape.com/help/Content/ui-basics.htm · https://developer.rhino3d.com/guides/general/rhino-ui-system/ · https://help.autodesk.com/cloudhelp/ENU/Fusion-GetStarted/files/GS-THE-FUSION-INTERFACE.htm · https://developer.blender.org/docs/features/interface/human_interface_guidelines/paradigms/ · https://www.dolthub.com/blog/2025-11-13-electron-vs-tauri/ · https://www.gethopp.app/blog/tauri-vs-electron
 
 Caveat globali: dimensioni hello-world Electron/Tauri solo da secondarie; pagine Blender/Shapr3D/Plasticity restituivano 403 al fetch diretto, citazioni prese dagli snippet di ricerca sulle stesse URL; `stack_comparator` usa punteggi del researcher, non misure; `opensees` 0.1.31 senza wheel macOS arm64 può cambiare alla prossima release (cadenza ~mensile osservata).
+
+## Cosa se ne prende
+
+- **URL** https://raw.githubusercontent.com/OpenSees/OpenSees/master/SRC/element/elasticBeamColumn/ModElasticBeam2d.cpp · [V]
+  **perché conta qui** 8 `exit()` dopo `opserr` nel costruttore/`setDomain`; M. Scott, «No Exit»: oltre 2.000 `exit()` nel core
+  **cosa se ne prende** la Raccomandazione 1 «solutore sempre fuori processo» → architettura a tre processi della spec, sidecar mai `import openseespy` nel processo del server
+
+- **URL** https://v2.tauri.app/develop/sidecar/ · [V]
+  **perché conta qui** `CommandEvent::Stdout(line_bytes)` — NDJSON, una riga = un messaggio, letto nativamente dal sidecar
+  **cosa se ne prende** il protocollo del sidecar della spec: una riga JSON per richiesta su stdin, una o più righe JSON su stdout con lo stesso `id`
+
+- **URL** /Users/mario/GitHub/Tesi/meshrec/src/meshrec/app/worker.py:25-60 · [V]
+  **perché conta qui** pipe del figlio con `encoding="utf-8", errors="replace"` perché librerie C++ scrivono su fd saltando `sys.stdout`
+  **cosa se ne prende** il decode `"utf-8", errors="replace"` usato per leggere stdout/stderr del sidecar nel piano T0/T1 (`docs/superpowers/plans/2026-09-05-t0-t1-scaffold-modello-sidecar-statica.md:1791`)
+
+- **URL** https://github.com/madil4/awatif · [V]
+  **perché conta qui** unico riferimento MIT nello stesso dominio (strutturale in browser), `three` moderno, undo presente
+  **cosa se ne prende** three.js 0.185 (WebGPURenderer + fallback WebGL2) + `camera-controls`/`three-mesh-bvh` per il viewport 3D sincronizzato della spec
+
+- **URL** https://immerjs.github.io/immer/patches · [V]
+  **perché conta qui** `produceWithPatches` → `patches`/`inversePatches`, stesso meccanismo di un event log (patch, inversePatch, etichetta)
+  **cosa se ne prende** «uno snapshot per comando e cronologia lineare» e la cronologia navigabile (`⌘Z`, `⇧⌘Z`) della spec
+
+- **URL** /Users/mario/.claude/skills/impeccable/SKILL.md · [V]
+  **perché conta qui** modo Operate prescritto: niente modali, command palette, motion 150-250 ms, una sola famiglia tipografica
+  **cosa se ne prende** «l'interfaccia vera passa per `impeccable` (critique, layout, polish)» della spec, palette `⌘K`, nessuna finestra flottante
+
+- **URL** https://www.sqlite.org/appfileformat.html · [V]
+  **perché conta qui** Raccomandazione 4: JSON per il modello (piccolo, versionabile), formato separato per i risultati (grandi)
+  **cosa se ne prende** la separazione «un file JSON per il modello… risultati in file separati per corsa» del Modello dati della spec

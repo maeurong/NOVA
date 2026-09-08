@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/OpenSees/OpenSeesDocumentation/master/source/user/manual/model/elements/SSPbrick.rst",
+  "sha256": "22f136bfe15751b736b1983f9346d61ba46c571e9abb5a94026f6b8a7249df99",
+  "bytes": 3033
+ },
+ "tool": "curl",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}

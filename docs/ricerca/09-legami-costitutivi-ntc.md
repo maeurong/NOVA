@@ -341,3 +341,27 @@ Cinque esempi, cinque `K` (1,12 · 1,2 · 1,25 · 1,3 · —) e nessuno calcolat
 - FGU 3D frame https://github.com/AmirHosseinNamadchi/OpenSeesPy-Examples/blob/master/Reinforced%20Concrete%203D%20Frame%20(FGU).ipynb
 - opstool https://opstool.readthedocs.io/en/latest/src/analysis/mc_analysis.html
 - In casa: `docs/ricerca/01`, `05`, `06`, `08`; `~/GitHub/Tesi/docs/validazione/ricerca-armature-opensees-fibre.md`, `ricerca-ntc-2018-numeri-per-il-catalogo.md`.
+
+## Cosa se ne prende
+
+- **URL** https://opensees.github.io/OpenSeesDocumentation/user/manual/material/uniaxialMaterials/Concrete02.html · [V]
+  **perché conta qui** «compressive concrete parameters should be input as negative values», `Ec = 2·fpc/epsc0` non è un parametro libero
+  **cosa se ne prende** guardia `ValueError` «Concrete02 vuole compressioni negative» in `righe_tcl` (piano T4, `nova/legami.py`)
+- **URL** https://opensees.github.io/OpenSeesDocumentation/user/manual/material/uniaxialMaterials/Steel02.html · [V]
+  **perché conta qui** «Recommended values: R0 between 10 and 20, cR1=0.925, cR2=0.15»
+  **cosa se ne prende** default `R0=18, cR1=0.925, cR2=0.15` del campo `Legame` (piano T4)
+- **URL** NTC 2018 DM 17/01/2018, §4.1.2.1.2.1 «Calcestruzzo confinato» [4.1.8]-[4.1.12.i] · [V]
+  **perché conta qui** formule di α_n, α_s, σ2, f_ck,c, ε_cu2,c dalle staffe e dalle posizioni delle barre
+  **cosa se ne prende** `nova.legami.confinamento_ntc()`, con gli oracoli α=0,457 σ2=0,980 f_ck,c=29,90 ε_cu2,c=0,01134 misurati con le posizioni vere di `deck._barre` (`nova/legami.py:111,204`)
+- **URL** https://www.phd.eng.br/wp-content/uploads/2015/02/en.1998.1.2004.pdf (EN 1998-1:2004 §4.3.3.4.1(4)) · [V]
+  **perché conta qui** «element properties should be based on mean values of the properties of the materials»
+  **cosa se ne prende** veste `media` come default dell'analisi non lineare (`impostazioni_analisi.veste`, spec:90)
+- **URL** Circolare 21/01/2019 n. 7, C4.1.2.1.2.1 · [V]
+  **perché conta qui** «devono essere utilizzati legami diversi per il nucleo confinato e per le zone esterne alle staffe»; caratteristica di default, altre vesti ammesse «in funzione del tipo di verifica»
+  **cosa se ne prende** campo `veste` del materiale con default `media` per l'analisi e sezione a due patch (nucleo/copriferro) in `deck.py` (piano T4)
+- **URL** https://web.itu.edu.tr/darilmazk/file/Mander_Priestley_Park_StressStrainModelforConfinedConcrete.pdf (Mander, Priestley, Park 1988) · [V]
+  **perché conta qui** curva di Popovics con `Ec` indipendente, incompatibile con `epsc0` di `Concrete02`
+  **cosa se ne prende** opzione `confinamento: "mander"` → `Concrete04` con `Ec = E_cm` esplicito (piano T4)
+- **URL** https://portwooddigital.com/2021/08/22/making-sense-out-of-concrete02/ (M.H. Scott) · [V]
+  **perché conta qui** razionale dei default: `λ=0,1 «seems reasonable»`, `ft≈0,1|fc|`
+  **cosa se ne prende** default `lambda_: float = 0.1`, `fpcu_su_fpc: float = 0.2` del campo `Legame` (piano T4)

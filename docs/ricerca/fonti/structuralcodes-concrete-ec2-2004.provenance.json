@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://raw.githubusercontent.com/fib-international/structuralcodes/0754aeaeb257d97b79f832e41ab38b9777c82878/structuralcodes/materials/concrete/_concreteEC2_2004.py",
+  "sha256": "9d77eb3d72e3a05a8ccd967bf56d288be8b1039b8307f0d8b138d84aad725541",
+  "bytes": 20985
+ },
+ "tool": "curl",
+ "tool_version": "8.7.1",
+ "extracted": "2026-09-08"
+}

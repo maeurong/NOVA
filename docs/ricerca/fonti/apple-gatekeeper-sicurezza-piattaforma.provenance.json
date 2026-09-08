@@ -1,0 +1,10 @@
+{
+ "derived_from": {
+  "path": "https://support.apple.com/guide/security/gatekeeper-and-runtime-protection-sec5599b66df/web",
+  "sha256": "6a7a83fa51d0c070a152d8c6c7f61ed16c3ea9c63f4d180581241a1f935a2f98",
+  "bytes": 2401
+ },
+ "tool": "defuddle",
+ "tool_version": "n/d",
+ "extracted": "2026-09-08"
+}
