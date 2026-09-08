@@ -201,12 +201,27 @@ class Materiale(_Base):
 
     @model_validator(mode="after")
     def _la_classe_esiste_nel_catalogo(self):
-        """Se non è un materiale a valori scritti a mano, la classe deve esistere di norma."""
+        """Se non è un materiale a valori scritti a mano, la classe deve esistere di norma —
+        e deve essere della **famiglia** del `tipo`.
+
+        Senza il secondo confronto la coppia passava: `calcestruzzo` + `B450C` arrivava a
+        `legami.veste_valori`, che moltiplicava l'`f_ctm` che l'acciaio non ha (`None`) e
+        sollevava `TypeError`, cioè un 500 nudo; `acciaio` + `C25/30` rispondeva 200 con
+        `f_y` = 25, la resistenza di un calcestruzzo spacciata per acciaio — un numero finto,
+        che è peggio di un rifiuto. `VoceMateriale.famiglia`
+        (`meshrec/core/materiali.py:134`) è la riga che divide le due liste del catalogo,
+        la stessa che `/api/catalogo` legge.
+
+        Con `personalizzato` non si confronta niente: la classe può stare fuori catalogo, e
+        fuori catalogo non c'è nessuna famiglia da leggere.
+        """
         if not self.personalizzato:
             try:
-                _materiali.trova(self.classe)
+                voce = _materiali.trova(self.classe)
             except KeyError as e:
                 raise ValueError(str(e.args[0])) from None
+            if voce.famiglia != self.tipo:
+                raise ValueError(f"classe {self.classe} è {voce.famiglia}, non {self.tipo}")
         return self
 
 
@@ -404,6 +419,10 @@ _FRASI_ERRORE: dict[str, str] = {
     "extra_forbidden": "campo non previsto",
     "int_parsing": "deve essere un numero intero",
     "float_parsing": "deve essere un numero",
+    # `*_parsing` è la stringa che non si legge, `*_type` è il tipo sbagliato: `sezione: null`
+    # cadeva sul secondo e usciva in inglese, «Input should be a valid integer».
+    "int_type": "deve essere un numero intero",
+    "float_type": "deve essere un numero",
     "literal_error": "valore non ammesso",
     "string_pattern_mismatch": "non rispetta il formato richiesto",
     "finite_number": "deve essere un numero finito (niente NaN/Infinity)",

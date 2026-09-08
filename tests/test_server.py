@@ -719,3 +719,52 @@ def test_legame_acciaio_sotto_lo_snervamento_e_400(cliente):
 def test_legame_in_veste_progetto_porta_l_avviso(cliente):
     r = cliente.post("/api/materiale/legame", json={"materiale": _cls(), "veste": "progetto"})
     assert r.status_code == 200 and r.json()["valori"]["avvisi"]
+
+
+# --- fix di fine ramo 11b: la famiglia della classe, e i `type` di pydantic ----
+
+def test_legame_calcestruzzo_con_classe_di_acciaio_e_400_non_500(cliente):
+    # `Materiale` accettava la coppia e `veste_valori` moltiplicava un `None`: TypeError,
+    # che `server.py` non prendeva -> 500 nudo. Ora la coppia si rifiuta a monte.
+    r = cliente.post("/api/materiale/legame", json={"materiale": _cls(classe="B450C")})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "B450C" in motivo and "acciaio" in motivo and "calcestruzzo" in motivo
+
+
+def test_legame_acciaio_con_classe_di_calcestruzzo_e_400_non_numeri_finti(cliente):
+    # Questa coppia rispondeva 200 con `Fy` = 25: la classe di un calcestruzzo letta come
+    # acciaio. Un numero finto e' peggio di un rifiuto.
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc(classe="C25/30")})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
+
+
+def test_legame_senza_il_campo_legame_nel_corpo_risponde_col_tipo(cliente):
+    # `Materiale.legame` ha un default: il corpo che non lo porta e' il caso normale
+    # dell'interfaccia, e finora era coperto solo per omissione.
+    corpo = _cls()
+    assert "legame" not in corpo
+    r = cliente.post("/api/materiale/legame", json={"materiale": corpo, "veste": "media"})
+    assert r.status_code == 200
+    assert r.json()["legame"]["tipo"] == "concrete02"
+
+
+def test_legame_acciaio_in_veste_progetto(cliente):
+    r = cliente.post("/api/materiale/legame", json={"materiale": _acc(), "veste": "progetto"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["valori"]["fy"] == pytest.approx(450.0 / _materiali.GAMMA_S)
+    assert d["valori"]["fy"] < d["valori"]["fyk"]
+    assert d["valori"]["avvisi"]
+
+
+def test_salva_con_sezione_nulla_dice_deve_essere_un_numero_intero(cliente, tmp_path):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["aste"][0]["sezione"] = None
+    r = cliente.post("/api/modello/salva",
+                     json={"percorso": str(tmp_path / "t.nova.json"), "modello": m})
+    assert r.status_code == 400
+    motivo = r.json()["motivo"]
+    assert "aste.0.sezione" in motivo and "deve essere un numero intero" in motivo

@@ -1553,3 +1553,36 @@ def test_ccx_che_muore_leggendo_le_uscite_resta_fase_deck(monkeypatch):
     r = sidecar.rispondi({"comando": "ccx", "inp": "qualunque.inp"}, lambda ev: None)
     assert r["esito"] == "errore" and r["fase"] == "deck", r
     assert "disponibile" in r["motivo"] and "KeyError" not in r["motivo"]
+
+
+# --- fix di fine ramo 11b: la classe deve essere della famiglia del `tipo` ---
+# `veste_valori` moltiplicava `f_ctm` (None sull'acciaio) e sollevava TypeError; dall'altro
+# verso rispondeva 200 con `Fy` = 25, cioe' la resistenza di un calcestruzzo letta come
+# acciaio. La riga che divide le due famiglie e' `VoceMateriale.famiglia`
+# (`meshrec/core/materiali.py:134`).
+
+def test_materiale_calcestruzzo_rifiuta_una_classe_di_acciaio():
+    from nova.modello import Materiale
+    with pytest.raises(ValueError, match=r"classe B450C è acciaio, non calcestruzzo"):
+        Materiale(id=1, nome="cls", tipo="calcestruzzo", classe="B450C")
+
+
+def test_materiale_acciaio_rifiuta_una_classe_di_calcestruzzo():
+    from nova.modello import Materiale
+    with pytest.raises(ValueError, match=r"classe C25/30 è calcestruzzo, non acciaio"):
+        Materiale(id=2, nome="acc", tipo="acciaio", classe="C25/30")
+
+
+def test_materiale_personalizzato_fuori_catalogo_non_ha_famiglia_da_confrontare():
+    from nova.modello import Materiale
+    k = Materiale(id=1, nome="cls in opera", tipo="calcestruzzo", classe="C mio",
+                  personalizzato=True, valori={"fck": 18.0})
+    assert k.classe == "C mio"
+
+
+def test_carica_rifiuta_un_materiale_con_la_classe_dell_altra_famiglia():
+    from nova.modello import carica
+    d = leggi_fixture("telaio_2x1.nova.json")
+    d["materiali"][0]["tipo"] = "acciaio"
+    with pytest.raises(ValueError, match=r"non acciaio"):
+        carica(d)
