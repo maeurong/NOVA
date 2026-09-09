@@ -128,35 +128,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }));
     }
 
-    // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello
-    // e non entra in `estensione` — il riquadro non si muove quando si aggiunge un carico.
-    if (azione) {
-      const L = 28 * s;
-      for (const f of frecceDeiCarichi(m, azione, L)) {
-        const pa = schermo(f.a), pd = schermo(f.da);
-        gruppo.append(el("line", { x1: pd.x, y1: pd.y, x2: pa.x, y2: pa.y, stroke: INCHIOSTRO,
-                                   "stroke-width": 1.5 * s, class: "carico" }));
-        const ang = Math.atan2(pa.y - pd.y, pa.x - pd.x);
-        for (const d of [-1, 1]) {
-          const a2 = ang + Math.PI + d * Math.PI / 6;
-          gruppo.append(el("line", { x1: pa.x, y1: pa.y, x2: pa.x + Math.cos(a2) * 6 * s, y2: pa.y + Math.sin(a2) * 6 * s,
-                                     stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: "carico-punta" }));
-        }
-        if (f.testo) {
-          const t = el("text", { x: pd.x + 4 * s, y: pd.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
-          t.textContent = f.testo; gruppo.append(t);
-        }
-      }
-      // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
-      // dice nel titolo o non si vede da nessuna parte. `vista.x0`/`vista.z0` sono già le
-      // coordinate schermo del riquadro (`inquadra`): non passano da `schermo()`.
-      const g = azione.carichi.find((c) => c.tipo === "gravita");
-      const titolo = el("text", { x: vista.x0 + 8 * s, y: vista.z0 + 14 * s, "font-size": 11 * s, fill: INCHIOSTRO,
-                                  "font-family": MONO, class: "carichi-titolo" });
-      titolo.textContent = `carichi: ${azione.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`;
-      gruppo.append(titolo);
-    }
-
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
     // una forma sua invece di un `{da, dx, dz}` con un'origine inventata. Cerchio vuoto e
     // tratteggiato — «c'è, ma non ancora»: il nodo posato è pieno, questo no.
@@ -217,6 +188,37 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);
+    }
+
+    // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello
+    // e non entra in `estensione` — il riquadro non si muove quando si aggiunge un carico.
+    // Le frecce stanno sopra i nodi perché la punta del nodale finisce sul nodo e un cerchio
+    // pieno la coprirebbe; il ghost resta sotto: è un'anteprima, e ci sta un attimo.
+    if (azione) {
+      const L = 28 * s;
+      for (const f of frecceDeiCarichi(m, azione, L)) {
+        const pa = schermo(f.a), pd = schermo(f.da);
+        gruppo.append(el("line", { x1: pd.x, y1: pd.y, x2: pa.x, y2: pa.y, stroke: INCHIOSTRO,
+                                   "stroke-width": 1.5 * s, class: "carico" }));
+        const ang = Math.atan2(pa.y - pd.y, pa.x - pd.x);
+        for (const d of [-1, 1]) {
+          const a2 = ang + Math.PI + d * Math.PI / 6;
+          gruppo.append(el("line", { x1: pa.x, y1: pa.y, x2: pa.x + Math.cos(a2) * 6 * s, y2: pa.y + Math.sin(a2) * 6 * s,
+                                     stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: "carico-punta" }));
+        }
+        if (f.testo) {
+          const t = el("text", { x: pd.x + 4 * s, y: pd.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
+          t.textContent = f.testo; gruppo.append(t);
+        }
+      }
+      // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
+      // dice nel titolo o non si vede da nessuna parte. `vista.x0`/`vista.z0` sono già le
+      // coordinate schermo del riquadro (`inquadra`): non passano da `schermo()`.
+      const g = (azione.carichi ?? []).find((c) => c.tipo === "gravita");
+      const titolo = el("text", { x: vista.x0 + 8 * s, y: vista.z0 + 14 * s, "font-size": 11 * s, fill: INCHIOSTRO,
+                                  "font-family": MONO, class: "carichi-titolo" });
+      titolo.textContent = `carichi: ${azione.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`;
+      gruppo.append(titolo);
     }
 
     svg.replaceChildren(gruppo);

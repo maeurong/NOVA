@@ -198,6 +198,8 @@ test("creaPiano: modello vuoto e nessun ghost non sollevano e non disegnano nien
 const linee = (svg) => tutti(svg, "line").filter((l) => l.getAttribute("class") === "carico");
 const titoli = (svg) => tutti(svg, "text").filter((t) => t.getAttribute("class") === "carichi-titolo");
 const scritte = (svg) => JSON.stringify(tutti(svg, "text").map((t) => t.textContent));
+// L'ordine dei figli **è** l'ordine del disegno: in SVG non c'è z-index, chi viene dopo sta sopra.
+const inOrdine = (radice) => [radice, ...(radice._figli ?? []).flatMap(inOrdine)];
 
 test("creaPiano: l'azione in vista disegna le frecce e il titolo, senza toccare il riquadro", () => {
   const { piano, svg } = pianoFinto();
@@ -262,4 +264,31 @@ test("creaPiano: un'azione su un modello senza nodi scrive il titolo dentro il r
   const t = titoli(svg)[0];
   assert.ok(Number(t.getAttribute("x")) >= x0 && Number(t.getAttribute("x")) <= x0 + larghezza, "il titolo sta dentro in x");
   assert.ok(Number(t.getAttribute("y")) >= z0 && Number(t.getAttribute("y")) <= z0 + altezza, "il titolo sta dentro in y");
+});
+
+// --- ingressi degeneri del giro di correzione (fix round 1) --------------------
+
+test("creaPiano: un'azione senza la chiave carichi non solleva, e il titolo non parla di gravità", () => {
+  const { piano, svg } = pianoFinto();
+  const azione = { id: 1, nome: "monca", natura: "G2", categoria: null, generata: false };
+  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
+  assert.equal(titoli(svg).length, 1);
+  assert.equal(titoli(svg)[0].textContent, "carichi: monca", "senza carichi non c'è gravità da dire");
+});
+
+// La punta del nodale finisce esattamente sul centro del nodo (`frecceDeiCarichi`: `a` è il nodo),
+// e il cerchio del nodo è pieno: se si disegnasse dopo, se la mangerebbe.
+test("creaPiano: la freccia di un nodale si disegna sopra il cerchio del nodo", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  const azione = { id: 1, nome: "vento", natura: "Q", categoria: "vento", generata: false, carichi: [
+    { tipo: "nodale", nodo: 1, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 },
+  ] };
+  piano.disegna(modello, { azione });
+  const ordine = inOrdine(svg);
+  const freccia = linee(svg).at(-1);
+  const cerchio = tutti(svg, "circle").filter((c) => c.getAttribute("fill") !== "none").at(-1);
+  assert.ok(freccia && cerchio, "servono una freccia e il cerchio del nodo");
+  assert.ok(ordine.indexOf(freccia) > ordine.indexOf(cerchio),
+    "la freccia deve venire dopo il cerchio del nodo, o il cerchio la copre");
 });
