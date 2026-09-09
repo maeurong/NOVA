@@ -1181,6 +1181,17 @@ test("righe di un'azione: natura con categoria, il nome del caso, il conteggio d
      ["termini", "0"], ["generata", "no"]]);
 });
 
+// `TIPI_COMBINAZIONE` e `NOME_TIPO_COMBINAZIONE` sono due costanti gemelle: chi aggiunge un
+// tipo alla prima e si scorda la seconda leggeva «undefined» qui, mentre l'albero stampava
+// già la chiave grezza (`albero.js:80`). Due verità sullo stesso modello, in due riquadri
+// che si vedono insieme.
+test("righe di una combinazione: un tipo senza nome a schermo stampa la chiave, non «undefined»", () => {
+  const m = { ...modelloVuoto(), combinazioni: [{ id: 1, nome: "SLV", tipo: "eccezionale", termini: [], generata: false }] };
+  assert.deepEqual(righe(m, { tipo: "combinazione", id: 1 }),
+    [["identificatore", "1"], ["nome", "SLV"], ["tipo", "eccezionale"], ["caso", "C1"],
+     ["termini", "0"], ["generata", "no"]]);
+});
+
 test("editor dell'azione: il campo q cambiato manda il carico intero, e un testo illeggibile solo un avviso", () => {
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(conCarichi(), { tipo: "azione", id: 1 });
@@ -1193,7 +1204,29 @@ test("editor dell'azione: il campo q cambiato manda il carico intero, e un testo
   // Il campo torna al valore del **modello** con cui è stato disegnato: il -15 di prima non è
   // ancora rientrato da un ridisegno (qui non c'è `app.js` a farlo), e inventarlo sarebbe la
   // stessa bugia del campo che tiene «molto» a schermo.
-  assert.equal(q.value, "-12,500");
+  assert.equal(q.value, "-12,5", "gli zeri in coda non dicono niente: la grafia è quella dell'albero");
+});
+
+// --- 6: il campo scrive quel che sa rileggere ---------------------------------------------
+// `conciso` sopra cento non tiene decimali: «20 000,5» uscirebbe «20 001», e il campo direbbe
+// un numero diverso da quello del modello. Sotto l'unità invece tiene quattro decimali, e
+// 0,0035 non diventa «0,004». Il campo prende la forma corta solo se rientra dalla sua porta.
+test("editor dell'azione: il campo non arrotonda ciò che non saprebbe rileggere", () => {
+  const { p, editor } = pannelloFinto();
+  const m = aggiungiCarico(conCarichi(), { azione: 1, carico: { tipo: "nodale", nodo: 1, Fz: -20000.5 } });
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [fz] = controlliCon(editor, "Fz del carico 3");
+  assert.equal(leggiNumero(fz.value), -20000.5, `il campo dice ${fz.value}, che non è il numero del modello`);
+  assert.ok(!/,\d*0$/.test(fz.value), `nessuno zero in coda: ${fz.value}`);
+});
+
+test("editor dell'azione: sotto l'unità il campo tiene le cifre che servono", () => {
+  const { p, editor } = pannelloFinto();
+  const m = aggiungiCarico(conCarichi(), { azione: 1, carico: { tipo: "distribuito", asta: 1, q: 0.0035 } });
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [q] = controlliCon(editor, "q del carico 3");
+  assert.equal(q.value, "0,0035");
+  assert.equal(leggiNumero(q.value), 0.0035);
 });
 
 // Le migliaia come nella `<dl>` due centimetri sopra: «20 000», non «20000». Lo spazio è
@@ -1212,14 +1245,17 @@ test("editor dell'azione: Fx illeggibile avvisa e rimette il numero di prima, co
   assert.equal(fx.value, atteso);
 });
 
-test("editor dell'azione: «aggiungi carico» è un comando, togli passa l'indice, il termico avverte", () => {
+// Il select sceglie e basta; il bottone accanto esegue. Con l'azione sul `change`, scorrere
+// le voci con le frecce — l'unico modo di aprirlo da tastiera — nasceva un carico per tasto.
+test("editor dell'azione: «aggiungi carico» è select più bottone, togli passa l'indice, il termico avverte", () => {
   const { p, editor, chiamate } = pannelloFinto();
   let m = conCarichi();
   p.disegna(m, { tipo: "azione", id: 1 });
   const [aggiungi] = controlliCon(editor, "aggiungi carico");
-  aggiungi.value = ""; aggiungi.dispatch("change");
-  assert.deepEqual(chiamate.suAggiungiCarico, []);
+  const eseguiAggiunta = () => tutti(editor).find((e) => e.textContent === "aggiungi").dispatch("click");
   aggiungi.value = "termico"; aggiungi.dispatch("change");
+  assert.deepEqual(chiamate.suAggiungiCarico, [], "scegliere il tipo non aggiunge niente");
+  eseguiAggiunta();
   assert.deepEqual(chiamate.suAggiungiCarico, [[1, "termico"]]);
   const togli = tutti(editor).find((e) => e.textContent === "togli carico 2");
   togli.dispatch("click");
@@ -1231,7 +1267,20 @@ test("editor dell'azione: «aggiungi carico» è un comando, togli passa l'indic
   assert.equal(dopo.value, "");
   assert.equal(dopo._figli[0].textContent, "— scegli il tipo");
   assert.equal(dopo._figli[0].selected, true);
-  assert.ok(tutti(editor).some((e) => e.className === "avviso" && /Check Model/.test(e.textContent)));
+  // 8: niente «Check Model», niente percorso di file, niente «v1» — la frase è per chi legge.
+  const avviso = tutti(editor).find((e) => e.className === "avviso");
+  assert.equal(avviso.textContent, "attenzione: la verifica del modello rifiuta il carico termico in questa versione");
+});
+
+// Ingresso degenere: «aggiungi» col select ancora su «— scegli il tipo».
+test("editor dell'azione: «aggiungi» senza tipo avvisa, e non aggiunge niente", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(conCarichi(), { tipo: "azione", id: 1 });
+  const [aggiungi] = controlliCon(editor, "aggiungi carico");
+  assert.equal(aggiungi.value, "");
+  tutti(editor).find((e) => e.textContent === "aggiungi").dispatch("click");
+  assert.deepEqual(chiamate.suAggiungiCarico, []);
+  assert.deepEqual(chiamate.suAvviso, ["scegli il tipo del carico"]);
 });
 
 test("editor dell'azione: senza carichi c'è la nota e il comando, non un gruppo vuoto", () => {
@@ -1292,7 +1341,7 @@ test("editor della combinazione: un campo per azione, vuoto toglie, il tipo si s
   m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
   p.disegna(m, { tipo: "combinazione", id: 1 });
   const [coeff] = controlliCon(editor, "permanenti travi: coefficiente");
-  assert.equal(coeff.value, "1,500");
+  assert.equal(coeff.value, "1,5");
   coeff.value = "1,3"; coeff.dispatch("change");
   coeff.value = ""; coeff.dispatch("change");
   assert.deepEqual(chiamate.suTermine, [[1, 1, 1.3], [1, 1, null]]);
@@ -1308,7 +1357,7 @@ test("editor della combinazione: due termini sulla stessa azione mostrano la som
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "combinazione", id: 1 });
   const [coeff] = controlliCon(editor, "permanenti travi: coefficiente");
-  assert.equal(coeff.value, "1,500");
+  assert.equal(coeff.value, "1,5");
 });
 
 test("editor della combinazione: senza azioni nel modello la nota dice cosa premere", () => {

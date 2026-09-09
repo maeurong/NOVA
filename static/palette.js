@@ -66,6 +66,9 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
     attiva = Math.min(attiva, Math.max(0, risultati.length - 1));
     elenco.replaceChildren(...risultati.map(riga));
     stato.textContent = risultati.length ? "" : NESSUN_COMANDO;
+    // `aria-expanded` fisso a «true» in `index.html` diceva a chi ascolta che l'elenco c'è
+    // anche quando «nessun comando» lo aveva svuotato: il combobox va con la lista che ha.
+    campo.setAttribute("aria-expanded", String(risultati.length > 0));
     campo.setAttribute("aria-activedescendant", risultati.length ? `palette-voce-${attiva}` : "");
   }
 
@@ -79,6 +82,7 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
     const li = elenco.children[attiva];
     li?.setAttribute("aria-selected", "true");
     li?.scrollIntoView?.({ block: "nearest" });  // `?.`: il DOM finto dei test non ce l'ha
+    campo.setAttribute("aria-expanded", String(risultati.length > 0));
     campo.setAttribute("aria-activedescendant", `palette-voce-${attiva}`);
   }
 

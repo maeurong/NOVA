@@ -184,8 +184,12 @@ export const cifre = (v) => stampaNumero(v, {
   migliaia: true,
 });
 
+/** Gli zeri in coda **dopo la virgola**: «1,500» è «1,5», «10» resta «10» — `,?0+$` da solo
+ *  mangiava anche lo zero delle decine. La grafia dei decimali è questa, una sola, e la usano
+ *  sia `conciso` sia i campi dell'editor (`pannello.js`). */
+export const senzaZeriInCoda = (t) => t.replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
+
 /** «0,8» e non «0,800»: gli zeri in coda di un fattore non dicono niente in più. Le cifre le
  *  sceglie `cifre`, non una regola riscritta un'altra volta: a tre decimali fissi un fattore
- *  di 0,0001 usciva come «0». Si tagliano solo gli zeri **dopo la virgola** — `,?0+$` da solo
- *  mangiava anche lo zero di «10». */
-export const conciso = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
+ *  di 0,0001 usciva come «0». */
+export const conciso = (v) => senzaZeriInCoda(cifre(v));

@@ -64,9 +64,13 @@
      chiude. Le voci non eseguibili adesso restano in lista con «non ora»: il tasto esiste, si
      impara da qui, e Invio risponde con la stessa frase che darebbe il tasto. -->
 <div id="palette" role="dialog" aria-label="comandi" hidden>
-  <input id="palette-campo" type="text" role="combobox" aria-expanded="true" aria-controls="palette-voci"
-         aria-label="cerca un comando, anche con il valore: «sezione 300 × 500», «q -12,5»"
-         placeholder="comando, anche col valore: «sezione 300 × 500», «q -12,5»" spellcheck="false" autocomplete="off">
+  <!-- Un testo solo per il segnaposto e per il nome accessibile: erano due frasi diverse, e
+       chi detta a voce pronunciava quel che leggeva senza che succedesse niente (WCAG 2.5.3).
+       Il meno è U+2212, come quello che l'albero stampa e che ora `leggiNumero` rilegge.
+       `aria-expanded` lo scrive `palette.js` a ogni disegno: qui non c'è uno stato da fissare. -->
+  <input id="palette-campo" type="text" role="combobox" aria-expanded="false" aria-controls="palette-voci"
+         aria-label="comando, anche col valore: «sezione 300 × 500», «q −12,5»"
+         placeholder="comando, anche col valore: «sezione 300 × 500», «q −12,5»" spellcheck="false" autocomplete="off">
   <ul id="palette-voci" role="listbox" aria-label="comandi trovati"></ul>
   <!-- Fuori dall'`<ul>`: un `listbox` possiede solo `option`, e «nessun comando» non lo è.
        Un posto solo per quella frase — vista qui e annunciata da `role="status"` — invece

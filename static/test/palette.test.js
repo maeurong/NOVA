@@ -252,3 +252,31 @@ test("Esc e Tab chiudono, e il fuoco che se ne va pure", () => {
   campo.dispatch("blur");
   assert.equal(p.aperta, false);
 });
+
+// --- `aria-expanded` segue l'elenco (fix di fine ramo, B12) -------------------------------
+// In `index.html` era fisso a «true»: chi ascolta sentiva «elenco aperto» anche quando la
+// query non trovava niente e la lista era vuota. Il combobox va con la lista che ha.
+
+test("aria-expanded: vero quando l'elenco ha voci, falso quando è vuoto", () => {
+  const { p, campo } = conPalette();
+  p.apri({ voci: TASTI, disponibili: new Set(["nodo"]) });
+  assert.equal(campo.getAttribute("aria-expanded"), "true");
+  campo.value = "zzzz"; campo.dispatch("input");
+  assert.equal(campo.getAttribute("aria-expanded"), "false", "nessun comando: non c'è nessun elenco aperto");
+  campo.value = "nodo"; campo.dispatch("input");
+  assert.equal(campo.getAttribute("aria-expanded"), "true");
+  campo.dispatch("keydown", { key: "ArrowDown" });
+  assert.equal(campo.getAttribute("aria-expanded"), "true", "muovere la voce attiva non chiude l'elenco");
+});
+
+// Il segnaposto e il nome accessibile sono lo stesso testo, col meno U+2212: chi detta a voce
+// pronuncia quel che legge (WCAG 2.5.3), e quel che legge `leggiNumero` lo rilegge.
+test("index.html: il campo della palette dice la stessa frase a chi guarda e a chi ascolta", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const campo = html.match(/<input id="palette-campo"[\s\S]*?>/)[0];
+  const etichetta = campo.match(/aria-label="([^"]*)"/)[1];
+  const segnaposto = campo.match(/placeholder="([^"]*)"/)[1];
+  assert.equal(etichetta, segnaposto);
+  assert.match(segnaposto, /q −12,5/);
+  assert.ok(!segnaposto.includes("-"), `il meno è U+2212, non il trattino ASCII: ${segnaposto}`);
+});

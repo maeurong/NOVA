@@ -2,7 +2,7 @@
 // con i sei gradi, le tre preimpostazioni e i tre editor della 11b (asta, sezione, materiale)
 // raddoppia due volte, e `app.js` ha già i due modi e la cucitura.
 
-import { leggiNumero, stampaNumero, millimetri, cifre, conciso } from "./numeri.js";
+import { leggiNumero, stampaNumero, millimetri, cifre, conciso, senzaZeriInCoda } from "./numeri.js";
 import { nodo, asta, sezione, materiale, azione, combinazione, asteDellaSezione, vesteDi,
          nomeCaso } from "./modello.js";
 import { NATURE, TIPI_CARICO, DIREZIONI, TIPI_COMBINAZIONE, COMPONENTI, GRADI_CEDIMENTO,
@@ -85,7 +85,9 @@ function righeDiAzione(m, a) {
 /** `?? []`: una combinazione di un file vecchio può non avere il campo `termini`. */
 function righeDiCombinazione(m, c) {
   return [["identificatore", String(c.id)], ["nome", c.nome],
-          ["tipo", c.tipo ? NOME_TIPO_COMBINAZIONE[c.tipo] : "—"],
+          // `?? c.tipo` come nell'albero (`albero.js:80`): chi aggiunge un tipo a
+          // `TIPI_COMBINAZIONE` e si scorda la tabella dei nomi leggerebbe «undefined».
+          ["tipo", c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "—"],
           ["caso", nomeCaso("combinazione", c.id)], ["termini", String((c.termini ?? []).length)],
           ["generata", c.generata ? "sì" : "no"]];
 }
@@ -148,9 +150,15 @@ const testoNumero = (v) => {
   // sono due verità sullo stesso numero. `leggiNumero` toglie U+202F (`numeri.js:21`), quindi
   // quel che il campo scrive il campo lo rilegge — è il contratto di `numeri.test.js:61-69`.
   if (Number.isInteger(v)) return stampaNumero(v, { decimali: 0, migliaia: true });
-  const piccolo = Math.abs(v) < 0.001;
-  const decimali = piccolo ? Math.min(100, 3 - Math.floor(Math.log10(Math.abs(v)))) : 3;
-  return stampaNumero(v, { decimali, migliaia: true });
+  if (Math.abs(v) < 0.001) return stampaNumero(v, { decimali: Math.min(100, 3 - Math.floor(Math.log10(Math.abs(v)))), migliaia: true });
+  // Una grafia sola per i decimali: gli zeri in coda cadono, qui come nell'albero e nel piano
+  // («q −12,5 N/mm»), che il campo diceva «-12,500» dello stesso numero.
+  // `conciso` prima, che sotto l'unità tiene quattro decimali e 0,0035 non diventa «0,004»;
+  // ma sopra cento non ne tiene nessuno — misurato, `conciso(20000,5)` è «20 001» — e un
+  // campo che rilegge 20 001 da 20 000,5 è la bugia che questa funzione esiste per non dire.
+  // Quindi si prende la forma corta **solo se rientra dalla propria porta**.
+  const corto = conciso(v);
+  return leggiNumero(corto) === v ? corto : senzaZeriInCoda(stampaNumero(v, { decimali: 3, migliaia: true }));
 };
 
 // WCAG 2.5.3 (livello A): il nome accessibile di ogni campo qui sotto **comincia** dal testo
@@ -183,7 +191,7 @@ function campoNumero({ etichetta, nome = etichetta, valore, unita = "", alCambio
   return { etichetta: et, controllo: c };
 }
 
-function scelta({ etichetta, nome = etichetta, opzioni, valore, alCambio }) {
+function scelta({ etichetta, nome = etichetta, opzioni, valore, alCambio = null }) {
   const et = document.createElement("label");
   const s = document.createElement("select");
   s.setAttribute("aria-label", nome);
@@ -192,7 +200,7 @@ function scelta({ etichetta, nome = etichetta, opzioni, valore, alCambio }) {
     if (String(v) === String(valore ?? "")) o.selected = true;
     s.append(o);
   }
-  s.addEventListener("change", () => alCambio(s.value));
+  if (alCambio) s.addEventListener("change", () => alCambio(s.value));  // senza, il select sceglie e basta
   et.append(document.createTextNode(etichetta), s);
   return { etichetta: et, controllo: s };
 }
@@ -582,18 +590,25 @@ function editorAzione(m, a, azioni) {
     campiDelCarico(m, c, i, box, (nuovo) => azioni.suCarico(a.id, i, nuovo), azioni, controlli);
     if (c.tipo === "termico") {
       const p = document.createElement("p"); p.className = "avviso";
-      p.textContent = "attenzione: il Check Model rifiuta il carico termico in v1 (nova/check.py)";
+      p.textContent = "attenzione: la verifica del modello rifiuta il carico termico in questa versione";
       box.append(p);
     }
     const via = bottone(`togli carico ${i + 1}`, () => azioni.suTogliCarico(a.id, i));
     box.append(via); controlli.push(via);
     car.append(box);
   });
-  // Un comando, non uno stato: al ridisegno il select torna sulla prima voce, e la Storia lo racconta.
+  // Due mosse, non una: il select sceglie il tipo e non fa niente, il bottone esegue. Un
+  // `change` che aggiungeva subito il carico rendeva impossibile cambiare idea con le frecce
+  // — ogni tasto giù nasceva un carico — e con la tastiera il select non si può nemmeno
+  // aprire senza scorrerne le voci. Un comando, non uno stato: al ridisegno il select torna
+  // sulla prima voce, e la Storia lo racconta.
   const agg = scelta({ etichetta: "aggiungi carico", nome: "aggiungi carico: scegli il tipo",
-                       opzioni: [["", "— scegli il tipo"], ...TIPI_CARICO.map((t) => [t, NOME_TIPO[t]])], valore: "",
-                       alCambio: (v) => { if (v) azioni.suAggiungiCarico(a.id, v); } });
-  car.append(agg.etichetta); controlli.push(agg.controllo);
+                       opzioni: [["", "— scegli il tipo"], ...TIPI_CARICO.map((t) => [t, NOME_TIPO[t]])], valore: "" });
+  const aggBottone = bottone("aggiungi", () => {
+    if (agg.controllo.value) azioni.suAggiungiCarico(a.id, agg.controllo.value);
+    else azioni.suAvviso("scegli il tipo del carico");
+  });
+  car.append(agg.etichetta, aggBottone); controlli.push(agg.controllo, aggBottone);
   return { elementi: [nat, car], controlli };
 }
 
@@ -605,7 +620,7 @@ function editorCombinazione(m, c, azioni) {
                      valore: c.tipo ?? "", alCambio: (v) => azioni.suCombinazione(c.id, { tipo: v || null }) });
   tipo.append(t.etichetta); controlli.push(t.controllo);
   const ter = gruppo("termini", "editor editor-campi",
-                     m.azioni.length ? "coefficiente per azione; vuoto = l'azione non entra" : "nessuna azione nel modello: premi Z");
+                     m.azioni.length ? "coefficiente per azione; vuoto: l'azione non entra" : "nessuna azione nel modello: premi Z");
   const termini = c.termini ?? [];
   for (const a of m.azioni) {
     // La somma, non il primo: un file con due termini sulla stessa azione mostra il numero che
@@ -646,9 +661,11 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
   // `body`.
   //
   // Limite dichiarato, dalla 11c: i carichi di un'azione non hanno un identificatore, e il
-  // loro nome è **posizionale** («Fx del carico 2»). Un ⌘Z che toglie il primo carico lascia
-  // il fuoco su un nome che esiste ancora ma ora è di un altro carico. Il fuoco non si perde,
-  // il cursore sì: si sistema il giorno che un carico avrà un `id` suo.
+  // loro nome è **posizionale** («Fx del carico 2»). Un ⌘Z che toglie il primo carico fa
+  // slittare tutti gli altri di un posto: il nome esiste ancora, e il fuoco ci torna sopra,
+  // ma ora è il campo di un **altro carico**. Non si sposta solo il cursore — si sposta il
+  // bersaglio della scrittura: quel che si batte subito dopo finisce sul carico sbagliato,
+  // e nessuno lo dice. Si chiude il giorno che un carico avrà un `id` suo (T6).
   let editorAttuale = null;
 
   const chiave = (c) => c?.getAttribute?.("aria-label") ?? c?.textContent ?? null;
