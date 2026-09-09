@@ -106,18 +106,29 @@ test("il clic su una riga «gruppo» non seleziona niente: non ha data-tipo", ()
   assert.deepEqual(scelte, []);
 });
 
-// Il rosso vuol dire attenzione e nient'altro (ticket #14): la selezione lo prende, con il
-// segno accanto (doppio canale, WCAG 1.4.1); un'intestazione non è un'attenzione.
-test("una sezione selezionata prende «▸» e il rosso; il suo gruppo non li prende", () => {
+// Il rosso vuol dire attenzione e nient'altro (ticket #14): la selezione lo prende come
+// **filetto**, con il segno accanto (doppio canale, WCAG 1.4.1); un'intestazione non è
+// un'attenzione. Come inchiostro no: `--rosso` su `--fondo` è 4,28:1, sotto AA a 11px — la
+// classe `scelto` porta la regola in `stile.css`, e `style.color` non si scrive più.
+test("una sezione selezionata prende «▸» e la classe «scelto»; il suo gruppo non li prende", () => {
   const { albero, elenco } = alberoFinto();
   albero.disegna(conSezione(), { selezione: { tipo: "sezione", id: 1 } });
   const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
   assert.equal(voce.textContent, "▸ 300 × 500 · 0 aste");
-  assert.equal(voce.style.color, "var(--rosso)");
+  assert.equal(voce.className, "numero scelto");
+  assert.equal(voce.style.color, undefined, "il rosso fa il filetto, non l'inchiostro del testo");
   assert.equal(voce.getAttribute("aria-pressed"), "true");
   const gruppo = elenco._figli.find((li) => li.textContent === "Sezioni");
+  assert.equal(gruppo.className, "gruppo");
   assert.equal(gruppo.style.color, undefined);
   assert.equal(gruppo.getAttribute("aria-pressed"), undefined);
+});
+
+test("una voce non selezionata resta «numero», senza la classe del filetto", () => {
+  const { albero, elenco } = alberoFinto();
+  albero.disegna(conSezione(), {});
+  const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
+  assert.equal(voce.className, "numero");
 });
 
 

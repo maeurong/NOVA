@@ -125,7 +125,12 @@ function elementoSvgFinto(nome) {
   };
 }
 
-globalThis.document = { createElementNS: (_ns, nome) => elementoSvgFinto(nome) };
+// `createElement` per il solo `<p class="carichi-titolo">`: il titolo dei carichi è testo del
+// documento, non un `<text>` nel `viewBox` (fix di fine ramo, A1).
+globalThis.document = {
+  createElementNS: (_ns, nome) => elementoSvgFinto(nome),
+  createElement: (nome) => ({ ...elementoSvgFinto(nome), className: "", hidden: false }),
+};
 
 const contenitoreFinto = () => ({
   clientWidth: 800, clientHeight: 600, _figli: [],
@@ -147,7 +152,7 @@ const anteprime = (svg) => tutti(svg, "circle").filter((c) => c.getAttribute("fi
 function pianoFinto() {
   const contenitore = contenitoreFinto();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
-  return { piano, svg: contenitore._figli[0] };
+  return { piano, svg: contenitore._figli[0], titolo: contenitore._figli[1] };
 }
 
 test("creaPiano: un ghost con punto disegna il cerchio dell'anteprima, tratteggiato e vuoto", () => {
@@ -196,35 +201,38 @@ test("creaPiano: modello vuoto e nessun ghost non sollevano e non disegnano nien
 // confronto del `viewBox` prima e dopo è la difesa di quella proprietà.
 
 const linee = (svg) => tutti(svg, "line").filter((l) => l.getAttribute("class") === "carico");
-const titoli = (svg) => tutti(svg, "text").filter((t) => t.getAttribute("class") === "carichi-titolo");
+// Dentro l'SVG di titoli non ce ne deve essere **nessuno**: si scalavano coi millimetri e
+// finivano addosso all'etichetta del primo nodo. Il titolo è il `<p>` accanto all'SVG.
+const titoliNellSvg = (svg) => tutti(svg, "text").filter((t) => t.getAttribute("class") === "carichi-titolo");
 const scritte = (svg) => JSON.stringify(tutti(svg, "text").map((t) => t.textContent));
 // L'ordine dei figli **è** l'ordine del disegno: in SVG non c'è z-index, chi viene dopo sta sopra.
 const inOrdine = (radice) => [radice, ...(radice._figli ?? []).flatMap(inOrdine)];
 
 test("creaPiano: l'azione in vista disegna le frecce e il titolo, senza toccare il riquadro", () => {
-  const { piano, svg } = pianoFinto();
+  const { piano, svg, titolo } = pianoFinto();
   let modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
   modello = creaAzione(modello, { nome: "permanenti travi", natura: "G2" });
   modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
   piano.disegna(modello, {});
   const riquadro = svg.getAttribute("viewBox");
   assert.equal(linee(svg).length, 0, "senza azione in vista nessuna freccia");
-  assert.equal(titoli(svg).length, 0, "senza azione in vista nessun titolo");
+  assert.equal(titolo.hidden, true, "senza azione in vista il titolo è nascosto");
+  assert.equal(titolo.textContent, "", "senza azione in vista il titolo è vuoto");
   piano.disegna(modello, { azione: modello.azioni[0] });
   assert.equal(linee(svg).length, 3, "un distribuito porta tre frecce: a un quarto, a metà, a tre quarti");
   assert.equal(svg.getAttribute("viewBox"), riquadro, "il riquadro non si muove quando compare un carico");
-  assert.ok(tutti(svg, "text").some((t) => t.textContent === "carichi: permanenti travi"),
-    `nessun titolo dell'azione: ${scritte(svg)}`);
+  assert.equal(titolo.textContent, "carichi: permanenti travi");
+  assert.equal(titolo.hidden, false);
+  assert.equal(titoliNellSvg(svg).length, 0, "il titolo non sta più dentro l'SVG");
 });
 
 test("creaPiano: la sola gravità non ha frecce ma sta nel titolo", () => {
-  const { piano, svg } = pianoFinto();
+  const { piano, svg, titolo } = pianoFinto();
   let modello = creaAzione(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { nome: "peso proprio", natura: "G1" });
   modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "gravita", fattore_z: -1 } });
   piano.disegna(modello, { azione: modello.azioni[0] });
   assert.equal(linee(svg).length, 0, "la gravità non ha una geometria da disegnare");
-  assert.ok(tutti(svg, "text").some((t) => /carichi: peso proprio · g z ×−1/.test(t.textContent)),
-    `la gravità deve dirsi nel titolo: ${scritte(svg)}`);
+  assert.match(titolo.textContent, /carichi: peso proprio · g z ×−1/, "la gravità deve dirsi nel titolo");
 });
 
 // --- ingressi degeneri: riferimenti spariti ------------------------------------
@@ -244,7 +252,7 @@ test("creaPiano: un nodale su un nodo sparito non si disegna, il resto sì", () 
 });
 
 test("creaPiano: un'azione i cui carichi puntano tutti nel vuoto tiene comunque il titolo", () => {
-  const { piano, svg } = pianoFinto();
+  const { piano, svg, titolo } = pianoFinto();
   const modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
   const azione = { id: 1, nome: "residui", natura: "G2", categoria: null, generata: false, carichi: [
     { tipo: "nodale", nodo: 99, Fx: 0, Fy: 0, Fz: -10000, Mx: 0, My: 0, Mz: 0 },
@@ -252,28 +260,38 @@ test("creaPiano: un'azione i cui carichi puntano tutti nel vuoto tiene comunque 
   ] };
   piano.disegna(modello, { azione });
   assert.equal(linee(svg).length, 0, "nessun carico ha una geometria a cui appendersi");
-  assert.equal(titoli(svg).length, 1, "l'azione esiste, e il titolo lo dice");
+  assert.equal(titolo.textContent, "carichi: residui", "l'azione esiste, e il titolo lo dice");
+  assert.equal(titolo.hidden, false);
 });
 
-test("creaPiano: un'azione su un modello senza nodi scrive il titolo dentro il riquadro", () => {
-  const { piano, svg } = pianoFinto();
+// Fuori dall'SVG il titolo non ha più coordinate da sbagliare: sta in alto a sinistra di
+// `#piano` in px costanti, qualunque sia il riquadro. Quel che resta da difendere è che
+// nell'SVG non ne rientri uno di nascosto.
+test("creaPiano: un'azione su un modello senza nodi porta il titolo fuori dall'SVG", () => {
+  const { piano, svg, titolo } = pianoFinto();
   const azione = { id: 1, nome: "vuota", natura: "Q", categoria: "vento", generata: false, carichi: [] };
   assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
-  assert.equal(titoli(svg).length, 1);
-  const [x0, z0, larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
-  const t = titoli(svg)[0];
-  assert.ok(Number(t.getAttribute("x")) >= x0 && Number(t.getAttribute("x")) <= x0 + larghezza, "il titolo sta dentro in x");
-  assert.ok(Number(t.getAttribute("y")) >= z0 && Number(t.getAttribute("y")) <= z0 + altezza, "il titolo sta dentro in y");
+  assert.equal(titolo.textContent, "carichi: vuota");
+  assert.equal(titolo.className, "carichi-titolo");
+  assert.equal(titoliNellSvg(svg).length, 0, `nessun titolo dentro l'SVG: ${scritte(svg)}`);
+});
+
+// Ingresso degenere: `disegna(m, {})`, cioè nessuna azione in vista.
+test("creaPiano: senza azione il titolo è vuoto e nascosto, e nell'SVG non ce n'è nessuno", () => {
+  const { piano, svg, titolo } = pianoFinto();
+  piano.disegna(modelloVuoto(), {});
+  assert.equal(titolo.textContent, "");
+  assert.equal(titolo.hidden, true);
+  assert.equal(titoliNellSvg(svg).length, 0);
 });
 
 // --- ingressi degeneri del giro di correzione (fix round 1) --------------------
 
 test("creaPiano: un'azione senza la chiave carichi non solleva, e il titolo non parla di gravità", () => {
-  const { piano, svg } = pianoFinto();
+  const { piano, titolo } = pianoFinto();
   const azione = { id: 1, nome: "monca", natura: "G2", categoria: null, generata: false };
   assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
-  assert.equal(titoli(svg).length, 1);
-  assert.equal(titoli(svg)[0].textContent, "carichi: monca", "senza carichi non c'è gravità da dire");
+  assert.equal(titolo.textContent, "carichi: monca", "senza carichi non c'è gravità da dire");
 });
 
 // La punta del nodale finisce esattamente sul centro del nodo (`frecceDeiCarichi`: `a` è il nodo),

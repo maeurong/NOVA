@@ -82,7 +82,15 @@ export function versoLibero(m, n) {
 
 export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   const svg = el("svg", { "aria-label": "piano di lavoro x–z" });
-  contenitore.replaceChildren(svg);
+  // Il titolo dei carichi è testo del documento, non un `<text>` nel `viewBox`: dentro l'SVG
+  // scalava coi millimetri e finiva addosso alla prima etichetta in alto a sinistra. Fuori,
+  // è un `<p>` in posizione assoluta su `#piano` (`stile.css`, già `position: relative`),
+  // sempre 11px, e nessun modello lo può spostare.
+  const titolo = document.createElement("p");
+  titolo.className = "carichi-titolo";
+  titolo.textContent = "";
+  titolo.hidden = true;
+  contenitore.replaceChildren(svg, titolo);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -211,15 +219,16 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           t.textContent = f.testo; gruppo.append(t);
         }
       }
-      // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
-      // dice nel titolo o non si vede da nessuna parte. `vista.x0`/`vista.z0` sono già le
-      // coordinate schermo del riquadro (`inquadra`): non passano da `schermo()`.
-      const g = (azione.carichi ?? []).find((c) => c.tipo === "gravita");
-      const titolo = el("text", { x: vista.x0 + 8 * s, y: vista.z0 + 14 * s, "font-size": 11 * s, fill: INCHIOSTRO,
-                                  "font-family": MONO, class: "carichi-titolo" });
-      titolo.textContent = `carichi: ${azione.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`;
-      gruppo.append(titolo);
     }
+
+    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
+    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
+    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
+    const g = azione && (azione.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azione
+      ? `carichi: ${azione.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
+      : "";
+    titolo.hidden = !azione;
 
     svg.replaceChildren(gruppo);
   }

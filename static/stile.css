@@ -51,6 +51,11 @@ body {
 #piano, #spazio { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #piano { border-right: 1px solid var(--tratto); }
 #piano svg { width: 100%; height: 100%; display: block; }
+/* Il titolo dei carichi sta sopra l'SVG, non dentro: nel `viewBox` scalava coi millimetri e
+   finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
+   `pointer-events: none` lascia che il clic sullo sfondo arrivi comunque al piano. */
+#piano .carichi-titolo { position: absolute; top: 6px; left: 8px; margin: 0;
+                         font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
 
 h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
      color: var(--testo-tenue); margin: 0 0 var(--passo); font-weight: 600; }
@@ -102,7 +107,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    etichetta e campo su una riga, i numeri in mono. Il rosso compare solo in `.avviso`, come
    filetto e non come testo, e sempre accanto alla parola «attenzione»: il colore è il
    secondo canale, mai il primo. */
-.editor { border: 0; padding: 0; margin: 6px 0 0; }
+/* `min-inline-size: 0`: un `<fieldset>` porta `min-inline-size: min-content` dallo UA, un
+   pavimento che nessun `minmax(0, 1fr)` di dentro può scendere sotto — l'unità dei campi
+   usciva oltre il bordo destro del pannello. */
+.editor { border: 0; padding: 0; margin: 6px 0 0; min-inline-size: 0; }
 .editor legend { font-size: 10px; color: var(--testo-tenue); letter-spacing: 0.06em; text-transform: uppercase; padding: 0; }
 /* `wrap` per lo stesso motivo dei bottoni delle preimpostazioni: a testo ingrandito
    l'etichetta non si stringe sotto il suo min-content, e senza il capo il campo sfonderebbe
@@ -119,6 +127,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* Anche `.avviso`: quello del carico termico è figlio diretto della griglia, e in una colonna
    sola andava a capo otto volte di fianco a «gradiente». Una frase vuole la riga intera. */
 .editor-campi legend, .editor-campi > .nota, .editor-campi > .avviso { grid-column: 1 / -1; }
+/* «togli carico 1» è un'azione sul gruppo intero, non un campo di fianco a un altro: sta su
+   una riga sua, larga quanto il suo testo e non quanto mezza griglia. */
+.editor-campi > button { grid-column: 1 / -1; justify-self: start; }
 /* Una colonna sola per i valori del materiale: le loro etichette portano il nome di norma
    («E, modulo elastico», «f_ctm») e l'unità, e a due colonne l'unità andava a capo da sola
    — misurato a 1440 × 900 col pannello a 20rem. I campi corti (b, h, «inf n», Ø) restano
@@ -126,7 +137,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .editor-valori { grid-template-columns: minmax(0, 1fr); }
 /* Il carico è un sotto-gruppo dentro «carichi»: il filetto a sinistra dice dove comincia e
    dove finisce senza una seconda cornice, e il rientro lo mette sotto la sua legenda. */
-.carico { border-left: 1px solid var(--tratto); padding-left: 6px; margin-top: 6px; }
+/* Con scope: `piano.js` mette `class="carico"` sulle frecce SVG, e un `border-left` su una
+   `<line>` non si vede ma il nome collideva lo stesso. */
+.editor .carico { border-left: 1px solid var(--tratto); padding-left: 6px; margin-top: 6px; }
 .editor button { font: inherit; font-size: 11px; padding: 2px 8px; margin-top: 4px; border: 1px solid var(--tratto-forte);
   border-radius: 3px; background: var(--pannello); color: var(--inchiostro); }
 .editor input:focus-visible, .editor select:focus-visible, .editor button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
@@ -155,6 +168,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #albero li.gruppo { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--testo-tenue);
   margin-top: var(--passo); cursor: default; }
 #albero li.gruppo:hover { background: none; }
+/* La voce scelta: filetto rosso e grassetto, mai il rosso come inchiostro (4,28:1 su questo
+   fondo, sotto AA a 11px). Stesso mestiere che il rosso fa in `.avviso`; il «▸» che
+   `albero.js` mette in testa è l'altro canale. */
+#albero li.scelto { border-left: 3px solid var(--rosso); padding-left: 6px; font-weight: 700; }
 
 /* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e, quando un tasto ce l'ha, lo
    nomina — `N` per l'albero, `G` per l'ispettore. I recenti non ne hanno uno e non lo fingono. */

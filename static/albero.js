@@ -101,9 +101,12 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       li.tabIndex = 0;
       li.setAttribute("role", "button");
       li.setAttribute("aria-pressed", String(selezione?.tipo === r.tipo && selezione.id === r.id));
-      // Doppio canale: chi è selezionato ha il rosso e il segno «▸», non il solo colore.
+      // Doppio canale: chi è selezionato ha il segno «▸» e il filetto rosso a sinistra, non il
+      // rosso come inchiostro — `--rosso` su `--fondo` è 4,28:1, sotto la soglia AA per un
+      // testo di 11px. Il rosso fa il filetto, come in `.avviso` e `.non-ora`; la parola la
+      // fa il segno. Classe e non `style`, così la regola sta tutta in `stile.css`.
       if (selezione?.tipo === r.tipo && selezione.id === r.id) {
-        li.style.color = "var(--rosso)";
+        li.className = "numero scelto";
         li.textContent = `▸ ${r.testo}`;
       }
       return li;
