@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { versoLibero, estensione, creaPiano } from "../piano.js";
+import { modelloVuoto } from "../modello.js";
+import { creaNodo, estrudi, creaAzione, aggiungiCarico } from "../comandi.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -186,4 +188,78 @@ test("creaPiano: modello vuoto e nessun ghost non sollevano e non disegnano nien
   assert.doesNotThrow(() => piano.disegna(m([])));
   assert.equal(tutti(svg, "circle").length, 0);
   assert.equal(tutti(svg, "line").length, 0);
+});
+
+// --- i carichi dell'azione in vista (11c/task 6) -------------------------------
+// Una freccia è un'annotazione, non una misura del modello: se entrasse in `estensione` il
+// riquadro salterebbe a ogni carico aggiunto, e il telaio si rimpicciolirebbe da sé. Il
+// confronto del `viewBox` prima e dopo è la difesa di quella proprietà.
+
+const linee = (svg) => tutti(svg, "line").filter((l) => l.getAttribute("class") === "carico");
+const titoli = (svg) => tutti(svg, "text").filter((t) => t.getAttribute("class") === "carichi-titolo");
+const scritte = (svg) => JSON.stringify(tutti(svg, "text").map((t) => t.textContent));
+
+test("creaPiano: l'azione in vista disegna le frecce e il titolo, senza toccare il riquadro", () => {
+  const { piano, svg } = pianoFinto();
+  let modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  modello = creaAzione(modello, { nome: "permanenti travi", natura: "G2" });
+  modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
+  piano.disegna(modello, {});
+  const riquadro = svg.getAttribute("viewBox");
+  assert.equal(linee(svg).length, 0, "senza azione in vista nessuna freccia");
+  assert.equal(titoli(svg).length, 0, "senza azione in vista nessun titolo");
+  piano.disegna(modello, { azione: modello.azioni[0] });
+  assert.equal(linee(svg).length, 3, "un distribuito porta tre frecce: a un quarto, a metà, a tre quarti");
+  assert.equal(svg.getAttribute("viewBox"), riquadro, "il riquadro non si muove quando compare un carico");
+  assert.ok(tutti(svg, "text").some((t) => t.textContent === "carichi: permanenti travi"),
+    `nessun titolo dell'azione: ${scritte(svg)}`);
+});
+
+test("creaPiano: la sola gravità non ha frecce ma sta nel titolo", () => {
+  const { piano, svg } = pianoFinto();
+  let modello = creaAzione(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { nome: "peso proprio", natura: "G1" });
+  modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "gravita", fattore_z: -1 } });
+  piano.disegna(modello, { azione: modello.azioni[0] });
+  assert.equal(linee(svg).length, 0, "la gravità non ha una geometria da disegnare");
+  assert.ok(tutti(svg, "text").some((t) => /carichi: peso proprio · g z ×−1/.test(t.textContent)),
+    `la gravità deve dirsi nel titolo: ${scritte(svg)}`);
+});
+
+// --- ingressi degeneri: riferimenti spariti ------------------------------------
+// I comandi rifiutano un carico su un nodo che non c'è (`comandi.js:433`), ma un modello letto
+// da file può portarne uno: l'azione arriva a `disegna` com'è, e queste sono scritte a mano.
+
+test("creaPiano: un nodale su un nodo sparito non si disegna, il resto sì", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  const azione = { id: 1, nome: "misti", natura: "G2", categoria: null, generata: false, carichi: [
+    { tipo: "nodale", nodo: 99, Fx: 0, Fy: 0, Fz: -10000, Mx: 0, My: 0, Mz: 0 },
+    { tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" },
+  ] };
+  piano.disegna(modello, { azione });
+  assert.equal(linee(svg).length, 3, "restano le tre frecce del distribuito, nessuna per il nodo sparito");
+  assert.equal(tutti(svg, "circle").length, 2, "i due nodi restano disegnati");
+});
+
+test("creaPiano: un'azione i cui carichi puntano tutti nel vuoto tiene comunque il titolo", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  const azione = { id: 1, nome: "residui", natura: "G2", categoria: null, generata: false, carichi: [
+    { tipo: "nodale", nodo: 99, Fx: 0, Fy: 0, Fz: -10000, Mx: 0, My: 0, Mz: 0 },
+    { tipo: "distribuito", asta: 42, q: -12.5, direzione: "z" },
+  ] };
+  piano.disegna(modello, { azione });
+  assert.equal(linee(svg).length, 0, "nessun carico ha una geometria a cui appendersi");
+  assert.equal(titoli(svg).length, 1, "l'azione esiste, e il titolo lo dice");
+});
+
+test("creaPiano: un'azione su un modello senza nodi scrive il titolo dentro il riquadro", () => {
+  const { piano, svg } = pianoFinto();
+  const azione = { id: 1, nome: "vuota", natura: "Q", categoria: "vento", generata: false, carichi: [] };
+  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
+  assert.equal(titoli(svg).length, 1);
+  const [x0, z0, larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
+  const t = titoli(svg)[0];
+  assert.ok(Number(t.getAttribute("x")) >= x0 && Number(t.getAttribute("x")) <= x0 + larghezza, "il titolo sta dentro in x");
+  assert.ok(Number(t.getAttribute("y")) >= z0 && Number(t.getAttribute("y")) <= z0 + altezza, "il titolo sta dentro in y");
 });
