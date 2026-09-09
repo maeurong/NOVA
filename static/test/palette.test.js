@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { filtraVoci, punteggio, creaPalette, NESSUN_COMANDO } from "../palette.js";
 import { TASTI } from "../tastiera.js";
 
@@ -62,6 +63,21 @@ test("punteggio: la sottostringa in testa vale più di quella in coda, e più de
   assert.equal(punteggio("nodo", "x"), 0);
 });
 
+// --- il foglio di stile -----------------------------------------------------
+// Un `/*` non chiuso non è un errore che il browser segnala: quel che segue diventa il
+// prelude della regola dopo, e quella regola sparisce in silenzio. È successo davvero al
+// round 1 — `#palette-stato { margin: 0 }` non esisteva, e il paragrafo prendeva i margini
+// del browser sotto la lista. Costa una lettura di file provarlo, e nessuno se ne accorge
+// a occhio.
+test("stile.css: ogni commento si chiude, e le regole restano regole", () => {
+  const css = readFileSync(new URL("../stile.css", import.meta.url), "utf8");
+  const senzaCommenti = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.ok(!senzaCommenti.includes("*/"), "c'è un `/*` senza il suo `*/`");
+  assert.ok(!senzaCommenti.includes("/*"), "c'è un `*/` che non chiude niente");
+  // La regola base di `#palette-stato`: è quella che il commento aperto si era mangiata.
+  assert.match(senzaCommenti, /}\s*#palette-stato\s*\{/);
+});
+
 // --- il riquadro, sul DOM finto ---------------------------------------------
 // Stampo di `test/pannello.test.js:10-35`, con tre aggiunte che lì non servivano:
 // `querySelector` (la palette cerca campo, elenco e stato dentro la radice), `children`
@@ -96,7 +112,7 @@ globalThis.document = {
 function riquadroFinto() {
   const campo = elementoFinto(), elenco = elementoFinto(), stato = elementoFinto();
   const radice = elementoFinto();
-  radice.querySelector = (s) => ({ input: campo, ul: elenco, p: stato }[s]);
+  radice.querySelector = (s) => ({ input: campo, ul: elenco, "#palette-stato": stato }[s]);
   return { radice, campo, elenco, stato };
 }
 

@@ -269,7 +269,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    --fondo, `stile.css:133`). Restano i due canali, e il testo è leggibile come gli altri. */
 #palette-voci li.non-ora { border-left: 3px solid var(--rosso); }
 /* «nessun comando»: un `<p role="status">` sotto l'elenco vuoto, non un `<li>` — un
-   `listbox` possiede solo `option`. Stesso posto a schermo, un testo solo. */
+   `listbox` possiede solo `option`. Stesso posto a schermo, un testo solo.
    Vuoto resta reso ad altezza zero, non `display: none`: una live region nascosta e poi
    mostrata non viene annunciata da tutte le AT, e i margini sono l'unica cosa da togliere. */
 #palette-stato { margin: 0; padding: 0; font-size: 13px; color: var(--inchiostro); }

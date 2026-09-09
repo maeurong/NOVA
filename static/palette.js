@@ -36,7 +36,7 @@ export function filtraVoci(voci, query) {
 export function creaPalette(radice, { suScelta }) {
   const campo = radice.querySelector("input");
   const elenco = radice.querySelector("ul");
-  const stato = radice.querySelector("p");
+  const stato = radice.querySelector("#palette-stato");
   let voci = [], disponibili = new Set(), risultati = [], attiva = 0;
 
   function riga(r, i) {
