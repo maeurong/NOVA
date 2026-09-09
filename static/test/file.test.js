@@ -471,6 +471,8 @@ test("importa: campo vuoto, richiesta in corso, 400 e successo", async () => {
   await f.importa("/x/12_wall.json");
   assert.equal(chiamate.err.at(-1), "il prior non porta la chiave `terna`");
   assert.equal(chiamate.imp.length, 0);
+  assert.equal(radice.querySelector("#file-importa").disabled, false, "il bottone torna disponibile anche dopo un 400");
+  assert.equal(radice.querySelector("#file-importa").textContent, "importa");
   const risposta = { esito: "ok", modello: { nodi: [] }, scartate: [], giunzioni: [], proposte_vincoli: [], mancano: [], resoconto: {} };
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => risposta });
   await f.importa("/x/12_wall.json");
@@ -504,6 +506,8 @@ test("importa: il server non risponde", async () => {
   const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione() {}, suErrore: (m) => detti.push(m) });
   await f.importa("/x/12_wall.json");
   assert.deepEqual(detti, ["il server non risponde"]);
+  assert.equal(radice.querySelector("#file-importa").disabled, false, "il bottone torna disponibile anche dopo un rigetto della fetch");
+  assert.equal(radice.querySelector("#file-importa").textContent, "importa");
   globalThis.fetch = originale;
 });
 
