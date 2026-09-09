@@ -60,11 +60,12 @@ export function depositoSicuro() {
   }
 }
 
-export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito = null }) {
+export function creaFile(radice, { suApertura, suSalvataggio, suImportazione, suErrore, deposito = null }) {
   const campo = radice.querySelector("#file-percorso");
   const stato = radice.querySelector("#file-stato");
   const elenco = radice.querySelector("#file-recenti");
   const elencoVuoto = radice.querySelector("#file-recenti-vuoto");
+  const bottoneImporta = radice.querySelector("#file-importa");
   const deposito_ = deposito ?? depositoSicuro();
   let recenti = deposito_ ? leggi(deposito_) : [];
   // Uno scatto per comando: due Invio di fila non devono aprire due richieste in corsa,
@@ -157,12 +158,37 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
     }
   }
 
+  /** Il prior di MeshRec come modello. Come `apri`, con tre differenze dette dal patto: il
+   *  percorso non entra nei recenti (sono modelli `.nova.json`), `salvato` resta `null` (un
+   *  modello importato non è mai stato su disco: «salva» chiederà dove), e chi chiama riceve
+   *  la risposta intera — scartate, giunzioni, proposte, mancano — perché il rendiconto sta
+   *  accanto al modello, non dentro. */
+  async function importa(percorso) {
+    if (inCorso) return occupato();
+    const p = (typeof percorso === "string" ? percorso : campo.value).trim();
+    if (p === "") return suErrore("scrivi il percorso di un 12_wall.json");
+    inCorso = true;
+    if (bottoneImporta) { bottoneImporta.disabled = true; bottoneImporta.textContent = "importazione…"; }  // P5
+    try {
+      const risposta = await chiediJson("/api/importa", { percorso: p });
+      campo.value = "";   // il campo è la destinazione di «salva»: un .nova.json sopra il prior sarebbe una perdita
+      salvato = null;
+      suImportazione(p, risposta.modello, risposta);
+    } catch (e) {
+      suErrore(e.message);
+    } finally {
+      inCorso = false;
+      if (bottoneImporta) { bottoneImporta.disabled = false; bottoneImporta.textContent = "importa"; }
+    }
+  }
+
   campo.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
     apri();
   });
   radice.querySelector("#file-apri").addEventListener("click", () => apri());
+  bottoneImporta?.addEventListener("click", () => importa());
 
   function disegna({ percorso, impronta, modello }) {
     if (percorso && campo.value === "") campo.value = percorso;
@@ -176,5 +202,5 @@ export function creaFile(radice, { suApertura, suSalvataggio, suErrore, deposito
   }
 
   disegnaRecenti();
-  return { disegna, apri, salva, percorsoCorrente: () => campo.value.trim() };
+  return { disegna, apri, salva, importa, percorsoCorrente: () => campo.value.trim() };
 }

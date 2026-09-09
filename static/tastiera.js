@@ -20,6 +20,7 @@ export const TASTI = [
   { codice: "seleziona", tasto: "G",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "importa",   tasto: "⌘I",    etichetta: "importa",   aiuto: "il 12_wall.json scritto nel campo", contesto: "salvo-ghost", modificatore: "comando" },
   // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
   // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
   // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
@@ -73,7 +74,7 @@ const SENZA_MODIFICATORE = new Map([
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
   ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
-const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"], ["k", "palette"]]);
+const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"], ["k", "palette"], ["i", "importa"]]);
 // Solo ⇧⌘Z ha un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
 const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"]]);
 
