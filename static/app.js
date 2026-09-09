@@ -247,6 +247,12 @@ campoComando.addEventListener("keydown", (ev) => {
 // di qui, e `window.prompt` non esiste più in nessuna strada del programma (P2).
 rigaComando.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  conferma();
+});
+
+/** Il dispatch della conferma, fuori dal listener: `Invio` nel campo non è l'unica strada che
+ *  porta qui. Il campo chiuso non ha niente da confermare, e tacere è la risposta giusta. */
+function conferma() {
   if (!comando) return;
   if (comando.tipo === "estrudi") return confermaEstrusione();
   if (comando.tipo === "rinomina") return confermaNome();
@@ -254,7 +260,7 @@ rigaComando.addEventListener("submit", (ev) => {
   if (comando.tipo === "materiale") return confermaMateriale();
   if (comando.tipo === "danno") return confermaDanno();
   confermaPunto();  // `nodo` e `sposta`: la stessa grammatica, «x; z»
-});
+}
 
 // Campo vuoto: niente da eseguire **e** niente da dire. Un testo che c'è ma non si legge
 // parla, e solo adesso — mentre si scriveva era un testo a metà, non uno sbagliato.
@@ -479,7 +485,13 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
   ev.preventDefault();
+  eseguiVoce(voce);
+});
 
+/** Una voce della tastiera, eseguita. Fuori dal listener perché `ev` qui dentro non serve più
+ *  — il ramo `direzione`, l'unico che legge `ev.key`, resta di là — e perché il tasto non è
+ *  l'unica strada che porta a un comando. */
+function eseguiVoce(voce) {
   if (voce.codice === "annulla") { modo = null; chiudiComando(); dì(null); ridisegna(); return; }
 
   // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
@@ -632,6 +644,6 @@ window.addEventListener("keydown", (ev) => {
     if (selezione?.tipo !== "asta") { dì("il danno vuole un'asta: clicca un'asta nel piano o nell'albero"); return; }
     apriComando(voce, { bersaglio: { ...selezione } });
   }
-});
+}
 
 ridisegna();
