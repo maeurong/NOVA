@@ -4,7 +4,9 @@ import { modelloVuoto } from "../modello.js";
 import { ErroreComando, creaNodo, estrudi, spostaNodo, eliminaNodo, rinomina, collega, impostaVincolo,
          creaSezione, modificaSezione, impostaFila, assegnaSezione, eliminaSezione, creaMateriale,
          modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault,
-         DEFAULT_CALCESTRUZZO, DEFAULT_ACCIAIO } from "../comandi.js";
+         DEFAULT_CALCESTRUZZO, DEFAULT_ACCIAIO, creaAzione, modificaAzione, aggiungiCarico,
+         modificaCarico, togliCarico, eliminaAzione, creaCombinazione, modificaCombinazione,
+         impostaTermine, eliminaCombinazione } from "../comandi.js";
 
 test("crea un nodo con l'identificatore 1 e le coordinate date", () => {
   const m = creaNodo(modelloVuoto(), { x: 1200, z: 3400 });
@@ -114,7 +116,8 @@ test("spostaNodo con la sola x aggiornata lascia z quella di prima", () => {
 test("elimina un nodo e con lui aste e carichi che lo nominano", () => {
   let m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
   m = { ...m, azioni: [{ id: 1, nome: "Q", natura: "Q", generata: false, carichi: [
-    { tipo: "nodale", nodo: 2, fz: -1200 },
+    { tipo: "nodale", nodo: 2, Fz: -1200 },
+    { tipo: "cedimento", nodo: 2, uz: -5 },
     { tipo: "distribuito", asta: 1, q: -3, direzione: "z" },
     { tipo: "gravita", fattore_z: -1 },
   ] }] };
@@ -134,7 +137,7 @@ test("elimina un nodo che non esiste si rifiuta e lascia il modello intatto", ()
 test("eliminaNodo non tocca il modello che riceve, aste e carichi compresi", () => {
   let m = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
   m = { ...m, azioni: [{ id: 1, nome: "Q", natura: "Q", generata: false, carichi: [
-    { tipo: "nodale", nodo: 2, fz: -1200 },
+    { tipo: "nodale", nodo: 2, Fz: -1200 },
     { tipo: "distribuito", asta: 1, q: -3, direzione: "z" },
     { tipo: "gravita", fattore_z: -1 },
   ] }] };
@@ -539,4 +542,149 @@ test("P4: la veste già scelta non è un comando; una veste diversa sì", () => 
   const importato = conSezione();
   delete importato.impostazioni_analisi;
   assert.notEqual(impostaVeste(importato, { veste: "media" }), importato);
+});
+
+// --- azioni, carichi, combinazioni, termini (story 25-27) ----------------------------------
+const conAzione = () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = estrudi(m, { da: 1, dx: 5000, dz: 0 });
+  return creaAzione(m, { nome: "permanenti travi", natura: "G2" });
+};
+const conDueCarichi = () => {
+  const m = aggiungiCarico(conAzione(), { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
+  return aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita", fattore_z: -1 } });
+};
+
+test("creaAzione: natura obbligatoria, Q con categoria, identificatore mai riusato", () => {
+  const m = conAzione();
+  assert.deepEqual(m.azioni[0], { id: 1, nome: "permanenti travi", natura: "G2", categoria: null, generata: false, carichi: [] });
+  assert.equal(m.contatori.azione, 1);
+  assert.throws(() => creaAzione(m, { nome: "x", natura: "G3" }), /G1, G2, Q, E/);
+  // La grammatica del campo alza la natura (`carichi.js:leggiAzione`), il riduttore no: chi
+  // arriva da un'altra strada deve passarla come la scrive lo schema.
+  assert.throws(() => creaAzione(m, { nome: "x", natura: "q" }), /G1, G2, Q, E/);
+  assert.throws(() => creaAzione(m, { nome: "x", natura: "Q" }), /natura Q senza categoria d'uso/);
+  assert.throws(() => creaAzione(m, { nome: "", natura: "G1" }), ErroreComando);
+  const salto = { ...modelloVuoto(), contatori: { azione: 5 } };
+  assert.equal(creaAzione(salto, { nome: "x", natura: "G1" }).azioni[0].id, 6);
+});
+
+test("modificaAzione: solo i campi passati, e il risultato deve restare valido", () => {
+  const m = conAzione();
+  const rinominata = modificaAzione(m, { id: 1, nome: "solai" });
+  assert.equal(rinominata.azioni[0].nome, "solai");
+  assert.equal(rinominata.azioni[0].natura, "G2", "la natura non passata resta quella di prima");
+  assert.throws(() => modificaAzione(m, { id: 1, natura: "Q" }), /natura Q senza categoria d'uso/);
+  const q = modificaAzione(m, { id: 1, natura: "Q", categoria: "residenziale" });
+  assert.throws(() => modificaAzione(q, { id: 1, categoria: null }), /natura Q senza categoria d'uso/);
+  assert.equal(modificaAzione(m, { id: 1, nome: "permanenti travi" }), m, "gli stessi valori non sono un comando");
+  assert.equal(modificaAzione(m, { id: 1, categoria: "" }), m, "il campo svuotato è «nessuna categoria»");
+  assert.throws(() => modificaAzione(m, { id: 9, nome: "x" }), ErroreComando);
+});
+
+test("aggiungiCarico: normalizza, controlla i riferimenti, ammette il termico", () => {
+  const m = conAzione();
+  const n = aggiungiCarico(m, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5, colore: "rosso" } });
+  assert.deepEqual(n.azioni[0].carichi, [{ tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" }]);
+  assert.throws(() => aggiungiCarico(m, { azione: 1, carico: { tipo: "nodale", nodo: 99 } }), /il nodo 99 non esiste/);
+  assert.throws(() => aggiungiCarico(m, { azione: 1, carico: { tipo: "distribuito", asta: 99, q: 1 } }), /l'asta 99 non esiste/);
+  assert.throws(() => aggiungiCarico(m, { azione: 1, carico: { tipo: "vento" } }), ErroreComando);
+  assert.throws(() => aggiungiCarico(m, { azione: 9, carico: { tipo: "gravita" } }), /l'azione 9 non esiste/);
+  assert.deepEqual(aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita" } }).azioni[0].carichi,
+    [{ tipo: "gravita", fattore_x: 0, fattore_y: 0, fattore_z: 0 }], "la gravità non ha riferimenti da controllare");
+  // Story 26: il termico lo rifiuta il Check Model alla corsa, non il modello in memoria.
+  assert.doesNotThrow(() => aggiungiCarico(m, { azione: 1, carico: { tipo: "termico", asta: 1, dT_uniforme: 20 } }));
+  assert.deepEqual(m.azioni[0].carichi, [], "il modello ricevuto resta intatto");
+});
+
+test("modificaCarico: sostituisce tutto il carico all'indice, che deve esistere", () => {
+  const m = conDueCarichi();
+  const n = modificaCarico(m, { azione: 1, indice: 0, carico: { tipo: "distribuito", asta: 1, q: -20 } });
+  assert.deepEqual(n.azioni[0].carichi[0], { tipo: "distribuito", asta: 1, q: -20, direzione: "z" });
+  assert.equal(n.azioni[0].carichi.length, 2, "l'altro carico resta dov'era");
+  const uno = { tipo: "gravita", fattore_z: -1 };
+  assert.throws(() => modificaCarico(m, { azione: 1, indice: 5, carico: uno }), /l'azione 1 ha 2 carichi/);
+  assert.throws(() => modificaCarico(m, { azione: 1, indice: -1, carico: uno }), ErroreComando);
+  assert.equal(modificaCarico(m, { azione: 1, indice: 0, carico: { tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" } }), m,
+    "lo stesso carico non è un comando");
+});
+
+test("togliCarico: l'ultimo carico se ne va, l'azione resta", () => {
+  const m = togliCarico(aggiungiCarico(conAzione(), { azione: 1, carico: { tipo: "gravita" } }), { azione: 1, indice: 0 });
+  assert.deepEqual(m.azioni[0].carichi, []);
+  assert.equal(m.azioni.length, 1, "l'azione senza carichi resta un'azione");
+  assert.throws(() => togliCarico(m, { azione: 1, indice: 0 }), /l'azione 1 ha 0 carichi/);
+});
+
+test("impostaTermine: un termine per azione, null lo toglie, zero resta", () => {
+  let m = creaCombinazione(conAzione(), { nome: "SLU", tipo: "fondamentale" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.3 });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
+  assert.deepEqual(m.combinazioni[0].termini, [{ azione: 1, coefficiente: 1.5 }]);
+  assert.deepEqual(impostaTermine(m, { id: 1, azione: 1, coefficiente: 0 }).combinazioni[0].termini, [{ azione: 1, coefficiente: 0 }]);
+  const senza = impostaTermine(m, { id: 1, azione: 1, coefficiente: null });
+  assert.deepEqual(senza.combinazioni[0].termini, []);
+  assert.equal(impostaTermine(senza, { id: 1, azione: 1, coefficiente: null }), senza, "niente da togliere: non è un comando");
+  assert.throws(() => impostaTermine(m, { id: 1, azione: 9, coefficiente: 1 }), /l'azione 9 non esiste/);
+  assert.throws(() => impostaTermine(m, { id: 9, azione: 1, coefficiente: 1 }), /la combinazione 9 non esiste/);
+  assert.throws(() => impostaTermine(m, { id: 1, azione: 1, coefficiente: NaN }), ErroreComando);
+  const doppia = { ...m, combinazioni: [{ ...m.combinazioni[0], termini: [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }] }] };
+  assert.throws(() => impostaTermine(doppia, { id: 1, azione: 1, coefficiente: 2 }), /due termini sull'azione 1/);
+});
+
+test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicono chi", () => {
+  let m = creaCombinazione(conAzione(), { nome: "SLU" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
+  assert.throws(() => eliminaAzione(m, { id: 1 }), /combinazioni 1/);
+  const conAnalisi = { ...m, analisi: [{ tipo: "statica", casi: ["C1"] }] };
+  assert.throws(() => eliminaCombinazione(conAnalisi, { id: 1 }), /C1/);
+  const libera = impostaTermine(m, { id: 1, azione: 1, coefficiente: null });
+  assert.throws(() => eliminaAzione({ ...libera, analisi: [{ tipo: "statica", casi: ["Z1"] }] }, { id: 1 }), /Z1/);
+  assert.deepEqual(eliminaAzione(libera, { id: 1 }).azioni, []);
+  assert.equal(eliminaAzione(libera, { id: 1 }).contatori.azione, 1, "un identificatore eliminato non si riusa");
+  assert.deepEqual(eliminaCombinazione(m, { id: 1 }).combinazioni, []);
+  assert.throws(() => eliminaAzione(m, { id: 9 }), ErroreComando);
+  assert.throws(() => eliminaCombinazione(m, { id: 9 }), ErroreComando);
+});
+
+test("creaCombinazione: il tipo è uno dei cinque o nessuno, e modificaCombinazione lo toglie", () => {
+  const m = creaCombinazione(conAzione(), { nome: "SLU" });
+  assert.deepEqual(m.combinazioni[0], { id: 1, nome: "SLU", termini: [], tipo: null, generata: false });
+  assert.equal(m.contatori.combinazione, 1);
+  assert.throws(() => creaCombinazione(m, { nome: "x", tipo: "slu" }), /fondamentale, caratteristica, frequente, quasi_permanente, sismica/);
+  assert.throws(() => creaCombinazione(m, { nome: "  " }), ErroreComando);
+  const tipata = modificaCombinazione(m, { id: 1, tipo: "sismica" });
+  assert.equal(tipata.combinazioni[0].tipo, "sismica");
+  assert.equal(modificaCombinazione(tipata, { id: 1, tipo: null }).combinazioni[0].tipo, null, "«nessun tipo» è un valore, non un campo assente");
+  assert.throws(() => modificaCombinazione(m, { id: 1, tipo: "slu" }), ErroreComando);
+  assert.throws(() => modificaCombinazione(m, { id: 1, nome: "" }), ErroreComando);
+  assert.throws(() => modificaCombinazione(m, { id: 9, nome: "x" }), ErroreComando);
+  assert.equal(modificaCombinazione(m, { id: 1, nome: "SLU" }), m, "lo stesso nome non è un comando");
+});
+
+test("rinomina accetta anche le azioni e le combinazioni", () => {
+  const m = creaCombinazione(conAzione(), { nome: "SLU" });
+  assert.equal(rinomina(m, { tipo: "azione", id: 1, nome: "pesi propri" }).azioni[0].nome, "pesi propri");
+  assert.equal(rinomina(m, { tipo: "combinazione", id: 1, nome: "SLU 1" }).combinazioni[0].nome, "SLU 1");
+});
+
+test("i dieci riduttori di azioni e combinazioni non toccano il modello che ricevono", () => {
+  let m = creaCombinazione(conDueCarichi(), { nome: "SLU" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.3 });
+  const snapshot = structuredClone(m);
+  for (const [nome, fn] of [
+    ["creaAzione", (x) => creaAzione(x, { nome: "vento", natura: "Q", categoria: "vento" })],
+    ["modificaAzione", (x) => modificaAzione(x, { id: 1, nome: "altro" })],
+    ["aggiungiCarico", (x) => aggiungiCarico(x, { azione: 1, carico: { tipo: "nodale", nodo: 1, Fz: -1000 } })],
+    ["modificaCarico", (x) => modificaCarico(x, { azione: 1, indice: 0, carico: { tipo: "distribuito", asta: 1, q: -1 } })],
+    ["togliCarico", (x) => togliCarico(x, { azione: 1, indice: 0 })],
+    ["creaCombinazione", (x) => creaCombinazione(x, { nome: "SLE" })],
+    ["modificaCombinazione", (x) => modificaCombinazione(x, { id: 1, tipo: "fondamentale" })],
+    ["impostaTermine", (x) => impostaTermine(x, { id: 1, azione: 1, coefficiente: 1.5 })],
+    ["eliminaCombinazione", (x) => eliminaCombinazione(x, { id: 1 })],
+    ["eliminaAzione", (x) => eliminaAzione(eliminaCombinazione(x, { id: 1 }), { id: 1 })],
+  ]) {
+    fn(m);
+    assert.deepEqual(m, snapshot, `${nome} ha toccato il modello ricevuto`);
+  }
 });
