@@ -194,6 +194,9 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
       if (!n || modulo === 0) continue;
       const ux = (c.Fx ?? 0) / modulo, uz = (c.Fz ?? 0) / modulo;
       const forze = ["Fx", "Fz"].filter((k) => c[k]).map((k) => `${k} ${num(c[k])} N`).join(" · ");
+      // Il testo parte dalla coda e corre verso il nodo: provato il contrario (testo dalla
+      // parte opposta al nodo) e usciva dal riquadro, che `estensione` tiene stretto sui nodi.
+      // Sfiorare il cerchio del nodo è il male minore; un riquadro con più margine è del piano.
       frecce.push({ da: { x: n.x - ux * lunghezza, z: n.z - uz * lunghezza }, a: { x: n.x, z: n.z }, testo: forze });
     } else if (c.tipo === "distribuito") {
       const a = asta(m, c.asta);
