@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { righe, prossimoVincolo, copiaPreimpostazione, presetPremuto, creaPannello }
   from "../pannello.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "../vincoli.js";
-import { creaNodo, estrudi, creaSezione, materialiDiDefault } from "../comandi.js";
+import { creaNodo, estrudi, creaSezione, materialiDiDefault,
+         creaAzione, aggiungiCarico, creaCombinazione, impostaTermine } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
 import { leggiNumero } from "../numeri.js";
 
@@ -32,6 +33,16 @@ globalThis.document = {
   createElement: () => elementoFinto(),
   createTextNode: (t) => ({ nodeType: 3, textContent: t }),
 };
+
+// Tutto l'albero finto sotto una radice, radice compresa.
+function tutti(radice) {
+  const out = [radice];
+  for (const f of radice._figli ?? []) out.push(...tutti(f));
+  return out;
+}
+// I controlli dell'editor, a qualunque profondità, che portano un `aria-label`.
+const controlliCon = (radice, testo) =>
+  tutti(radice).filter((e) => (e._attrs?.["aria-label"] ?? "").includes(testo));
 
 // Naviga dentro il DOM finto costruito da `editorVincolo`: editor → [fila, gradi], ognuno
 // con la legenda come primo figlio (fix round 1, D: `<fieldset>`/`<legend>`).
@@ -162,7 +173,8 @@ test("presetPremuto: la preimpostazione giusta è premuta, le altre no", () => {
 // --- creaPannello: wiring DOM ---
 
 const AZIONI = ["suVincolo", "suSezione", "suFila", "suAssegna", "suDanno", "suMateriale",
-                "suVeste", "suAvviso"];
+                "suVeste", "suAvviso", "suAzione", "suCarico", "suTogliCarico",
+                "suAggiungiCarico", "suCombinazione", "suTermine"];
 
 // Un registratore per azione: un solo argomento entra com'è (`suAvviso("…")`, `suVeste("media")`),
 // due o più entrano come lista (`suAssegna(1, null)` → `[1, null]`).
@@ -701,14 +713,14 @@ test("editorMateriale: la veste è del modello intero e manda suVeste", () => {
 // Il testo visibile di un'etichetta e il nome accessibile del suo controllo, per ogni campo
 // dell'editor in piedi. L'ordine dentro la `<label>` non è fisso: la spunta «personalizzato»
 // mette il controllo prima del testo, i campi numerici dopo.
+// A qualunque profondità: i campi di un carico stanno dentro il `<fieldset>` del carico,
+// dentro il gruppo «carichi» — due livelli più giù delle etichette degli altri editor.
 function nomiDeiCampi(editor) {
   const coppie = [];
-  for (const gruppo of editor._figli) {
-    for (const et of gruppo._figli ?? []) {
-      const testo = (et._figli ?? []).find((x) => x.nodeType === 3);
-      const c = (et._figli ?? []).find((x) => x._attrs?.["aria-label"]);
-      if (testo && c) coppie.push([testo.textContent, c._attrs["aria-label"]]);
-    }
+  for (const et of tutti(editor)) {
+    const testo = (et._figli ?? []).find((x) => x.nodeType === 3);
+    const c = (et._figli ?? []).find((x) => x._attrs?.["aria-label"]);
+    if (testo && c) coppie.push([testo.textContent, c._attrs["aria-label"]]);
   }
   return coppie;
 }
@@ -824,12 +836,29 @@ test("editorSezione: se l'altra casella non è un numero, avvisa e non manda la 
 
 // --- WCAG 2.5.3: il nome accessibile comincia da ciò che si vede ---
 
-for (const [nome, selezione] of [["asta", { tipo: "asta", id: 1 }],
-                                 ["sezione", { tipo: "sezione", id: 1 }],
-                                 ["materiale", { tipo: "materiale", id: 1 }]]) {
+const conBarre = () => {
+  const m = conStaffe(conSezioneEAsta());
+  m.materiali[0].personalizzato = true;
+  return m;
+};
+
+for (const [nome, selezione, modello] of [
+  ["asta", { tipo: "asta", id: 1 }, conBarre],
+  ["sezione", { tipo: "sezione", id: 1 }, conBarre],
+  ["materiale", { tipo: "materiale", id: 1 }, conBarre],
+  // Tutti e cinque i tipi di carico in un colpo: è qui che un campo nuovo rompe in silenzio.
+  ["Azione", { tipo: "azione", id: 1 }, () => {
+    let m = conCarichi();
+    m = aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita", fattore_z: -1 } });
+    m = aggiungiCarico(m, { azione: 1, carico: { tipo: "cedimento", nodo: 1, uz: -5 } });
+    return aggiungiCarico(m, { azione: 1, carico: { tipo: "termico", asta: 1, dT_uniforme: 20 } });
+  }],
+  ["Combinazione", { tipo: "combinazione", id: 1 }, () => impostaTermine(
+    creaCombinazione(conCarichi(), { nome: "SLU", tipo: "fondamentale" }),
+    { id: 1, azione: 1, coefficiente: 1.3 })],
+]) {
   test(`editor${nome}: ogni nome accessibile comincia dal testo visibile (WCAG 2.5.3)`, () => {
-    const m = conStaffe(conSezioneEAsta());
-    m.materiali[0].personalizzato = true;
+    const m = modello();
     const { p, editor } = pannelloFinto();
     p.disegna(m, selezione, { catalogo: null, legame: LEGAME_C25 });
     const coppie = nomiDeiCampi(editor);
@@ -1111,4 +1140,180 @@ test("editorMateriale: senza legame e senza tabella il gruppo «valori» non c'�
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "materiale", id: 1 }, { catalogo: null, legame: null, tabella: null });
   assert.ok(!editor._figli.some((e) => e._figli?.[0]?.textContent === "valori"));
+});
+
+// --- le azioni e le combinazioni (11c) -----------------------------------------------------
+
+// Due nodi, un'asta, un'azione con due carichi: il distribuito sull'asta 1 (indice 0) e il
+// nodale sul nodo 2 (indice 1).
+const conCarichi = () => {
+  let m = CON_CERNIERA();
+  m = creaAzione(m, { nome: "permanenti travi", natura: "G2" });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "nodale", nodo: 2, Fx: 20000 } });
+  return m;
+};
+
+test("righe di un'azione: natura con categoria, il nome del caso, il conteggio dei carichi", () => {
+  let m = creaAzione(modelloVuoto(), { nome: "spinta", natura: "Q", categoria: "vento" });
+  assert.deepEqual(righe(m, { tipo: "azione", id: 1 }),
+    [["identificatore", "1"], ["nome", "spinta"], ["natura", "Q · vento"], ["caso", "Z1"],
+     ["carichi", "0"], ["generata", "no"]]);
+  assert.equal(righe(m, { tipo: "azione", id: 9 }), null);
+  m = creaCombinazione(m, { nome: "SLU", tipo: "fondamentale" });
+  assert.deepEqual(righe(m, { tipo: "combinazione", id: 1 }),
+    [["identificatore", "1"], ["nome", "SLU"], ["tipo", "fondamentale (SLU)"], ["caso", "C1"],
+     ["termini", "0"], ["generata", "no"]]);
+});
+
+test("editor dell'azione: il campo q cambiato manda il carico intero, e un testo illeggibile solo un avviso", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(conCarichi(), { tipo: "azione", id: 1 });
+  const [q] = controlliCon(editor, "q del carico 1");
+  q.value = "-15"; q.dispatch("change");
+  assert.deepEqual(chiamate.suCarico, [[1, 0, { tipo: "distribuito", asta: 1, q: -15, direzione: "z" }]]);
+  q.value = "molto"; q.dispatch("change");
+  assert.equal(chiamate.suCarico.length, 1);
+  assert.equal(chiamate.suAvviso.length, 1);
+  // Il campo torna al valore del **modello** con cui è stato disegnato: il -15 di prima non è
+  // ancora rientrato da un ridisegno (qui non c'è `app.js` a farlo), e inventarlo sarebbe la
+  // stessa bugia del campo che tiene «molto» a schermo.
+  assert.equal(q.value, "-12,500");
+});
+
+test("editor dell'azione: Fx illeggibile avvisa e rimette il numero di prima", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(conCarichi(), { tipo: "azione", id: 1 });
+  const [fx] = controlliCon(editor, "Fx del carico 2");
+  fx.value = "ventimila"; fx.dispatch("change");
+  assert.deepEqual(chiamate.suCarico, []);
+  assert.equal(chiamate.suAvviso[0], "«ventimila» non è un numero");
+  assert.equal(fx.value, "20000");
+});
+
+test("editor dell'azione: «aggiungi carico» è un comando, togli passa l'indice, il termico avverte", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  let m = conCarichi();
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [aggiungi] = controlliCon(editor, "aggiungi carico");
+  aggiungi.value = ""; aggiungi.dispatch("change");
+  assert.deepEqual(chiamate.suAggiungiCarico, []);
+  aggiungi.value = "termico"; aggiungi.dispatch("change");
+  assert.deepEqual(chiamate.suAggiungiCarico, [[1, "termico"]]);
+  const togli = tutti(editor).find((e) => e.textContent === "togli carico 2");
+  togli.dispatch("click");
+  assert.deepEqual(chiamate.suTogliCarico, [[1, 1]]);
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "termico", asta: 1, dT_uniforme: 20 } });
+  p.disegna(m, { tipo: "azione", id: 1 });
+  // un comando, non uno stato: al ridisegno il select è di nuovo sulla prima voce
+  const [dopo] = controlliCon(editor, "aggiungi carico");
+  assert.equal(dopo.value, "");
+  assert.equal(dopo._figli[0].textContent, "— scegli il tipo");
+  assert.equal(dopo._figli[0].selected, true);
+  assert.ok(tutti(editor).some((e) => e.className === "avviso" && /Check Model/.test(e.textContent)));
+});
+
+test("editor dell'azione: senza carichi c'è la nota e il comando, non un gruppo vuoto", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(creaAzione(modelloVuoto(), { nome: "peso proprio", natura: "G1" }), { tipo: "azione", id: 1 });
+  assert.ok(tutti(editor).some((e) => e.className === "nota" && /nessun carico/.test(e.textContent)));
+  assert.equal(controlliCon(editor, "aggiungi carico").length, 1);
+  assert.equal(tutti(editor).filter((e) => /^togli carico/.test(e.textContent)).length, 0);
+});
+
+test("editor dell'azione: il grado di un cedimento svuotato è «libero», non un avviso", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  let m = creaAzione(CON_CERNIERA(), { nome: "cedimento appoggio", natura: "G1" });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "cedimento", nodo: 1, uz: -5 } });
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [uz] = controlliCon(editor, "uz del carico 1");
+  uz.value = ""; uz.dispatch("change");
+  assert.equal(chiamate.suAvviso.length, 0);
+  assert.deepEqual(chiamate.suCarico[0][2].uz, null);
+});
+
+test("editor dell'azione: la categoria svuotata è «nessuna», non una stringa vuota", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  const m = creaAzione(modelloVuoto(), { nome: "spinta", natura: "Q", categoria: "vento" });
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [cat] = controlliCon(editor, "categoria d'uso");
+  assert.equal(cat.value, "vento");
+  cat.value = "  "; cat.dispatch("change");
+  assert.deepEqual(chiamate.suAzione, [[1, { categoria: null }]]);
+});
+
+// Decisione 1: il flag si mostra, non blocca. Un'azione generata dalla norma resta modificabile.
+test("editor dell'azione: un'azione generata ha il suo editor, e la riga dice «sì»", () => {
+  const m = creaAzione(modelloVuoto(), { nome: "sisma X", natura: "E" });
+  m.azioni[0].generata = true;
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "azione", id: 1 });
+  assert.deepEqual(righe(m, { tipo: "azione", id: 1 }).find(([k]) => k === "generata"), ["generata", "sì"]);
+  assert.equal(editor.hidden, false);
+  assert.equal(controlliCon(editor, "natura dell'azione").length, 1);
+});
+
+// Ingresso degenere: un file dove il nodo del carico non c'è più. L'identificatore grezzo si
+// mostra e resta scelto — un `select` che ridisegna non può cancellarlo da sé.
+test("editor dell'azione: un carico su un nodo sparito mostra l'id grezzo, non solleva", () => {
+  let m = conCarichi();
+  m = { ...m, nodi: m.nodi.filter((n) => n.id !== 2) };
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "azione", id: 1 });
+  const [sel] = controlliCon(editor, "nodo del carico 2");
+  assert.deepEqual(sel._figli.map((o) => [o.textContent, o.selected]),
+    [["nodo 2 (sparito)", true], ["nodo 1", false]]);
+});
+
+test("editor della combinazione: un campo per azione, vuoto toglie, il tipo si sceglie", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  let m = creaCombinazione(conCarichi(), { nome: "SLU" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  const [coeff] = controlliCon(editor, "permanenti travi: coefficiente");
+  assert.equal(coeff.value, "1,500");
+  coeff.value = "1,3"; coeff.dispatch("change");
+  coeff.value = ""; coeff.dispatch("change");
+  assert.deepEqual(chiamate.suTermine, [[1, 1, 1.3], [1, 1, null]]);
+  const [tipo] = controlliCon(editor, "tipo della combinazione");
+  tipo.value = "sismica"; tipo.dispatch("change");
+  assert.deepEqual(chiamate.suCombinazione, [[1, { tipo: "sismica" }]]);
+});
+
+// Il deck somma i due termini (`nova/deck.py:305-309`): il campo mostra il numero che conta.
+test("editor della combinazione: due termini sulla stessa azione mostrano la somma", () => {
+  const m = creaCombinazione(conCarichi(), { nome: "SLU" });
+  m.combinazioni[0].termini = [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }];
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  const [coeff] = controlliCon(editor, "permanenti travi: coefficiente");
+  assert.equal(coeff.value, "1,500");
+});
+
+test("editor della combinazione: senza azioni nel modello la nota dice cosa premere", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(creaCombinazione(modelloVuoto(), { nome: "SLU" }), { tipo: "combinazione", id: 1 });
+  assert.ok(tutti(editor).some((e) => e.className === "nota" && /premi Z/.test(e.textContent)));
+});
+
+// Ingresso degenere: una combinazione di un file vecchio, senza il campo `termini`.
+test("combinazione senza «termini»: le righe dicono 0 e l'editor non solleva", () => {
+  const m = creaCombinazione(conCarichi(), { nome: "SLU" });
+  delete m.combinazioni[0].termini;
+  assert.deepEqual(righe(m, { tipo: "combinazione", id: 1 }).find(([k]) => k === "termini"),
+    ["termini", "0"]);
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  assert.equal(controlliCon(editor, "permanenti travi: coefficiente")[0].value, "");
+});
+
+test("dopo «togli carico» il fuoco non cade su body", () => {
+  const { p, editor } = pannelloFinto();
+  let m = conCarichi();
+  p.disegna(m, { tipo: "azione", id: 1 });
+  tutti(editor).find((e) => e.textContent === "togli carico 2").focus();
+  m = { ...m, azioni: [{ ...m.azioni[0], carichi: m.azioni[0].carichi.slice(0, 1) }] };
+  p.disegna(m, { tipo: "azione", id: 1 });
+  assert.notEqual(globalThis.document.activeElement, null);
+  assert.ok(tutti(editor).includes(globalThis.document.activeElement));
 });

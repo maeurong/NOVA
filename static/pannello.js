@@ -3,7 +3,10 @@
 // raddoppia due volte, e `app.js` ha già i due modi e la cucitura.
 
 import { leggiNumero, stampaNumero, millimetri } from "./numeri.js";
-import { nodo, asta, sezione, materiale, asteDellaSezione, vesteDi } from "./modello.js";
+import { nodo, asta, sezione, materiale, azione, combinazione, asteDellaSezione, vesteDi,
+         nomeCaso } from "./modello.js";
+import { NATURE, TIPI_CARICO, DIREZIONI, TIPI_COMBINAZIONE, COMPONENTI, GRADI_CEDIMENTO,
+         NOME_TIPO, NOME_TIPO_COMBINAZIONE } from "./carichi.js";
 import { LATI, VESTI, svgSezione, geometriaImpossibile } from "./sezione.js";
 import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "./legame.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
@@ -15,10 +18,9 @@ const mm = (v) => `${millimetri(v)} mm`;
  *  la virgola** — `,?0+$` da solo mangiava anche lo zero di «10». */
 const conciso = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
 
-const CERCA = { nodo, asta, sezione, materiale };
+const CERCA = { nodo, asta, sezione, materiale, azione, combinazione };
 
-/** L'entità selezionata, o `null` — anche quando il tipo è uno che l'ispettore non mostra
- *  (le azioni, le combinazioni). Le quattro vie sono esplicite: un `else` che faceva cadere
+/** L'entità selezionata, o `null`. Le sei vie sono esplicite: un `else` che faceva cadere
  *  tutto ciò che non è nodo su `aste.find` mostrava i numeri di un'asta con una **sezione**
  *  selezionata, perché gli identificatori delle due liste partono entrambi da 1. */
 function entitaSelezionata(m, selezione) {
@@ -78,7 +80,24 @@ function righeDiMateriale(m, k) {
           ["origine", testoOrigine(k.origine)]];
 }
 
-const RIGHE = { nodo: righeDiNodo, asta: righeDiAsta, sezione: righeDiSezione, materiale: righeDiMateriale };
+/** «Q · vento» quando la categoria c'è: la natura da sola non dice quale Q. */
+function righeDiAzione(m, a) {
+  return [["identificatore", String(a.id)], ["nome", a.nome],
+          ["natura", a.categoria ? `${a.natura} · ${a.categoria}` : a.natura],
+          ["caso", nomeCaso("azione", a.id)], ["carichi", String((a.carichi ?? []).length)],
+          ["generata", a.generata ? "sì" : "no"]];
+}
+
+/** `?? []`: una combinazione di un file vecchio può non avere il campo `termini`. */
+function righeDiCombinazione(m, c) {
+  return [["identificatore", String(c.id)], ["nome", c.nome],
+          ["tipo", c.tipo ? NOME_TIPO_COMBINAZIONE[c.tipo] : "—"],
+          ["caso", nomeCaso("combinazione", c.id)], ["termini", String((c.termini ?? []).length)],
+          ["generata", c.generata ? "sì" : "no"]];
+}
+
+const RIGHE = { nodo: righeDiNodo, asta: righeDiAsta, sezione: righeDiSezione,
+                materiale: righeDiMateriale, azione: righeDiAzione, combinazione: righeDiCombinazione };
 const righeDe = (m, tipo, e) => RIGHE[tipo](m, e);
 
 /** Le righe della `<dl>` per la selezione corrente, o `null` se punta a un oggetto sparito o
@@ -147,12 +166,17 @@ const testoNumero = (v) => {
  *  (P9: unità ed espressioni scritte come le scrive una persona). Se il testo non si legge,
  *  torna com'era e lo dice: un campo che tiene «trecento» a schermo e un modello che tiene
  *  300 sono due verità. */
-function campoNumero({ etichetta, nome = etichetta, valore, unita = "", alCambio, suAvviso }) {
+function campoNumero({ etichetta, nome = etichetta, valore, unita = "", alCambio, suAvviso,
+                       vuotoAmmesso = false }) {
   const et = document.createElement("label");
   const c = document.createElement("input");
   c.type = "text"; c.className = "numero"; c.value = testoNumero(valore);
   c.setAttribute("inputmode", "decimal"); c.setAttribute("aria-label", nome);
   c.addEventListener("change", () => {
+    // Con `vuotoAmmesso` il campo vuoto è un valore, non un errore: «nessun grado imposto»,
+    // «nessun gradiente», «l'azione non entra nella combinazione». `testoNumero(null)` è già
+    // la stringa vuota, quindi il giro campo → modello → campo si chiude su sé stesso.
+    if (vuotoAmmesso && c.value.trim() === "") { alCambio(null); return; }
     const v = leggiNumero(c.value);
     if (v === null) { suAvviso(`«${c.value}» non è un numero`); c.value = testoNumero(valore); return; }
     alCambio(v);
@@ -502,7 +526,98 @@ function editorMateriale(m, k, azioni, { catalogo, legame, tabella = null }) {
   return { elementi, controlli };
 }
 
-const EDITORI = { nodo: editorVincolo, asta: editorAsta, sezione: editorSezione, materiale: editorMateriale };
+const nomeNodo = (n) => n.nome ?? `nodo ${n.id}`;
+const nomeAsta = (a) => a.nome ?? `asta ${a.id}`;
+
+/** I campi di un carico, per tipo, appesi nel `box` del carico. Ogni cambio manda **il carico
+ *  intero** con il campo nuovo: il riduttore lo normalizza e lo confronta, e qui non si tiene
+ *  un secondo stato. Niente `DocumentFragment`: il DOM finto dei test non lo ha, e il box c'è già. */
+function campiDelCarico(m, c, i, box, invia, azioni, controlli) {
+  const chi = `del carico ${i + 1}`;
+  const agg = (x) => { box.append(x.etichetta); controlli.push(x.controllo); };
+  const num = (campo, etichetta, unita, vuotoAmmesso = false) =>
+    agg(campoNumero({ etichetta, nome: `${etichetta} ${chi}`, valore: c[campo], unita, vuotoAmmesso,
+                      alCambio: (v) => invia({ ...c, [campo]: v }), suAvviso: azioni.suAvviso }));
+  const rif = (campo, lista, nome) => {
+    const opzioni = lista.map((e) => [e.id, nome(e)]);
+    // Un file può portare un carico su un nodo (o un'asta) che non c'è più. L'identificatore
+    // grezzo resta a schermo ed è quello scelto: senza questa voce il `select` mostrerebbe il
+    // primo della lista, cioè un carico spostato che nessuno ha spostato.
+    if (!lista.some((e) => e.id === c[campo])) opzioni.unshift([c[campo], `${campo} ${c[campo]} (sparito)`]);
+    agg(scelta({ etichetta: campo, nome: `${campo} ${chi}`, opzioni, valore: c[campo],
+                 alCambio: (v) => invia({ ...c, [campo]: Number(v) }) }));
+  };
+  if (c.tipo === "nodale") { rif("nodo", m.nodi, nomeNodo); for (const k of COMPONENTI) num(k, k, k[0] === "F" ? " N" : " N·mm"); }
+  else if (c.tipo === "distribuito") {
+    rif("asta", m.aste, nomeAsta); num("q", "q", " N/mm");
+    agg(scelta({ etichetta: "direzione", nome: `direzione ${chi}`, opzioni: DIREZIONI.map((d) => [d, d.replace("_", " ")]),
+                 valore: c.direzione, alCambio: (v) => invia({ ...c, direzione: v }) }));
+  }
+  else if (c.tipo === "gravita") { for (const k of ["x", "y", "z"]) num(`fattore_${k}`, `fattore ${k}`, ""); }
+  else if (c.tipo === "cedimento") { rif("nodo", m.nodi, nomeNodo); for (const k of GRADI_CEDIMENTO) num(k, k, k[0] === "u" ? " mm" : " rad", true); }
+  else { rif("asta", m.aste, nomeAsta); num("dT_uniforme", "ΔT uniforme", " °C"); num("gradiente", "gradiente", " °C/mm", true); }
+}
+
+function editorAzione(m, a, azioni) {
+  const controlli = [];
+  const nat = gruppo("natura", "editor");
+  const n = scelta({ etichetta: "natura", nome: `natura dell'azione ${a.nome}`, opzioni: NATURE.map((k) => [k, k]),
+                     valore: a.natura, alCambio: (v) => azioni.suAzione(a.id, { natura: v }) });
+  nat.append(n.etichetta); controlli.push(n.controllo);
+  const et = document.createElement("label");
+  const cat = document.createElement("input");
+  cat.type = "text"; cat.value = a.categoria ?? "";
+  cat.setAttribute("aria-label", `categoria d'uso dell'azione ${a.nome}`);
+  cat.addEventListener("change", () => azioni.suAzione(a.id, { categoria: cat.value.trim() || null }));
+  et.append(document.createTextNode("categoria d'uso"), cat); nat.append(et); controlli.push(cat);
+
+  const carichi = a.carichi ?? [];
+  const car = gruppo("carichi", "editor",
+                     carichi.length ? null : "nessun carico: premi Q su un nodo o un'asta, o scegli un tipo qui sotto");
+  carichi.forEach((c, i) => {
+    const box = gruppo(`carico ${i + 1} · ${NOME_TIPO[c.tipo]}`, "editor editor-campi carico");
+    campiDelCarico(m, c, i, box, (nuovo) => azioni.suCarico(a.id, i, nuovo), azioni, controlli);
+    if (c.tipo === "termico") {
+      const p = document.createElement("p"); p.className = "avviso";
+      p.textContent = "attenzione: il Check Model rifiuta il carico termico in v1 (nova/check.py)";
+      box.append(p);
+    }
+    const via = bottone(`togli carico ${i + 1}`, () => azioni.suTogliCarico(a.id, i));
+    box.append(via); controlli.push(via);
+    car.append(box);
+  });
+  // Un comando, non uno stato: al ridisegno il select torna sulla prima voce, e la Storia lo racconta.
+  const agg = scelta({ etichetta: "aggiungi carico", nome: "aggiungi carico: scegli il tipo",
+                       opzioni: [["", "— scegli il tipo"], ...TIPI_CARICO.map((t) => [t, NOME_TIPO[t]])], valore: "",
+                       alCambio: (v) => { if (v) azioni.suAggiungiCarico(a.id, v); } });
+  car.append(agg.etichetta); controlli.push(agg.controllo);
+  return { elementi: [nat, car], controlli };
+}
+
+function editorCombinazione(m, c, azioni) {
+  const controlli = [];
+  const tipo = gruppo("tipo", "editor");
+  const t = scelta({ etichetta: "tipo", nome: `tipo della combinazione ${c.nome}`,
+                     opzioni: [["", "— nessuno"], ...TIPI_COMBINAZIONE.map((k) => [k, NOME_TIPO_COMBINAZIONE[k]])],
+                     valore: c.tipo ?? "", alCambio: (v) => azioni.suCombinazione(c.id, { tipo: v || null }) });
+  tipo.append(t.etichetta); controlli.push(t.controllo);
+  const ter = gruppo("termini", "editor editor-campi",
+                     m.azioni.length ? "coefficiente per azione; vuoto = l'azione non entra" : "nessuna azione nel modello: premi Z");
+  const termini = c.termini ?? [];
+  for (const a of m.azioni) {
+    // La somma, non il primo: un file con due termini sulla stessa azione mostra il numero che il
+    // deck userà (`nova/deck.py:305-309`); scriverci sopra lo rifiuta `impostaTermine`, che lo dice.
+    const suoi = termini.filter((k) => k.azione === a.id);
+    const coeff = suoi.length ? suoi.reduce((s, k) => s + k.coefficiente, 0) : null;
+    const campo = campoNumero({ etichetta: a.nome, nome: `${a.nome}: coefficiente nella combinazione ${c.nome}`, valore: coeff,
+                                vuotoAmmesso: true, alCambio: (v) => azioni.suTermine(c.id, a.id, v), suAvviso: azioni.suAvviso });
+    ter.append(campo.etichetta); controlli.push(campo.controllo);
+  }
+  return { elementi: [tipo, ter], controlli };
+}
+
+const EDITORI = { nodo: editorVincolo, asta: editorAsta, sezione: editorSezione,
+                  materiale: editorMateriale, azione: editorAzione, combinazione: editorCombinazione };
 
 export function creaPannello({ dati, vuoto, editor }, azioni) {
   // L'editor in piedi ora, per ritrovare il controllo a fuoco dopo un `replaceChildren`:
