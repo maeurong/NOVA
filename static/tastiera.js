@@ -20,7 +20,10 @@ export const TASTI = [
   { codice: "seleziona", tasto: "G",     etichetta: "seleziona", aiuto: "gira fra i nodi", contesto: "salvo-ghost" },
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
-  { codice: "disfa",     tasto: "⌘Z",    etichetta: "annulla",   aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
+  // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
+  // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
+  // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
+  { codice: "disfa",     tasto: "⌘Z",    etichetta: "disfa",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "rifai",     tasto: "⇧⌘Z",   etichetta: "rifai",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "estrudi",   tasto: "B",     etichetta: "estrudi",   aiuto: "lunghezza, poi freccia", contesto: "selezione", esempio: "3000", campo: "lunghezza da" },
   { codice: "asta",      tasto: "A",     etichetta: "asta",      aiuto: "poi il secondo nodo",    contesto: "selezione" },

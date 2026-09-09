@@ -21,6 +21,15 @@ test("ogni voce ha tasto ed etichetta da stampare nella barra", () => {
   }
 });
 
+// L'etichetta è il nome con cui la voce si cerca nella palette: due voci che la condividono
+// diventano indistinguibili lì dentro, dove il tasto è una scritta a destra e non il modo
+// in cui ci sei arrivato. ⌘Z e Esc dicevano tutte e due «annulla» (fix round 1, punto 4).
+test("nessuna etichetta è di due voci: nella palette si cercano per nome", () => {
+  const etichette = TASTI.map((v) => v.etichetta);
+  assert.equal(new Set(etichette).size, etichette.length,
+    `etichette ripetute: ${etichette.filter((e, i) => etichette.indexOf(e) !== i)}`);
+});
+
 test("un tasto mappato si riconosce dall'evento", () => {
   assert.equal(voceDaEvento({ key: "n", metaKey: false, ctrlKey: false, altKey: false }).codice, "nodo");
   assert.equal(voceDaEvento({ key: "N", metaKey: false, ctrlKey: false, altKey: false }).codice, "nodo");

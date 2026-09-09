@@ -68,6 +68,10 @@
          aria-label="cerca un comando, anche con il valore: «sezione 300 × 500», «q -12,5»"
          placeholder="comando, anche col valore: «sezione 300 × 500», «q -12,5»" spellcheck="false" autocomplete="off">
   <ul id="palette-voci" role="listbox" aria-label="comandi trovati"></ul>
+  <!-- Fuori dall'`<ul>`: un `listbox` possiede solo `option`, e «nessun comando» non lo è.
+       Un posto solo per quella frase — vista qui e annunciata da `role="status"` — invece
+       di un `<li>` visibile più un doppione nascosto che la direbbe due volte. -->
+  <p id="palette-stato" role="status"></p>
 </div>
 
 <!-- Il campo di comando: una riga sopra la barra, non una finestra che blocca (P2). `hidden`
