@@ -116,13 +116,15 @@ export function leggiCombinazione(testo) {
 // dopo la virgola cadono, come fa `conciso` in `pannello.js:16`, e il meno diventa tipografico.
 const num = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "").replace("-", "−");
 
+// Precondizione: un carico già passato da `normalizzaCarico` (chiavi complete); `direzione`
+// si difende da sola perché un file scritto a mano può ometterla.
 /** Una riga per persona, unità su ogni numero, e le componenti nulle taciute. */
 export function testoCarico(c) {
   if (c.tipo === "nodale") {
     const p = COMPONENTI.filter((k) => c[k]).map((k) => `${k} ${num(c[k])} ${k[0] === "F" ? "N" : "N·mm"}`);
     return `nodo ${c.nodo} · ${p.length ? p.join(" · ") : "nullo"}`;
   }
-  if (c.tipo === "distribuito") return `asta ${c.asta} · q ${num(c.q)} N/mm lungo ${c.direzione.replace("_", " ")}`;
+  if (c.tipo === "distribuito") return `asta ${c.asta} · q ${num(c.q)} N/mm lungo ${(c.direzione ?? "z").replace("_", " ")}`;
   if (c.tipo === "gravita") {
     const p = ["x", "y", "z"].filter((k) => c[`fattore_${k}`]).map((k) => `${k} ×${num(c[`fattore_${k}`])}`);
     return `gravità · ${p.length ? p.join(" · ") : "nulla"}`;
@@ -131,8 +133,14 @@ export function testoCarico(c) {
     const p = GRADI_CEDIMENTO.filter((k) => c[k] !== null && c[k] !== undefined).map((k) => `${k} ${num(c[k])} ${k[0] === "u" ? "mm" : "rad"}`);
     return `cedimento nodo ${c.nodo} · ${p.length ? p.join(" · ") : "nessuna componente"}`;
   }
-  const g = c.gradiente === null || c.gradiente === undefined ? "" : ` · gradiente ${num(c.gradiente)} °C/mm`;
-  return `termico asta ${c.asta} · ΔT ${num(c.dT_uniforme)} °C${g}`;
+  if (c.tipo === "termico") {
+    const g = c.gradiente === null || c.gradiente === undefined ? "" : ` · gradiente ${num(c.gradiente)} °C/mm`;
+    return `termico asta ${c.asta} · ΔT ${num(c.dT_uniforme)} °C${g}`;
+  }
+  // Un tipo fuori da `TIPI_CARICO` è un difetto del programma, non un testo sbagliato da
+  // mostrare a una persona: si solleva, come `valoriDaMostrare` (`legame.js:41`). Senza
+  // questo, un typo usciva stampato come un carico termico con l'asta «undefined».
+  throw new Error(`tipo di carico sconosciuto: ${c?.tipo}`);
 }
 
 /** Il versore nel piano x–z lungo cui spinge un distribuito, o `null` se è fuori dal piano. */

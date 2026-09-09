@@ -86,6 +86,12 @@ test("testoCarico: una gravità senza fattori dice «nulla», non «undefined»"
   assert.equal(t, "gravità · nulla");
   assert.doesNotMatch(t, /undefined|NaN/);
 });
+test("testoCarico: un tipo sconosciuto solleva, non scivola nel ramo del termico", () => {
+  assert.throws(() => testoCarico({ tipo: "vento" }), /sconosciuto/);
+});
+test("testoCarico: un distribuito senza direzione è lungo z", () => {
+  assert.equal(testoCarico({ tipo: "distribuito", asta: 4, q: -12.5 }), "asta 4 · q −12,5 N/mm lungo z");
+});
 test("frecceDeiCarichi: un distribuito verso il basso su una trave dà tre frecce che scendono", () => {
   const az = { id: 1, nome: "g", natura: "G2", categoria: null, generata: false,
                carichi: [{ tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" }] };
