@@ -179,6 +179,14 @@ function versoDistribuito(c, i, j) {
  *  Chi non ha una geometria nel piano (gravità, cedimento, termico, momenti, `y`) non ne ha. */
 export function frecceDeiCarichi(m, azione, lunghezza) {
   const frecce = [];
+  // Due distribuiti sulla stessa asta nella stessa azione: il secondo ha le frecce più lunghe
+  // di metà (si vede che sono due), e **tutte** le etichette stanno sopra la freccia più alta,
+  // impilate per carico — altrimenti i fusti lunghi del secondo attraversano il testo del
+  // primo. Visto in Chrome (09/09): «q −12,5» e «q −3,2» stampate una sull'altra a metà trave.
+  const distribuiti = (azione?.carichi ?? []).filter((c) => c.tipo === "distribuito");
+  const quantiSullAsta = new Map();
+  for (const c of distribuiti) quantiSullAsta.set(c.asta, (quantiSullAsta.get(c.asta) ?? 0) + 1);
+  const giaSullAsta = new Map();
   for (const c of azione?.carichi ?? []) {
     if (c.tipo === "nodale") {
       const n = nodo(m, c.nodo);
@@ -193,10 +201,21 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
       if (!i || !j || !c.q) continue;
       const verso = versoDistribuito(c, i, j);
       if (!verso) continue;
+      const k = giaSullAsta.get(c.asta) ?? 0;
+      giaSullAsta.set(c.asta, k + 1);
+      const L = lunghezza * (1 + 0.5 * k);
+      const piuAlta = lunghezza * (1 + 0.5 * (quantiSullAsta.get(c.asta) - 1));
       for (const t of [0.25, 0.5, 0.75]) {
         const p = { x: i.x + (j.x - i.x) * t, z: i.z + (j.z - i.z) * t };
-        frecce.push({ da: { x: p.x - verso.x * lunghezza, z: p.z - verso.z * lunghezza }, a: p,
-                      testo: t === 0.5 ? `q ${num(c.q)} N/mm` : null });
+        const f = { da: { x: p.x - verso.x * L, z: p.z - verso.z * L }, a: p, testo: null };
+        if (t === 0.5) {
+          f.testo = `q ${num(c.q)} N/mm`;
+          // L'ancora del testo: sopra la coda più alta dell'asta, una riga per carico. Con un
+          // carico solo coincide con `da`, e il piano non nota la differenza.
+          const h = piuAlta + k * 0.45 * lunghezza;
+          f.ancora = { x: p.x - verso.x * h, z: p.z - verso.z * h };
+        }
+        frecce.push(f);
       }
     }
   }

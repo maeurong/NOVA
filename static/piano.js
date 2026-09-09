@@ -217,7 +217,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
                                      stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: "carico-punta" }));
         }
         if (f.testo) {
-          const t = el("text", { x: pd.x + 4 * s, y: pd.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
+          // `ancora`, se c'è, sta sopra la coda più alta dell'asta (`carichi.js`): due carichi
+          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo.
+          const pt = f.ancora ? schermo(f.ancora) : pd;
+          const t = el("text", { x: pt.x + 4 * s, y: pt.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
           t.textContent = f.testo; gruppo.append(t);
         }
       }

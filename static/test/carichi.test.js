@@ -103,6 +103,23 @@ test("frecceDeiCarichi: un distribuito verso il basso su una trave dà tre frecc
   assert.equal(f.filter((k) => k.testo).length, 1);
   assert.match(f[1].testo, /12,5 N\/mm/);
 });
+test("frecceDeiCarichi: due distribuiti sulla stessa asta hanno code sfalsate, etichette in due posti", () => {
+  const az = { id: 1, nome: "g", natura: "G2", categoria: null, generata: false,
+               carichi: [{ tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" },
+                         { tipo: "distribuito", asta: 1, q: -3.2, direzione: "z" }] };
+  const f = frecceDeiCarichi(telaio(), az, 500);
+  assert.equal(f.length, 6);
+  assert.equal(f[1].da.z - f[1].a.z, 500);   // il primo, lungo `lunghezza`
+  assert.equal(f[4].da.z - f[4].a.z, 750);   // il secondo, una volta e mezza
+  // Le etichette stanno sopra la coda più alta (750), una riga per carico: nessun fusto le attraversa.
+  assert.equal(f[1].ancora.z - f[1].a.z, 750);
+  assert.equal(f[4].ancora.z - f[4].a.z, 750 + 225);
+  assert.equal(f[0].ancora, undefined);      // solo la freccia di mezzo porta il testo
+  // Su un'altra asta si riparte da zero: non è un contatore globale.
+  const altra = { ...az, carichi: [az.carichi[0], { tipo: "distribuito", asta: 2, q: 3, direzione: "locale_z" }] };
+  const g = frecceDeiCarichi(telaio(), altra, 500);
+  assert.equal(Math.abs(g[4].a.x - g[4].da.x), 500);
+});
 test("frecceDeiCarichi: il nodale punta sul nodo nel verso della forza", () => {
   const az = { id: 1, nome: "s", natura: "Q", categoria: "vento", generata: false,
                carichi: [{ tipo: "nodale", nodo: 3, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 }] };

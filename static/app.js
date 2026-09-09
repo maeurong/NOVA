@@ -254,6 +254,10 @@ function chiudiComando() {
   comando = null;
   modo = null;
   campoComando.value = "";
+  // Misurato in Chrome (09/09): un campo nascosto con `hidden` **tiene** il fuoco, e
+  // `daControllo` continua a lasciargli i tasti — `Z` dopo un Invio non apriva niente e le
+  // lettere finivano in un campo che nessuno vedeva. Il fuoco si toglie qui, a mano.
+  if (document.activeElement === campoComando) campoComando.blur();
 }
 
 // Il testo è la sorgente del ghost, quindi ogni tasto ridisegna. `comando.testo` rispecchia
