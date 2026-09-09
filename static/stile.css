@@ -128,8 +128,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    sola andava a capo otto volte di fianco a «gradiente». Una frase vuole la riga intera. */
 .editor-campi legend, .editor-campi > .nota, .editor-campi > .avviso { grid-column: 1 / -1; }
 /* «togli carico 1» è un'azione sul gruppo intero, non un campo di fianco a un altro: sta su
-   una riga sua, larga quanto il suo testo e non quanto mezza griglia. */
-.editor-campi > button { grid-column: 1 / -1; justify-self: start; }
+   una riga sua, larga quanto il suo testo e non quanto mezza griglia. Solo nel box del
+   carico: gli altri bottoni delle griglie (staffe, danno, valori di tabella) restano dove sono. */
+.editor-campi.carico > button { grid-column: 1 / -1; justify-self: start; }
 /* Una colonna sola per i valori del materiale: le loro etichette portano il nome di norma
    («E, modulo elastico», «f_ctm») e l'unità, e a due colonne l'unità andava a capo da sola
    — misurato a 1440 × 900 col pannello a 20rem. I campi corti (b, h, «inf n», Ø) restano

@@ -508,9 +508,9 @@ export function eliminaAzione(m, { id }) {
   const usata = combinazioniDellAzione(m, id).map((c) => `«${c.nome}»`);
   if (usata.length) throw new ErroreComando(`l'azione «${a.nome}» la usano le combinazioni ${usata.join(", ")}`, "togli il termine dalle combinazioni, poi elimina");
   const caso = nomeCaso("azione", id);
-  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
+  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione «${a.nome}» la usa un'analisi, come caso ${caso}`, NEL_FILE);
   // La modale nomina l'azione per identificatore, non per caso: `analisiCheUsano` non la vede.
-  if (analisiConMassaDa(m, id).length) throw new ErroreComando(`l'azione ${id} dà massa a un'analisi modale`, NEL_FILE);
+  if (analisiConMassaDa(m, id).length) throw new ErroreComando(`l'azione «${a.nome}» dà massa a un'analisi modale`, NEL_FILE);
   const n = copia(m);
   n.azioni = n.azioni.filter((a) => a.id !== id);
   return n;  // i contatori restano: un identificatore eliminato non si riusa
@@ -554,7 +554,7 @@ export function modificaCombinazione(m, { id, ...campi }) {
  *  (`nova/deck.py:305-309`), e una somma nascosta in un elenco è una bugia da leggere. */
 export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   const vecchia = combinazioneEsistente(m, id);
-  azioneEsistente(m, idAzione);
+  const a = azioneEsistente(m, idAzione);  // una ricerca sola: il nome nel messaggio viene da qui
   // Un file può portare due termini sulla stessa azione (il deck li somma): sostituirli con uno
   // perderebbe un dato senza dirlo. Si rifiuta, e si dice dove correggere.
   //
@@ -565,7 +565,7 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   const prima = vecchia.termini ?? [];  // sola lettura: la guardia e il posto del termine
   if (coefficiente !== null && prima.filter((t) => t.azione === idAzione).length > 1) {
     // «il deck li somma» è gergo di dentro: chi legge sa cos'è un'analisi, non cos'è un deck.
-    throw new ErroreComando(`la combinazione «${vecchia.nome}» ha due termini sull'azione «${azione(m, idAzione).nome}»: i due si sommano nell'analisi`,
+    throw new ErroreComando(`la combinazione «${vecchia.nome}» ha due termini sull'azione «${a.nome}»: i due si sommano nell'analisi`,
                             "correggi il file: un termine per azione");
   }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
@@ -585,9 +585,9 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
 }
 
 export function eliminaCombinazione(m, { id }) {
-  combinazioneEsistente(m, id);
+  const c = combinazioneEsistente(m, id);
   const caso = nomeCaso("combinazione", id);
-  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`la combinazione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
+  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`la combinazione «${c.nome}» la usa un'analisi, come caso ${caso}`, NEL_FILE);
   const n = copia(m);
   n.combinazioni = n.combinazioni.filter((c) => c.id !== id);
   return n;
