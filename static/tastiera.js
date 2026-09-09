@@ -32,6 +32,10 @@ export const TASTI = [
   // `tipi` restringe la voce ai soli tipi di selezione su cui il comando esiste davvero:
   // `D` con una sezione selezionata prometteva «danno» e `app.js` rispondeva «vuole un'asta».
   { codice: "danno",     tasto: "D",     etichetta: "danno",     aiuto: "fattori su E; fc, poi la nota", contesto: "selezione", esempio: "0,8; 0,9; martinetto 3", campo: "danno di", tipi: ["asta"] },
+  { codice: "azione",       tasto: "Z",  etichetta: "azione",       aiuto: "nome; natura (G1, G2, Q con categoria, E)", contesto: "salvo-ghost", esempio: "permanenti travi; G2", campo: "azione" },
+  { codice: "carico",       tasto: "Q",  etichetta: "carico",       aiuto: "su un nodo «Fx 20000», su un'asta «q» in N/mm", contesto: "selezione", esempio: "-12,5", campo: "carico su", tipi: ["nodo", "asta"] },
+  { codice: "combinazione", tasto: "K",  etichetta: "combinazione", aiuto: "nome; tipo (facoltativo)", contesto: "salvo-ghost", esempio: "SLU; fondamentale", campo: "combinazione" },
+  { codice: "palette",      tasto: "⌘K", etichetta: "comandi",      aiuto: "cerca un comando, anche col valore", contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
@@ -58,12 +62,15 @@ const SENZA_MODIFICATORE = new Map([
   ["m", "sposta"], ["r", "rinomina"], ["f2", "rinomina"],
   // `s` nudo e `⌘S` stanno in due mappe: il modificatore le separa prima del `get` (`voceDaEvento`).
   ["s", "sezione"], ["c", "materiale"], ["d", "danno"],
+  // `z` nudo e `⌘Z`, `k` nudo e `⌘K`: due mappe, il modificatore le separa prima del `get`
+  // (`voceDaEvento`).
+  ["z", "azione"], ["q", "carico"], ["k", "combinazione"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
   ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
-const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"]]);
+const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"], ["k", "palette"]]);
 // Solo ⇧⌘Z ha un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
 const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"]]);
 

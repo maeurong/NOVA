@@ -27,7 +27,7 @@ test("un tasto mappato si riconosce dall'evento", () => {
 });
 
 test("un tasto non mappato torna null", () => {
-  assert.equal(voceDaEvento({ key: "q", metaKey: false, ctrlKey: false, altKey: false }), null);
+  assert.equal(voceDaEvento({ key: "p", metaKey: false, ctrlKey: false, altKey: false }), null);
 });
 
 test("un contesto sconosciuto dà le voci di sempre, non un'eccezione", () => {
@@ -55,8 +55,9 @@ test("senza modificatore quella lettera non fa niente", () => {
 });
 
 test("una combinazione non mappata resta al browser", () => {
-  // "z" non c'è più qui: dalla giornata 11c ⌘Z è mappato (disfa), vedi sotto.
-  for (const key of ["n", "p", "w", "b", "k"]) {
+  // "z" e "k" non ci sono più qui: dalla giornata 11c ⌘Z è mappato (disfa) e ⌘K (palette),
+  // vedi sotto.
+  for (const key of ["n", "p", "w", "b"]) {
     assert.equal(voceDaEvento({ key, metaKey: true, ctrlKey: false, altKey: false }), null, key);
   }
 });
@@ -137,7 +138,7 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
   const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s",
-                "⌘Z": "z", "⇧⌘Z": "z", "← ↑ → ↓": "ArrowUp" };
+                "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "← ↑ → ↓": "ArrowUp" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const shift = v.tasto.startsWith("⇧");
@@ -368,6 +369,30 @@ test("ogni codice a lettera singola è raggiunto da esattamente una lettera", ()
 });
 test("col campo aperto la barra resta a due voci", () => {
   assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
+});
+
+// --- Z azione, Q carico, K combinazione, ⌘K palette (giornata 11c, Task 3) --------------
+
+test("Z nudo è azione, ⌘Z resta disfa; K nudo è combinazione, ⌘K la palette (anche Ctrl)", () => {
+  assert.equal(voceDaEvento({ key: "z" })?.codice, "azione");
+  assert.equal(voceDaEvento({ key: "z", metaKey: true })?.codice, "disfa");
+  assert.equal(voceDaEvento({ key: "k" })?.codice, "combinazione");
+  assert.equal(voceDaEvento({ key: "K", shiftKey: true })?.codice, "combinazione");
+  assert.equal(voceDaEvento({ key: "k", metaKey: true })?.codice, "palette");
+  assert.equal(voceDaEvento({ key: "k", ctrlKey: true })?.codice, "palette");
+  assert.equal(voceDaEvento({ key: "q" })?.codice, "carico");
+});
+test("Q vale su nodo e asta, non su sezione o materiale; la palette e le altre due sono di sempre", () => {
+  const codici = (c, t) => vociDellaBarra(c, t).map((v) => v.codice);
+  assert.ok(codici("selezione", "asta").includes("carico"));
+  assert.ok(codici("selezione", "nodo").includes("carico"));
+  assert.ok(!codici("selezione", "sezione").includes("carico"));
+  for (const c of ["azione", "combinazione", "palette"]) assert.ok(codici("sempre", null).includes(c), c);
+  assert.ok(!codici("sempre", null).includes("carico"));
+  assert.deepEqual(codici("comando"), ["conferma", "annulla"]);
+});
+test("⌘Q resta al browser: Q da solo basta per il carico, il comando non è nostro", () => {
+  assert.equal(voceDaEvento({ key: "q", metaKey: true }), null);
 });
 
 
