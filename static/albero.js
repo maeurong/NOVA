@@ -3,6 +3,7 @@
 
 import { asteDelNodo, asteDellaSezione } from "./modello.js";
 import { millimetri as mm } from "./numeri.js";
+import { NOME_TIPO_COMBINAZIONE } from "./carichi.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
   const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
@@ -56,6 +57,22 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       righe.push({
         tipo: "materiale", id: k.id,
         testo: `${k.nome} · ${k.classe}${k.personalizzato ? " · personalizzato" : ""}`,
+      });
+    }
+
+    const plurale = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
+    gruppo("Azioni", m.azioni.length);
+    for (const a of m.azioni) {
+      righe.push({
+        tipo: "azione", id: a.id,
+        testo: `${a.nome} · ${a.natura}${a.categoria ? ` ${a.categoria}` : ""} · ${plurale(a.carichi.length, "carico", "carichi")}${a.generata ? " · generata" : ""}`,
+      });
+    }
+    gruppo("Combinazioni", m.combinazioni.length);
+    for (const c of m.combinazioni) {
+      righe.push({
+        tipo: "combinazione", id: c.id,
+        testo: `${c.nome} · ${c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "senza tipo"} · ${plurale(c.termini.length, "termine", "termini")}${c.generata ? " · generata" : ""}`,
       });
     }
 
