@@ -52,6 +52,15 @@ export const sezioniDelMateriale = (m, id) => m.sezioni.filter((s) => s.calcestr
 /** La veste dell'analisi, una per modello (`nova/modello.py:349-351`). I file salvati prima
  *  della 11b non portano il campo: il server lo riempie col default, e qui si fa lo stesso. */
 export const vesteDi = (m) => m.impostazioni_analisi?.veste ?? "media";
+export const azione = (m, id) => m.azioni.find((a) => a.id === id) ?? null;
+export const combinazione = (m, id) => m.combinazioni.find((c) => c.id === id) ?? null;
+export const combinazioniDellAzione = (m, id) => m.combinazioni.filter((c) => c.termini.some((t) => t.azione === id));
+/** Le analisi statiche che nominano quel caso (`nova/modello.py:308-319`): un'azione o una
+ *  combinazione che una corsa aspetta non si elimina sotto i suoi piedi. */
+export const analisiCheUsano = (m, caso) => (m.analisi ?? []).filter((a) => a.tipo === "statica" && (a.casi ?? []).includes(caso));
+/** `Z<id>` per un'azione, `C<id>` per una combinazione: il nome del caso è quello che la corsa
+ *  riceve (`nova/deck.py:296-311`), e l'ispettore lo stampa perché è ciò che si scrive in `analisi`. */
+export const nomeCaso = (tipo, id) => `${tipo === "azione" ? "Z" : "C"}${id}`;
 
 /** Il nodo entro la tolleranza da un punto, se c'è. Serve a non creare nodi coincidenti,
  *  che il Check Model rifiuta e che il solutore invece accetta in silenzio. */

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino,
   sezione, materiale, asteDellaSezione, sezioniDelMateriale, vesteDi,
+  azione, combinazione, combinazioniDellAzione, analisiCheUsano, nomeCaso,
 } from "../modello.js";
 
 const conNodi = () => ({
@@ -83,4 +84,19 @@ test("asteDellaSezione e sezioniDelMateriale elencano chi referenzia", () => {
   assert.deepEqual(asteDellaSezione(m, 1).map((a) => a.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 1).map((s) => s.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 2).map((s) => s.id), [1]);
+});
+test("lookup delle azioni e delle combinazioni, e chi usa chi", () => {
+  const m = modelloVuoto();
+  m.azioni.push({ id: 1, nome: "g", natura: "G2", categoria: null, generata: false, carichi: [] });
+  m.combinazioni.push({ id: 1, nome: "SLU", termini: [{ azione: 1, coefficiente: 1.5 }], tipo: null, generata: false });
+  m.analisi.push({ tipo: "statica", casi: ["Z1", "C1"] });
+  assert.equal(azione(m, 1).nome, "g");
+  assert.equal(azione(m, 2), null);
+  assert.equal(combinazione(m, 1).nome, "SLU");
+  assert.deepEqual(combinazioniDellAzione(m, 1).map((c) => c.id), [1]);
+  assert.deepEqual(combinazioniDellAzione(m, 7), []);
+  assert.equal(analisiCheUsano(m, "Z1").length, 1);
+  assert.equal(analisiCheUsano(m, "Z9").length, 0);
+  assert.equal(nomeCaso("azione", 3), "Z3");
+  assert.equal(nomeCaso("combinazione", 1), "C1");
 });
