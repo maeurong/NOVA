@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-05-nova-v1-design.md` — story 25-27 (righe 57-59), 28 (riga 60, «un caso di carico è una corsa sola»: qui si mostra il nome del caso, la corsa è T6), 24 (riga 56, il peso proprio è l'unica azione generata), 8 (riga 34, palette `⌘K`), forma del file (riga 157). Calendario: `docs/superpowers/plans/2026-09-06-t5-interfaccia-bozza.md:85` (11c = 25-27, 8, P3).
 
-**Ricerca che questo piano applica** (`docs/ricerca/index.md`): riga 19, ricerca 07 — `07-ux-modellatore.md:81` (Plasticity: palette con esecuzione per nome, conflitti evidenziati; «ricerca fuzzy di ogni comando + valori»), `:150` (P3 «Tastiera prima, palette con conflitti in rosso»), `:146-157` (P2 nessuna finestra che blocca, P4 anteprima e undo, P8 divulgazione progressiva, P9 unità ed espressioni nei campi); riga 20, ricerca 08 — `08-modelli-dati-riferimento.md:195` («natura del carico e norma sono dato, non commento»: la natura è un campo obbligatorio dell'azione, non un testo libero), `:216-217` (R3: vocabolario SAF per nature e categorie — `G1/G2/Q/E` e la categoria d'uso sono già nel modello). Mappa wayfinder #31: la 11c è l'ultima giornata «a metà» del calendario T5 prima della passata sull'uso.
+**Ricerca che questo piano applica** (`docs/ricerca/index.md`): riga 19, ricerca 07 — `07-ux-modellatore.md:81` (Plasticity: palette con esecuzione per nome, conflitti evidenziati; «ricerca fuzzy di ogni comando + valori»), `:150` (P3 «Tastiera prima, palette con conflitti in rosso»), `:146-157` (P2 nessuna finestra che blocca, P4 anteprima e undo, P8 divulgazione progressiva, P9 unità ed espressioni nei campi); riga 20, ricerca 08 — `08-modelli-dati-riferimento.md:195` («natura del carico e norma sono dato, non commento»: la natura è un campo obbligatorio dell'azione, non un testo libero), `:218` (R3: vocabolario SAF per nature e categorie — `G1/G2/Q/E` e la categoria d'uso sono già nel modello). Mappa wayfinder #31: la 11c è l'ultima giornata «a metà» del calendario T5 prima della passata sull'uso.
 
 **Ramo:** `feat/interfaccia-11c-azioni` da `main` a `c1a0337`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-11c` (venv pronto, `nova ok 3.12.13`). PR verso `main`.
 
@@ -21,7 +21,7 @@
 - **Unità `mm-N-MPa-t-s`**, dichiarate su ogni numero: forze in **N**, momenti in **N·mm**, carico distribuito in **N/mm**, cedimenti in **mm** e **rad**, temperatura in **°C** e gradiente in **°C/mm**.
 - **Palette «colonna tensegrale»**: fondo `#dcdad5`, inchiostro `#141414`, **un solo rosso** `#b8321e` = attenzione. Mai «cream palette». Il rosso a 11 px misura 4,28:1 su `--fondo` (`static/stile.css:133`): il testo in rosso sta a **13 px o più**, oppure è inchiostro con filetto rosso come `.avviso` (`stile.css:139`).
 - **Nessun bundler, nessun `package.json`, nessuna rete a tempo d'uso.**
-- **WCAG AA**; nessuna informazione sul solo colore; fuoco sempre visibile; ogni campo con nome accessibile che **comincia** dal testo visibile della sua etichetta (WCAG 2.5.3, `pannello.js:135-141`).
+- **WCAG AA**; nessuna informazione sul solo colore; fuoco sempre visibile; ogni campo con nome accessibile che **comincia** dal testo visibile della sua etichetta (WCAG 2.5.3, `pannello.js:140-144`).
 - **Zero sovrapposizioni, zero testo tagliato**, verificato a 1280 e 1920 px e a zoom 200 %.
 - **Nessun file sotto `nova/` né `meshrec/` cambia.** Nessun test Python cambia.
 - Riduttori **puri**: `(modello, argomenti) → modello nuovo`, `structuredClone`, mai mutare l'ingresso; un comando che non cambia niente restituisce **il modello ricevuto** per riferimento (`comandi.js:37-46`, `cronologia.js:12-27`).
@@ -36,19 +36,19 @@
 
 ## Quel che il backend dà già, e non va reinventato
 
-- `nova/modello.py:231-240` — `CaricoNodale{tipo:"nodale", nodo:int, Fx Fy Fz Mx My Mz: float = 0}`; `:243-247` `CaricoDistribuito{tipo:"distribuito", asta:int, q:float, direzione ∈ x|y|z|locale_y|locale_z = "z"}`; `:250-254` `CaricoGravita{fattore_x, fattore_y, fattore_z: float = 0}`; `:257-265` `Cedimento{nodo, ux uy uz rx ry rz: float|None = None}`; `:268-272` `Termico{asta, dT_uniforme: float = 0, gradiente: float|None = None}`. Unione discriminata su `tipo` (`:275-278`).
-- `nova/modello.py:281-293` — `Azione{id, nome, natura ∈ G1|G2|Q|E, categoria: str|None = None, generata=False, carichi=[]}`; validator: **natura `Q` senza categoria è rifiutata** («natura Q senza categoria d'uso»). `:296-306` `Termine{azione:int, coefficiente:float}`, `Combinazione{id, nome, termini:[Termine], tipo ∈ fondamentale|caratteristica|frequente|quasi_permanente|sismica|None, generata=False}`. `:308-319` `AnalisiStatica{tipo:"statica", casi:[^[ZC][0-9]+$], legami, passi}`: il caso di un'azione è `Z<id>`, di una combinazione `C<id>`.
-- `nova/modello.py:497-505` `assicura_peso_proprio` — la chiama **il sidecar alla corsa** (`nova/sidecar.py:36`): l'interfaccia non crea mai il peso proprio, e un'azione `generata: true` letta da un file si mostra come tale. `nova/check.py:28-38` `_porta_il_peso_proprio`: vale anche una gravità scritta a mano con `fattore_z`.
+- `nova/modello.py:231-240` — `CaricoNodale{tipo:"nodale", nodo:int, Fx Fy Fz Mx My Mz: float = 0}`; `:242-246` `CaricoDistribuito{tipo:"distribuito", asta:int, q:float, direzione ∈ x|y|z|locale_y|locale_z = "z"}`; `:249-253` `CaricoGravita{fattore_x, fattore_y, fattore_z: float = 0}`; `:256-264` `Cedimento{nodo, ux uy uz rx ry rz: float|None = None}`; `:267-271` `Termico{asta, dT_uniforme: float = 0, gradiente: float|None = None}`. Unione discriminata su `tipo` (`:274-277`).
+- `nova/modello.py:280-292` — `Azione{id, nome, natura ∈ G1|G2|Q|E, categoria: str|None = None, generata=False, carichi=[]}`; validator: **natura `Q` senza categoria è rifiutata** («natura Q senza categoria d'uso»). `:295-305` `Termine{azione:int, coefficiente:float}`, `Combinazione{id, nome, termini:[Termine], tipo ∈ fondamentale|caratteristica|frequente|quasi_permanente|sismica|None, generata=False}`. `:308-319` `AnalisiStatica{tipo:"statica", casi:[^[ZC][0-9]+$], legami, passi}`: il caso di un'azione è `Z<id>`, di una combinazione `C<id>`.
+- `nova/modello.py:497-505` `assicura_peso_proprio` — la chiama **il sidecar alla corsa** (`nova/sidecar.py:36`): l'interfaccia non crea mai il peso proprio, e un'azione `generata: true` letta da un file si mostra come tale. `nova/check.py:27-38` `_porta_il_peso_proprio`: vale anche una gravità scritta a mano con `fattore_z`.
 - `nova/check.py:164-203` `riferimenti` — un carico su un nodo o un'asta inesistente, un termine su un'azione inesistente, un caso non dichiarato: **rifiutati dal Check Model**. I riduttori qui li rifiutano prima, con la stessa sostanza. `:238-241` `carico_termico`: **non passato** se c'è un termico, rimedio «togli il carico termico». Il modello lo accetta (`Termico` è nel formato): story 26 alla lettera.
 - `nova/deck.py:296-311` `_fattori` — `Z<id>` → `{id: 1.0}`; `C<id>` → due termini sulla stessa azione **si sommano**. L'editor tiene **un** termine per azione: la somma resta possibile da file, non nasce dall'interfaccia.
 - `tests/fixture/telaio_2x1.nova.json` — azione 1 «permanenti travi» `G2` con due `distribuito{asta: 4|5, q: -12.5, direzione: "z"}`; azione 2 «spinta in testa» `Q` categoria «vento» con `nodale{nodo: 4, Fx: 20000}`; combinazione 1 «SLU» `fondamentale`, termini `1 × 1,5` e `2 × 1,5`; `contatori.azione = 2`, `contatori.combinazione = 1`. È la forma che il Task 9 deve riprodurre.
 - `static/modello.js:14-17` `LISTE` ha già `azione: "azioni"` e `combinazione: "combinazioni"`; `:19-33` `modelloVuoto()` ha `azioni: []`, `combinazioni: []`, `analisi: []`; `:37-43` `prossimoId(m, "azione")` funziona già.
-- `static/comandi.js:17-22` `ErroreComando(messaggio, rimedio)`; `:25-28` `numero(v, nome)`; `:30` `copia`; `:35` `marcaModificata` (le azioni non hanno `origine`: non si usa); `:46` `cambiata`; `:109-121` `eliminaNodo` **filtra già** i carichi per `c.nodo` e per le aste che spariscono (`c.asta`); `:123` `LISTE` di `rinomina` ha **quattro** tipi: senza `azione` e `combinazione`, `R` su un'azione solleva «tipo sconosciuto». `:200-215` `positivo`, `sezioneEsistente` come stampo dei controlli.
-- `static/test/comandi.test.js:114` usa `fz` minuscolo in un carico nodale: lo schema vuole `Fz`. Il test passa perché `eliminaNodo` guarda solo `nodo` e `asta` — si corregge (Task 2) perché una fixture con una chiave che il server rifiuterebbe è una premessa falsa in attesa.
-- `static/tastiera.js:15-41` `TASTI` (voci con `codice, tasto, etichetta, aiuto, contesto, esempio?, campo?, tipi?, modificatore?`); `:56-68` le tre mappe; `:93` `daControllo` (un `<input type="text">` a fuoco si tiene **tutti** i tasti senza modificatore, e lascia passare `⌘`); `:106` `voceDaEvento`; `:125-143` `vociDellaBarra(contesto, tipoSelezionato)`. `etichettaCampo(voce, bersaglio)` (`:76-77`) stampa «`campo` `tipo` `id`».
-- `static/app.js` — stato `cronologia, selezione, modo, comando, percorso, impronta` (`:25-42`); `scegli(tipo, id)` (`:97-110`); `creaPannello(…, callback)` (`:113-133`); `creaFile` con `suApertura` che azzera `selezione` e `modo` (`:143-158`); `apriComando(voce, {bersaglio, esempio})` (`:192-201`); `chiudiComando` (`:207-211`); `submit` del campo con il dispatch per `comando.tipo` (`:248-257`); `confermaDanno` come stampo di un conferma a grammatica «a; b; c» (`:385-394`); `esegui(fn, etichetta)` (`:396-406`); `ridisegna` con la guardia `esiste` a **quattro** vie (`:408-440`); `disegnaBarra` (`:442-458`); `keydown` con i rami su `voce.codice` (`:466-635`) — il ramo `elimina` (`:573-590`) ha già la mappa `sezione|materiale`.
+- `static/comandi.js:17-22` `ErroreComando(messaggio, rimedio)`; `:25-28` `numero(v, nome)`; `:30` `copia`; `:35` `marcaModificata` (le azioni non hanno `origine`: non si usa); `:46` `cambiata`; `:109-121` `eliminaNodo` **filtra già** i carichi per `c.nodo` e per le aste che spariscono (`c.asta`); `:122` `LISTE` di `rinomina` ha **quattro** tipi: senza `azione` e `combinazione`, `R` su un'azione solleva «tipo sconosciuto». `:200-215` `positivo`, `sezioneEsistente` come stampo dei controlli.
+- `static/test/comandi.test.js:117` usa `fz: -1200` minuscolo in un carico nodale: lo schema vuole `Fz`. Il test passa perché `eliminaNodo` guarda solo `nodo` e `asta` — si corregge (Task 2) perché una fixture con una chiave che il server rifiuterebbe è una premessa falsa in attesa.
+- `static/tastiera.js:14-40` `TASTI` (voci con `codice, tasto, etichetta, aiuto, contesto, esempio?, campo?, tipi?, modificatore?`); `:56-68` le tre mappe; `:93` `daControllo` (un `<input type="text">` a fuoco si tiene **tutti** i tasti senza modificatore, e lascia passare `⌘`); `:106` `voceDaEvento`; `:125-143` `vociDellaBarra(contesto, tipoSelezionato)`. `etichettaCampo(voce, bersaglio)` (`:50`) stampa «`campo` `tipo` `id`».
+- `static/app.js` — stato `cronologia, selezione, modo, comando, percorso, impronta` (`:25-42`); `scegli(tipo, id)` (`:97-110`); `creaPannello(…, callback)` (`:113-133`); `creaFile` con `suApertura` che azzera `selezione` e `modo` (`:143-158`); `apriComando(voce, {bersaglio, esempio})` (`:192-201`); `chiudiComando` (`:207-211`); `submit` del campo con il dispatch per `comando.tipo` (`:248-257`); `confermaDanno` come stampo di un conferma a grammatica «a; b; c» (`:385-394`); `esegui(fn, etichetta)` (`:396-406`); `ridisegna` con la guardia `esiste` a **quattro** vie (`:408-440`); `disegnaBarra` (`:442-458`); `keydown` con i rami su `voce.codice` (`:463-635`) — il ramo `elimina` (`:586-603`) ha già la mappa `sezione|materiale`.
 - `static/pannello.js:18` `CERCA`, `:81` `RIGHE`, `:505` `EDITORI` — tre tabelle a quattro vie; `:150-163` `campoNumero({etichetta, nome, valore, unita, alCambio, suAvviso})` (testo vuoto → avviso «non è un numero», il campo torna com'era); `:165-177` `scelta({etichetta, nome, opzioni:[[v, testo]], valore, alCambio})`; `:179-189` `gruppo(legenda, classe, nota)`; `:191-196` `bottone(testo, alClic)`; `:250-282` `editorAsta` come stampo (ritorna `{elementi, controlli}`); `:507-550` `creaPannello` ritrova il fuoco **per nome accessibile**.
-- `static/albero.js:22-57` — `gruppo(nome, quante)` salta i gruppi vuoti; voci `{tipo, id, testo, conta?}`; «1 asta» al singolare (`:39-46`).
+- `static/albero.js:22-57` — `gruppo(nome, quante)` salta i gruppi vuoti; voci `{tipo, id, testo, conta?}`; «1 asta» al singolare (`:42-51`).
 - `static/piano.js:82-175` — `creaPiano(contenitore, {suSelezione, suSfondo})`, `disegna(m, {selezione, ghost})`; `schermo(n)` specchia `z`; `millimetriPerPixel()` (`:104-108`) è il fattore `s` con cui ogni misura in px diventa mm nel `viewBox`; costanti `INCHIOSTRO`, `ROSSO`, `MONO`, `RAGGIO`, `OFFSET_ETICHETTA` (`:11-32`); `el(nome, attributi)` (`:34`). `estensione(m, ghost)` (`:45`) inquadra **solo nodi e ghost**: una freccia lunga in px non sposta il riquadro.
 - `static/modo.js:64-78` `esitoScelta` — in modo asta rifiuta ogni tipo che non sia `nodo` con una frase generica: un'azione cliccata nell'albero cade lì senza modifiche. `:148-151` `contestoBarra`.
 - `static/index.html:69-80` il `<form id="comando">` con `label`, `#comando-campo`, `.aiuto`; `:81` `<footer id="barra">`. `stile.css:20-38` la griglia del `body` (`overflow: hidden`), `:179-192` `#comando`.
@@ -60,7 +60,246 @@
 1. **Il peso proprio non nasce in interfaccia.** Lo aggiunge il sidecar alla corsa (`nova/sidecar.py:36`). Un'azione o una combinazione con `generata: true` letta da un file si mostra con la parola «generata» nell'albero e nell'ispettore; i riduttori **non toccano** il flag. Il «[DA DECIDERE] generata vs corretta» di `CONTEXT.md:119-176` si risolve così per v1: la distinzione «corretta a mano» arriva col generatore di combinazioni (fase 2), non prima.
 2. **`Q` ha un'azione di destinazione, e la nomina.** È l'ultima azione scelta nell'albero o creata con `Z`; se non c'è, l'ultima della lista; se il modello non ha azioni, `Q` rifiuta con «prima crea un'azione: premi Z». L'aiuto del campo la scrive («→ azione «permanenti travi»»), l'etichetta della Storia pure, e il piano disegna **i suoi** carichi col nome in alto a sinistra. Uno stato solo (`azioneCorrente`), una regola sola.
 3. **Il termico entra, e l'editor avverte.** Il formato lo prevede e il Check Model lo rifiuta (story 26): l'editor lo ammette e mostra sotto il carico l'avviso «attenzione: il Check Model rifiuta il carico termico in v1 (`nova/check.py`)». Nessun rifiuto in interfaccia: sarebbe una seconda verità sul formato.
-4. **La palette elenca tutto, e dice cosa non si può ora.** Ogni voce di `TASTI` compare con la scorciatoia accanto; quelle che la barra non promette in questo contesto (`vociDellaBarra`) restano in lista, in rosso a 13 px con la parola «non ora» (P3: i conflitti si vedono, non si nascondono). Invio su una di quelle passa dallo stesso ramo del tasto, che risponde con la sua frase («il danno vuole un'asta»). Il valore nella query è **tutto ciò che segue la prima parola**: entra nel campo di comando e conferma subito; se il campo lo rifiuta, resta aperto col testo e col messaggio, come se lo si fosse scritto a mano.
+4. **La palette elenca tutto, e dice cosa non si può ora.** Ogni voce di `TASTI` compare con la scorciatoia accanto; quelle che la barra non promette in questo contesto (`vociDellaBarra`) restano in lista, in rosso a 13 px con la parola «non ora» (P3: i conflitti si vedono, non si nascondono). Invio su una di quelle passa dallo stesso ramo del tasto, che risponde con la sua frase («il danno vuole un'asta»). Il valore nella query è **tutto ciò che segue la prima parola**: entra nel campo di comando e conferma subito; se il campo lo rifiuta, resta aperto col testo e col messaggio, come se lo si fosse scritto a mano. **Con un campo di comando già aperto, `⌘K` lo abbandona**: `suScelta` chiude il campo (`chiudiComando`) prima di eseguire la voce, e le voci disponibili si valutano come a campo chiuso (`contestoBarra(modo, selezione, null)`) — altrimenti ogni voce sarebbe «non ora» e Invio non direbbe niente (ruling R2 dell'architect). Il testo a metà nel campo vecchio si perde: è il costo, ed è il gesto che lo chiede.
+
+## Annotazione dell'architect (09/09/2026)
+
+Scritta nel worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-11c`, ramo `feat/interfaccia-11c-azioni`,
+HEAD `e0b294d`. Ogni riga `file:riga` citata dal piano è stata aperta: la sezione 3 elenca quelle
+che non combaciano. Punto di partenza rimisurato qui: `node --test test/*.test.js` da `static/` →
+**444 pass, 0 fail**.
+
+### 1. Chi esegue, con quale modello, in quale ordine
+
+| task | subagente | modello | skill-gate | gruppo | comincia dopo |
+|---|---|---|---|---|---|
+| 1 — `carichi.js` e i lookup | `frontend-engineer` | `opus` | **sì** | A | — |
+| 2 — i riduttori | `frontend-engineer` | `opus` | **sì** | B | 1 |
+| 3 — `tastiera.js` | `frontend-engineer` | `sonnet` | **no** — quattro voci in una tabella e quattro righe in due mappe, scritte per intero nel piano; nessuna scelta d'interfaccia | A | — |
+| 4 — `albero.js` | `frontend-engineer` | `sonnet` | **sì**, `impeccable` in modo **Operate** | C | 1, 2 |
+| 5 — `pannello.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | D | 1, 2, 7 |
+| 6 — `piano.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | C | 1, 2 |
+| 7 — `palette.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | B | 3 |
+| 8 — `app.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | E | tutti |
+| 9 — la verifica | **il controller**, a mano, col browser | — | — | F | 8 |
+
+Gruppi paralleli: **A** = 1 ‖ 3; **B** = 2 ‖ 7; **C** = 4 ‖ 6; **D** = 5; **E** = 8; **F** = 9.
+Sei giri invece di nove.
+
+`impeccable`: mai «cream palette» — la palette è quella dei Global Constraints (riga 22).
+
+**Nessun implementer in parallelo sullo stesso file.** Verificato file per file.
+
+| file | unico task che lo scrive |
+|---|---|
+| `static/carichi.js`, `static/test/carichi.test.js`, `static/modello.js`, `static/test/modello.test.js` | 1 |
+| `static/comandi.js`, `static/test/comandi.test.js` | 2 |
+| `static/tastiera.js`, `static/test/tastiera.test.js` | 3 |
+| `static/albero.js`, `static/test/albero.test.js` | 4 |
+| `static/pannello.js`, `static/test/pannello.test.js` | 5 |
+| `static/piano.js`, `static/test/piano.test.js` | 6 |
+| `static/palette.js`, `static/test/palette.test.js`, `static/index.html` | 7 |
+| `static/app.js` | 8 |
+| `static/stile.css` | **5 e 7** — vedi sotto |
+
+**`stile.css` è l'unico file condiviso**: il Task 5 gli aggiunge `.carico`, il Task 7 il blocco della
+palette. Sono in coda al file e non si toccano, ma bastano a vietare il parallelo fra 5 e 7: è per
+questo, e non per il codice, che il Task 5 comincia dopo il 7.
+
+### 2. Le dipendenze vere, un arco per riga
+
+Il brief di dispatch dice che «le task 3, 4, 6, 7 dipendono solo dalla 1 o da niente». Aperti i file,
+è vero solo per il codice; i **test** portano tre archi in più, e sono archi veri perché lo step
+«Rosso» non gira senza.
+
+- **1 ← nessuno** — `carichi.js` consuma `leggiEspressione` (`numeri.js:58`), `cifre` (`legame.js:49`),
+  `nodo`/`asta` (`modello.js:45-46`): tutto già in albero.
+- **3 ← nessuno** — davvero niente: quattro voci e quattro righe di mappa. `z`, `q`, `k` sono libere
+  in `SENZA_MODIFICATORE` (`tastiera.js:56-65`), verificato lettera per lettera.
+- **2 ← 1** — `TIPI_COMBINAZIONE`, `NATURE`, `normalizzaCarico`; e `azione`, `combinazione`,
+  `combinazioniDellAzione`, `analisiCheUsano`, `nomeCaso` dal Task 1 in `modello.js`.
+- **4 ← 1** per il codice (`NOME_TIPO_COMBINAZIONE`), **4 ← 2 per il test**: il test del Task 4
+  importa `creaAzione, aggiungiCarico, creaCombinazione` da `../comandi.js`.
+- **6 ← 1** per il codice (`frecceDeiCarichi`, `testoCarico`), **6 ← 2 per il test**: stessi tre
+  riduttori.
+- **7 ← 3 per il test**: `palette.test.js` importa `TASTI` da `../tastiera.js` e asserisce che
+  «`q -12,5`» trovi il **carico** — la voce che nasce nel Task 3. Il modulo `palette.js` invece non
+  importa niente: le voci gliele passa `app.js`.
+- **5 ← 1** (`NOME_TIPO`, `testoCarico`, le sei costanti), **5 ← 2** (i riduttori nei test),
+  **5 ← 7** solo per `stile.css`.
+- **8 ← tutti** — è la cucitura: importa i dieci riduttori, le quattro grammatiche, `creaPalette`,
+  `TASTI`, `azione`.
+- **9 ← 8** — è la prova a mano.
+
+Chi volesse allargare i gruppi paralleli ha una via sola: costruire i modelli dei test 4 e 6 a mano,
+con oggetti letterali, come fa già `modello.test.js` nel Task 1. Costa più righe di test di quante ne
+risparmia in attesa: non lo consiglio, ma l'arco è quello e non è di codice.
+
+### 3. I punti dove il piano si rompe
+
+**R1 — l'editor della combinazione rompe il test WCAG 2.5.3 che il piano stesso ordina di estendere.**
+Il campo del coefficiente (Task 5, `editorCombinazione`) nasce con etichetta visibile `a.nome` e nome
+accessibile `` `coefficiente di ${a.nome} in ${c.nome}` ``. Il testo visibile è «permanenti travi», il
+nome accessibile «coefficiente di permanenti travi in SLU». Il test già in casa
+(`static/test/pannello.test.js:827-840`) asserisce `accessibile.startsWith(visibile)` — qui è
+**falso**. E il Task 5, step 1, ultima riga, ordina di estendere proprio quel test ai tipi `azione` e
+`combinazione`: resterebbe rosso per sempre. Lo vieta anche il Global Constraint a riga 24, e la nota
+in testa a `pannello.js:140-144` dice perché («pronunciava quello che leggeva e non succedeva
+niente»). **Rimedio più corto**: rovesciare il nome, `` `${a.nome}: coefficiente nella combinazione
+${c.nome}` ``; il test dell'editor che cerca `controlliCon(editor, "coefficiente di permanenti
+travi")` va allineato alla stessa stringa. Tutti gli altri campi dei due editor nuovi passano —
+verificati uno per uno: `natura`, `categoria d'uso`, `tipo`, `aggiungi carico`, e i campi dei cinque
+carichi (`q del carico 1`, `uz del carico 1`, …).
+
+**R2 — con il campo di comando aperto la palette promette una frase, e non ne dà nessuna.**
+La decisione 4 (riga 63) dice: «Invio su una di quelle passa dallo stesso ramo del tasto, che risponde
+con la sua frase». Ma con un comando aperto `contestoBarra` restituisce `"comando"`
+(`modo.js:148-150`) e `vociDellaBarra` lascia **solo** `conferma` e `annulla` (`tastiera.js:133-136`):
+la palette aperta da dentro il campo di `N` marca «non ora» *ogni* voce. E il ramo del tasto, per
+tutte, è `app.js:510` — `if (comando) { campoComando.focus(); return; }` — che non chiama `dì`.
+Peggio: la coda che il Task 8 aggiunge, `if (comando && valore !== null) { … conferma(); }`, sta
+**sotto** quella guardia e non viene mai raggiunta. Chi scrive «sezione 300 × 500» nella palette
+mentre il campo di `N` è aperto ottiene silenzio, e il valore digitato sparisce. Il Task 8 elenca
+«da dentro il campo di comando `⌘K` apre lo stesso» fra gli ingressi degeneri, ma non dice cosa
+succede a Invio, e il Task 9 step 5 lo prova solo per l'apertura. **Va deciso prima del Task 8**, non
+in browser: o si dà una frase a quella guardia («c'è un comando aperto: Invio conferma, Esc
+annulla»), o `suScelta` chiude il comando prima di chiamare `eseguiVoce`. Sono due prodotti diversi.
+
+**Quattordici righe di puntamento che non combaciano.** Il simbolo cercato esiste sempre — nessuna
+cambia *cosa* fare — ma due costano davvero a chi esegue (la 6 e la 7).
+
+1. `comandi.js` `LISTE` sta a **122**, non `:123` (righe 46 e 71 del piano, e Task 2 step 3).
+2. `tastiera.js` `TASTI` sta a **14-40**, non `:15-41` (riga 48, e Task 3 «Files»).
+3. `tastiera.js` `etichettaCampo` sta a **50**, non `:76-77` (riga 48).
+4. `app.js`: il `keydown` comincia a **463**, non `:466`; il `ev.preventDefault()` da cui estrarre
+   `eseguiVoce` è a **481**, non `:479` (riga 49, e Task 8).
+5. `app.js`: il ramo `elimina` sta a **586-603**, non `:573-590` (riga 49, e Task 8). La mappa
+   `sezione|materiale` c'è, come dice il piano.
+6. `static/test/comandi.test.js`: la chiave minuscola sta alla riga **117** e vale **`fz: -1200`**,
+   non alla 114 con `-5000` (riga 47, e Task 2 step 1). Il difetto esiste ed è esattamente quello
+   descritto; la riga e il valore no.
+7. `albero.js`: il singolare «1 asta» sta a **42-51**, non `:39-46`; e il ciclo dei materiali va da
+   **54 a 60**, quindi il ramo nuovo si innesta **dopo la riga 60**, non «dopo `:50-56`» (riga 51, e
+   Task 4 step 3). Chi segue il numero scritto innesta dentro le sezioni.
+8. `static/test/piano.test.js`: `pianoFinto` sta a **145**, fuori dal `:115-138` citato dal Task 6
+   step 1. `elementoSvgFinto` 115 e `tutti` 135 sono giusti.
+9. `static/test/pannello.test.js`: `AZIONI` sta a **164**, non `:161-162` (Task 5 step 1).
+   `pannelloFinto` a 169 è giusto.
+10. `pannello.js`: la nota WCAG 2.5.3 sta a **140-144**, non `:135-141` (riga 24).
+11. `numeri.js`: la nota sullo spazio U+202F sta a **143** e `stampaNumero` a **151**; il
+    «`numeri.js:148`» del commento nel test del Task 1 non punta a niente.
+12. `nova/modello.py`: da `CaricoDistribuito` in giù ogni classe sta **una riga sopra** — 242, 249,
+    256, 267, 274 (l'unione), 280 (`Azione`), 295, 300 — non 243, 250, 257, 268, 275, 281, 296. La
+    frase «natura Q senza categoria d'uso» è a **291**, non 290. `CaricoNodale` 231,
+    `AnalisiStatica` 308 e `assicura_peso_proprio` 497 combaciano.
+13. `nova/check.py`: `_porta_il_peso_proprio` è a **27**, non `:28-38`.
+14. **`docs/ricerca/08-modelli-dati-riferimento.md:216-217` non è R3**: 216 è R1, 217 è R2. **R3, il
+    vocabolario SAF delle nature e categorie, sta a `:218`.** Corretto nella tabella della sezione 5.
+
+**Combaciano invece**, verificate in questa sessione e non da rileggere: `ErroreComando`
+(`comandi.js:17`), `copia` (`:30`), `cambiata` (`:46`), `eliminaNodo` (`:109-120`) che **filtra già**
+i carichi per `c.nodo` e per le aste che spariscono (`:115-118`), `positivo` (`:200`),
+`sezioneEsistente` (`:211`); `modello.js` `LISTE` (`:14-17`) già con `azione`/`combinazione` e i
+lookup (`:45-54`); `pannello.js` `CERCA` 18, `RIGHE` 81, `campoNumero` 150, `scelta` 165, `gruppo`
+179, `bottone` 191, `editorAsta` 250, `EDITORI` 505, `creaPannello` 507, `conciso` 16,
+`testoNumero(null) === ""`; `piano.js` `el` 34, `estensione` 45, `creaPiano` 82, `disegna` 112, con
+`vista` e `gruppo` nello scope dove il Task 6 scrive; `modo.js` `esitoScelta` 64, `ghostDelComando`
+126, `contestoBarra` 148; `app.js` `scegli` 97, `creaPannello` 113, `creaFile` 143, `apriComando`
+192, `chiudiComando` 207, `submit` 248, `confermaDanno` 385, `esegui` 396, `ridisegna` 408 con
+`esiste` a 412, `disegnaBarra` 442, `dì` 90, `campoComando` 179, `corrente` importato a 12;
+`index.html` 69 e 81; `stile.css` 133 (il 4,28:1) e 139 (`.avviso`), e tutte le variabili che la
+palette usa (`--pannello`, `--tratto-forte`, `--testo-tenue`, `--mono`, `--rosso`, `--fondo`);
+`nova/sidecar.py:36`, `nova/check.py` `riferimenti` 164-203 e `carico_termico` 239,
+`nova/deck.py:_fattori` 296. `tests/fixture/telaio_2x1.nova.json` è **identica** a com'è descritta
+alla riga 44, contatori compresi. `leggiEspressione("2e6")` è `null`, `("(1+1)*10000")` è `20000`,
+`("-12,5")` è `-12.5`, `("0")` è `0` — misurati qui. Il test dell'alfabeto
+(`test/tastiera.test.js:354-367`) conta i codici raggiunti da una lettera sola filtrando
+`!v.modificatore && /^[A-Z]$/`: le tre lettere nuove passano e `⌘K` ne resta fuori — **resta verde**.
+
+### 4. Gli ingressi degeneri: cosa c'è e cosa manca
+
+Otto task su nove hanno la sezione, e tutti superano il minimo di due righe con condizione **e**
+oracolo: Task 1 dodici, Task 2 quattordici, Task 3 cinque, Task 4 cinque, Task 5 dieci, Task 6
+quattro, Task 7 dieci, Task 8 tredici.
+
+**Task 9 non ha la sezione, e non scrive codice** (`Files: nessuno`): la riga che manca è la forma
+rigida, `- nessun ingresso esterno`.
+
+Sei righe portano la condizione e l'oracolo ma non la freccia `→`, e una condizione senza freccia è
+la prima che si perde nel passaggio al brief. Riscritte qui, senza toccare gli step:
+
+- Task 2 — `ogni riduttore chiamato su un modello qualunque → il modello ricevuto è identico prima e dopo (deepEqual), nessuna mutazione dell'ingresso`
+- Task 3 — `il test dell'alfabeto (tastiera.test.js:354-367) dopo le tre lettere nuove → ancora verde: ogni codice a lettera singola raggiunto da esattamente una lettera`
+- Task 4 — `clic su una voce «azione» → suSelezione("azione", id), con il listener che c'è già, nessun codice nuovo`
+- Task 5 — `ogni controllo dei due editor nuovi → nome accessibile che comincia dal testo visibile (pannello.test.js:827-840 esteso ai due tipi, verde)`
+- Task 6 — `la stessa disegna con e senza azione → attributo viewBox identico`
+- Task 7 — `↑ sulla prima voce → resta sulla prima; ↓ sull'ultima → resta sull'ultima`
+
+**Per chi dispaccia**: qui la sezione è `**Ingressi degeneri:**` in grassetto, ma l'hook
+`dispatch-gate.py` pretende nel brief il **titolo** `## Ingressi degeneri`. Si copia il contenuto
+sotto un titolo, non il grassetto.
+
+### 5. La ricerca che regge ogni task
+
+Aperto `docs/ricerca/index.md` prima di annotare: la 07 è alla riga 19, la 08 alla riga 20, come dice
+il piano. Nelle righe qui sotto la tabella dei dieci principi di `07` mappa così: 148 = P1, 149 = P2,
+150 = P3, 151 = P4, 152 = P5, 153 = P6, 154 = P7, 155 = P8, 156 = P9, 157 = P10.
+
+| task | riferimento | perché conta qui |
+|---|---|---|
+| 1 | `docs/ricerca/08-modelli-dati-riferimento.md:195` | la natura del carico è dato, non commento: `NATURE` è un campo obbligatorio, non testo libero |
+| 1 (vocabolario) | `docs/ricerca/08-modelli-dati-riferimento.md:218` | R3, vocabolario SAF di nature e categorie — **`:218`**, non `:216-217` |
+| 1 (campi) | `docs/ricerca/07-ux-modellatore.md:156` | P9, unità ed espressioni nei campi: `leggiEspressione` dentro le quattro grammatiche |
+| 2 | `docs/ricerca/08-modelli-dati-riferimento.md:216` | R1: casi con natura, combinazioni con coefficienti e categoria, riferimenti validati |
+| 3 | `docs/ricerca/07-ux-modellatore.md:150` | P3, tastiera prima: «⌘K, N=nodo, B=asta, S=sezione» |
+| 4 | `docs/ricerca/07-ux-modellatore.md:155` | P8, divulgazione progressiva: i gruppi vuoti non compaiono |
+| 5 | `docs/ricerca/07-ux-modellatore.md:149` | P2, seleziona poi agisci: l'editor contestuale al posto di un dialogo |
+| 5 (numeri) | `docs/ricerca/07-ux-modellatore.md:148` | P1, ogni numero col suo contraddittore: l'unità su ogni campo |
+| 6 | `docs/ricerca/07-ux-modellatore.md:148` | P1: la freccia porta accanto il valore che disegna |
+| 7 | `docs/ricerca/07-ux-modellatore.md:81` | Plasticity: esecuzione per nome, ricerca fuzzy di ogni comando **con i valori**, conflitti evidenziati |
+| 7 (non ora) | `docs/ricerca/07-ux-modellatore.md:154` | P7, fallimento a doppio canale: «non ora» è la parola, il rosso è solo il filetto |
+| 8 | `docs/ricerca/07-ux-modellatore.md:151` | P4, anteprima e undo visibile: il valore della palette passa dal campo e la Storia lo racconta |
+| 9 | `docs/ricerca/07-ux-modellatore.md:150` | P3: la prova a mano verifica che le scorciatoie si imparino dalla palette |
+
+**Nove task su nove con un riferimento, nessun «nessuno».** È l'opposto della misura dell'08/09 (nove
+ricerche, un piano che ne cita una una volta): qui le due ricerche dichiarate in testa tornano
+entrambe con righe interne, non con la riga d'indice.
+
+### 6. I debiti, per il ticket di chiusura
+
+Dichiarati dal piano stesso («Fuori da questa seduta», in coda): `analisi` e il bottone della corsa
+(T6), il generatore di combinazioni dalla norma, le masse da azioni (T7), le frecce in vista 3D,
+l'ordine dei carichi nell'editor, il secondo termine sulla stessa azione, l'importatore (11d).
+
+Visti qui, e non scritti da nessuna parte:
+
+1. **La palette a query vuota mostra 9 voci su 22, e le quattro nuove non ci sono.** `filtraVoci` con
+   query vuota fa `voci.slice(0, 9)`, e il Task 3 mette `Z`, `Q`, `K`, `⌘K` **dopo** `danno`, in
+   tredicesima posizione e oltre. La lista a campo vuoto è esattamente la superficie che insegna le
+   scorciatoie (P3, `07:150`): i quattro comandi della giornata sono i soli che non si imparano da
+   lì. Il `9` è un numero deciso qui, non misurato.
+2. **`stile.css` scritto da due task.** È l'unico arco di sequenza del piano che non nasce dal
+   codice, e il giorno che qualcuno allarga i gruppi paralleli è il primo a rompersi in silenzio (un
+   merge pulito che perde una regola).
+3. **Il Task 8 non ha un solo test automatico**: due rami nuovi in `eseguiVoce`, tre conferme, sei
+   callback, `esiste` a sei vie, la palette, `azioneCorrente` — tredici ingressi degeneri il cui
+   unico oracolo è la prova a mano del Task 9. È lo stesso debito della voce 8 dell'annotazione 11b,
+   non pagato: il task più grosso, il più cucito, il meno protetto.
+4. **`carichi.js` è due moduli in uno.** Porta le costanti di schema (`NATURE`, `TIPI_CARICO`,
+   `DIREZIONI`, che devono restare fedeli a `nova/modello.py`) **e** i nomi a schermo (`NOME_TIPO`,
+   `NOME_TIPO_COMBINAZIONE`, `testoCarico`) **e** la geometria delle frecce. `albero.js` lo importa
+   per una tabella di sei stringhe italiane. È il gemello del debito 11b sulle `VESTI`: il
+   vocabolario a schermo non è geometria dei carichi.
+5. **Un file legale con due termini sulla stessa azione perde un dato appena lo si tocca.** Il
+   formato li ammette e il deck li somma (`nova/deck.py:296-311`); `editorCombinazione` mostra il
+   primo (`c.termini.find(…)`) e `impostaTermine` filtra via **tutti** i termini di quell'azione
+   prima di rimetterne uno. Basta scrivere un coefficiente qualunque in quella combinazione perché
+   il secondo termine sparisca, senza un avviso. Il piano dichiara «l'interfaccia ne tiene uno»; qui
+   si annota che il costo non è «non si può creare», è «si distrugge leggendo e salvando».
+6. **`azioneCorrente` non entra nella cronologia.** `⌘Z` non la riporta indietro; `ridisegna` la
+   azzera solo se l'azione è sparita. Disfatte due creazioni, il piano mostra i carichi dell'ultima
+   azione rimasta, non di quella che era in vista prima. Innocuo oggi, e non scritto da nessuna
+   parte.
 
 ## Struttura dei file
 
@@ -105,7 +344,7 @@
 - `normalizzaCarico({tipo: "vento"})` → `{carico: null, messaggio}` che elenca i cinque tipi
 - `normalizzaCarico({tipo: "nodale", nodo: 4})` → `{Fx: 0, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0}` compilati, nessuna chiave in più; con `Fx: "20"` (stringa) o `NaN` → `messaggio`
 - `normalizzaCarico({tipo: "distribuito", asta: 1, q: -12.5, direzione: "nord"})` → `messaggio` che elenca le direzioni; senza `direzione` → `"z"`; con `q` mancante → `messaggio` («q è obbligatorio»)
-- `normalizzaCarico({tipo: "cedimento", nodo: 1})` → i sei gradi a `null` (tutti liberi è lecito per lo schema, `nova/modello.py:257-265`); `ux: "x"` → `messaggio`
+- `normalizzaCarico({tipo: "cedimento", nodo: 1})` → i sei gradi a `null` (tutti liberi è lecito per lo schema, `nova/modello.py:256-264`); `ux: "x"` → `messaggio`
 - `normalizzaCarico({tipo: "termico", asta: 1})` → `dT_uniforme: 0, gradiente: null`
 - `normalizzaCarico({tipo: "nodale", nodo: 4, colore: "rosso"})` → la chiave in più **sparisce** (il server la rifiuterebbe), nessun messaggio
 - `leggiAzione("")` → `{azione: null, messaggio: null}`; `leggiAzione("permanenti travi")` → `messaggio` (manca la natura); `leggiAzione("spinta; q")` → `messaggio` («Q vuole la categoria»); `leggiAzione("spinta; q; vento")` → `{nome: "spinta", natura: "Q", categoria: "vento"}`; `leggiAzione("x; G3")` → `messaggio` che elenca le nature; `leggiAzione("; G1")` → `messaggio` (nome vuoto)
@@ -176,7 +415,7 @@ test("leggiCombinazione: il tipo è facoltativo e «quasi permanente» si scrive
   assert.match(leggiCombinazione("x; slu").messaggio, /fondamentale, caratteristica, frequente, quasi_permanente, sismica/);
 });
 test("testoCarico: unità su ogni numero, e le componenti nulle non si stampano", () => {
-  // `cifre(20000)` separa le migliaia con U+202F (`numeri.js:148`): la stringa attesa si
+  // `cifre(20000)` separa le migliaia con U+202F (`numeri.js:143`): la stringa attesa si
   // costruisce con la stessa funzione, così il test non dipende da uno spazio invisibile.
   assert.equal(testoCarico({ tipo: "nodale", nodo: 4, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 }), `nodo 4 · Fx ${cifre(20000)} N`);
   assert.equal(testoCarico({ tipo: "nodale", nodo: 4, Fx: 0, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 }), "nodo 4 · nullo");
@@ -442,7 +681,7 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
 }
 ```
 
-- [ ] **Step 5: Verde** — `node --test test/*.test.js` → 444 + i nuovi, 0 fail. Attenzione a `testoCarico` del nodale: `cifre(20000)` mette il separatore delle migliaia ` ` (`numeri.js:148`), e il test lo aspetta.
+- [ ] **Step 5: Verde** — `node --test test/*.test.js` → 444 + i nuovi, 0 fail. Attenzione a `testoCarico` del nodale: `cifre(20000)` mette il separatore delle migliaia ` ` (`numeri.js:143`), e il test lo aspetta.
 - [ ] **Step 6: Commit** — `feat(carichi): costanti, grammatiche, testo e frecce dei carichi; lookup di azioni e combinazioni`
 
 ---
@@ -451,7 +690,7 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
 
 **Files:**
 - Modify: `static/comandi.js` (import da `carichi.js` e `modello.js`; `LISTE` a `:123`; dieci riduttori in coda)
-- Test: `static/test/comandi.test.js` (e la correzione `fz` → `Fz` a `:114`)
+- Test: `static/test/comandi.test.js` (e la correzione `fz` → `Fz` a `:117`)
 
 **Interfaces:**
 - Consumes: `TIPI_CARICO`, `NATURE`, `TIPI_COMBINAZIONE`, `normalizzaCarico` (Task 1); `azione`, `combinazione`, `combinazioniDellAzione`, `analisiCheUsano`, `nomeCaso`, `nodo`, `asta`, `prossimoId` (`modello.js`); `ErroreComando`, `numero`, `copia`, `cambiata` (`comandi.js:17-46`).
@@ -469,7 +708,7 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
   - `rinomina` accetta `azione` e `combinazione` (`LISTE` a sei voci).
 
 **Ingressi degeneri:**
-- `creaAzione` con `natura: "G3"` → `ErroreComando` che elenca le nature; `natura: "Q"` senza categoria → `ErroreComando` «natura Q senza categoria d'uso» (la stessa frase del backend, `nova/modello.py:290`); `nome: ""` → `ErroreComando`
+- `creaAzione` con `natura: "G3"` → `ErroreComando` che elenca le nature; `natura: "Q"` senza categoria → `ErroreComando` «natura Q senza categoria d'uso» (la stessa frase del backend, `nova/modello.py:291`); `nome: ""` → `ErroreComando`
 - `creaAzione` su un modello con `contatori.azione: 5` e nessuna azione → `id 6` (un identificatore eliminato non si riusa)
 - `modificaAzione` con `natura: "Q"` su un'azione senza categoria → `ErroreComando`; con `categoria: null` su una `Q` → `ErroreComando`; con gli stessi valori → **il modello ricevuto** (non entra nella Storia); `id` inesistente → `ErroreComando`
 - `aggiungiCarico` con `carico.tipo: "vento"` → `ErroreComando` (il messaggio di `normalizzaCarico`); nodale su `nodo: 99` → `ErroreComando` «il nodo 99 non esiste»; distribuito su `asta: 99` → `ErroreComando`; gravità → accettata senza riferimenti; termico → **accettato** (story 26: lo rifiuta il Check Model, non il modello)
@@ -478,13 +717,14 @@ export function frecceDeiCarichi(m, azione, lunghezza) {
 - `togliCarico` sull'ultimo carico → `carichi: []`, l'azione resta
 - `eliminaAzione` usata da una combinazione → `ErroreComando` con gli identificatori delle combinazioni; usata da `analisi[0].casi = ["Z1"]` → `ErroreComando` con «Z1»; libera → sparisce, `contatori.azione` resta
 - `creaCombinazione` con `tipo: "slu"` → `ErroreComando` che elenca i tipi; `tipo` assente → `null`
+- `impostaTermine` su una combinazione letta da file con **due** termini sulla stessa azione → `ErroreComando` «la combinazione 1 ha due termini sull'azione 1 (il deck li somma)» con rimedio «correggi il file: l'interfaccia ne tiene uno» — mai perdere un dato in silenzio
 - `impostaTermine` con `azione: 9` inesistente → `ErroreComando`; `coefficiente: NaN` → `ErroreComando`; due volte sulla stessa azione → **un** termine, l'ultimo coefficiente; `coefficiente: null` → il termine sparisce; `null` su un'azione che non aveva termine → il modello ricevuto; `coefficiente: 0` → termine con `0` (zero è un numero, non un'assenza)
 - `eliminaCombinazione` nominata da `analisi[0].casi = ["C1"]` → `ErroreComando`; libera → sparisce
 - `rinomina(m, {tipo: "azione", id, nome})` → il nome cambia; `tipo: "combinazione"` idem
 - `eliminaNodo` su un nodo con un carico nodale e un cedimento → entrambi spariscono; il carico di gravità della stessa azione **resta** (non ha `nodo`)
 - ogni riduttore: il modello in ingresso resta intatto (`deepEqual` prima/dopo)
 
-- [ ] **Step 1: Test** — in `static/test/comandi.test.js`, aggiungi agli import: `creaAzione, modificaAzione, aggiungiCarico, modificaCarico, togliCarico, eliminaAzione, creaCombinazione, modificaCombinazione, impostaTermine, eliminaCombinazione`. Correggi la riga 114: `fz: -5000` → `Fz: -5000`. Un `test(…)` per riga qui sopra; stampo:
+- [ ] **Step 1: Test** — in `static/test/comandi.test.js`, aggiungi agli import: `creaAzione, modificaAzione, aggiungiCarico, modificaCarico, togliCarico, eliminaAzione, creaCombinazione, modificaCombinazione, impostaTermine, eliminaCombinazione`. Correggi la riga 117: `fz: -1200` → `Fz: -1200`. Un `test(…)` per riga qui sopra; stampo:
 
 ```js
 const conAzione = () => {
@@ -524,6 +764,8 @@ test("impostaTermine: un termine per azione, null lo toglie, zero resta", () => 
   assert.equal(impostaTermine(senza, { id: 1, azione: 1, coefficiente: null }), senza, "niente da togliere: non è un comando");
   assert.throws(() => impostaTermine(m, { id: 1, azione: 9, coefficiente: 1 }), /l'azione 9 non esiste/);
   assert.throws(() => impostaTermine(m, { id: 1, azione: 1, coefficiente: NaN }), ErroreComando);
+  const doppia = { ...m, combinazioni: [{ ...m.combinazioni[0], termini: [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }] }] };
+  assert.throws(() => impostaTermine(doppia, { id: 1, azione: 1, coefficiente: 2 }), /due termini sull'azione 1/);
 });
 test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicono chi", () => {
   let m = creaCombinazione(conAzione(), { nome: "SLU" });
@@ -539,7 +781,7 @@ test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicon
 ```
 
 - [ ] **Step 2: Rosso.**
-- [ ] **Step 3: I riduttori**, in coda a `comandi.js`. Import da aggiungere: `import { TIPI_COMBINAZIONE, NATURE, normalizzaCarico } from "./carichi.js";` e, in `modello.js` già importato, `azione, combinazione, combinazioniDellAzione, analisiCheUsano, nomeCaso, asta`. `LISTE` a `:123` diventa `{ nodo: "nodi", asta: "aste", sezione: "sezioni", materiale: "materiali", azione: "azioni", combinazione: "combinazioni" }`.
+- [ ] **Step 3: I riduttori**, in coda a `comandi.js`. Import da aggiungere: `import { TIPI_COMBINAZIONE, NATURE, normalizzaCarico } from "./carichi.js";` e, in `modello.js` già importato, `azione, combinazione, combinazioniDellAzione, analisiCheUsano, nomeCaso, asta`. `LISTE` a `:122` diventa `{ nodo: "nodi", asta: "aste", sezione: "sezioni", materiale: "materiali", azione: "azioni", combinazione: "combinazioni" }`.
 
 ```js
 // --- azioni e carichi (story 25-26) --------------------------------------------------------
@@ -553,7 +795,7 @@ const combinazioneEsistente = (m, id) => {
   if (!c) throw new ErroreComando(`la combinazione ${id} non esiste`, "seleziona una combinazione nell'albero e ripeti");
   return c;
 };
-// La stessa regola del backend (`nova/modello.py:288-292`), con la stessa frase: l'azione che
+// La stessa regola del backend (`nova/modello.py:287-291`), con la stessa frase: l'azione che
 // il riduttore accetta è quella che il server accetterà al salvataggio.
 const azioneValida = (a) => {
   if (typeof a.nome !== "string" || a.nome.trim() === "") throw new ErroreComando("l'azione vuole un nome", "scrivi «nome; natura»");
@@ -663,6 +905,11 @@ export function modificaCombinazione(m, { id, ...campi }) {
 export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   const vecchia = combinazioneEsistente(m, id);
   azioneEsistente(m, idAzione);
+  // Un file può portare due termini sulla stessa azione (il deck li somma): sostituirli con uno
+  // perderebbe un dato senza dirlo. Si rifiuta, e si dice dove correggere.
+  if (vecchia.termini.filter((t) => t.azione === idAzione).length > 1) {
+    throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file: l'interfaccia ne tiene uno per azione");
+  }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
   const n = copia(m);
   const c = n.combinazioni.find((k) => k.id === id);
@@ -691,7 +938,7 @@ export function eliminaCombinazione(m, { id }) {
 ### Task 3: `tastiera.js` — `Z`, `Q`, `K`, `⌘K`
 
 **Files:**
-- Modify: `static/tastiera.js:15-41` (quattro voci), `:56-66` (tre chiavi nude e una col comando)
+- Modify: `static/tastiera.js:14-40` (quattro voci), `:56-66` (tre chiavi nude e una col comando)
 - Test: `static/test/tastiera.test.js`
 
 **Interfaces:**
@@ -783,7 +1030,7 @@ test("senza azioni né combinazioni i due gruppi non compaiono", () => {
 
 (`alberoFinto` è a `albero.test.js:33`; import da aggiungere: `creaAzione, aggiungiCarico, creaCombinazione` da `../comandi.js`, `creaNodo` se manca.)
 
-- [ ] **Step 2: Rosso; Step 3:** dopo il ciclo dei materiali (`albero.js:50-56`):
+- [ ] **Step 2: Rosso; Step 3:** dopo il ciclo dei materiali (`albero.js:54-60`, quindi **dopo la riga 60**):
 
 ```js
     const plurale = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
@@ -822,7 +1069,7 @@ Import: `import { NOME_TIPO_COMBINAZIONE } from "./carichi.js";`.
   - `campoNumero({…, vuotoAmmesso = false})`: con `vuotoAmmesso`, un testo vuoto chiama `alCambio(null)` invece dell'avviso (i gradi di un cedimento, il gradiente termico, il coefficiente di un termine: vuoto vuol dire «nessuno»).
   - `righeDiAzione(m, a)` → `[["identificatore"], ["nome"], ["natura", "Q · vento"], ["caso", "Z2"], ["carichi", "1"], ["generata", "sì"/"no"]]`; `righeDiCombinazione(m, c)` → `identificatore, nome, tipo (NOME_TIPO_COMBINAZIONE o «—»), caso «C1», termini (n), generata`.
   - `editorAzione(m, a, azioni)` → `{elementi, controlli}`: gruppo «natura» (`scelta` natura fra `NATURE`, `input` testo categoria con nome «categoria d'uso dell'azione ‹nome›»); gruppo «carichi» con un `<fieldset class="carico">` per carico (legenda `«carico ${i+1} · ${NOME_TIPO[tipo]}»`, i campi del tipo, bottone «togli carico ${i+1}»), sotto un termico il `<p class="avviso">` «attenzione: il Check Model rifiuta il carico termico in v1 (nova/check.py)», e in coda una `scelta` «aggiungi carico» con `["", "— scegli il tipo"]` + i cinque tipi. Callback: `azioni.suAzione(id, campi)`, `azioni.suCarico(idAzione, indice, caricoIntero)`, `azioni.suTogliCarico(idAzione, indice)`, `azioni.suAggiungiCarico(idAzione, tipo)`, `azioni.suAvviso`.
-  - `editorCombinazione(m, c, azioni)` → gruppo «tipo» (`scelta` con `["", "— nessuno"]` + `TIPI_COMBINAZIONE` etichettati da `NOME_TIPO_COMBINAZIONE`); gruppo «termini» con un `campoNumero` per **ogni azione del modello** (etichetta `a.nome`, nome «coefficiente di ‹nome azione› in ‹nome combinazione›», valore il coefficiente o `null`, `vuotoAmmesso: true`), nota «vuoto = l'azione non entra». Senza azioni nel modello la nota dice «nessuna azione nel modello: premi Z». Callback: `azioni.suCombinazione(id, campi)`, `azioni.suTermine(idCombinazione, idAzione, coefficiente|null)`.
+  - `editorCombinazione(m, c, azioni)` → gruppo «tipo» (`scelta` con `["", "— nessuno"]` + `TIPI_COMBINAZIONE` etichettati da `NOME_TIPO_COMBINAZIONE`); gruppo «termini» con un `campoNumero` per **ogni azione del modello** (etichetta `a.nome`, nome «‹nome azione›: coefficiente nella combinazione ‹nome combinazione›» (il nome accessibile **comincia** dall'etichetta visibile, WCAG 2.5.3 — ruling R1 dell'architect), valore il coefficiente o `null`, `vuotoAmmesso: true`), nota «vuoto = l'azione non entra». Senza azioni nel modello la nota dice «nessuna azione nel modello: premi Z». Callback: `azioni.suCombinazione(id, campi)`, `azioni.suTermine(idCombinazione, idAzione, coefficiente|null)`.
   - Campi per tipo di carico nell'editor dell'azione (ognuno con nome accessibile che comincia dall'etichetta visibile): **nodale** → `scelta` nodo (fra `m.nodi`, testo `n.nome ?? «nodo n»`) + sei `campoNumero` `Fx … Mz` (unità « N» e « N·mm»); **distribuito** → `scelta` asta + `campoNumero` q (« N/mm») + `scelta` direzione; **gravità** → tre `campoNumero` «fattore x/y/z»; **cedimento** → `scelta` nodo + sei `campoNumero` `ux … rz` con `vuotoAmmesso` (unità « mm» e « rad»); **termico** → `scelta` asta + `campoNumero` «ΔT uniforme» (« °C») + `campoNumero` «gradiente» (« °C/mm», `vuotoAmmesso`). Ogni cambio chiama `suCarico(a.id, i, {...carico, [campo]: valore})` — il carico intero, così il riduttore lo normalizza e lo confronta.
 
 **Ingressi degeneri:**
@@ -832,12 +1079,13 @@ Import: `import { NOME_TIPO_COMBINAZIONE } from "./carichi.js";`.
 - il campo `Fx` con «ventimila» → `suAvviso(«ventimila» non è un numero)`, nessun `suCarico`, il campo torna a «20 000»
 - il campo `uz` di un cedimento svuotato → `suCarico(id, i, {…, uz: null})` (non un avviso)
 - il coefficiente di un termine svuotato → `suTermine(idC, idA, null)`; scritto «1,5» → `suTermine(idC, idA, 1.5)`
+- una combinazione con due termini sulla stessa azione (da file) → il campo mostra la **somma** (1 + 0,5 → «1,500»), non il primo
 - `categoria` svuotata → `suAzione(id, {categoria: null})`
 - un'azione `generata: true` → l'editor **c'è** lo stesso (decisione 1: il flag si mostra, non blocca) e la riga «generata» dice «sì»
 - il fuoco: dopo «togli carico 1» il controllo a fuoco non esiste più → il fuoco va al primo controllo dell'editor, mai a `body` (`creaPannello:507-520` lo fa già per nome; il test lo prova su un carico tolto)
 - il nome accessibile di **ogni** controllo dei due editor comincia dal testo visibile della sua etichetta (estendi il test WCAG 2.5.3 già presente ai tipi `azione` e `combinazione`)
 
-- [ ] **Step 1: Test** — aggiungi a `AZIONI` (`pannello.test.js:161-162`): `"suAzione", "suCarico", "suTogliCarico", "suAggiungiCarico", "suCombinazione", "suTermine"`. Stampo:
+- [ ] **Step 1: Test** — aggiungi a `AZIONI` (`pannello.test.js:164`): `"suAzione", "suCarico", "suTogliCarico", "suAggiungiCarico", "suCombinazione", "suTermine"`. Stampo:
 
 ```js
 import { creaAzione, aggiungiCarico, creaCombinazione, impostaTermine } from "../comandi.js";
@@ -906,7 +1154,7 @@ test("editor della combinazione: un campo per azione, vuoto toglie, il tipo si s
   let m = creaCombinazione(conCarichi(), { nome: "SLU" });
   m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
   p.disegna(m, { tipo: "combinazione", id: 1 });
-  const [coeff] = controlliCon(editor, "coefficiente di permanenti travi");
+  const [coeff] = controlliCon(editor, "permanenti travi: coefficiente");
   assert.equal(coeff.value, "1,500");
   coeff.value = "1,3"; coeff.dispatch("change");
   coeff.value = ""; coeff.dispatch("change");
@@ -1024,8 +1272,11 @@ function editorCombinazione(m, c, azioni) {
   const ter = gruppo("termini", "editor editor-campi",
                      m.azioni.length ? "coefficiente per azione; vuoto = l'azione non entra" : "nessuna azione nel modello: premi Z");
   for (const a of m.azioni) {
-    const coeff = c.termini.find((k) => k.azione === a.id)?.coefficiente ?? null;
-    const campo = campoNumero({ etichetta: a.nome, nome: `coefficiente di ${a.nome} in ${c.nome}`, valore: coeff,
+    // La somma, non il primo: un file con due termini sulla stessa azione mostra il numero che il
+    // deck userà (`nova/deck.py:305-309`); scriverci sopra lo rifiuta `impostaTermine`, che lo dice.
+    const suoi = c.termini.filter((k) => k.azione === a.id);
+    const coeff = suoi.length ? suoi.reduce((s, k) => s + k.coefficiente, 0) : null;
+    const campo = campoNumero({ etichetta: a.nome, nome: `${a.nome}: coefficiente nella combinazione ${c.nome}`, valore: coeff,
                                 vuotoAmmesso: true, alCambio: (v) => azioni.suTermine(c.id, a.id, v), suAvviso: azioni.suAvviso });
     ter.append(campo.etichetta); controlli.push(campo.controllo);
   }
@@ -1058,7 +1309,7 @@ In `stile.css`, dopo `.editor-valori`: `.carico { border-left: 2px solid var(--t
 - azione con un nodale su un nodo sparito → nessuna freccia per lui (lo salta `frecceDeiCarichi`), il resto si disegna
 - il `viewBox` **non cambia** aggiungendo un'azione (le frecce non entrano in `estensione`): il test confronta l'attributo prima e dopo
 
-- [ ] **Step 1: Test** — con `pianoFinto` e `tutti` di `piano.test.js:115-138`:
+- [ ] **Step 1: Test** — con `elementoSvgFinto` (`piano.test.js:115`), `tutti` (`:135`) e `pianoFinto` (`:145`):
 
 ```js
 import { creaAzione, aggiungiCarico } from "../comandi.js";
@@ -1132,17 +1383,17 @@ Firma: `function disegna(m, { selezione = null, ghost = null, azione = null } = 
 **Interfaces:**
 - Consumes: `TASTI` (forma delle voci: `codice, tasto, etichetta, aiuto, modificatore?`) — passati da fuori, il modulo non importa `tastiera.js`.
 - Produces:
-  - `filtraVoci(voci, query) → [{voce, valore, punti}]` (puro, esportato): `query` vuota → tutte le voci nell'ordine ricevuto con `valore: null`; altrimenti la **prima parola** cerca la voce (sottostringa in `etichetta` o `codice` → `100 − indice`; uguale al `tasto` senza modificatore, senza distinzione di maiuscole → `120`; sottosequenza → `3 × lettere trovate`; zero se manca una lettera), il resto della query è `valore` (`null` se non c'è); ordinate per punti decrescenti, a parità nell'ordine ricevuto; al massimo **9**.
+  - `filtraVoci(voci, query) → [{voce, valore, punti}]` (puro, esportato): `query` vuota → **tutte** le voci nell'ordine ricevuto con `valore: null` (è la lista che insegna le scorciatoie, P3: `Z`, `Q`, `K` stanno in coda e un tetto le nasconderebbe; la lista scorre, `max-height: 50vh`); altrimenti la **prima parola** cerca la voce (sottostringa in `etichetta` o `codice` → `100 − indice`; uguale al `tasto` senza modificatore, senza distinzione di maiuscole → `120`; sottosequenza → `3 × lettere trovate`; zero se manca una lettera), il resto della query è `valore` (`null` se non c'è); ordinate per punti decrescenti, a parità nell'ordine ricevuto; al massimo **9**.
   - `punteggio(nome, q)` (esportato per il test).
   - `creaPalette(radice, {suScelta}) → {apri({voci, disponibili}), chiudi(), aperta}`: `radice` è il `<div id="palette" hidden>` con dentro `<input id="palette-campo" role="combobox">` e `<ul id="palette-voci" role="listbox">`. `apri` svuota il campo, mostra, dà il fuoco; ogni `input` ridisegna; ↑↓ spostano l'attiva (`aria-selected`), Invio chiama `suScelta(voce, valore)` e chiude, Esc chiude; clic su una voce come Invio. `disponibili` è un `Set` di codici: le voci fuori dal set prendono `class="non-ora"` e il testo «non ora» dopo l'etichetta. Ogni voce stampa `etichetta`, il `valore` in `<b>` se c'è, `aiuto` in `<small>`, e `<kbd>tasto</kbd>` a destra. Nessuna voce → un `<li>` «nessun comando: prova «nodo», «sezione», «carico»». Il `keydown` del campo fa `stopPropagation` per ↑↓ Invio Esc (il listener globale di `app.js` non li deve vedere), non per gli altri tasti.
 
 **Ingressi degeneri:**
-- `filtraVoci(voci, "")` e `filtraVoci(voci, "   ")` → tutte, `valore: null`, ordine di `TASTI`
+- `filtraVoci(voci, "")` e `filtraVoci(voci, "   ")` → **tutte** le voci (22 con `TASTI` della 11c, nessun tetto), `valore: null`, ordine di `TASTI`
 - `filtraVoci(voci, "sezione 300 × 500")` → prima `sezione`, `valore: "300 × 500"`
 - `filtraVoci(voci, "q -12,5")` → prima `carico` (`tasto` `Q`), `valore: "-12,5"`
 - `filtraVoci(voci, "sz")` → `sezione` c'è (sottosequenza); `"xyz"` → `[]`
 - `filtraVoci(voci, "rinomina piede sinistro")` → `valore: "piede sinistro"` (il valore può avere spazi)
-- `filtraVoci(voci, "a")` → al massimo 9 voci, e `asta`/`azione`/`annulla`/`apri` prima di chi ha la `a` in mezzo
+- `filtraVoci(voci, "a")` → al massimo 9 voci (il tetto vale **solo** con una query), e `asta`/`azione`/`annulla`/`apri` prima di chi ha la `a` in mezzo
 - `filtraVoci([], "nodo")` → `[]`
 - `apri` due volte → un riquadro solo, campo svuotato; `chiudi` su una palette chiusa → niente
 - Invio senza voci → non chiama `suScelta`, resta aperta
@@ -1160,8 +1411,9 @@ const primo = (q) => filtraVoci(TASTI, q)[0];
 
 test("query vuota: tutte le voci, nell'ordine della tastiera, senza valore", () => {
   const r = filtraVoci(TASTI, "  ");
-  assert.equal(r.length, Math.min(9, TASTI.length));
-  assert.deepEqual(r.map((x) => x.voce.codice), TASTI.slice(0, 9).map((v) => v.codice));
+  assert.equal(r.length, TASTI.length);  // nessun tetto a query vuota: è la lista che insegna le scorciatoie
+  assert.deepEqual(r.map((x) => x.voce.codice), TASTI.map((v) => v.codice));
+  assert.ok(r.some((x) => x.voce.codice === "carico"));
   assert.ok(r.every((x) => x.valore === null));
 });
 test("la prima parola trova il comando, il resto è il valore", () => {
@@ -1202,10 +1454,10 @@ export function punteggio(nome, q) {
   return k === q.length ? p : 0;
 }
 
-/** Le voci che rispondono alla query, con il valore che la segue. Al massimo nove. */
+/** Le voci che rispondono alla query, con il valore che la segue. Con una query, al massimo nove. */
 export function filtraVoci(voci, query) {
   const testo = String(query ?? "").trim();
-  if (testo === "") return voci.slice(0, 9).map((voce) => ({ voce, valore: null, punti: 1 }));
+  if (testo === "") return voci.map((voce) => ({ voce, valore: null, punti: 1 }));  // tutte: la lista che insegna i tasti
   const [parola, ...resto] = testo.split(/\s+/);
   const q = parola.toLowerCase();
   const valore = resto.length ? resto.join(" ") : null;
@@ -1315,23 +1567,23 @@ In `stile.css`, in coda:
 ### Task 8: `app.js` — la cucitura
 
 **Files:**
-- Modify: `static/app.js` (import `:7-23`; stato `:25-42`; `scegli` `:97-110`; callback del pannello `:113-133`; `suApertura` `:143-158`; `submit` `:248-257`; `ridisegna` `:408-440`; il `keydown` `:466-635` con l'estrazione di `eseguiVoce`)
+- Modify: `static/app.js` (import `:7-23`; stato `:25-42`; `scegli` `:97-110`; callback del pannello `:113-133`; `suApertura` `:143-158`; `submit` `:248-257`; `ridisegna` `:408-440`; il `keydown` `:463-635` con l'estrazione di `eseguiVoce`)
 
 **Interfaces:**
 - Consumes: tutto quanto sopra. `creaPalette` (Task 7), `TASTI` (`tastiera.js`), `leggiAzione`, `leggiNodale`, `leggiDistribuito`, `leggiCombinazione`, `AVVISO_*` (Task 1), i dieci riduttori (Task 2), `azione` e `nomeCaso` (`modello.js`).
 - Produces:
   - stato `let azioneCorrente = null;` e `azioneDestinazione(m)` → l'azione con id `azioneCorrente` se esiste in `m`, altrimenti l'ultima di `m.azioni`, altrimenti `null`. `scegli("azione", id)` la aggiorna; `suApertura` la azzera; `ridisegna` la azzera se sparita.
-  - `eseguiVoce(voce, valore = null)`: il corpo del `keydown` da «`ev.preventDefault()`» in poi (`:479-635`), con `ev` non più disponibile: il ramo `direzione` resta **nel listener** prima della chiamata (ha bisogno di `ev.key`), tutti gli altri passano. Se dopo il dispatch `comando` è aperto e `valore !== null`: `campoComando.value = valore; comando.testo = valore; conferma();`. Il listener diventa: guardie (`daControllo`, `voceDaEvento`, `direzione`), `ev.preventDefault()`, `eseguiVoce(voce)`.
+  - `eseguiVoce(voce, valore = null)`: il corpo del `keydown` da «`ev.preventDefault()`» in poi (`:481-635`), con `ev` non più disponibile: il ramo `direzione` resta **nel listener** prima della chiamata (ha bisogno di `ev.key`), tutti gli altri passano. Se dopo il dispatch `comando` è aperto e `valore !== null`: `campoComando.value = valore; comando.testo = valore; conferma();`. Il listener diventa: guardie (`daControllo`, `voceDaEvento`, `direzione`), `ev.preventDefault()`, `eseguiVoce(voce)`.
   - `conferma()`: il corpo del `submit` (`:248-257`) estratto, con i tre casi nuovi: `azione` → `confermaAzione`, `carico` → `confermaCarico`, `combinazione` → `confermaCombinazione`. Il listener `submit` chiama `conferma()` dopo `preventDefault`.
   - `confermaAzione`: `leggiAzione(comando.testo)`; messaggio → `dì`; azione → `esegui((m) => creaAzione(m, azione), \`azione «${nome}» ${natura}\`)`; a successo `azioneCorrente = id nuovo`, `selezione = {tipo: "azione", id}`, `chiudiComando()`; `ridisegna()`.
   - `confermaCarico`: per `comando.bersaglio.tipo`: `nodo` → `leggiNodale`, carico `{tipo: "nodale", nodo: bersaglio.id, ...letto}`; `asta` → `leggiDistribuito`, carico `{tipo: "distribuito", asta: bersaglio.id, ...letto}`; destinazione `comando.azione` (congelata all'apertura, come il bersaglio); `esegui((m) => aggiungiCarico(m, {azione, carico}), \`carico su ${tipo} ${id} → ${nome azione}\`)`; a successo `chiudiComando()`; `ridisegna()`.
   - `confermaCombinazione`: `leggiCombinazione` → `creaCombinazione`; a successo `selezione = {tipo: "combinazione", id}`, `chiudiComando()`; `ridisegna()`.
   - rami nuovi in `eseguiVoce`: `azione` → `apriComando(voce)`; `combinazione` → `apriComando(voce)`; `carico` → se `selezione?.tipo` non è `nodo` né `asta` → `dì("il carico vuole un nodo o un'asta: clicca nel piano o nell'albero")`; se `azioneDestinazione(m)` è `null` → `dì("prima crea un'azione: premi Z")`; altrimenti `apriComando({...voce, aiuto: \`${voce.aiuto} → azione «${dest.nome}»\`, esempio: tipo === "nodo" ? "Fx 20000" : "-12,5"}, {bersaglio: {...selezione}})` e `comando.azione = dest.id`; `palette` → se aperta `chiudi()`, altrimenti `apri({voci: TASTI, disponibili: new Set(vociDellaBarra(contestoBarra(modo, selezione, comando), selezione?.tipo ?? null).map((v) => v.codice))})`. **`palette` sta sopra la guardia `if (comando)`** come `apri`/`salva`: da dentro il campo `⌘K` deve aprire lo stesso.
-  - `elimina` (`:573-590`): la mappa diventa `{sezione: eliminaSezione, materiale: eliminaMateriale, azione: eliminaAzione, combinazione: eliminaCombinazione}` e il ramo copre i quattro tipi.
+  - `elimina` (`:586-603`): la mappa diventa `{sezione: eliminaSezione, materiale: eliminaMateriale, azione: eliminaAzione, combinazione: eliminaCombinazione}` e il ramo copre i quattro tipi.
   - `esiste` (`:412-413`) a sei vie: `azione: m.azioni, combinazione: m.combinazioni`.
   - `ridisegna`: `piano.disegna(m, { selezione, ghost, azione: azioneDestinazione(m) })`.
   - callback del pannello: `suAzione: (id, campi) => esegui((m) => modificaAzione(m, {id, ...campi}), \`azione ${id}: ${chiavi}\`)`; `suCarico: (azione, indice, carico) => esegui((m) => modificaCarico(m, {azione, indice, carico}), \`carico ${indice + 1} dell'azione ${azione}\`)`; `suTogliCarico`; `suAggiungiCarico: (id, tipo)` → il carico di default per tipo: `nodale` e `cedimento` sul **primo nodo** (`m.nodi[0]`; senza nodi → `dì("serve un nodo: premi N")`), `distribuito` e `termico` sulla **prima asta** (senza aste → `dì("serve un'asta")`), `gravita` con `fattore_z: -1`; poi `aggiungiCarico`; etichetta `\`carico ${NOME_TIPO[tipo]} → ${nome azione}\``; `suCombinazione: (id, campi) => modificaCombinazione`; `suTermine: (id, azione, coefficiente) => impostaTermine`, etichetta `\`termine ${azione} della combinazione ${id}\``. Tutte seguite da `ridisegna()`.
-  - la palette: `const palette = creaPalette($("palette"), { suScelta: (voce, valore) => { eseguiVoce(voce, valore); ridisegna(); } });`
+  - la palette: `const palette = creaPalette($("palette"), { suScelta: (voce, valore) => { chiudiComando(); eseguiVoce(voce, valore); ridisegna(); } });` — **R2**: la palette abbandona il campo aperto; `apri` valuta `disponibili` con `contestoBarra(modo, selezione, null)`.
   - `chiudiComando` azzera anche `comando.azione` (è dentro `comando`, quindi già così).
 
 **Ingressi degeneri:**
@@ -1340,7 +1592,7 @@ In `stile.css`, in coda:
 - `Q` su un'asta, poi clic su un altro nodo, poi Invio → il carico va **sull'asta congelata** nel bersaglio, e all'azione congelata in `comando.azione` (anche se nel frattempo si è cliccata un'altra azione nell'albero)
 - Invio su «20000» con un nodo → `AVVISO_NODALE` a schermo, il campo resta aperto col testo
 - `Z` «spinta; Q» → il messaggio della categoria, campo aperto; «spinta; Q; vento» → azione creata, selezionata, `azioneCorrente` = lei, la Storia dice «azione «spinta» Q»
-- `⌘K` → palette aperta con le voci; `⌘K` di nuovo → chiusa; Esc → chiusa; da dentro il campo di comando `⌘K` apre lo stesso
+- `⌘K` → palette aperta con le voci; `⌘K` di nuovo → chiusa; Esc → chiusa; da dentro il campo di `N` con «0;» scritto, `⌘K` «sezione 300 × 500» Invio → il campo di `N` si chiude, la sezione nasce (R2); da dentro il campo di `N`, `⌘K` e poi Esc → il campo di `N` è ancora aperto col suo testo (la palette chiude il campo solo quando esegue)
 - palette «sezione 300 × 500» Invio senza asta selezionata → la sezione nasce (come `S` e poi Invio); «q -12,5» con un'asta selezionata → il carico nasce sull'asta, la palette e il campo si chiudono; «q -12,5» **senza** selezione → «il carico vuole un nodo o un'asta…», nessun campo
 - palette «danno» con un nodo selezionato (voce «non ora») Invio → «il danno vuole un'asta…» (la frase del tasto)
 - palette «sezione trecento» → il campo resta aperto con «trecento» e il messaggio «non è né b × h né il nome di una sezione»: lo stesso che a mano
@@ -1425,7 +1677,8 @@ Il ramo `palette`, sopra `if (comando) { campoComando.focus(); return; }`:
 ```js
   if (voce.codice === "palette") {
     if (palette.aperta) { palette.chiudi(); return; }
-    const disponibili = new Set(vociDellaBarra(contestoBarra(modo, selezione, comando), selezione?.tipo ?? null).map((v) => v.codice));
+    // R2: come a campo chiuso — la palette lo chiuderà se esegue, e con `comando` tutto sarebbe «non ora».
+    const disponibili = new Set(vociDellaBarra(contestoBarra(modo, selezione, null), selezione?.tipo ?? null).map((v) => v.codice));
     palette.apri({ voci: TASTI, disponibili });
     return;
   }
@@ -1438,6 +1691,9 @@ Il ramo `palette`, sopra `if (comando) { campoComando.focus(); return; }`:
 ### Task 9: la verifica che conta
 
 **Files:** nessuno — è la prova a mano, e chiude la 11c: il telaio 2×1 con i suoi carichi, disegnato da zero e salvato nella forma della fixture.
+
+**Ingressi degeneri:**
+- nessun ingresso esterno
 
 - [ ] **Step 1: Server** su `8817` (Global Constraints), Chrome su `http://127.0.0.1:8817/?v=11c`.
 - [ ] **Step 2: Il telaio.** Apri `tests/fixture/telaio_2x1.nova.json`: nell'albero compaiono «Azioni» con «permanenti travi · G2 · 2 carichi» e «spinta in testa · Q vento · 1 carico», «Combinazioni» con «SLU · fondamentale (SLU) · 2 termini». Il piano disegna in alto a sinistra «carichi: spinta in testa» (l'ultima) con una freccia orizzontale sul nodo 4 e «Fx 20 000 N». Clic su «permanenti travi»: sei frecce che scendono sulle due travi, «q −12,5 N/mm».
@@ -1464,8 +1720,8 @@ Con controllo nullo verde prima di ogni mutante; copia del file prima, ripristin
 9. `pannello.js:campoNumero` — `vuotoAmmesso` ignorato → «svuotato è libero» rosso.
 10. `pannello.js:editorAzione` — l'avviso del termico rimosso → rosso.
 11. `piano.js` — le frecce disegnate anche con `azione: null` → rosso; il titolo omesso con la gravità → rosso.
-12. `palette.js:filtraVoci` — `tasto === q` non dà 120 → «q -12,5 è il carico» rosso; `slice(0, 9)` tolto → «al massimo 9» rosso.
+12. `palette.js:filtraVoci` — `tasto === q` non dà 120 → «q -12,5 è il carico» rosso; `slice(0, 9)` messo anche sulla query vuota → «tutte le voci» rosso.
 
 ## Fuori da questa seduta
 
-`analisi` (i casi da lanciare, `AnalisiStatica.casi`) e il bottone della corsa: T6 (#43-#46) — qui l'ispettore stampa il nome del caso e basta. Il generatore di combinazioni dalla norma (P6, fase 2) e il significato di «corretta» su una combinazione generata. Le masse da azioni per la modale (story 44, T7). Le frecce dei carichi nella vista 3D (`spazio.js`). L'ordine dei carichi nell'editor (si aggiungono in coda, non si spostano). Un secondo termine sulla stessa azione (il deck li somma, l'interfaccia ne tiene uno). L'importatore in interfaccia (11d).
+`analisi` (i casi da lanciare, `AnalisiStatica.casi`) e il bottone della corsa: T6 (#43-#46) — qui l'ispettore stampa il nome del caso e basta. Il generatore di combinazioni dalla norma (P6, fase 2) e il significato di «corretta» su una combinazione generata. Le masse da azioni per la modale (story 44, T7). Le frecce dei carichi nella vista 3D (`spazio.js`). L'ordine dei carichi nell'editor (si aggiungono in coda, non si spostano). Un secondo termine sulla stessa azione (il deck li somma; l'interfaccia ne tiene uno, mostra la somma e rifiuta di scrivere sopra due — decisione presa sull'annotazione, debito 5). L'importatore in interfaccia (11d). Dall'annotazione dell'architect, non pagati qui: il Task 8 senza test automatici (debito 3, come nella 11b); `carichi.js` che porta schema, nomi a schermo e geometria in un modulo (debito 4); `azioneCorrente` fuori dalla cronologia (debito 6); `stile.css` scritto da due task (debito 2).
