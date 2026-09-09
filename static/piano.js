@@ -7,6 +7,7 @@
 
 import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
+import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -81,7 +82,15 @@ export function versoLibero(m, n) {
 
 export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   const svg = el("svg", { "aria-label": "piano di lavoro x–z" });
-  contenitore.replaceChildren(svg);
+  // Il titolo dei carichi è testo del documento, non un `<text>` nel `viewBox`: dentro l'SVG
+  // scalava coi millimetri e finiva addosso alla prima etichetta in alto a sinistra. Fuori,
+  // è un `<p>` in posizione assoluta su `#piano` (`stile.css`, già `position: relative`),
+  // sempre 11px, e nessun modello lo può spostare.
+  const titolo = document.createElement("p");
+  titolo.className = "carichi-titolo";
+  titolo.textContent = "";
+  titolo.hidden = true;
+  contenitore.replaceChildren(svg, titolo);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -109,7 +118,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     return Math.max(vista.larghezza / w, vista.altezza / h);
   }
 
-  function disegna(m, { selezione = null, ghost = null } = {}) {
+  // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
+  // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
+  function disegna(m, { selezione = null, ghost = null, azioneInVista = null } = {}) {
     inquadra(m, ghost);
     const s = millimetriPerPixel();
     const gruppo = el("g");
@@ -188,6 +199,41 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }
       gruppo.append(nodoEl);
     }
+
+    // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello
+    // e non entra in `estensione` — il riquadro non si muove quando si aggiunge un carico.
+    // Le frecce stanno sopra i nodi perché la punta del nodale finisce sul nodo e un cerchio
+    // pieno la coprirebbe; il ghost resta sotto: è un'anteprima, e ci sta un attimo.
+    if (azioneInVista) {
+      const L = 28 * s;
+      for (const f of frecceDeiCarichi(m, azioneInVista, L)) {
+        const pa = schermo(f.a), pd = schermo(f.da);
+        gruppo.append(el("line", { x1: pd.x, y1: pd.y, x2: pa.x, y2: pa.y, stroke: INCHIOSTRO,
+                                   "stroke-width": 1.5 * s, class: "carico" }));
+        const ang = Math.atan2(pa.y - pd.y, pa.x - pd.x);
+        for (const d of [-1, 1]) {
+          const a2 = ang + Math.PI + d * Math.PI / 6;
+          gruppo.append(el("line", { x1: pa.x, y1: pa.y, x2: pa.x + Math.cos(a2) * 6 * s, y2: pa.y + Math.sin(a2) * 6 * s,
+                                     stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: "carico-punta" }));
+        }
+        if (f.testo) {
+          // `ancora`, se c'è, sta sopra la coda più alta dell'asta (`carichi.js`): due carichi
+          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo.
+          const pt = f.ancora ? schermo(f.ancora) : pd;
+          const t = el("text", { x: pt.x + 4 * s, y: pt.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
+          t.textContent = f.testo; gruppo.append(t);
+        }
+      }
+    }
+
+    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
+    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
+    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
+    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azioneInVista
+      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
+      : "";
+    titolo.hidden = !azioneInVista;
 
     svg.replaceChildren(gruppo);
   }

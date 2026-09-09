@@ -52,6 +52,25 @@ export const sezioniDelMateriale = (m, id) => m.sezioni.filter((s) => s.calcestr
 /** La veste dell'analisi, una per modello (`nova/modello.py:349-351`). I file salvati prima
  *  della 11b non portano il campo: il server lo riempie col default, e qui si fa lo stesso. */
 export const vesteDi = (m) => m.impostazioni_analisi?.veste ?? "media";
+export const azione = (m, id) => m.azioni.find((a) => a.id === id) ?? null;
+/** L'azione a cui `Q` dà il carico e di cui il piano disegna le frecce: quella scelta o creata
+ *  per ultima, altrimenti l'ultima del modello, altrimenti nessuna. La regola sta qui e non in
+ *  `app.js` perché è una regola sul modello, e là non si poteva provare senza il DOM. */
+export const azioneInVista = (m, idCorrente) => azione(m, idCorrente) ?? m.azioni.at(-1) ?? null;
+export const combinazione = (m, id) => m.combinazioni.find((c) => c.id === id) ?? null;
+export const combinazioniDellAzione = (m, id) => m.combinazioni.filter((c) => (c.termini ?? []).some((t) => t.azione === id));
+/** Le analisi che nominano quel caso: la statica in `casi` (`nova/modello.py:317`), la
+ *  pushover in `caso_gravita` (`:358`), che è un caso come gli altri ma sta in un campo suo.
+ *  Un'azione o una combinazione che una corsa aspetta non si elimina sotto i suoi piedi. */
+export const analisiCheUsano = (m, caso) => (m.analisi ?? []).filter(
+  (a) => (a.tipo === "statica" && (a.casi ?? []).includes(caso)) || (a.tipo === "pushover" && a.caso_gravita === caso));
+/** Le analisi modali che prendono massa da quell'azione (`nova/modello.py:322-330`): qui il
+ *  riferimento viaggia sull'identificatore, non sul nome del caso, e nessun `casi` lo contiene. */
+export const analisiConMassaDa = (m, id) => (m.analisi ?? []).filter(
+  (a) => a.tipo === "modale" && (a.masse_da_azioni ?? []).some((x) => x.azione === id));
+/** `Z<id>` per un'azione, `C<id>` per una combinazione: il nome del caso è quello che la corsa
+ *  riceve (`nova/deck.py:296-311`), e l'ispettore lo stampa perché è ciò che si scrive in `analisi`. */
+export const nomeCaso = (tipo, id) => `${tipo === "azione" ? "Z" : "C"}${id}`;
 
 /** Il nodo entro la tolleranza da un punto, se c'è. Serve a non creare nodi coincidenti,
  *  che il Check Model rifiuta e che il solutore invece accetta in silenzio. */

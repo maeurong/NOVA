@@ -3,6 +3,7 @@
 
 import { asteDelNodo, asteDellaSezione } from "./modello.js";
 import { millimetri as mm } from "./numeri.js";
+import { NOME_TIPO_COMBINAZIONE } from "./carichi.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
   const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
@@ -59,6 +60,27 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       });
     }
 
+    const plurale = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
+    gruppo("Azioni", m.azioni.length);
+    for (const a of m.azioni) {
+      righe.push({
+        tipo: "azione", id: a.id,
+        // `?? []`: un file vecchio può non avere il campo, e l'albero disegna prima di tutti
+        // gli altri — se cade qui, l'ispettore che si guarda le spalle non serve a niente.
+        testo: `${a.nome} · ${a.natura}${a.categoria ? ` ${a.categoria}` : ""} · ${plurale((a.carichi ?? []).length, "carico", "carichi")}${a.generata ? " · generata" : ""}`,
+      });
+    }
+    gruppo("Combinazioni", m.combinazioni.length);
+    for (const c of m.combinazioni) {
+      // `TIPI_COMBINAZIONE` e `NOME_TIPO_COMBINAZIONE` sono due costanti gemelle in
+      // `carichi.js` (righe 13 e 19-22): chi aggiunge un tipo alla prima e si scorda la
+      // seconda vedrebbe «undefined» qui. Il fallback stampa la chiave grezza in quel caso.
+      righe.push({
+        tipo: "combinazione", id: c.id,
+        testo: `${c.nome} · ${c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "senza tipo"} · ${plurale((c.termini ?? []).length, "termine", "termini")}${c.generata ? " · generata" : ""}`,
+      });
+    }
+
     vuoto.hidden = righe.length > 0;
     elenco.hidden = righe.length === 0;
     elenco.replaceChildren(...righe.map((r) => {
@@ -79,9 +101,12 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       li.tabIndex = 0;
       li.setAttribute("role", "button");
       li.setAttribute("aria-pressed", String(selezione?.tipo === r.tipo && selezione.id === r.id));
-      // Doppio canale: chi è selezionato ha il rosso e il segno «▸», non il solo colore.
+      // Doppio canale: chi è selezionato ha il segno «▸» e il filetto rosso a sinistra, non il
+      // rosso come inchiostro — `--rosso` su `--fondo` è 4,28:1, sotto la soglia AA per un
+      // testo di 11px. Il rosso fa il filetto, come in `.avviso` e `.non-ora`; la parola la
+      // fa il segno. Classe e non `style`, così la regola sta tutta in `stile.css`.
       if (selezione?.tipo === r.tipo && selezione.id === r.id) {
-        li.style.color = "var(--rosso)";
+        li.className = "numero scelto";
         li.textContent = `▸ ${r.testo}`;
       }
       return li;

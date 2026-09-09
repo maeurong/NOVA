@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino,
   sezione, materiale, asteDellaSezione, sezioniDelMateriale, vesteDi,
+  azione, azioneInVista, combinazione, combinazioniDellAzione, analisiCheUsano,
+  analisiConMassaDa, nomeCaso,
 } from "../modello.js";
 
 const conNodi = () => ({
@@ -83,4 +85,69 @@ test("asteDellaSezione e sezioniDelMateriale elencano chi referenzia", () => {
   assert.deepEqual(asteDellaSezione(m, 1).map((a) => a.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 1).map((s) => s.id), [1]);
   assert.deepEqual(sezioniDelMateriale(m, 2).map((s) => s.id), [1]);
+});
+test("lookup delle azioni e delle combinazioni, e chi usa chi", () => {
+  const m = modelloVuoto();
+  m.azioni.push({ id: 1, nome: "g", natura: "G2", categoria: null, generata: false, carichi: [] });
+  m.combinazioni.push({ id: 1, nome: "SLU", termini: [{ azione: 1, coefficiente: 1.5 }], tipo: null, generata: false });
+  m.analisi.push({ tipo: "statica", casi: ["Z1", "C1"] });
+  assert.equal(azione(m, 1).nome, "g");
+  assert.equal(azione(m, 2), null);
+  assert.equal(combinazione(m, 1).nome, "SLU");
+  assert.deepEqual(combinazioniDellAzione(m, 1).map((c) => c.id), [1]);
+  assert.deepEqual(combinazioniDellAzione(m, 7), []);
+  assert.equal(analisiCheUsano(m, "Z1").length, 1);
+  assert.equal(analisiCheUsano(m, "Z9").length, 0);
+  assert.equal(nomeCaso("azione", 3), "Z3");
+  assert.equal(nomeCaso("combinazione", 1), "C1");
+});
+
+test("un caso lo nomina anche la pushover, in caso_gravita, e non solo la statica", () => {
+  const m = modelloVuoto();
+  m.analisi.push({ tipo: "pushover", distribuzione: "modo1", nodo_controllo: 1, dof: "ux",
+                   incremento: 1, spostamento_max: 100, caso_gravita: "C1" });
+  assert.equal(analisiCheUsano(m, "C1").length, 1, "caso_gravita non sta in casi, ma è un uso");
+  assert.equal(analisiCheUsano(m, "Z1").length, 0);
+  const scarica = { ...m, analisi: [{ ...m.analisi[0], caso_gravita: null }] };
+  assert.equal(analisiCheUsano(scarica, "C1").length, 0);
+  // Un'analisi senza `casi` (una modale, o una statica scritta a mano) non è un TypeError.
+  assert.equal(analisiCheUsano({ ...m, analisi: [{ tipo: "modale" }, { tipo: "statica" }] }, "C1").length, 0);
+});
+
+test("la modale prende massa dall'azione per identificatore, non per nome di caso", () => {
+  const m = modelloVuoto();
+  m.analisi.push({ tipo: "modale", modi: "auto", masse_da_azioni: [{ azione: 2, coefficiente: 0.3 }] });
+  assert.equal(analisiConMassaDa(m, 2).length, 1);
+  assert.equal(analisiConMassaDa(m, 1).length, 0);
+  assert.equal(analisiCheUsano(m, "Z2").length, 0, "nessun `casi` la nomina: serve il lookup suo");
+  assert.equal(analisiConMassaDa({ ...m, analisi: [{ tipo: "modale" }] }, 2).length, 0);
+  assert.equal(analisiConMassaDa(modelloVuoto(), 2).length, 0);
+});
+
+// --- l'azione in vista: la regola sta nel modello, non in `app.js` -----------------------
+// «l'ultima scelta o creata, altrimenti l'ultima del modello»: era una riga di `app.js`, e
+// una riga di `app.js` non si prova senza il DOM. Qui si prova.
+
+const conAzioni = () => ({
+  ...modelloVuoto(),
+  contatori: { azione: 2 },
+  azioni: [{ id: 1, nome: "permanenti travi", natura: "G2", categoria: null, generata: false, carichi: [] },
+           { id: 2, nome: "spinta in testa", natura: "Q", categoria: "vento", generata: false, carichi: [] }],
+});
+
+test("azioneInVista: l'identificatore corrente vince, quando esiste", () => {
+  assert.equal(azioneInVista(conAzioni(), 1).nome, "permanenti travi");
+});
+
+// Ingresso degenere: un identificatore che non c'è più — ⌘Z ha disfatto la creazione.
+test("azioneInVista: un identificatore sparito ricade sull'ultima azione del modello", () => {
+  assert.equal(azioneInVista(conAzioni(), 99).nome, "spinta in testa");
+  assert.equal(azioneInVista(conAzioni(), null).nome, "spinta in testa");
+});
+
+// Ingresso degenere: nessuna azione nel modello. `null`, non `undefined`: `piano.disegna`
+// distingue «nessuna azione in vista» da un'azione senza nome.
+test("azioneInVista: un modello senza azioni dà null, non undefined", () => {
+  assert.equal(azioneInVista(modelloVuoto(), 1), null);
+  assert.equal(azioneInVista(modelloVuoto(), null), null);
 });

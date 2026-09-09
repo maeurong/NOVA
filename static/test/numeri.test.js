@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leggiNumero, stampaNumero, leggiEspressione, leggiLunghezza, millimetri } from "../numeri.js";
+import { leggiNumero, stampaNumero, leggiEspressione, leggiLunghezza, millimetri,
+         cifre, conciso } from "../numeri.js";
 
 test("la virgola separa i decimali", () => {
   assert.equal(leggiNumero("2,5"), 2.5);
@@ -204,4 +205,47 @@ test("lunghezza: un valore che eccede il finito è null, non Infinity", () => {
   assert.equal(leggiLunghezza(`-${enorme}m`), null);
   // e la stessa cifra in millimetri, che finita lo è, continua a passare
   assert.equal(leggiLunghezza(`${enorme}mm`), Number(enorme));
+});
+
+// --- fix di fine ramo: il meno tipografico rientra dalla propria porta -------------------
+// `carichi.js` stampa «q −12,5 N/mm» con U+2212, e quel testo si ricopia nei campi e nel
+// campo di comando. Prima tornava `null`: l'ispettore diceva un numero che l'ingresso non
+// sapeva rileggere. Si normalizza a `-` all'unica porta, e le grammatiche non lo vedono mai.
+
+test("il meno tipografico si legge come il meno", () => {
+  assert.equal(leggiNumero("−12,5"), -12.5);
+  assert.equal(leggiNumero("−1.234,5"), -1234.5);
+  assert.equal(leggiNumero("−2.5"), -2.5);
+});
+
+test("espressione: il meno tipografico vale davanti al numero e dentro le parentesi", () => {
+  assert.equal(leggiEspressione("−12,5"), -12.5);
+  assert.equal(leggiEspressione("(−1)*2"), -2);
+  assert.equal(leggiEspressione("10 − 3"), 7);
+});
+
+// Ingresso degenere: il solo segno, senza cifre. `null`, mai un'eccezione — il campo di
+// comando lo chiama a ogni tasto battuto, e il primo tasto di «−12,5» è questo.
+test("il solo meno tipografico è null, non un'eccezione", () => {
+  assert.equal(leggiNumero("−"), null);
+  assert.equal(leggiEspressione("−"), null);
+});
+
+// --- `cifre` e `conciso` stanno qui, e il giro si chiude ---------------------------------
+
+test("conciso taglia gli zeri dopo la virgola, non quello di «10»", () => {
+  assert.equal(conciso(1.5), "1,5");
+  assert.equal(conciso(-12.5), "-12,5");
+  assert.equal(conciso(10), "10");
+  assert.equal(conciso(0.8), "0,8");
+  assert.equal(conciso(0.0001), "0,0001");
+  assert.equal(cifre(0.8), "0,8000");
+});
+
+// Il giro completo: `conciso` stampa, `carichi.js` mette il meno tipografico, `leggiNumero`
+// rilegge. Se una delle tre porte cambia grafia, questo test lo dice.
+test("giro completo: quel che il testo dei carichi scrive, leggiNumero lo rilegge", () => {
+  for (const v of [-12.5, 20000, 0.0035]) {
+    assert.equal(leggiNumero(conciso(v).replace("-", "−")), v, `giro rotto su ${v}`);
+  }
 });

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { creaAlbero } from "../albero.js";
-import { creaMateriale, creaSezione } from "../comandi.js";
+import { creaMateriale, creaSezione, creaNodo, creaAzione, aggiungiCarico, creaCombinazione } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
 
 // Il DOM finto di `pannello.test.js`, con in più `dataset`, `style` e `closest`.
@@ -106,18 +106,29 @@ test("il clic su una riga «gruppo» non seleziona niente: non ha data-tipo", ()
   assert.deepEqual(scelte, []);
 });
 
-// Il rosso vuol dire attenzione e nient'altro (ticket #14): la selezione lo prende, con il
-// segno accanto (doppio canale, WCAG 1.4.1); un'intestazione non è un'attenzione.
-test("una sezione selezionata prende «▸» e il rosso; il suo gruppo non li prende", () => {
+// Il rosso vuol dire attenzione e nient'altro (ticket #14): la selezione lo prende come
+// **filetto**, con il segno accanto (doppio canale, WCAG 1.4.1); un'intestazione non è
+// un'attenzione. Come inchiostro no: `--rosso` su `--fondo` è 4,28:1, sotto AA a 11px — la
+// classe `scelto` porta la regola in `stile.css`, e `style.color` non si scrive più.
+test("una sezione selezionata prende «▸» e la classe «scelto»; il suo gruppo non li prende", () => {
   const { albero, elenco } = alberoFinto();
   albero.disegna(conSezione(), { selezione: { tipo: "sezione", id: 1 } });
   const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
   assert.equal(voce.textContent, "▸ 300 × 500 · 0 aste");
-  assert.equal(voce.style.color, "var(--rosso)");
+  assert.equal(voce.className, "numero scelto");
+  assert.equal(voce.style.color, undefined, "il rosso fa il filetto, non l'inchiostro del testo");
   assert.equal(voce.getAttribute("aria-pressed"), "true");
   const gruppo = elenco._figli.find((li) => li.textContent === "Sezioni");
+  assert.equal(gruppo.className, "gruppo");
   assert.equal(gruppo.style.color, undefined);
   assert.equal(gruppo.getAttribute("aria-pressed"), undefined);
+});
+
+test("una voce non selezionata resta «numero», senza la classe del filetto", () => {
+  const { albero, elenco } = alberoFinto();
+  albero.disegna(conSezione(), {});
+  const voce = elenco._figli.find((li) => li.dataset.tipo === "sezione");
+  assert.equal(voce.className, "numero");
 });
 
 
@@ -156,4 +167,77 @@ test("una lettera o una freccia su una voce a fuoco non chiama suSelezione", () 
   assert.deepEqual(scelte, []);
   elenco.dispatch("keydown", { key: " ", target: voce });
   assert.deepEqual(scelte, [["sezione", 1]], "Spazio invece attiva, come Invio");
+});
+
+
+// --- ramo 11c: i rami «Azioni» e «Combinazioni» ------------------------------------------
+
+test("l'albero elenca azioni e combinazioni, con natura, categoria, conteggi al singolare e «generata»", () => {
+  let m = creaNodo(modelloVuoto(), { x: 0, z: 0 });
+  m = creaAzione(m, { nome: "spinta in testa", natura: "Q", categoria: "vento" });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "nodale", nodo: 1, Fx: 20000 } });
+  m = creaAzione(m, { nome: "peso proprio", natura: "G1" });
+  m.azioni[1].generata = true;
+  m = creaCombinazione(m, { nome: "SLU" });
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(m);
+  const t = testi(elenco);
+  assert.ok(t.includes("Azioni"), JSON.stringify(t));
+  assert.ok(t.includes("spinta in testa · Q vento · 1 carico"), JSON.stringify(t));
+  assert.ok(t.includes("peso proprio · G1 · 0 carichi · generata"), JSON.stringify(t));
+  assert.ok(t.includes("Combinazioni"), JSON.stringify(t));
+  assert.ok(t.includes("SLU · senza tipo · 0 termini"), JSON.stringify(t));
+});
+
+test("senza azioni né combinazioni i due gruppi non compaiono", () => {
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(creaNodo(modelloVuoto(), { x: 0, z: 0 }));
+  const t = testi(elenco);
+  assert.ok(!t.includes("Azioni") && !t.includes("Combinazioni"), JSON.stringify(t));
+});
+
+// Ingresso degenere: un'azione sola, nessuna combinazione — i due gruppi non vanno di pari
+// passo, ognuno compare o no secondo il proprio conteggio (P8).
+test("un'azione senza combinazioni: «Azioni» compare, «Combinazioni» no", () => {
+  const m = creaAzione(modelloVuoto(), { nome: "peso proprio", natura: "G1" });
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(m);
+  const t = testi(elenco);
+  assert.ok(t.includes("Azioni"), JSON.stringify(t));
+  assert.ok(!t.includes("Combinazioni"), JSON.stringify(t));
+});
+
+// Ingresso degenere: il clic (non solo Invio/Spazio) su una voce azione chiama lo stesso
+// listener delle altre voci — nessun codice nuovo in `albero.js`, ma qui lo si prova.
+test("il clic su una voce azione chiama suSelezione(\"azione\", id)", () => {
+  const m = creaAzione(modelloVuoto(), { nome: "peso proprio", natura: "G1" });
+  const { elenco, albero, scelte } = alberoFinto();
+  albero.disegna(m);
+  const voce = elenco._figli.find((li) => li.dataset.tipo === "azione");
+  elenco.dispatch("click", { target: voce });
+  assert.deepEqual(scelte, [["azione", 1]]);
+});
+
+// Ingresso degenere: `categoria: null` (nessuna categoria) non lascia uno spazio doppio né
+// la parola «null» nel testo.
+test("azione con categoria null: niente spazio doppio né «null» nel testo", () => {
+  let m = creaAzione(modelloVuoto(), { nome: "permanenti travi", natura: "G2" });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita" } });
+  m = aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita" } });
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(m);
+  const t = testi(elenco);
+  assert.ok(t.includes("permanenti travi · G2 · 2 carichi"), JSON.stringify(t));
+  assert.ok(!t.some((s) => s.includes("null")), JSON.stringify(t));
+});
+
+// Ingresso degenere: un tipo che `TIPI_COMBINAZIONE` conosce e `NOME_TIPO_COMBINAZIONE` no:
+// la chiave grezza, non «undefined» — guardia contro la deriva fra le due costanti gemelle di
+// `carichi.js`, non contro un file vecchio (un file così è respinto prima di arrivare qui).
+test("un tipo che TIPI_COMBINAZIONE conosce e NOME_TIPO_COMBINAZIONE no: la chiave grezza, non «undefined»", () => {
+  let m = creaCombinazione(modelloVuoto(), { nome: "SLU" });
+  m.combinazioni[0].tipo = "eccezionale";
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(m);
+  assert.ok(testi(elenco).includes("SLU · eccezionale · 0 termini"), JSON.stringify(testi(elenco)));
 });

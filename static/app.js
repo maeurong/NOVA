@@ -4,13 +4,17 @@
 // secondo nodo. `ponytail: ridisegno intero; si passa a un diff quando un modello vero
 // lo rende lento, non prima.`
 
-import { modelloVuoto, nodo, materiale, vesteDi } from "./modello.js";
+import { modelloVuoto, nodo, materiale, azione, azioneInVista, vesteDi } from "./modello.js";
 import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo,
          creaSezione, modificaSezione, impostaFila, assegnaSezione, eliminaSezione, creaMateriale,
-         modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault } from "./comandi.js";
+         modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault,
+         creaAzione, modificaAzione, eliminaAzione, aggiungiCarico, modificaCarico, togliCarico,
+         creaCombinazione, modificaCombinazione, impostaTermine, eliminaCombinazione } from "./comandi.js";
+import { leggiAzione, leggiNodale, leggiDistribuito, leggiCombinazione, caricoVuoto, NOME_TIPO } from "./carichi.js";
 import { leggiDimensioni } from "./sezione.js";
 import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
-import { voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
+import { creaPalette } from "./palette.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
 import { creaAlbero } from "./albero.js";
@@ -31,9 +35,13 @@ let modo = null;
 // Il campo di comando: `null` quando è chiuso, `{ tipo, testo, bersaglio }` quando è aperto.
 // Fuori da `modo` perché non è un modo — `nodo` non ha un nodo di partenza, e `modoValido`
 // lo chiuderebbe a ogni ridisegno cercandogli un `da` che non ha mai avuto. Un campo solo per
-// sette comandi: `N`, `B`, `M`, `R`, `S`, `C`, `D`. Da qui `window.prompt` non è più nel
-// programma (P2).
+// dieci comandi: `N`, `B`, `M`, `R`, `S`, `C`, `D`, `Z`, `Q`, `K`. Da qui `window.prompt` non
+// è più nel programma (P2).
 let comando = null;
+// L'azione a cui `Q` dà il carico e di cui il piano disegna le frecce: l'ultima scelta o
+// creata, altrimenti l'ultima del modello. Una regola sola, scritta nell'aiuto del campo.
+let azioneCorrente = null;
+const azioneDestinazione = (m) => azioneInVista(m, azioneCorrente);
 // Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
 // che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
 // per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
@@ -103,6 +111,9 @@ function scegli(tipo, id) {
   if (tipo === "materiale") {
     for (const [k, v] of legami) if (v?.errore) legami.delete(k);
   }
+  // Scegliere un'azione la rende la destinazione di `Q` e il soggetto delle frecce nel piano:
+  // il gesto che la mostra è lo stesso che la elegge, e non ce n'è un secondo da imparare.
+  if (tipo === "azione") azioneCorrente = id;
   if (aggiornaA) modo = { ...modo, a: id };
   selezione = { tipo, id };
   ridisegna();
@@ -120,6 +131,22 @@ const pannello = creaPannello(
     suDanno: (asta, danno) => { esegui((m) => impostaDanno(m, { asta, danno }), `danno dell'asta ${asta}`); ridisegna(); },
     suMateriale: (id, campi) => { esegui((m) => modificaMateriale(m, { id, ...campi }), `materiale ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
     suVeste: (veste) => { esegui((m) => impostaVeste(m, { veste }), `veste ${veste}`); ridisegna(); },
+    suAzione: (id, campi) => { esegui((m) => modificaAzione(m, { id, ...campi }), `azione ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
+    suCarico: (idAzione, indice, carico) => { esegui((m) => modificaCarico(m, { azione: idAzione, indice, carico }), `carico ${indice + 1} dell'azione ${idAzione}`); ridisegna(); },
+    suTogliCarico: (idAzione, indice) => { esegui((m) => togliCarico(m, { azione: idAzione, indice }), `via il carico ${indice + 1} dell'azione ${idAzione}`); ridisegna(); },
+    suAggiungiCarico: (idAzione, tipo) => { aggiungiCaricoVuoto(idAzione, tipo); ridisegna(); },
+    suCombinazione: (id, campi) => { esegui((m) => modificaCombinazione(m, { id, ...campi }), `combinazione ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
+    // Metti, cambia e togli sono tre gesti diversi che scrivevano la stessa riga nella Storia:
+    // «termine 1 della combinazione 1», tre volte, e l'annulla non diceva più a cosa tornava.
+    // Il nome dell'azione e il coefficiente le distinguono (P4).
+    suTermine: (idCombinazione, idAzione, coefficiente) => {
+      const nome = azione(corrente(cronologia), idAzione)?.nome ?? idAzione;
+      esegui((m) => impostaTermine(m, { id: idCombinazione, azione: idAzione, coefficiente }),
+             coefficiente === null
+               ? `via il termine «${nome}» dalla combinazione ${idCombinazione}`
+               : `termine «${nome}» della combinazione ${idCombinazione}: ${stampaNumero(coefficiente, { decimali: 2 })}`);
+      ridisegna();
+    },
     // Un numero illeggibile in un campo dell'editor è un avviso, non un comando: non entra
     // nella Storia e non tocca il modello — il campo si rimette da solo sul valore di prima.
     suAvviso: dì,
@@ -149,6 +176,9 @@ const file = creaFile(document, {
     // sul file di prima confermava sul nodo 3 del file appena aperto.
     chiudiComando();
     selezione = null; modo = null;
+    // Gli id ripartono da 1 in ogni file: l'azione 3 di prima non è l'azione 3 di adesso, e
+    // `azioneDestinazione` cadrebbe su un'omonima. Azzerata, il piano mostra l'ultima del file.
+    azioneCorrente = null;
     percorso = p; impronta = i;
     dì(null);
     ridisegna();
@@ -160,6 +190,22 @@ const file = creaFile(document, {
 // Il percorso aperto, non il campo: il campo è la sorgente di `apri`. `null` solo finché
 // non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
 $("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
+
+// La palette non è un secondo programma: passa voce e valore ai rami del tasto, e l'esito è
+// quello del tasto **a gesto chiuso**. **R2** — se esegue, abbandona campo e modo insieme:
+// cercare un comando mentre se ne stava facendo un altro è un ripensamento, e un ghost appeso a
+// un gesto che nessuno finirà più è peggio di niente. Da qui l'elenco che le si passa: senza il
+// modo non c'è più niente da girare né da confermare, e `direzione` e `conferma` sarebbero due
+// voci che non fanno nulla; `palette` dentro la palette la farebbe lampeggiare.
+//
+// Chi la chiude con Esc invece non ha ripensato niente: `chiudi` non passa da `suScelta`, e il
+// campo di prima è ancora lì col suo testo — `suChiusura` gli rimette il fuoco, che se no
+// restava sul `body` e le cifre battute dopo non arrivavano da nessuna parte.
+const VOCI_PALETTE = TASTI.filter((v) => !["direzione", "conferma", "palette"].includes(v.codice));
+const palette = creaPalette($("palette"), {
+  suScelta: (voce, valore) => { chiudiComando(); eseguiVoce(voce, valore); ridisegna(); },
+  suChiusura: () => { if (comando) campoComando.focus(); },
+});
 
 // Aprire un modo lo rende il gesto della tastiera globale, quindi il fuoco deve lasciare
 // il controllo su cui si trovava: `pannello.js` lo riporta apposta sul bottone dopo ogni
@@ -208,6 +254,10 @@ function chiudiComando() {
   comando = null;
   modo = null;
   campoComando.value = "";
+  // Misurato in Chrome (09/09): un campo nascosto con `hidden` **tiene** il fuoco, e
+  // `daControllo` continua a lasciargli i tasti — `Z` dopo un Invio non apriva niente e le
+  // lettere finivano in un campo che nessuno vedeva. Il fuoco si toglie qui, a mano.
+  if (document.activeElement === campoComando) campoComando.blur();
 }
 
 // Il testo è la sorgente del ghost, quindi ogni tasto ridisegna. `comando.testo` rispecchia
@@ -247,14 +297,27 @@ campoComando.addEventListener("keydown", (ev) => {
 // di qui, e `window.prompt` non esiste più in nessuna strada del programma (P2).
 rigaComando.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  conferma();
+});
+
+/** Il dispatch della conferma, fuori dal listener: `Invio` nel campo non è l'unica strada che
+ *  porta qui. Il campo chiuso non ha niente da confermare, e tacere è la risposta giusta. */
+function conferma() {
   if (!comando) return;
   if (comando.tipo === "estrudi") return confermaEstrusione();
   if (comando.tipo === "rinomina") return confermaNome();
   if (comando.tipo === "sezione") return confermaSezione();
   if (comando.tipo === "materiale") return confermaMateriale();
   if (comando.tipo === "danno") return confermaDanno();
-  confermaPunto();  // `nodo` e `sposta`: la stessa grammatica, «x; z»
-});
+  if (comando.tipo === "azione") return confermaAzione();
+  if (comando.tipo === "carico") return confermaCarico();
+  if (comando.tipo === "combinazione") return confermaCombinazione();
+  // `nodo` e `sposta`: la stessa grammatica, «x; z». Esplicito e non per caduta, perché un
+  // tipo nuovo dimenticato qui prendeva la grammatica del punto e leggeva «x; z» in un campo
+  // che chiedeva altro — in silenzio. Ora si rompe subito, e dice quale tipo manca.
+  if (comando.tipo === "nodo" || comando.tipo === "sposta") return confermaPunto();
+  throw new Error(`comando senza conferma: ${comando.tipo}`);
+}
 
 // Campo vuoto: niente da eseguire **e** niente da dire. Un testo che c'è ma non si legge
 // parla, e solo adesso — mentre si scriveva era un testo a metà, non uno sbagliato.
@@ -393,6 +456,65 @@ function confermaDanno() {
   ridisegna();
 }
 
+// --- azioni, carichi, combinazioni (story 26, 27, 28) --------------------------------------
+
+// `leggiAzione` tace sul campo vuoto e parla su tutto il resto, come `esitoComando`: un testo a
+// metà non è un testo sbagliato. Il nome dell'azione entra nella Storia, non il suo id — è
+// quello che si è appena scritto, e l'annulla è visibile solo se le sue voci si leggono (P4).
+function confermaAzione() {
+  const { azione: letta, messaggio } = leggiAzione(comando.testo);
+  if (messaggio) { dì(messaggio); return; }
+  if (!letta) return;
+  if (esegui((m) => creaAzione(m, letta), `azione «${letta.nome}» ${letta.natura}${letta.categoria ? ` ${letta.categoria}` : ""}`)) {
+    const n = corrente(cronologia);
+    // L'azione appena nata è quella a cui `Q` darà il carico: è il gesto che segue, sempre.
+    azioneCorrente = n.azioni[n.azioni.length - 1].id;
+    selezione = { tipo: "azione", id: azioneCorrente };
+    chiudiComando();
+  }
+  ridisegna();
+}
+
+// Bersaglio **e** azione arrivano congelati dall'apertura del campo: da aperto la pagina resta
+// viva, e un clic nel piano o nell'albero sposterebbe sotto i piedi del comando sia il nodo sia
+// l'azione. L'etichetta nomina il primo, l'aiuto la seconda.
+function confermaCarico() {
+  const { tipo, id } = comando.bersaglio;
+  const letto = tipo === "nodo" ? leggiNodale(comando.testo) : leggiDistribuito(comando.testo);
+  if (letto.messaggio) { dì(letto.messaggio); return; }
+  if (!letto.carico) return;
+  const carico = tipo === "nodo"
+    ? { tipo: "nodale", nodo: id, ...letto.carico }
+    : { tipo: "distribuito", asta: id, ...letto.carico };
+  const dest = comando.azione;
+  const nome = azione(corrente(cronologia), dest)?.nome ?? String(dest);
+  if (esegui((m) => aggiungiCarico(m, { azione: dest, carico }), `carico su ${tipo} ${id} → ${nome}`)) chiudiComando();
+  ridisegna();
+}
+
+function confermaCombinazione() {
+  const { combinazione: letta, messaggio } = leggiCombinazione(comando.testo);
+  if (messaggio) { dì(messaggio); return; }
+  if (!letta) return;
+  if (esegui((m) => creaCombinazione(m, letta), `combinazione «${letta.nome}»${letta.tipo ? ` ${letta.tipo}` : ""}`)) {
+    const n = corrente(cronologia);
+    selezione = { tipo: "combinazione", id: n.combinazioni[n.combinazioni.length - 1].id };
+    chiudiComando();
+  }
+  ridisegna();
+}
+
+/** Il «+» dell'editor: il carico vuoto del suo tipo, sul primo bersaglio del modello. Da lì si
+ *  corregge nei campi, che si vedono — chiedere prima il nodo vorrebbe dire un secondo campo
+ *  per un valore che poi si cambia comunque. Senza bersaglio non nasce, e dice cosa manca. */
+function aggiungiCaricoVuoto(idAzione, tipo) {
+  const m = corrente(cronologia);
+  const { carico, messaggio } = caricoVuoto(m, tipo);
+  if (!carico) { dì(messaggio); return; }
+  const nome = azione(m, idAzione)?.nome ?? String(idAzione);
+  esegui((s) => aggiungiCarico(s, { azione: idAzione, carico }), `carico ${NOME_TIPO[tipo] ?? tipo} → ${nome}`);
+}
+
 function esegui(fn, etichetta) {
   try {
     cronologia = applica(cronologia, fn, etichetta);
@@ -407,17 +529,25 @@ function esegui(fn, etichetta) {
 
 function ridisegna() {
   const m = corrente(cronologia);
-  // Quattro tipi selezionabili da quando l'albero porta sezioni e materiali: un tipo che
+  // Sei tipi selezionabili da quando l'albero porta azioni e combinazioni: un tipo che
   // non è nell'elenco non esiste, e la selezione cade — non solleva.
-  const esiste = (s) => ({ nodo: m.nodi, asta: m.aste, sezione: m.sezioni, materiale: m.materiali }[s.tipo] ?? [])
+  const esiste = (s) => ({ nodo: m.nodi, asta: m.aste, sezione: m.sezioni, materiale: m.materiali,
+                           azione: m.azioni, combinazione: m.combinazioni }[s.tipo] ?? [])
     .some((e) => e.id === s.id);
   // Una selezione che punta a un oggetto sparito è peggio di nessuna selezione.
   if (selezione && !esiste(selezione)) selezione = null;
+  // ⌘Z che disfa la creazione dell'azione corrente la fa sparire: senza questo il piano
+  // disegnerebbe le frecce di un'azione che non c'è più. Azzerata, si torna all'ultima rimasta.
+  if (azioneCorrente !== null && !azione(m, azioneCorrente)) azioneCorrente = null;
   // Il nodo di partenza di un modo sparito è nella stessa condizione di una selezione sparita.
   modo = modoValido(m, modo);
   // E il bersaglio di un comando aperto pure: ⌘Z lavora anche col campo aperto, e un campo
   // che chiede il nome di un nodo appena disfatto non ha più a chi parlare.
   if (comando?.bersaglio && !esiste(comando.bersaglio)) chiudiComando();
+  // E l'azione a cui il campo consegna il carico: `Q` la fissa quando si apre (`comando.azione`),
+  // e un ⌘Z col campo aperto la può portare via — `esiste` non la guarda, perché l'azione non è
+  // il bersaglio della selezione.
+  if (comando?.azione != null && !azione(m, comando.azione)) chiudiComando();
 
   // Un ghost solo, di due forme: la punta dell'asta — dal modo, o dal campo mentre si scrive
   // la lunghezza — oppure il punto in anteprima. Il secondo non è un `{da, dx, dz}`, non
@@ -425,7 +555,7 @@ function ridisegna() {
   // riconosce da `punto`.
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   rigaComando.hidden = !comando;
-  piano.disegna(m, { selezione, ghost });
+  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m) });
   spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
   albero.disegna(m, { selezione });
   const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;
@@ -479,7 +609,23 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
   ev.preventDefault();
+  eseguiVoce(voce);
+});
 
+/** Una voce della tastiera, eseguita — dal tasto o dalla palette. Fuori dal listener perché
+ *  `ev` qui dentro non serve più: il ramo `direzione`, l'unico che legge `ev.key`, resta di là.
+ *  `valore` è quello scritto nella palette dopo il nome del comando; una voce che non apre il
+ *  campo lo lascia cadere, che è quello che fa anche il tasto. */
+function eseguiVoce(voce, valore = null) {
+  dispatchVoce(voce);
+  // Il valore entra nel campo appena aperto e conferma subito: se il campo lo rifiuta resta
+  // aperto col testo e col messaggio, esattamente come se fosse stato scritto a mano.
+  if (comando && valore !== null) { campoComando.value = valore; comando.testo = valore; conferma(); }
+}
+
+// I rami escono con `return`: la coda di `eseguiVoce` deve girare dopo il dispatch intero, non
+// dopo il primo ramo che ha risposto — da qui le due funzioni invece di una.
+function dispatchVoce(voce) {
   if (voce.codice === "annulla") { modo = null; chiudiComando(); dì(null); ridisegna(); return; }
 
   // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
@@ -502,6 +648,19 @@ window.addEventListener("keydown", (ev) => {
   // scrive un nome non faceva niente e non diceva niente.
   if (voce.codice === "apri") { file.apri(); return; }
   if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
+
+  // ⌘K sta con apri e salva, sopra la guardia del campo: da dentro un comando aperto la palette
+  // deve aprirsi lo stesso — è lì che serve di più, quando il comando in corso non è quello che
+  // si voleva. Ri-premuto chiude, che è l'altra metà di una scorciatoia che alterna.
+  if (voce.codice === "palette") {
+    if (palette.aperta) { palette.chiudi(); return; }
+    // **R2**: le disponibili si contano a gesto chiuso — né campo né modo — perché la palette
+    // chiude entrambi quando esegue. Passando quelli veri, da dentro `B` sarebbe tutto «non
+    // ora» mentre invece funziona tutto: la lista direbbe il falso su sé stessa.
+    const disponibili = new Set(vociDellaBarra(contestoBarra(null, selezione, null), selezione?.tipo ?? null).map((v) => v.codice));
+    palette.apri({ voci: VOCI_PALETTE, disponibili });
+    return;
+  }
 
   // Col campo aperto il gesto è la scrittura. Da dentro il campo qui arrivano solo le
   // combinazioni col modificatore, già servite qui sopra; ma il fuoco può uscire dal campo
@@ -584,12 +743,13 @@ window.addEventListener("keydown", (ev) => {
   }
 
   if (voce.codice === "elimina") {
-    // Sezioni e materiali si eliminano come i nodi. Chi è ancora in uso lo rifiuta da sé e
-    // dice **chi** lo usa (`comandi.js:eliminaSezione`, `eliminaMateriale`): una guardia qui
-    // sarebbe un secondo oracolo da tenere allineato a mano.
-    if (selezione?.tipo === "sezione" || selezione?.tipo === "materiale") {
+    // Sezioni, materiali, azioni e combinazioni si eliminano come i nodi. Chi è ancora in uso
+    // lo rifiuta da sé e dice **chi** lo usa (`comandi.js:eliminaSezione`, `eliminaAzione`):
+    // una guardia qui sarebbe un secondo oracolo da tenere allineato a mano.
+    const via = { sezione: eliminaSezione, materiale: eliminaMateriale,
+                  azione: eliminaAzione, combinazione: eliminaCombinazione }[selezione?.tipo];
+    if (via) {
       const { tipo, id } = selezione;
-      const via = tipo === "sezione" ? eliminaSezione : eliminaMateriale;
       esegui((m) => via(m, { id }), `elimina ${tipo} ${id}`);
       ridisegna();
       return;
@@ -631,7 +791,36 @@ window.addEventListener("keydown", (ev) => {
   if (voce.codice === "danno") {
     if (selezione?.tipo !== "asta") { dì("il danno vuole un'asta: clicca un'asta nel piano o nell'albero"); return; }
     apriComando(voce, { bersaglio: { ...selezione } });
+    return;
   }
-});
+
+  // `Q` congela due cose e non una: il bersaglio, come `M` e `R`, **e** l'azione di
+  // destinazione. Sono due selezioni diverse — il nodo nel piano, l'azione nell'albero — e da
+  // campo aperto tutte e due si possono muovere con un clic. L'etichetta nomina il bersaglio,
+  // l'aiuto l'azione: chi confermerà sa a chi sta scrivendo, senza fidarsi di cosa è evidenziato.
+  if (voce.codice === "carico") {
+    if (selezione?.tipo !== "nodo" && selezione?.tipo !== "asta") {
+      dì("il carico vuole un nodo o un'asta: clicca nel piano o nell'albero");
+      return;
+    }
+    const dest = azioneDestinazione(corrente(cronologia));
+    if (!dest) { dì("prima crea un'azione: premi Z"); return; }
+    // L'esempio cambia col bersaglio perché la grammatica cambia: sul nodo sono componenti con
+    // il nome («Fx 20000»), sull'asta un `q` in N/mm e basta.
+    apriComando({ ...voce, aiuto: `${voce.aiuto} → azione «${dest.nome}»`,
+                  esempio: selezione.tipo === "nodo" ? "Fx 20000" : "-12,5" },
+                { bersaglio: { ...selezione } });
+    // `comando` c'è per forza, e non è una scommessa: `apriComando` ridisegna, e il ridisegno
+    // chiude il campo solo quando il bersaglio è sparito — qui il bersaglio è la selezione, che
+    // lo stesso ridisegno ha appena validato due righe sopra. Un campo aperto su un bersaglio
+    // che non passa da `selezione` avrebbe bisogno di un `comando?.` qui.
+    comando.azione = dest.id;
+    return;
+  }
+
+  // `Z` e `K` non chiedono nessun bersaglio: un'azione e una combinazione non sono di nessun
+  // nodo — sono i carichi, dentro, a scegliersi il loro.
+  if (voce.codice === "azione" || voce.codice === "combinazione") { apriComando(voce); return; }
+}
 
 ridisegna();

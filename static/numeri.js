@@ -18,7 +18,10 @@ export function leggiNumero(testo) {
   // è ciò che `stampaNumero` emette per le migliaia: toglierlo qui è quello che fa rientrare
   // l'uscita dalla propria porta. La regola qui sopra non cambia di una virgola — punto e
   // virgola decidono esattamente come prima.
-  const t = testo.trim().replace(/[\u202F\u00A0]/g, "");
+  // U+2212 è il meno che stampa `carichi.js` («q −12,5 N/mm» nell'albero e nel piano) e che
+  // un incolla da un documento si porta dietro. Si normalizza qui, all'unica porta d'ingresso:
+  // le tre grammatiche sotto non sanno che esiste, e nessun campo lo reinventa a modo suo.
+  const t = testo.trim().replace(/[\u202F\u00A0]/g, "").replaceAll("\u2212", "-");
   if (t === "") return null;
   if (t.includes(",")) {
     if (!MIGLIAIA.test(t) && !VIRGOLA.test(t)) return null;
@@ -30,7 +33,8 @@ export function leggiNumero(testo) {
 
 // Tokenizzatore + parser a precedenza scritti a mano: niente `eval`, niente `new Function`,
 // niente costruttori dinamici. Il campo dove si scrive accetterà incolla da fuori (P9).
-function tokenizza(testo) {
+function tokenizza(testo0) {
+  const testo = testo0.replaceAll("\u2212", "-");  // stessa porta di `leggiNumero`: «(−1)*2» è −2
   const token = [];
   let i = 0;
   while (i < testo.length) {
@@ -167,3 +171,25 @@ export function stampaNumero(valore, { decimali = 1, migliaia = false } = {}) {
 export function millimetri(v) {
   return stampaNumero(v, { decimali: 0, migliaia: true });
 }
+
+/** Le cifre di un valore, in un posto solo: le usano la curva e la `<dl>` dei materiali
+ *  (`legame.js`, `pannello.js`), il testo dei carichi (`carichi.js`) e i campi dell'editor.
+ *  Zero decimali su un intero (33 è «33», non «33,00»), due sotto cento (f_t = 2,56 è «2,56»,
+ *  non «3»: arrotondarla a un intero cancellava la resistenza a trazione), quattro sotto uno
+ *  (le deformazioni), zero sopra cento con le migliaia.
+ *  Stava in `legame.js`, che però importa da qui: portarci dentro `conciso` avrebbe chiuso un
+ *  cerchio fra i due moduli. La regola è di notazione, non di legame, e questa è casa sua. */
+export const cifre = (v) => stampaNumero(v, {
+  decimali: Number.isInteger(v) ? 0 : (Math.abs(v) < 1 ? 4 : (Math.abs(v) < 100 ? 2 : 0)),
+  migliaia: true,
+});
+
+/** Gli zeri in coda **dopo la virgola**: «1,500» è «1,5», «10» resta «10» — `,?0+$` da solo
+ *  mangiava anche lo zero delle decine. La grafia dei decimali è questa, una sola, e la usano
+ *  sia `conciso` sia i campi dell'editor (`pannello.js`). */
+export const senzaZeriInCoda = (t) => t.replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
+
+/** «0,8» e non «0,800»: gli zeri in coda di un fattore non dicono niente in più. Le cifre le
+ *  sceglie `cifre`, non una regola riscritta un'altra volta: a tre decimali fissi un fattore
+ *  di 0,0001 usciva come «0». */
+export const conciso = (v) => senzaZeriInCoda(cifre(v));
