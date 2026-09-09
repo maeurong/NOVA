@@ -17,7 +17,7 @@
 ## Global Constraints
 
 - **Lingua italiana** in interfaccia, commenti, messaggi di commit; identificatori tecnici invariati. Le chiavi del modello sono quelle di `nova/modello.py` alla lettera: il modello importato arriva dal server già valido e **non si tocca** in JS se non con i riduttori esistenti.
-- **Notazione numerica italiana**: `cifre`/`conciso`/`millimetri` in uscita (`static/numeri.js:182-195,167`), `leggiNumero` in ingresso. Unità su ogni numero: scostamenti in **mm**, punti come conteggio con migliaia, valori delle scartate con l'`unita` che il prior dichiara (`frazione`, `-`, `mm`).
+- **Notazione numerica italiana**: `cifre`/`conciso`/`millimetri` in uscita (`static/numeri.js:182-195,171`), `leggiNumero` in ingresso. Unità su ogni numero: scostamenti in **mm**, punti come conteggio con migliaia, valori delle scartate con l'`unita` che il prior dichiara (`frazione`, `-`, `mm`).
 - **Palette «colonna tensegrale»**: fondo `#dcdad5`, inchiostro `#141414`, **un solo rosso** `#b8321e` = attenzione. Mai «cream palette». Il rosso a 11-13 px non regge AA come colore di testo (`stile.css:133`): il rosso è il **filetto** (`.avviso`, `.non-ora`, `li.scelto`), la parola è il canale.
 - **Nessun bundler, nessun `package.json`, nessuna rete a tempo d'uso.**
 - **WCAG AA**; nessuna informazione sul solo colore; fuoco sempre visibile; ogni campo con nome accessibile che **comincia** dal testo visibile (`pannello.js:140-144` circa, test «comincia dal testo visibile» in `pannello.test.js`).
@@ -29,16 +29,16 @@
 - `ghostDelComando` (`modo.js:126`) **non si tocca**: l'importazione non apre il campo di comando.
 - Comando dei test JS (dalla cartella `static/`): `node --test test/*.test.js` — punto di partenza **570 pass** (il glob da `node` v26 vuole i file elencati o `env -C … node --test test/*.test.js` dalla shell).
 - Comando dei test Python (non cambiano):
-  `/Users/mario/GitHub/NOVA-wt/interfaccia-11d/.venv/bin/python -P -m pytest /Users/mario/GitHub/NOVA-wt/interfaccia-11d/tests -p no:cacheprovider --color=no --rootdir=/Users/mario/GitHub/NOVA-wt/interfaccia-11d` — punto di partenza **698**.
+  `/Users/mario/GitHub/NOVA-wt/interfaccia-11d/.venv/bin/python -P -m pytest /Users/mario/GitHub/NOVA-wt/interfaccia-11d/tests -p no:cacheprovider --color=no --rootdir=/Users/mario/GitHub/NOVA-wt/interfaccia-11d` — punto di partenza **698 segni** (695 pass + 3 skip).
 - Server per la prova in browser: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-11d .venv/bin/python -P -m nova --porta 8818`. **Mai la 8765, né 8766-8767.** Spegnerlo a fine prova. Chrome: l'estensione se risponde; altrimenti il Chrome headless via CDP (`/Users/mario/.claude/jobs/4fd80bf5/tmp/cdp.mjs`, con `Network.setCacheDisabled`: `?v=` non scavalca la cache dei moduli).
 - **Mai `git checkout --` per revertire un mutante**: copia del file prima, ripristino dalla copia.
 - Un comando per chiamata Bash, percorsi assoluti, `git -C`; niente `cd … &&`.
 
 ## Quel che il backend dà già, e non va reinventato
 
-- `nova/server.py:135-136` `ImportaReq{percorso}`; `:199-204` `POST /api/importa` risolve il relativo nella cwd del server e passa al sidecar; errori come `HTTPException(400, {fase: "importa", motivo})` (`tests/test_server.py:496-511`: percorso inesistente e prior mutilato sono **400**, mai 200).
-- `nova/sidecar.py:95-127` `comando_importa` → `{esito: "ok", modello, scartate, giunzioni, proposte_vincoli, mancano, resoconto}`. `modello` è `model_dump(mode="json", exclude_none=True)`: la stessa forma di `/api/modello/apri`, e `nuovaCronologia(m)` lo prende com'è.
-- `nova/importa.py:56-64` `Importato`; `:117-129` `_scartate`: **una riga per controllo fallito**, `{regione, punti, controllo, valore, soglia, unita, spiegazione}`; `:171-176` i due materiali di default con `origine {sorgente: "rilievo", nota: "assunta: il rilievo non dice la classe"}`; `:202-268` `importa`: sezioni `nome "rilievo m0 s0 140×281"`, `copriferro 0`, `file []`, origine con nota «dispersione 0.00×0.06 mm»; aste `nome "membratura 0 fetta 0"`, origine con nota «riempimento 1.00»; nodi con `origine {sorgente, riferimento: "12_wall.json"}` e `y` non nullo (la terna ruotata, story 54); `giunzioni = [{nodo, scostamento_nodo, distanza_proiezione, cede, resta}]` (nodo già **1-based**); `proposte_vincoli = [{nodo, vincolo: {sei gradi true}}]` (`nova/modello.py:603-618`: un incastro per ogni nodo al piede, «da proporre e non da applicare»); `mancano = ["armature", "classe", "vincoli"]`; `resoconto = {membrature, aste, nodi, scartate, giunzioni_scartate, nota_vincoli?, percorso}` con `nota_vincoli = "tutti i nodi sarebbero al piede: nessuna proposta"` (`nova/modello.py:600`).
+- `nova/server.py:135-136` `ImportaReq{percorso}`; `:199-204` `POST /api/importa` risolve il relativo nella cwd del server e passa al sidecar; errori come `HTTPException(400, {fase: "importa", motivo})` (`tests/test_server.py:485-523`, i due 400 a 496-511: percorso inesistente e prior mutilato sono **400**, mai 200).
+- `nova/sidecar.py:96-125` `comando_importa` → `{esito: "ok", modello, scartate, giunzioni, proposte_vincoli, mancano, resoconto}`. `modello` è `model_dump(mode="json", exclude_none=True)`: la stessa forma di `/api/modello/apri`, e `nuovaCronologia(m)` lo prende com'è.
+- `nova/importa.py:56-64` `Importato`; `:117-128` `_scartate`: **una riga per controllo fallito**, `{regione, punti, controllo, valore, soglia, unita, spiegazione}`; `:171-176` i due materiali di default con `origine {sorgente: "rilievo", nota: "assunta: il rilievo non dice la classe"}`; `:202-267` `importa`: sezioni `nome "rilievo m0 s0 140×281"`, `copriferro 0`, `file []`, origine con nota «dispersione 0.00×0.06 mm»; aste `nome "membratura 0 fetta 0"`, origine con nota «riempimento 1.00»; nodi con `origine {sorgente, riferimento: "12_wall.json"}` e `y` non nullo (la terna ruotata, story 54); `giunzioni = [{nodo, scostamento_nodo, distanza_proiezione, cede, resta}]` (nodo già **1-based**); `proposte_vincoli = [{nodo, vincolo: {sei gradi true}}]` (`nova/modello.py:603-618`: un incastro per ogni nodo al piede, «da proporre e non da applicare»); `mancano = ["armature", "classe", "vincoli"]`; `resoconto = {membrature, aste, nodi, scartate, giunzioni_scartate, nota_vincoli?, percorso}` con `nota_vincoli = "tutti i nodi sarebbero al piede: nessuna proposta"` (`nova/modello.py:600`).
 - **Misurato sulle tre fixture** (09/09, `importa()` diretto): `tests/fixture/prior_vuoto/12_wall.json` → 0 nodi, 0 aste, **0 materiali**, 14 righe di scartate (8 regioni, `resoconto.scartate = 8`), `mancano = []`, prima riga `{regione: 0, punti: 4 215 879, controllo: "costanza_sezione", valore: 1.187, soglia: 0.1, unita: "frazione"}`; `prior_parziale` → 42 nodi, 40 aste, 2 scartate (`unita: "-"`, spiegazione «sintetico: scartata a mano per il test»), 0 proposte con `nota_vincoli`; `prior_sintetico` → 80 nodi, 80 aste, 80 sezioni, 0 scartate, 4 giunzioni (`scostamento_nodo` 27,2 mm), **21 proposte**, `mancano` a tre.
 - `nova/check.py:262-272` il verdetto `vincoli_dedotti` con la stessa nota: dopo la conferma delle proposte, `vincoli` passa e `vincoli_dedotti` legge il modello confermato.
 - `static/file.js:24-33` `chiediJson(rotta, corpo)` (POST se `corpo` c'è; l'errore porta `motivo` o «il server non risponde»); `:63-179` `creaFile(radice, {suApertura, suSalvataggio, suErrore, deposito})` con `apri` (`:117-136`: `inCorso`, `salvato = JSON.stringify(modello)`, `ricorda(p)`, `suApertura(p, modello, impronta)`), `salva` (`:138-160`), il listener di `#file-apri` (`:165`), `disegna` (`:167`), il ritorno `{disegna, apri, salva, percorsoCorrente}` (`:179`). `testoStato` (`:46-49`).
@@ -58,7 +58,280 @@
 1. **Il rendiconto è un pannello, non una schermata** (brief §5.4). Vive nell'ispettore, come ogni altra cosa selezionata: dopo l'importazione la selezione è `{tipo: "rilievo", id: 0}`, l'albero porta un ramo «Rilievo» con quella voce sola, e cliccarla riporta al rendiconto. Niente finestra che blocca (P2), niente terza colonna.
 2. **Il caso principale è il rifiuto, e il rendiconto è disegnato al contrario** (brief §3): la prima sezione è «scartate» (una riga per controllo, con valore **e** soglia **e** unità, e la spiegazione sotto), poi «mancano», poi le giunzioni, poi le proposte. Il modello vuoto non è un errore: la Storia dice «importato 12_wall.json: nessuna membratura, 8 regioni scartate».
 3. **Le proposte si confermano, non si applicano**: nel piano i vincoli proposti sono simboli **tratteggiati** ai nodi (il ghost della 11a, nella sua forma), quelli dichiarati sono pieni; il rendiconto ha «conferma» per nodo e «conferma tutte»; l'ispettore del nodo dice «vincolo proposto dal rilievo: incastro» col suo «conferma». Confermare passa da `impostaVincolo`: una voce nella Storia per proposta («vincolo del nodo 22 dal rilievo»), `⌘Z` la disfa. Una proposta su un nodo che ha già un vincolo dichiarato non si mostra più.
-4. **Importare sostituisce il modello aperto come «apri»** (nessuna conferma: la Storia ricomincia con la riga «importato …», e il file resta com'era su disco); il percorso importato **non** entra nei recenti (sono modelli `.nova.json`) ma va nel campo, e «salva» chiede un percorso nuovo come per un modello mai salvato.
+4. **Importare sostituisce il modello aperto come «apri»** (nessuna conferma: la Storia ricomincia con la riga «importato …», e il file resta com'era su disco); il percorso importato **non** entra nei recenti (sono modelli `.nova.json`) e **non resta nel campo** (il campo è la destinazione di «salva», e un `.nova.json` sopra il prior sarebbe una perdita: `file.importa` lo svuota, il percorso del prior sta nel rendiconto), quindi «salva» chiede un percorso nuovo come per un modello mai salvato.
+
+## Annotazione dell'architect (09/09/2026)
+
+Scritta nel worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-11d`, ramo
+`feat/interfaccia-11d-importatore`, HEAD **`5333e1d`** (`a8905d1`, che il brief chiamava HEAD, è il
+**padre**: `chore: graphify ignora static/vendor` su `main` — la riga 15 del piano, «da `main` a
+`a8905d1`», è giusta). Ogni riga `file:riga` citata dal piano è stata aperta: la sezione 3 elenca
+quelle che non combaciano. Punti di partenza rimisurati qui: `node --test test/*.test.js` da
+`static/` → **570 pass, 0 fail**; `pytest tests` → **695 passed, 3 skipped** (698 raccolti). Le tre
+fixture rimisurate con `importa()` diretto: i numeri della riga 42 combaciano tutti, `prior_vuoto`
+**0 materiali** compresi.
+
+### 1. Chi esegue, con quale modello, in quale ordine
+
+| task | subagente | modello | skill-gate | gruppo | comincia dopo |
+|---|---|---|---|---|---|
+| 1 — `rilievo.js` | `frontend-engineer` | `opus` | **sì** | A | — |
+| 2 — `file.js`, `tastiera.js`, il bottone | `frontend-engineer` | `sonnet` | **sì**, `impeccable` in modo **Operate** | A | — |
+| 3 — `albero.js` | `frontend-engineer` | `sonnet` | **sì**, `impeccable` in modo **Operate** | B | 1 |
+| 4 — `piano.js` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | A | — |
+| 5 — `pannello.js`, `stile.css` | `frontend-engineer` | `opus` | **sì**, `impeccable` in modo **Operate** | B | 1 |
+| 6 — `app.js` | `frontend-engineer` | `opus` | **sì** | C | 1, 2, 3, 4, 5 |
+| 7 — la verifica | **il controller**, a mano, col browser | — | — | D | 6 |
+
+Gruppi paralleli: **A** = 1 ‖ 2 ‖ 4; **B** = 3 ‖ 5; **C** = 6; **D** = 7. **Quattro giri invece di
+sette.**
+
+Il Task 1 resta `opus` benché il codice sia scritto per intero nel piano: è il modulo che cinque task
+importano, e i suoi testi sono asseriti alla lettera a valle — un carattere diverso e tre suite vanno
+rosse insieme. Il Task 2 va `sonnet` perché le tre modifiche sono scritte per intero (una funzione,
+una riga di `TASTI`, una di `CON_COMANDO`, un `<button>`), ma il gate resta **sì**: il bottone e il
+suo stato «importazione…» sono superficie che una persona guarda.
+
+`impeccable`: mai «cream palette» — la palette è quella dei Global Constraints (riga 21). Il rosso
+del filetto `.scartata` è `--rosso`, non testo rosso.
+
+**Nessun implementer in parallelo sullo stesso file.** Verificato file per file: nessun file è scritto
+da due task.
+
+| file | unico task che lo scrive |
+|---|---|
+| `static/rilievo.js`, `static/test/rilievo.test.js` | 1 |
+| `static/file.js`, `static/test/file.test.js`, `static/tastiera.js`, `static/test/tastiera.test.js`, `static/index.html` | 2 |
+| `static/albero.js`, `static/test/albero.test.js` | 3 |
+| `static/piano.js`, `static/test/piano.test.js` | 4 |
+| `static/pannello.js`, `static/test/pannello.test.js`, `static/stile.css` | 5 |
+| `static/app.js` | 6 |
+
+A differenza della 11c **non c'è un file condiviso**: `stile.css` lo tocca solo il Task 5,
+`index.html` solo il Task 2. Ogni arco di sequenza qui sotto è di codice, nessuno è di merge.
+
+### 2. Le dipendenze vere, un arco per riga
+
+Il piano lascia intendere una catena 1 → 2 → 3 → 4 → 5 → 6. Aperti i file, **due archi non
+esistono**: il Task 2 e il Task 4 non toccano `rilievo.js`, né nel codice né nei test.
+
+- **1 ← nessuno** — `rilievo.js` importa `cifre, conciso` da `numeri.js` (182 e 195, presenti);
+  `rilievo.test.js` importa `creaNodo, impostaVincolo` da `comandi.js` (169) e `modelloVuoto` da
+  `modello.js`: tutto già in albero.
+- **2 ← nessuno** — `file.js` passa a `suImportazione` la **risposta grezza** del server, non un
+  rilievo: nessun import da `rilievo.js`. Il test del Task 2 stubba `fetch` e asserisce sul corpo
+  grezzo. `tastiera.js` non conosce il rilievo. `i` è libera in `CON_COMANDO` (`tastiera.js:76`:
+  solo `o, s, z, k`), verificato lettera per lettera.
+- **4 ← nessuno** — `piano.js` riceve `proposte` come `[{nodo, vincolo}]` letterali; importa `GRADI,
+  nomePreimpostazione` da `vincoli.js` (5 e 25) e ha già `nodo` da `modello.js`. Il test importa
+  `impostaVincolo` da `comandi.js`. **Nessun arco verso il Task 1.**
+- **3 ← 1** — codice **e** test: `albero.js` importa `riassunto`, `albero.test.js` importa
+  `daRisposta`.
+- **5 ← 1** — codice **e** test: sei funzioni da `rilievo.js`, e `daRisposta` nel test.
+- **6 ← 1, 2, 3, 4, 5** — è la cucitura: `daRisposta`, `etichettaStoria`, `proposteAperte`,
+  `propostaPerNodo`, `file.importa`, il ramo `importa` di `dispatchVoce`, le tre `disegna` nuove.
+- **7 ← 6** — è la prova a mano.
+
+Ciò che il Task 4 e il Task 6 innestano esiste già nello scope dove il piano lo mette, verificato:
+in `piano.js` `disegna` (123) hanno `s` (125), `gruppo` (126), `el`, `schermo` (104), `INCHIOSTRO`
+(31) e `nodo` importato; i nodi si disegnano a 183 e le frecce dopo 211, quindi «dopo i nodi, prima
+delle frecce» è un punto che esiste. In `app.js`: `esegui(fn, etichetta)` (518),
+`nuovaCronologia(m, etichetta)` (`cronologia.js:6`, il secondo argomento c'è), `dì` (98),
+`percorso`/`impronta` (48), `chiudiComando` (253), e `esiste` (534) che fa
+`.some((e) => e.id === s.id)` — quindi `rilievo: rilievo ? [{ id: 0 }] : []` funziona così com'è
+scritto.
+
+### 3. I punti dove il piano si rompe
+
+**R1 — il caso `rilievo` in `CASI_EDITOR` fa rosso il test WCAG 2.5.3 che il Task 5 ordina di
+estendere.** Il Task 5, step 1, prima riga: «a `CASI_EDITOR` (`:845`) il caso `rilievo`». Ma i due
+cicli che consumano `CASI_EDITOR` (`pannello.test.js:861` e `:877`) chiamano
+`p.disegna(m, selezione, { catalogo: null, legame: LEGAME_C25 })` — **opzioni fisse, senza
+`rilievo`**. Con `CERCA.rilievo = (m, id, opzioni) => opzioni?.rilievo ?? null` l'entità è `null`,
+l'editor non si disegna, e il primo ciclo muore sulla riga
+`assert.ok(coppie.length > 0, "l'editor ha almeno un campo etichettato")`. E anche passando il
+rilievo resterebbe rosso: `nomiDeiCampi` (`:718-726`) costruisce le coppie da un elemento che ha **un
+figlio nodo di testo** *e* un figlio con `aria-label` — la forma etichetta + campo. `editorRilievo`
+non ha un solo `<input>` né un `<select>`: solo bottoni, che portano testo e `aria-label` sullo
+**stesso** elemento e che `nomiDeiCampi` non guarda affatto. `coppie` resta `[]` in ogni caso.
+**Rimedio più corto**: lasciare `CASI_EDITOR` com'è e scrivere per `rilievo` un test suo, che legge
+i bottoni con `tutti(editor)` e asserisce `_attrs["aria-label"].startsWith(textContent)` — che è poi
+la regola vera per un bottone. Il secondo ciclo (nomi unici) va invece esteso volentieri: con 21
+proposte i bottoni con `aria-label` in un solo editor diventano 22, ed è lì che un nome ripetuto
+farebbe danno (`creaPannello` ritrova il fuoco per nome).
+
+**R2 — il Task 7 pretende in browser un testo che il Task 1 non produce.** Step 2: ««1,1872 contro
+soglia 0,1 frazione»». Il valore vero della prima scartata di `prior_vuoto` è
+`1.1872108072168421`, e `righeScartate` lo stampa con `conciso`, che sotto 100 tiene **due**
+decimali: misurato qui, `conciso(1.1872108072168421)` è **«1,19»**. Il test del Task 1 (riga 142)
+asserisce giustamente `"1,19 contro soglia 0,1 frazione"`. Chi esegue la verifica a mano leggendo lo
+step 2 troverà «1,19», crederà a un difetto e andrà a cercarlo. **La riga sbagliata è quella del Task
+7**, non il contratto: si corregge in «1,19 contro soglia 0,1 frazione». (Misurati insieme, per lo
+stesso step: `cifre(4215879)` = «4 215 879» con U+202F, `conciso(27.173303579686976)` = «27,17»,
+`conciso(153.6026707628659)` = «154», `conciso(0.1)` = «0,1».)
+
+**R3 — la decisione 4 e il codice del Task 2 dicono il contrario sullo stesso campo.** La decisione
+4 (riga 61): «il percorso importato **non** entra nei recenti … **ma va nel campo**». Il Task 2, che
+la implementa, scrive `campo.value = ""` con il commento «il campo è la destinazione di «salva»: un
+`.nova.json` sopra il prior sarebbe una perdita», e il suo ingresso degenere lo asserisce
+(`campo.value === ""`). Il Task 6, nelle sue *Interfaces*, sta con la decisione («`⌘S` chiede il
+percorso dal campo, **che porta il prior**») e, otto righe sotto, nei suoi *Ingressi degeneri*, sta
+col Task 2 («il campo è stato svuotato da `file.importa`»). Il Task 7 sta col Task 2 in due punti
+(step 2 «Il campo è vuoto», step 5 «`⌘S` senza percorso → "scrivi il percorso dove salvare"»).
+
+**Non lo risolvo qui: è una delle quattro decisioni, e la decide chi le ha prese.** Ma va risolto
+**prima** del dispatch del Task 2, non in browser, perché sono due prodotti diversi: o `⌘S` propone
+di salvare sopra il `12_wall.json` del rilievo (campo pieno, la perdita è a un tasto di distanza),
+o chiede dove (campo vuoto, e il percorso del prior vive solo nel rendiconto). Quattro voci del piano
+su cinque stanno con il campo vuoto; se è quella la scelta, **la riga da correggere è la decisione 4**
+— «va nel campo» diventa «resta nel rendiconto, non nel campo».
+
+**Sette righe di puntamento che non combaciano.** Nessuna cambia *cosa* fare; la 5 cambia un numero
+che il Task 7 deve dichiarare a fine giornata.
+
+1. `nova/sidecar.py`: `comando_importa` sta a **96-125**, non `:95-127` (riga 40 e riga 11). Il
+   contratto restituito è esattamente quello descritto.
+2. `nova/importa.py`: `_scartate` finisce a **128**, non 129; `importa` finisce a **267**, non 268.
+   I due `def` (117 e 202) e `class Importato` (56) combaciano.
+3. `static/numeri.js`: `millimetri` sta a **171**, non `:167` (riga 20) — 167 è dentro
+   `stampaNumero`. `cifre` 182 e `conciso` 195 combaciano.
+4. `tests/test_server.py`: i quattro test di contratto stanno a **485-523**, non `:485-521`. Il
+   `:496-511` dei due 400 (riga 39) è **esatto**.
+5. **Il punto di partenza pytest non è 698 «pass»**: misurato qui è **695 passed, 3 skipped**, 698
+   raccolti (riga 32 e Task 7 step 9). Chi chiude la giornata deve confrontare `695 passed, 3
+   skipped`, altrimenti dichiarerà una regressione che non c'è.
+6. Task 1, *Interfaces*: «Consumes: `cifre`, `conciso`, `millimetri` (`numeri.js`), `descrizione`
+   (`vincoli.js:35`)». Il codice del Task 1, otto righe sotto, importa **solo `cifre, conciso`** — e
+   fa bene: i millimetri li scrive `num()` a mano, `descrizione` la chiama `pannello.js`.
+   `vincoli.js:35` è `descrizione` e c'è; l'arco `1 ← vincoli.js` non c'è.
+7. `static/index.html:11-27` per la sezione `#file` e `:28` per `<nav id="albero">` sono **esatti**
+   (`</section>` a 27); il `:16-19` del Task 2 per `.file-azioni` pure.
+
+**Combaciano invece**, verificate in questa sessione e non da rileggere: `nova/server.py`
+`ImportaReq` 135-136 e la rotta 199-204; `nova/modello.py` `NOTA_TUTTI_AL_PIEDE` **600** e
+`proposte_vincoli` **603-618** («da proporre e non da applicare», nessuna proposta quando ogni nodo
+cadrebbe al piede); `nova/importa.py` `_materiali_di_default` **171-176** con
+`nota: "assunta: il rilievo non dice la classe"`; `static/file.js` `chiediJson` 24, `testoStato` 46,
+`creaFile` 63-179, `apri` 117-136 (con `if (inCorso) return occupato();` a 118: la forma che il Task
+2 copia esiste), `salva` 138-160, il listener di `#file-apri` 165, `disegna` 167, il ritorno 179;
+`static/tastiera.js` `TASTI` 14 con `apri` a **21** nella forma esatta dello stampo, `CON_COMANDO`
+**76**; `static/pannello.js` `CERCA` 15, `testoOrigine` **26** (sorgente + «modificata», **senza
+riferimento e senza nota**: il Task 5 li aggiunge entrambi), `righeDiNodo` 28, `righeDiAsta` 42,
+`righeDiSezione` 59, `righeDiMateriale` 71, `RIGHE` 95, `righe(m, selezione)` **102 a due
+argomenti**, `entitaSelezionata(m, selezione)` **20 a due argomenti** (è quella che va adattata a
+ricevere le opzioni), `campoNumero` 174, `scelta` 194, `gruppo` 208, `bottone` 220, `editorVincolo`
+242, `EDITORI` 647, `creaPannello` 650, e `descrizione` **già importata** in testa (riga 12);
+`static/albero.js` `creaAlbero` 8, `disegna` 23, «Combinazioni» 73, `vuoto.hidden = righe.length > 0`
+**84** — copre già il caso «solo rilievo, modello vuoto» senza toccarlo; `static/piano.js` `RAGGIO`
+15, `OFFSET_ETICHETTA` 19, `estensione` 46, `creaPiano` 83, `disegna` 123, e **nessun simbolo di
+vincolo** oggi; `static/vincoli.js` `GRADI` 5, `PREIMPOSTAZIONI` 12, `nomePreimpostazione` 25,
+`descrizione` 35; `static/comandi.js:169` `impostaVincolo`; `static/modo.js` `esitoScelta` 64,
+`ghostDelComando` 126; `static/app.js` `selezione` 30, `azioneCorrente` 43, `scegli` 105, i tre
+`crea*` 122-124, `creaFile` 170-181, `apriModo` 214, `ridisegna` 530 con `esiste` 534 e
+`piano.disegna` 558, `eseguiVoce` 619, `dispatchVoce` 628, il ramo `apri` 649, il ramo `vincolo` 711;
+i DOM finti `test/file.test.js` `elementoFinto` 11 e `radiceFinta` 29, `test/pannello.test.js`
+`tutti` 38, `AZIONI` 175, `pannelloFinto` 181, `CASI_EDITOR` 845, `test/albero.test.js:33`,
+`test/piano.test.js:152`; `static/stile.css` 219-245 per l'area file, `.file-azioni button` 229.
+
+**Le tre fixture, rimisurate** (`importa()` diretto, 09/09, worktree `interfaccia-11d`):
+`prior_vuoto` → 0 nodi, 0 aste, 0 sezioni, **0 materiali**, **14** righe di scartate,
+`resoconto.scartate = 8`, `mancano = []`, prima riga `{regione: 0, punti: 4215879, controllo:
+"costanza_sezione", valore: 1.1872108072168421, soglia: 0.1, unita: "frazione"}`; `prior_parziale`
+→ 42 nodi, 40 aste, 40 sezioni, 2 materiali, **2** scartate (`unita: "-"`, «sintetico: scartata a
+mano per il test»), 0 proposte, `nota_vincoli` presente, `resoconto.membrature = 2`, `mancano` a tre;
+`prior_sintetico` → 80/80/80, 0 scartate, **4** giunzioni (`nodo: 41`, `scostamento_nodo:
+27.173303579686976`, `distanza_proiezione: 153.6026707628659`), **21** proposte, `mancano` a tre. La
+riga 42 del piano combacia in tutto.
+
+### 4. Gli ingressi degeneri: cosa c'è e cosa manca
+
+Sei task su sette scrivono codice e tutti e sei hanno la sezione, tutti sopra il minimo di due righe
+con condizione **e** oracolo: Task 1 sette, Task 2 sette, Task 3 quattro, Task 4 cinque, Task 5 sei,
+Task 6 otto. **Il Task 7 non scrive codice** (`Files: nessuno`) e porta già la forma rigida,
+`- nessun ingresso esterno`: non va toccato.
+
+Due righe portano condizione e oracolo ma **non la freccia `→`**, ed è la prima cosa che si perde nel
+passaggio al brief. Riscritte qui, senza toccare gli step:
+
+- Task 4 — `la stessa disegna con e senza proposte → attributo viewBox identico (le proposte non entrano in estensione)`
+- Task 5 — `ogni bottone dei due editor toccati → aria-label che comincia dal testo visibile, e unico dentro l'editor anche con 21 proposte`
+
+Tre condizioni che le fixture rendono obbligatorie e che nessun task enumera — da aggiungere alla
+sezione del task indicato, non da scoprire in browser:
+
+- Task 1 — `daRisposta sul prior_parziale (membrature 2, mancano a tre, nota_vincoli presente, zero proposte) → riassunto «12_wall.json · 2 membrature → 40 aste, 42 nodi · 2 scartate · mancano: armature, classe, vincoli»`
+- Task 5 — `resoconto con membrature > 0 e nota_vincoli insieme → la riga «nota» c'è e il gruppo «vincoli proposti» mostra la nota, non «nessuna proposta aperta»` (è esattamente `prior_parziale`, la fixture dello step 3 del Task 7)
+- Task 6 — `importare un prior con 0 materiali (prior_vuoto) → l'albero non ha il ramo «Materiali», l'ispettore non solleva, «mancano» resta vuoto` (misurato: `prior_vuoto` importa **zero** materiali, non i due di default)
+
+**Per chi dispaccia**: qui la sezione è `**Ingressi degeneri:**` in grassetto, ma l'hook
+`dispatch-gate.py` pretende nel brief il **titolo** `## Ingressi degeneri`. Si copia il contenuto
+sotto un titolo, non il grassetto.
+
+### 5. La ricerca che regge ogni task
+
+Aperto `docs/ricerca/index.md` prima di annotare: la **05** è alla riga **17**, la **07** alla riga
+**19**, come dice il piano. La tabella dei dieci principi di `07` mappa così, verificata riga per
+riga: 148 = P1, 149 = P2, 150 = P3, 151 = P4, 152 = P5, 153 = P6, 154 = P7, 155 = P8, 156 = P9,
+157 = P10 — la stessa mappa dell'annotazione 11c.
+
+| task | riferimento | perché conta qui |
+|---|---|---|
+| 1 | `docs/ricerca/07-ux-modellatore.md:148` | P1, ogni numero col suo contraddittore: `righeScartate` stampa valore **e** soglia **e** unità, mai il solo verdetto |
+| 1 (una fetta = un'asta) | `docs/ricerca/05-archeologia-linea-integrata.md:150-151` | `telaio.py` «non misura niente», decisioni #134/#142/#143: il rendiconto stampa ciò che il rilievo ha misurato, non lo interpreta |
+| 2 | `docs/ricerca/07-ux-modellatore.md:152` | P5, attesa parlante mai percentuale inventata: «importazione…» sul bottone, `disabled`, e l'errore col motivo del server |
+| 3 | `docs/ricerca/07-ux-modellatore.md:155` | P8, divulgazione progressiva: il ramo «Rilievo» compare solo dopo un'importazione, i gruppi vuoti non compaiono |
+| 4 | `docs/ricerca/07-ux-modellatore.md:151` | P4, anteprima prima del commit: il tratteggio **è** l'anteprima, il pieno è il commit |
+| 5 | `docs/ricerca/07-ux-modellatore.md:149` | P2, seleziona poi agisci, nessuna finestra che blocca: il rendiconto è un pannello nell'ispettore (decisione 1) |
+| 5 (la lista) | `docs/ricerca/05-archeologia-linea-integrata.md:176` | la linea rimossa mostrava «membrature del prior, sezione dichiarata, stazioni con verdetto, riempimento con soglia, giunzioni»: è la stessa lista, ridotta a ciò che il modello NOVA porta |
+| 6 | `docs/ricerca/07-ux-modellatore.md:151` | P4, undo illimitato e **visibile**: una voce di Storia per proposta confermata, `⌘Z` la disfa |
+| 7 | `docs/ricerca/05-archeologia-linea-integrata.md:176` | la prova a mano verifica proprio quella lista, sulle tre fixture e sul rilievo vero |
+
+**Sette task su sette con un riferimento, nessun «nessuno».** Come la 11c, e all'opposto della misura
+dell'08/09 (nove ricerche, un piano che ne cita una una volta): le due ricerche dichiarate in testa
+tornano entrambe con righe interne, non con la riga d'indice.
+
+### 6. I debiti, per il ticket di chiusura
+
+Dichiarati dal piano stesso («Fuori da questa seduta», in coda): il Check Model in interfaccia (12),
+il rendiconto persistito, le sezioni senza armatura, la giunzione come entità del modello, un simbolo
+diverso per cerniera e carrello, il prior dal corpo della richiesta, il nit della 11a sul fuoco.
+
+Visti qui, e non scritti da nessuna parte:
+
+1. **Il Task 6 non ha un solo test automatico.** Otto ingressi degeneri, sei callback, `esiste` a
+   sette vie, tre `disegna` con opzioni nuove, un ramo in `dispatchVoce` — l'unico oracolo è la prova
+   a mano del Task 7. **È la terza giornata di fila**: stesso debito della voce 8 dell'11b e della
+   voce 3 dell'11c, mai pagato. Il task più cucito è ancora il meno protetto, e non è più un caso
+   isolato ma la forma del piano.
+2. **`prior_vuoto` importa zero materiali, e nessun task lo mette a contratto.** Misurato: 0, non i
+   due di default — `_materiali_di_default` non entra senza membrature. È il **caso principale della
+   giornata** (riga 5 del piano), e il modello che ne esce non ha materiali, non ha sezioni, e
+   `mancano` è vuoto: l'interfaccia non ha una sola riga che dica all'utente «da qui non si riparte».
+   Il rendiconto racconta il rifiuto; il modello accanto è muto.
+3. **⌘Z rimette i tratteggi per caso, non per patto.** `proposteAperte` ricalcola dal modello a ogni
+   `ridisegna`, quindi disfare una conferma fa ricomparire la proposta. Funziona finché nessuno
+   consuma `rilievo.proposte`; il giorno che una conferma togliesse la proposta dallo stato, `⌘Z` non
+   la riporterebbe e nessun test se ne accorgerebbe — il rilievo, per scelta, è fuori dalla
+   cronologia.
+4. **Metà del rendiconto è già persistita, l'altra metà no.** Il piano dichiara «il rendiconto vale
+   per questa sessione», ma il modello salvato porta `origine.riferimento: "12_wall.json"` e le note
+   («riempimento 1.00», «dispersione …», «assunta: la classe») su ogni nodo, asta, sezione e
+   materiale: riaprendo, l'ispettore le mostra ancora. Scartate, giunzioni e proposte spariscono.
+   L'asimmetria non è dichiarata da nessuna parte, e all'utente sembrerà arbitraria.
+5. **Il ciclo WCAG 2.5.3 non guarda i bottoni.** `nomiDeiCampi` (`pannello.test.js:718-726`) coppia
+   un nodo di testo con un figlio che ha `aria-label`: la forma etichetta + campo, e nient'altro. Ogni
+   bottone con `aria-label` diverso dal testo visibile passa non visto, oggi e da prima della 11d.
+   Con questa giornata i bottoni con `aria-label` in un solo editor arrivano a 22.
+6. **Il percorso del prior non vive in nessun posto riusabile** (se R3 si chiude sul campo vuoto).
+   Fuori dai recenti per decisione, svuotato dal campo dal Task 2: resta solo in `rilievo.percorso` e
+   nella riga «file» del rendiconto, che muoiono con la sessione. Reimportare lo stesso prior è
+   riscriverlo a mano ogni volta. Il costo non è scritto da nessuna parte: manca un secondo posto,
+   non un secondo campo.
+
+**Per il roster** (segnalazione di meta-roster, non scope di questo piano): il debito 1 è alla terza
+occorrenza consecutiva. Il ruolo che scrive la cucitura non ha oggi un modo di provarla che non sia
+un browser e una persona; è il tipo di buco che vale la pena guardare con `self-improving-agent`
+prima della giornata 12, non dopo.
 
 ## Struttura dei file
 
@@ -81,7 +354,7 @@
 - Create: `static/rilievo.js`, `static/test/rilievo.test.js`
 
 **Interfaces:**
-- Consumes: `cifre`, `conciso`, `millimetri` (`numeri.js`), `descrizione` (`vincoli.js:35`).
+- Consumes: `cifre`, `conciso` (`numeri.js:182-195`).
 - Produces (tutto esportato):
   - `daRisposta(risposta, percorso) → rilievo`: `{percorso, nome, resoconto, scartate, giunzioni, proposte, mancano}` con `nome` = ultimo segmento del percorso; liste sempre presenti (`?? []`), `resoconto` sempre oggetto. `risposta` è il corpo di `/api/importa`.
   - `righeScartate(rilievo) → [{titolo, valore, spiegazione}]` — una riga per elemento di `scartate`: `titolo = «regione ${regione} · ${cifre(punti)} punti · ${controllo}»`, `valore = «${conciso(valore)} contro soglia ${conciso(soglia)}${unita && unita !== "-" ? " " + unita : ""}»`, `spiegazione` com'è (o «—»).
@@ -361,7 +634,7 @@ import { daRisposta } from "../rilievo.js";
 const rilievoVuoto = () => daRisposta({ scartate: [{ regione: 0, punti: 1, controllo: "x", valore: 1, soglia: 0.5, unita: "-", spiegazione: "" }], resoconto: { membrature: 0, aste: 0, nodi: 0, scartate: 8 } }, "lab/12_wall.json");
 
 test("con un rilievo l'albero apre col ramo «Rilievo», anche a modello vuoto, e la voce si seleziona", () => {
-  const { elenco, vuoto, albero, chiamate } = alberoFinto();
+  const { elenco, vuoto, albero, scelte } = alberoFinto();  // `alberoFinto` a `:33-36` ritorna `{albero, elenco, vuoto, scelte}`
   albero.disegna(modelloVuoto(), { rilievo: rilievoVuoto(), selezione: { tipo: "rilievo", id: 0 } });
   const testi = elenco._figli.map((li) => li.textContent);
   assert.equal(testi[0], "Rilievo");
@@ -369,7 +642,7 @@ test("con un rilievo l'albero apre col ramo «Rilievo», anche a modello vuoto, 
   assert.equal(vuoto.hidden, true);
   assert.equal(elenco._figli[1].dataset.tipo, "rilievo");
   elenco._figli[1].dispatch("click");
-  assert.deepEqual(chiamate.at(-1), ["rilievo", 0]);
+  assert.deepEqual(scelte.at(-1), ["rilievo", 0]);
 });
 test("senza rilievo l'albero non ha il ramo", () => {
   const { elenco, albero } = alberoFinto();
@@ -378,7 +651,7 @@ test("senza rilievo l'albero non ha il ramo", () => {
 });
 ```
 
-(Se `alberoFinto` non espone `chiamate`/`vuoto` con questi nomi, usa quelli veri: leggilo.)
+(`alberoFinto` è a `albero.test.js:33-36`.)
 
 - [ ] **Step 2: Rosso; Step 3:** in `disegna`, prima di `gruppo("Nodi", …)`:
 
@@ -502,9 +775,9 @@ Firma `disegna(m, { selezione = null, ghost = null, azioneInVista = null, propos
 - rilievo con 21 proposte → 21 bottoni «conferma» + «conferma tutte»; dopo `impostaVincolo` su un nodo, ridisegnando quel nodo sparisce dall'elenco (`proposteAperte`)
 - nodo con giunzione e senza proposta → la riga «giunzione» c'è, «vincolo proposto» no
 - `testoOrigine({sorgente: "rilievo"})` → «rilievo»; con `riferimento` → «rilievo (12_wall.json)»; con `nota` → « · nota»; `null` → «—»
-- ogni controllo dei due editor toccati ha il nome accessibile che comincia dal testo visibile (ciclo WCAG esteso a `rilievo`), e i nomi sono unici anche con 21 bottoni «conferma» (nome «conferma il vincolo proposto del nodo ‹id›», testo visibile «conferma»: **il nome comincia dal visibile**)
+- ogni controllo dei due editor toccati ha il nome accessibile che comincia dal testo visibile; per `rilievo` **non** si estende `CASI_EDITOR` (i suoi cicli, `pannello.test.js:861,877`, contano coppie testo+campo e il rendiconto ha solo bottoni: `coppie.length > 0` sarebbe rosso per costruzione) ma si scrive un test dedicato: ogni `<button>` dell'editor del rilievo ha `aria-label` che comincia dal proprio `textContent`, e i nomi sono unici anche con 21 «conferma» (nome «conferma il vincolo proposto del nodo ‹id›»)
 
-- [ ] **Step 1: Test** — aggiungi a `AZIONI` (`:175`) `"suConfermaVincolo", "suConfermaTutti"`; a `CASI_EDITOR` (`:845`) il caso `rilievo`. Stampo:
+- [ ] **Step 1: Test** — aggiungi a `AZIONI` (`:175`) `"suConfermaVincolo", "suConfermaTutti"`; **non** toccare `CASI_EDITOR` (ruling R1 dell'architect): il test WCAG del rendiconto è dedicato (sotto). Stampo:
 
 ```js
 import { daRisposta } from "../rilievo.js";
@@ -541,6 +814,14 @@ test("rendiconto senza rilievo mostra il vuoto; il nodo con giunzione e proposta
   p.disegna(CON_CERNIERA(), { tipo: "nodo", id: 2 }, { rilievo: rilievoPieno() });
   const testi = dati._figli.map((e) => e.textContent);
   assert.ok(testi.includes("giunzione") && testi.includes("vincolo proposto") && testi.includes("incastro (dal rilievo)"));
+});
+test("rendiconto: ogni bottone ha un nome accessibile che comincia dal testo visibile, e i nomi sono unici (WCAG 2.5.3)", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: rilievoPieno() });
+  const bottoni = tutti(editor).filter((e) => e.type === "button" || (e._attrs["aria-label"] && e.textContent));
+  const nomi = bottoni.map((b) => b._attrs["aria-label"] ?? b.textContent);
+  for (const b of bottoni) assert.ok((b._attrs["aria-label"] ?? b.textContent).startsWith(b.textContent), b.textContent);
+  assert.equal(new Set(nomi).size, nomi.length);
 });
 test("editor del nodo con una proposta aperta: il bottone conferma chiama suConfermaVincolo", () => {
   const { p, editor, chiamate } = pannelloFinto();
@@ -662,7 +943,7 @@ In `righeDiNodo(m, n, { rilievo = null } = {})`, dopo la riga «vincolo»: la gi
 - nessun ingresso esterno
 
 - [ ] **Step 1: Server** su `8818`; Chrome (estensione, o headless via CDP con la cache spenta).
-- [ ] **Step 2: Il vuoto, prima di tutto.** Nel campo `tests/fixture/prior_vuoto/12_wall.json`, «importa»: durante la richiesta il bottone dice «importazione…»; poi l'albero ha solo «Rilievo · 12_wall.json · nessuna membratura · 8 scartate», l'ispettore mostra 14 righe di scartate (la prima: «regione 0 · 4 215 879 punti · costanza_sezione», «1,1872 contro soglia 0,1 frazione», la spiegazione sotto), «dal rilievo mancano: nessuna membratura importata», il piano vuoto, la Storia «importato 12_wall.json: nessuna membratura, 8 regioni scartate». Il campo è vuoto e lo stato del file dice «nessun modello aperto».
+- [ ] **Step 2: Il vuoto, prima di tutto.** Nel campo `tests/fixture/prior_vuoto/12_wall.json`, «importa»: durante la richiesta il bottone dice «importazione…»; poi l'albero ha solo «Rilievo · 12_wall.json · nessuna membratura · 8 scartate», l'ispettore mostra 14 righe di scartate (la prima: «regione 0 · 4 215 879 punti · costanza_sezione», «1,19 contro soglia 0,1 frazione» — `conciso` tiene due decimali sotto 100 — la spiegazione sotto), «dal rilievo mancano: nessuna membratura importata», il piano vuoto, la Storia «importato 12_wall.json: nessuna membratura, 8 regioni scartate». Il campo è vuoto e lo stato del file dice «nessun modello aperto».
 - [ ] **Step 3: Il parziale.** `prior_parziale`: 40 aste, 2 scartate («sintetico: scartata a mano per il test», unità «-» non stampata), la nota «tutti i nodi sarebbero al piede: nessuna proposta» nel gruppo «vincoli proposti» e nelle righe. Clic su un'asta: «origine: rilievo (12_wall.json) · riempimento 1.00»; sulla sua sezione: nome «rilievo m0 s0 140×281», origine con «dispersione …»; su un materiale: «rilievo · assunta: il rilievo non dice la classe».
 - [ ] **Step 4: Il sintetico.** `prior_sintetico`: 80 aste, 4 giunzioni («nodo 41 · scostamento 27,17 mm …»), 21 proposte tratteggiate nel piano; clic sul nodo 41: la riga «giunzione». Clic su un nodo proposto: «vincolo proposto: incastro (dal rilievo)» e il bottone nell'editor; «conferma il vincolo proposto» → simbolo pieno, Storia «vincolo del nodo N dal rilievo: incastro». Torna al rilievo: «conferma tutte» → 20 voci in più, nessun tratteggio. `⌘Z` due volte: due tratteggi tornano. `V` su un nodo confermato: passa a libero dichiarato, la proposta non ricompare. Check Model (`/api/check` via `curl`, o dal Task 12 quando ci sarà): `vincoli` passato.
 - [ ] **Step 5: Salva e riapri.** `⌘S` senza percorso → «scrivi il percorso dove salvare»; scrivi `/tmp/sintetico-11d.nova.json`, `⌘S` → salvato, impronta; «apri» lo stesso file → il ramo «Rilievo» **non** c'è (dichiarato), i vincoli confermati sì, le origini «rilievo (12_wall.json)» sì.
