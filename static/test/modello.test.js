@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino,
   sezione, materiale, asteDellaSezione, sezioniDelMateriale, vesteDi,
-  azione, combinazione, combinazioniDellAzione, analisiCheUsano, nomeCaso,
+  azione, combinazione, combinazioniDellAzione, analisiCheUsano, analisiConMassaDa, nomeCaso,
 } from "../modello.js";
 
 const conNodi = () => ({
@@ -99,4 +99,26 @@ test("lookup delle azioni e delle combinazioni, e chi usa chi", () => {
   assert.equal(analisiCheUsano(m, "Z9").length, 0);
   assert.equal(nomeCaso("azione", 3), "Z3");
   assert.equal(nomeCaso("combinazione", 1), "C1");
+});
+
+test("un caso lo nomina anche la pushover, in caso_gravita, e non solo la statica", () => {
+  const m = modelloVuoto();
+  m.analisi.push({ tipo: "pushover", distribuzione: "modo1", nodo_controllo: 1, dof: "ux",
+                   incremento: 1, spostamento_max: 100, caso_gravita: "C1" });
+  assert.equal(analisiCheUsano(m, "C1").length, 1, "caso_gravita non sta in casi, ma è un uso");
+  assert.equal(analisiCheUsano(m, "Z1").length, 0);
+  const scarica = { ...m, analisi: [{ ...m.analisi[0], caso_gravita: null }] };
+  assert.equal(analisiCheUsano(scarica, "C1").length, 0);
+  // Un'analisi senza `casi` (una modale, o una statica scritta a mano) non è un TypeError.
+  assert.equal(analisiCheUsano({ ...m, analisi: [{ tipo: "modale" }, { tipo: "statica" }] }, "C1").length, 0);
+});
+
+test("la modale prende massa dall'azione per identificatore, non per nome di caso", () => {
+  const m = modelloVuoto();
+  m.analisi.push({ tipo: "modale", modi: "auto", masse_da_azioni: [{ azione: 2, coefficiente: 0.3 }] });
+  assert.equal(analisiConMassaDa(m, 2).length, 1);
+  assert.equal(analisiConMassaDa(m, 1).length, 0);
+  assert.equal(analisiCheUsano(m, "Z2").length, 0, "nessun `casi` la nomina: serve il lookup suo");
+  assert.equal(analisiConMassaDa({ ...m, analisi: [{ tipo: "modale" }] }, 2).length, 0);
+  assert.equal(analisiConMassaDa(modelloVuoto(), 2).length, 0);
 });

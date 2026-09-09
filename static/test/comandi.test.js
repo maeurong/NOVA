@@ -647,6 +647,52 @@ test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicon
   assert.throws(() => eliminaCombinazione(m, { id: 9 }), ErroreComando);
 });
 
+test("eliminaAzione ed eliminaCombinazione guardano anche la modale e la pushover", () => {
+  const m = creaCombinazione(conAzione(), { nome: "SLU" });
+  const modale = { ...m, analisi: [{ tipo: "modale", masse_da_azioni: [{ azione: 1, coefficiente: 0.3 }] }] };
+  assert.throws(() => eliminaAzione(modale, { id: 1 }), /dà massa a un'analisi modale/);
+  // `caso_gravita` è un caso come quelli di `casi`, ma sta in un campo suo.
+  assert.throws(() => eliminaCombinazione({ ...m, analisi: [{ tipo: "pushover", caso_gravita: "C1" }] }, { id: 1 }), /C1/);
+  assert.throws(() => eliminaAzione({ ...m, analisi: [{ tipo: "pushover", caso_gravita: "Z1" }] }, { id: 1 }), /Z1/);
+  const scarica = { ...m, analisi: [{ tipo: "pushover", caso_gravita: null }] };
+  assert.deepEqual(eliminaCombinazione(scarica, { id: 1 }).combinazioni, [], "senza caso di gravità non usa niente");
+});
+
+test("i riduttori reggono un modello scritto a mano, senza termini e senza carichi", () => {
+  const m = creaCombinazione(conAzione(), { nome: "SLU" });
+  const senzaTermini = { ...m, combinazioni: [{ id: 1, nome: "SLU", tipo: null, generata: false }] };
+  assert.deepEqual(eliminaAzione(senzaTermini, { id: 1 }).azioni, []);
+  assert.deepEqual(impostaTermine(senzaTermini, { id: 1, azione: 1, coefficiente: 1.5 }).combinazioni[0].termini,
+    [{ azione: 1, coefficiente: 1.5 }]);
+  const senzaCarichi = { ...m, azioni: [{ id: 1, nome: "g", natura: "G2", categoria: null, generata: false }] };
+  assert.throws(() => togliCarico(senzaCarichi, { azione: 1, indice: 0 }), /l'azione 1 ha 0 carichi/);
+  assert.equal(aggiungiCarico(senzaCarichi, { azione: 1, carico: { tipo: "gravita" } }).azioni[0].carichi.length, 1);
+});
+
+test("impostaTermine tiene l'ordine quando aggiorna un termine che c'è già", () => {
+  let m = creaAzione(creaCombinazione(conAzione(), { nome: "SLU" }), { nome: "neve", natura: "Q", categoria: "neve" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.3 });
+  m = impostaTermine(m, { id: 1, azione: 2, coefficiente: 1.5 });
+  assert.deepEqual(impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.35 }).combinazioni[0].termini,
+    [{ azione: 1, coefficiente: 1.35 }, { azione: 2, coefficiente: 1.5 }],
+    "il termine aggiornato resta dov'era: un `push` lo manderebbe in coda");
+});
+
+test("i nomi entrano ripuliti dagli spazi, e la categoria d'uso è un testo", () => {
+  const m = creaAzione(modelloVuoto(), { nome: "  spinta  ", natura: "Q", categoria: "  vento  " });
+  assert.equal(m.azioni[0].nome, "spinta");
+  assert.equal(m.azioni[0].categoria, "vento");
+  assert.equal(creaCombinazione(m, { nome: "  SLU  " }).combinazioni[0].nome, "SLU");
+  assert.equal(modificaAzione(m, { id: 1, nome: "  spinta  " }), m, "solo spazi in più non è un comando");
+  const conSLU = creaCombinazione(m, { nome: "SLU" });
+  assert.equal(modificaCombinazione(conSLU, { id: 1, nome: "  SLU  " }), conSLU);
+  assert.throws(() => creaAzione(m, { nome: "x", natura: "Q", categoria: 42 }), ErroreComando);
+  assert.throws(() => modificaAzione(m, { id: 1, categoria: 42 }), ErroreComando);
+  // Il campo svuotato è «nessuna categoria», e una Q senza categoria non è valida.
+  assert.throws(() => modificaAzione(m, { id: 1, categoria: "" }), /natura Q senza categoria d'uso/);
+  assert.throws(() => modificaAzione(m, { id: 1, categoria: "   " }), /natura Q senza categoria d'uso/);
+});
+
 test("creaCombinazione: il tipo è uno dei cinque o nessuno, e modificaCombinazione lo toglie", () => {
   const m = creaCombinazione(conAzione(), { nome: "SLU" });
   assert.deepEqual(m.combinazioni[0], { id: 1, nome: "SLU", termini: [], tipo: null, generata: false });

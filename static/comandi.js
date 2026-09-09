@@ -9,7 +9,7 @@
 // qui vorrebbe dire tenere due oracoli allineati a mano, ed è così che divergono.
 
 import { prossimoId, nodo, asta, asteDelNodo, nodoVicino, TOLLERANZA_MM, sezione, materiale, asteDellaSezione, sezioniDelMateriale,
-         azione, combinazione, combinazioniDellAzione, analisiCheUsano, nomeCaso } from "./modello.js";
+         azione, combinazione, combinazioniDellAzione, analisiCheUsano, analisiConMassaDa, nomeCaso } from "./modello.js";
 import { TIPI_COMBINAZIONE, NATURE, normalizzaCarico } from "./carichi.js";
 import { GRADI } from "./vincoli.js";
 import { LATI, VESTI, geometriaImpossibile } from "./sezione.js";
@@ -419,11 +419,19 @@ const combinazioneEsistente = (m, id) => {
   if (!c) throw new ErroreComando(`la combinazione ${id} non esiste`, "seleziona una combinazione nell'albero e ripeti");
   return c;
 };
+/** Gli spazi del dito non entrano nel modello: `rinomina` (:139) e `creaSezione` (:236) li
+ *  tolgono già, e due strade per lo stesso campo che non concordano si notano al salvataggio.
+ *  Il campo svuotato è «nessuna categoria», non una stringa vuota. */
+const ripulisci = (e) => {
+  if (typeof e.nome === "string") e.nome = e.nome.trim();
+  if (typeof e.categoria === "string") e.categoria = e.categoria.trim() || null;
+};
 // La stessa regola del backend (`nova/modello.py:288-292`), con la stessa frase: l'azione che
 // il riduttore accetta è quella che il server accetterà al salvataggio.
 const azioneValida = (a) => {
   if (typeof a.nome !== "string" || a.nome.trim() === "") throw new ErroreComando("l'azione vuole un nome", "scrivi «nome; natura»");
   if (!NATURE.includes(a.natura)) throw new ErroreComando(`natura «${a.natura}» sconosciuta: le nature sono ${NATURE.join(", ")}`, "con Q anche la categoria d'uso");
+  if (a.categoria != null && typeof a.categoria !== "string") throw new ErroreComando("la categoria d'uso è un testo", "scrivi per esempio «residenziale» o «neve»");
   if (a.natura === "Q" && !a.categoria) throw new ErroreComando(`azione ${a.id} «${a.nome}»: natura Q senza categoria d'uso`, "scrivi la categoria, per esempio «vento» o «residenziale»");
 };
 /** Il carico con le sole chiavi dello schema, e i riferimenti che esistono davvero. */
@@ -434,17 +442,23 @@ const caricoAccettabile = (m, c) => {
   if ("asta" in carico && !asta(m, carico.asta)) throw new ErroreComando(`l'asta ${carico.asta} non esiste`, "scegli un'asta del modello");
   return carico;
 };
+/** Un'azione letta da un file può non portare `carichi`: il server lo riempie col default,
+ *  e qui si fa lo stesso invece di sollevare un TypeError (come `eliminaNodo`, :119). */
+const carichiDi = (a) => a.carichi ?? [];
 const indiceValido = (a, indice) => {
-  if (!Number.isInteger(indice) || indice < 0 || indice >= a.carichi.length) {
-    throw new ErroreComando(`l'azione ${a.id} ha ${a.carichi.length} carichi`, "scegli un carico dell'elenco");
+  if (!Number.isInteger(indice) || indice < 0 || indice >= carichiDi(a).length) {
+    throw new ErroreComando(`l'azione ${a.id} ha ${carichiDi(a).length} carichi`, "scegli un carico dell'elenco");
   }
 };
+// L'analisi non ha ancora un editor (T6): il rimedio manda dove la si può correggere davvero.
+const NEL_FILE = "l'analisi si corregge nel file (.nova.json): togli quel caso, poi elimina";
 
 export function creaAzione(m, { nome, natura, categoria = null }) {
-  const n = copia(m);
-  const id = prossimoId(n, "azione");
+  const id = prossimoId(m, "azione");
   const a = { id, nome, natura, categoria, generata: false, carichi: [] };
+  ripulisci(a);
   azioneValida(a);
+  const n = copia(m);
   n.azioni.push(a);
   n.contatori.azione = id;
   return n;
@@ -453,9 +467,9 @@ export function creaAzione(m, { nome, natura, categoria = null }) {
 export function modificaAzione(m, { id, ...campi }) {
   const vecchia = azioneEsistente(m, id);
   const n = copia(m);
-  const a = n.azioni.find((k) => k.id === id);
+  const a = azioneEsistente(n, id);
   for (const k of ["nome", "natura", "categoria"]) if (k in campi) a[k] = campi[k];
-  if (a.categoria === "") a.categoria = null;  // il campo svuotato è «nessuna categoria», non una stringa vuota
+  ripulisci(a);
   azioneValida(a);
   return cambiata(vecchia, a) ? n : m;
 }
@@ -464,7 +478,8 @@ export function aggiungiCarico(m, { azione: idAzione, carico }) {
   azioneEsistente(m, idAzione);
   const c = caricoAccettabile(m, carico);
   const n = copia(m);
-  n.azioni.find((k) => k.id === idAzione).carichi.push(c);
+  const a = azioneEsistente(n, idAzione);
+  (a.carichi ??= []).push(c);
   return n;
 }
 
@@ -474,7 +489,7 @@ export function modificaCarico(m, { azione: idAzione, indice, carico }) {
   const c = caricoAccettabile(m, carico);
   if (!cambiata(a.carichi[indice], c)) return m;
   const n = copia(m);
-  n.azioni.find((k) => k.id === idAzione).carichi[indice] = c;
+  azioneEsistente(n, idAzione).carichi[indice] = c;
   return n;
 }
 
@@ -482,7 +497,7 @@ export function togliCarico(m, { azione: idAzione, indice }) {
   const a = azioneEsistente(m, idAzione);
   indiceValido(a, indice);
   const n = copia(m);
-  n.azioni.find((k) => k.id === idAzione).carichi.splice(indice, 1);
+  azioneEsistente(n, idAzione).carichi.splice(indice, 1);
   return n;
 }
 
@@ -491,7 +506,9 @@ export function eliminaAzione(m, { id }) {
   const usata = combinazioniDellAzione(m, id).map((c) => c.id);
   if (usata.length) throw new ErroreComando(`l'azione ${id} la usano le combinazioni ${usata.join(", ")}`, "togli il termine dalle combinazioni, poi elimina");
   const caso = nomeCaso("azione", id);
-  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione ${id} la usa un'analisi, come caso ${caso}`, `togli il caso ${caso} dall'analisi, poi elimina`);
+  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
+  // La modale nomina l'azione per identificatore, non per caso: `analisiCheUsano` non la vede.
+  if (analisiConMassaDa(m, id).length) throw new ErroreComando(`l'azione ${id} dà massa a un'analisi modale`, "l'analisi si corregge nel file (.nova.json): togli quella massa, poi elimina");
   const n = copia(m);
   n.azioni = n.azioni.filter((a) => a.id !== id);
   return n;  // i contatori restano: un identificatore eliminato non si riusa
@@ -504,12 +521,18 @@ const tipoCombinazioneValido = (tipo) => {
   }
 };
 
-export function creaCombinazione(m, { nome, tipo = null }) {
+const nomeCombinazioneValido = (nome) => {
   if (typeof nome !== "string" || nome.trim() === "") throw new ErroreComando("la combinazione vuole un nome", "scrivi «nome» o «nome; tipo»");
+};
+
+export function creaCombinazione(m, { nome, tipo = null }) {
+  nomeCombinazioneValido(nome);
   tipoCombinazioneValido(tipo);
   const n = copia(m);
   const id = prossimoId(n, "combinazione");
-  n.combinazioni.push({ id, nome, termini: [], tipo, generata: false });
+  const c = { id, nome, termini: [], tipo, generata: false };
+  ripulisci(c);
+  n.combinazioni.push(c);
   n.contatori.combinazione = id;
   return n;
 }
@@ -517,10 +540,11 @@ export function creaCombinazione(m, { nome, tipo = null }) {
 export function modificaCombinazione(m, { id, ...campi }) {
   const vecchia = combinazioneEsistente(m, id);
   if ("tipo" in campi) tipoCombinazioneValido(campi.tipo);
-  if ("nome" in campi && (typeof campi.nome !== "string" || campi.nome.trim() === "")) throw new ErroreComando("la combinazione vuole un nome", "scrivi un nome");
+  if ("nome" in campi) nomeCombinazioneValido(campi.nome);
   const n = copia(m);
-  const c = n.combinazioni.find((k) => k.id === id);
+  const c = combinazioneEsistente(n, id);
   for (const k of ["nome", "tipo"]) if (k in campi) c[k] = campi[k];
+  ripulisci(c);
   return cambiata(vecchia, c) ? n : m;
 }
 
@@ -531,15 +555,18 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   azioneEsistente(m, idAzione);
   // Un file può portare due termini sulla stessa azione (il deck li somma): sostituirli con uno
   // perderebbe un dato senza dirlo. Si rifiuta, e si dice dove correggere.
-  if (vecchia.termini.filter((t) => t.azione === idAzione).length > 1) {
+  const termini = vecchia.termini ?? [];
+  if (termini.filter((t) => t.azione === idAzione).length > 1) {
     throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file: l'interfaccia ne tiene uno per azione");
   }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
   const n = copia(m);
-  const c = n.combinazioni.find((k) => k.id === id);
-  c.termini = c.termini.filter((t) => t.azione !== idAzione);
+  const c = combinazioneEsistente(n, id);
+  c.termini = termini.filter((t) => t.azione !== idAzione);
   if (coefficiente !== null) {
-    const dove = vecchia.termini.findIndex((t) => t.azione === idAzione);
+    // L'ordine dell'elenco è quello che si legge nell'albero: il termine aggiornato resta
+    // dov'era, e solo quello nuovo va in coda.
+    const dove = termini.findIndex((t) => t.azione === idAzione);
     c.termini.splice(dove === -1 ? c.termini.length : dove, 0, { azione: idAzione, coefficiente });
   }
   return cambiata(vecchia, c) ? n : m;
@@ -548,7 +575,7 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
 export function eliminaCombinazione(m, { id }) {
   combinazioneEsistente(m, id);
   const caso = nomeCaso("combinazione", id);
-  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`la combinazione ${id} la usa un'analisi, come caso ${caso}`, `togli il caso ${caso} dall'analisi, poi elimina`);
+  if (analisiCheUsano(m, caso).length) throw new ErroreComando(`la combinazione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
   const n = copia(m);
   n.combinazioni = n.combinazioni.filter((c) => c.id !== id);
   return n;
