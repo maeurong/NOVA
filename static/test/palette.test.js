@@ -116,9 +116,9 @@ function riquadroFinto() {
   return { radice, campo, elenco, stato };
 }
 
-const conPalette = (suScelta = () => {}) => {
+const conPalette = (suScelta = () => {}, suChiusura = null) => {
   const parti = riquadroFinto();
-  return { ...parti, p: creaPalette(parti.radice, { suScelta }) };
+  return { ...parti, p: creaPalette(parti.radice, { suScelta, suChiusura }) };
 };
 
 test("apri due volte: un riquadro solo, campo svuotato", () => {
@@ -136,6 +136,42 @@ test("chiudi su una palette chiusa non solleva", () => {
   p.chiudi();
   p.chiudi();
   assert.equal(p.aperta, false);
+});
+
+// Chiudere lascia il fuoco sul `body`: chi ha un campo di comando aperto sotto la palette lo
+// vuole indietro, o le cifre battute dopo Esc non arrivano da nessuna parte (fix round 1).
+test("Esc avvisa chi possiede la pagina, che si riprende il fuoco", () => {
+  let chiusure = 0;
+  const { p, campo } = conPalette(() => {}, () => { chiusure++; });
+  p.apri({ voci: TASTI, disponibili: new Set() });
+  campo.dispatch("keydown", { key: "Escape" });
+  assert.equal(chiusure, 1);
+  assert.equal(p.aperta, false);
+});
+
+// Il `blur` del campo arriva **dopo** che `radice.hidden = true` gli ha tolto il fuoco, e
+// richiama `chiudi`: senza la guardia il fuoco tornerebbe al campo di comando due volte, e da
+// `scegli` la seconda passerebbe sopra il campo che `suScelta` ha appena aperto.
+test("chiudi su una palette già chiusa non avvisa una seconda volta", () => {
+  let chiusure = 0;
+  const { p, campo } = conPalette(() => {}, () => { chiusure++; });
+  p.apri({ voci: TASTI, disponibili: new Set() });
+  p.chiudi();
+  campo.dispatch("blur");
+  p.chiudi();
+  assert.equal(chiusure, 1);
+});
+
+// La scelta chiude prima di eseguire, quindi l'avviso arriva **prima** di `suScelta`: chi
+// riapre un campo lì dentro ha l'ultima parola sul fuoco.
+test("scegliere una voce avvisa della chiusura prima di eseguire", () => {
+  const ordine = [];
+  const { p, campo } = conPalette(() => ordine.push("scelta"), () => ordine.push("chiusura"));
+  p.apri({ voci: TASTI, disponibili: new Set() });
+  campo.value = "nodo";
+  campo.dispatch("input");
+  campo.dispatch("keydown", { key: "Enter" });
+  assert.deepEqual(ordine, ["chiusura", "scelta"]);
 });
 
 test("Invio senza voci: nessuna scelta, la palette resta aperta", () => {

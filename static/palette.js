@@ -33,7 +33,7 @@ export function filtraVoci(voci, query) {
     .slice(0, 9);
 }
 
-export function creaPalette(radice, { suScelta }) {
+export function creaPalette(radice, { suScelta, suChiusura = null }) {
   const campo = radice.querySelector("input");
   const elenco = radice.querySelector("ul");
   const stato = radice.querySelector("#palette-stato");
@@ -83,7 +83,19 @@ export function creaPalette(radice, { suScelta }) {
   }
 
   const scegli = (i) => { const r = risultati[i]; if (!r) return; chiudi(); suScelta(r.voce, r.valore); };
-  function chiudi() { radice.hidden = true; }
+
+  /** Chiudere lascia il fuoco sul `body`, e chi aveva un campo aperto sotto la palette si
+   *  ritrovava a battere cifre che non arrivavano da nessuna parte: `suChiusura` dice a chi
+   *  possiede la pagina dove rimetterlo. Anche da `scegli`, ma lì `suScelta` viene subito dopo
+   *  e riapre il campo che vuole lui, quindi l'ultimo `focus` è il suo.
+   *
+   *  La guardia non è una micro-ottimizzazione: `radice.hidden = true` fa partire il `blur` del
+   *  campo, che richiama `chiudi` — senza, `suChiusura` girerebbe due volte per una chiusura. */
+  function chiudi() {
+    if (radice.hidden) return;
+    radice.hidden = true;
+    suChiusura?.();
+  }
 
   campo.addEventListener("input", () => { attiva = 0; disegna(); });
   // Il fuoco che se ne va chiude: una palette aperta ma spenta terrebbe il campo davanti al

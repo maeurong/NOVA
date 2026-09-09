@@ -136,9 +136,15 @@ const pannello = creaPannello(
     suTogliCarico: (idAzione, indice) => { esegui((m) => togliCarico(m, { azione: idAzione, indice }), `via il carico ${indice + 1} dell'azione ${idAzione}`); ridisegna(); },
     suAggiungiCarico: (idAzione, tipo) => { aggiungiCaricoVuoto(idAzione, tipo); ridisegna(); },
     suCombinazione: (id, campi) => { esegui((m) => modificaCombinazione(m, { id, ...campi }), `combinazione ${id}: ${Object.keys(campi).join(", ")}`); ridisegna(); },
+    // Metti, cambia e togli sono tre gesti diversi che scrivevano la stessa riga nella Storia:
+    // «termine 1 della combinazione 1», tre volte, e l'annulla non diceva più a cosa tornava.
+    // Il nome dell'azione e il coefficiente le distinguono (P4).
     suTermine: (idCombinazione, idAzione, coefficiente) => {
+      const nome = azione(corrente(cronologia), idAzione)?.nome ?? idAzione;
       esegui((m) => impostaTermine(m, { id: idCombinazione, azione: idAzione, coefficiente }),
-             `termine ${idAzione} della combinazione ${idCombinazione}`);
+             coefficiente === null
+               ? `via il termine «${nome}» dalla combinazione ${idCombinazione}`
+               : `termine «${nome}» della combinazione ${idCombinazione}: ${stampaNumero(coefficiente, { decimali: 2 })}`);
       ridisegna();
     },
     // Un numero illeggibile in un campo dell'editor è un avviso, non un comando: non entra
@@ -185,13 +191,20 @@ const file = creaFile(document, {
 // non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
 $("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
 
-// La palette non è un secondo programma: passa voce e valore ai rami del tasto, e l'esito è lo
-// stesso del gesto a mano. **R2** — se esegue, abbandona il campo che era aperto: cercare un
-// comando mentre se ne stava scrivendo un altro è un ripensamento, e due campi aperti insieme
-// non stanno in piedi. Chi chiude la palette con Esc invece non ha ripensato niente, e il campo
-// di prima è ancora lì col suo testo, perché `chiudi` da sola non passa di qui.
+// La palette non è un secondo programma: passa voce e valore ai rami del tasto, e l'esito è
+// quello del tasto **a gesto chiuso**. **R2** — se esegue, abbandona campo e modo insieme:
+// cercare un comando mentre se ne stava facendo un altro è un ripensamento, e un ghost appeso a
+// un gesto che nessuno finirà più è peggio di niente. Da qui l'elenco che le si passa: senza il
+// modo non c'è più niente da girare né da confermare, e `direzione` e `conferma` sarebbero due
+// voci che non fanno nulla; `palette` dentro la palette la farebbe lampeggiare.
+//
+// Chi la chiude con Esc invece non ha ripensato niente: `chiudi` non passa da `suScelta`, e il
+// campo di prima è ancora lì col suo testo — `suChiusura` gli rimette il fuoco, che se no
+// restava sul `body` e le cifre battute dopo non arrivavano da nessuna parte.
+const VOCI_PALETTE = TASTI.filter((v) => !["direzione", "conferma", "palette"].includes(v.codice));
 const palette = creaPalette($("palette"), {
   suScelta: (voce, valore) => { chiudiComando(); eseguiVoce(voce, valore); ridisegna(); },
+  suChiusura: () => { if (comando) campoComando.focus(); },
 });
 
 // Aprire un modo lo rende il gesto della tastiera globale, quindi il fuoco deve lasciare
@@ -637,10 +650,11 @@ function dispatchVoce(voce) {
   // si voleva. Ri-premuto chiude, che è l'altra metà di una scorciatoia che alterna.
   if (voce.codice === "palette") {
     if (palette.aperta) { palette.chiudi(); return; }
-    // **R2**: le disponibili si contano a campo chiuso, perché la palette lo chiuderà se esegue.
-    // Passando `comando` sarebbero tutte «non ora», e la lista direbbe il falso su sé stessa.
-    const disponibili = new Set(vociDellaBarra(contestoBarra(modo, selezione, null), selezione?.tipo ?? null).map((v) => v.codice));
-    palette.apri({ voci: TASTI, disponibili });
+    // **R2**: le disponibili si contano a gesto chiuso — né campo né modo — perché la palette
+    // chiude entrambi quando esegue. Passando quelli veri, da dentro `B` sarebbe tutto «non
+    // ora» mentre invece funziona tutto: la lista direbbe il falso su sé stessa.
+    const disponibili = new Set(vociDellaBarra(contestoBarra(null, selezione, null), selezione?.tipo ?? null).map((v) => v.codice));
+    palette.apri({ voci: VOCI_PALETTE, disponibili });
     return;
   }
 
@@ -792,6 +806,10 @@ function dispatchVoce(voce) {
     apriComando({ ...voce, aiuto: `${voce.aiuto} → azione «${dest.nome}»`,
                   esempio: selezione.tipo === "nodo" ? "Fx 20000" : "-12,5" },
                 { bersaglio: { ...selezione } });
+    // `comando` c'è per forza, e non è una scommessa: `apriComando` ridisegna, e il ridisegno
+    // chiude il campo solo quando il bersaglio è sparito — qui il bersaglio è la selezione, che
+    // lo stesso ridisegno ha appena validato due righe sopra. Un campo aperto su un bersaglio
+    // che non passa da `selezione` avrebbe bisogno di un `comando?.` qui.
     comando.azione = dest.id;
     return;
   }
