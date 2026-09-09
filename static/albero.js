@@ -65,7 +65,9 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     for (const a of m.azioni) {
       righe.push({
         tipo: "azione", id: a.id,
-        testo: `${a.nome} · ${a.natura}${a.categoria ? ` ${a.categoria}` : ""} · ${plurale(a.carichi.length, "carico", "carichi")}${a.generata ? " · generata" : ""}`,
+        // `?? []`: un file vecchio può non avere il campo, e l'albero disegna prima di tutti
+        // gli altri — se cade qui, l'ispettore che si guarda le spalle non serve a niente.
+        testo: `${a.nome} · ${a.natura}${a.categoria ? ` ${a.categoria}` : ""} · ${plurale((a.carichi ?? []).length, "carico", "carichi")}${a.generata ? " · generata" : ""}`,
       });
     }
     gruppo("Combinazioni", m.combinazioni.length);
@@ -75,7 +77,7 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
       // seconda vedrebbe «undefined» qui. Il fallback stampa la chiave grezza in quel caso.
       righe.push({
         tipo: "combinazione", id: c.id,
-        testo: `${c.nome} · ${c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "senza tipo"} · ${plurale(c.termini.length, "termine", "termini")}${c.generata ? " · generata" : ""}`,
+        testo: `${c.nome} · ${c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "senza tipo"} · ${plurale((c.termini ?? []).length, "termine", "termini")}${c.generata ? " · generata" : ""}`,
       });
     }
 

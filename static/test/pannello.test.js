@@ -6,7 +6,7 @@ import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "../vincoli.js";
 import { creaNodo, estrudi, creaSezione, materialiDiDefault,
          creaAzione, aggiungiCarico, creaCombinazione, impostaTermine } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
-import { leggiNumero } from "../numeri.js";
+import { leggiNumero, stampaNumero } from "../numeri.js";
 
 function elementoFinto() {
   const listeners = {};
@@ -842,7 +842,7 @@ const conBarre = () => {
   return m;
 };
 
-for (const [nome, selezione, modello] of [
+const CASI_EDITOR = [
   ["asta", { tipo: "asta", id: 1 }, conBarre],
   ["sezione", { tipo: "sezione", id: 1 }, conBarre],
   ["materiale", { tipo: "materiale", id: 1 }, conBarre],
@@ -856,7 +856,9 @@ for (const [nome, selezione, modello] of [
   ["Combinazione", { tipo: "combinazione", id: 1 }, () => impostaTermine(
     creaCombinazione(conCarichi(), { nome: "SLU", tipo: "fondamentale" }),
     { id: 1, azione: 1, coefficiente: 1.3 })],
-]) {
+];
+
+for (const [nome, selezione, modello] of CASI_EDITOR) {
   test(`editor${nome}: ogni nome accessibile comincia dal testo visibile (WCAG 2.5.3)`, () => {
     const m = modello();
     const { p, editor } = pannelloFinto();
@@ -867,6 +869,19 @@ for (const [nome, selezione, modello] of [
       assert.ok(accessibile.startsWith(visibile),
         `«${accessibile}» non comincia da «${visibile}»`);
     }
+  });
+}
+
+// Un nome accessibile ripetuto è peggio di un nome assente: `creaPannello` ritrova il fuoco
+// per nome (`chiave`), e due controlli omonimi lo riportano sempre sul primo dei due.
+for (const [nome, selezione, modello] of CASI_EDITOR) {
+  test(`editor${nome}: i nomi accessibili sono unici dentro l'editor`, () => {
+    const { p, editor } = pannelloFinto();
+    p.disegna(modello(), selezione, { catalogo: null, legame: LEGAME_C25 });
+    const nomi = tutti(editor).filter((e) => e._attrs?.["aria-label"]).map((c) => c._attrs["aria-label"]);
+    const doppi = nomi.filter((n, i) => nomi.indexOf(n) !== i);
+    assert.deepEqual(doppi, [], `nomi ripetuti: ${doppi.join(" · ")}`);
+    assert.equal(new Set(nomi).size, nomi.length);
   });
 }
 
@@ -1181,14 +1196,20 @@ test("editor dell'azione: il campo q cambiato manda il carico intero, e un testo
   assert.equal(q.value, "-12,500");
 });
 
-test("editor dell'azione: Fx illeggibile avvisa e rimette il numero di prima", () => {
+// Le migliaia come nella `<dl>` due centimetri sopra: «20 000», non «20000». Lo spazio è
+// U+202F, e `leggiNumero` lo toglie — l'uscita rientra dalla propria porta (`numeri.test.js`).
+test("editor dell'azione: Fx illeggibile avvisa e rimette il numero di prima, con le migliaia", () => {
   const { p, editor, chiamate } = pannelloFinto();
   p.disegna(conCarichi(), { tipo: "azione", id: 1 });
   const [fx] = controlliCon(editor, "Fx del carico 2");
+  const atteso = stampaNumero(20000, { decimali: 0, migliaia: true });
+  assert.equal(fx.value, atteso);
+  assert.notEqual(atteso, "20000");
+  assert.equal(leggiNumero(atteso), 20000);
   fx.value = "ventimila"; fx.dispatch("change");
   assert.deepEqual(chiamate.suCarico, []);
   assert.equal(chiamate.suAvviso[0], "«ventimila» non è un numero");
-  assert.equal(fx.value, "20000");
+  assert.equal(fx.value, atteso);
 });
 
 test("editor dell'azione: «aggiungi carico» è un comando, togli passa l'indice, il termico avverte", () => {
@@ -1305,6 +1326,47 @@ test("combinazione senza «termini»: le righe dicono 0 e l'editor non solleva",
   const { p, editor } = pannelloFinto();
   p.disegna(m, { tipo: "combinazione", id: 1 });
   assert.equal(controlliCon(editor, "permanenti travi: coefficiente")[0].value, "");
+});
+
+// Ingresso degenere: due azioni con lo stesso nome. Il nome accessibile porta anche il caso
+// (Z1, Z2), che è unico; senza, il fuoco tornerebbe sempre sul primo dei due campi.
+test("editor della combinazione: due azioni omonime hanno nomi accessibili diversi", () => {
+  let m = creaAzione(modelloVuoto(), { nome: "neve", natura: "G2" });
+  m = creaAzione(m, { nome: "neve", natura: "G2" });
+  m = creaCombinazione(m, { nome: "SLU" });
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  const nomi = controlliCon(editor, "neve: coefficiente").map((c) => c._attrs["aria-label"]);
+  assert.equal(nomi.length, 2);
+  assert.equal(new Set(nomi).size, 2);
+  for (const n of nomi) assert.ok(n.startsWith("neve: coefficiente"), n);
+});
+
+// Un tipo fuori da `TIPI_CARICO` è un difetto del programma: si solleva, come `testoCarico`
+// (`carichi.js:143`). L'`else` nudo di prima gli disegnava i campi del termico.
+test("editor dell'azione: un tipo di carico sconosciuto solleva, non finge un termico", () => {
+  const m = creaAzione(CON_CERNIERA(), { nome: "peso proprio", natura: "G1" });
+  m.azioni[0].carichi = [{ tipo: "vento", asta: 1 }];
+  const { p } = pannelloFinto();
+  assert.throws(() => p.disegna(m, { tipo: "azione", id: 1 }), /tipo di carico sconosciuto: vento/);
+});
+
+// Due termini nel file: il campo mostra la somma, e la nota dice cosa succede a svuotarlo —
+// `impostaTermine` li toglie entrambi, ed è l'unica scrittura che non perde un dato in silenzio.
+test("editor della combinazione: due termini sulla stessa azione lo dicono nella nota", () => {
+  const m = creaCombinazione(conCarichi(), { nome: "SLU" });
+  m.combinazioni[0].termini = [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }];
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  assert.ok(tutti(editor).some((e) => e.className === "nota" && /due termini nel file/.test(e.textContent)));
+});
+
+test("editor della combinazione: con un termine solo la nota dei doppi non c'è", () => {
+  const m = impostaTermine(creaCombinazione(conCarichi(), { nome: "SLU" }),
+    { id: 1, azione: 1, coefficiente: 1.3 });
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "combinazione", id: 1 });
+  assert.ok(!tutti(editor).some((e) => /due termini nel file/.test(e.textContent ?? "")));
 });
 
 test("dopo «togli carico» il fuoco non cade su body", () => {

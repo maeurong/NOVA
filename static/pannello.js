@@ -150,10 +150,13 @@ export function presetPremuto(nome, vincolo) {
  *  mostrerebbe zero — nessuna grandezza di questo modello ci arriva. */
 const testoNumero = (v) => {
   if (v === null || v === undefined) return "";
-  if (Number.isInteger(v)) return stampaNumero(v, { decimali: 0 });
+  // Le migliaia come nella `<dl>` due centimetri sopra: «20 000» in tutti e due i posti, o
+  // sono due verità sullo stesso numero. `leggiNumero` toglie U+202F (`numeri.js:21`), quindi
+  // quel che il campo scrive il campo lo rilegge — è il contratto di `numeri.test.js:61-69`.
+  if (Number.isInteger(v)) return stampaNumero(v, { decimali: 0, migliaia: true });
   const piccolo = Math.abs(v) < 0.001;
   const decimali = piccolo ? Math.min(100, 3 - Math.floor(Math.log10(Math.abs(v)))) : 3;
-  return stampaNumero(v, { decimali });
+  return stampaNumero(v, { decimali, migliaia: true });
 };
 
 // WCAG 2.5.3 (livello A): il nome accessibile di ogni campo qui sotto **comincia** dal testo
@@ -539,6 +542,8 @@ function campiDelCarico(m, c, i, box, invia, azioni, controlli) {
     agg(campoNumero({ etichetta, nome: `${etichetta} ${chi}`, valore: c[campo], unita, vuotoAmmesso,
                       alCambio: (v) => invia({ ...c, [campo]: v }), suAvviso: azioni.suAvviso }));
   const rif = (campo, lista, nome) => {
+    // ponytail: un'option per nodo, per carico; con migliaia di nodi si passa a <input list>
+    // + <datalist>. È l'unico `scelta` di questo file che pesca da una lista illimitata.
     const opzioni = lista.map((e) => [e.id, nome(e)]);
     // Un file può portare un carico su un nodo (o un'asta) che non c'è più. L'identificatore
     // grezzo resta a schermo ed è quello scelto: senza questa voce il `select` mostrerebbe il
@@ -555,7 +560,11 @@ function campiDelCarico(m, c, i, box, invia, azioni, controlli) {
   }
   else if (c.tipo === "gravita") { for (const k of ["x", "y", "z"]) num(`fattore_${k}`, `fattore ${k}`, ""); }
   else if (c.tipo === "cedimento") { rif("nodo", m.nodi, nomeNodo); for (const k of GRADI_CEDIMENTO) num(k, k, k[0] === "u" ? " mm" : " rad", true); }
-  else { rif("asta", m.aste, nomeAsta); num("dT_uniforme", "ΔT uniforme", " °C"); num("gradiente", "gradiente", " °C/mm", true); }
+  else if (c.tipo === "termico") { rif("asta", m.aste, nomeAsta); num("dT_uniforme", "ΔT uniforme", " °C"); num("gradiente", "gradiente", " °C/mm", true); }
+  // Un tipo fuori da `TIPI_CARICO` è un difetto del programma, non un carico da disegnare
+  // male: si solleva, come `testoCarico` (`carichi.js:143`). L'`else` nudo di prima gli
+  // dava i campi del termico, con l'asta «undefined» e nessuno che se ne accorgeva.
+  else throw new Error(`tipo di carico sconosciuto: ${c?.tipo}`);
 }
 
 function editorAzione(m, a, azioni) {
@@ -605,13 +614,23 @@ function editorCombinazione(m, c, azioni) {
                      m.azioni.length ? "coefficiente per azione; vuoto = l'azione non entra" : "nessuna azione nel modello: premi Z");
   const termini = c.termini ?? [];
   for (const a of m.azioni) {
-    // La somma, non il primo: un file con due termini sulla stessa azione mostra il numero che il
-    // deck userà (`nova/deck.py:305-309`); scriverci sopra lo rifiuta `impostaTermine`, che lo dice.
+    // La somma, non il primo: un file con due termini sulla stessa azione mostra il numero che
+    // il deck userà (`nova/deck.py:305-309`). Scriverci sopra un numero lo rifiuta
+    // `impostaTermine`; svuotare li toglie tutti e due, e la nota qui sotto lo dice.
     const suoi = termini.filter((k) => k.azione === a.id);
     const coeff = suoi.length ? suoi.reduce((s, k) => s + k.coefficiente, 0) : null;
-    const campo = campoNumero({ etichetta: a.nome, nome: `${a.nome}: coefficiente nella combinazione ${c.nome}`, valore: coeff,
+    // Il caso (Z1, Z2) nel nome, non solo il nome dell'azione: due azioni possono chiamarsi
+    // uguale, e due controlli con lo stesso nome accessibile riportano il fuoco sempre sul
+    // primo (`creaPannello`, `chiave`). Comincia lo stesso dal testo visibile (WCAG 2.5.3).
+    const campo = campoNumero({ etichetta: a.nome, valore: coeff,
+                                nome: `${a.nome}: coefficiente dell'azione ${nomeCaso("azione", a.id)} nella combinazione ${c.nome}`,
                                 vuotoAmmesso: true, alCambio: (v) => azioni.suTermine(c.id, a.id, v), suAvviso: azioni.suAvviso });
     ter.append(campo.etichetta); controlli.push(campo.controllo);
+    if (suoi.length > 1) {
+      const p = document.createElement("p"); p.className = "nota";
+      p.textContent = `${a.nome}: due termini nel file: si sommano; vuoto li toglie entrambi`;
+      ter.append(p);
+    }
   }
   return { elementi: [tipo, ter], controlli };
 }
@@ -627,9 +646,15 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
   // Il controllo si ritrova **per nome**, non per posto nella lista: l'ordine non è stabile.
   // «aggiungi staffe» fa comparire tre campi e un bottone *prima* delle file, e ogni indice
   // dopo quel punto slitta — chi stava scrivendo «inf n» si ritrovava dentro «bracci».
-  // Il nome accessibile è unico per controllo e non si sposta con esso; i bottoni non ne
-  // hanno uno e valgono per il loro testo. Se il controllo non c'è più (il bottone «togli
-  // danno» dopo che il danno è andato via) il fuoco va al primo dell'editor, mai a `body`.
+  // Il nome accessibile è unico dentro l'editor (un test lo prova sui cinque tipi); i bottoni
+  // non ne hanno uno e valgono per il loro testo. Se il controllo non c'è più (il bottone
+  // «togli danno» dopo che il danno è andato via) il fuoco va al primo dell'editor, mai a
+  // `body`.
+  //
+  // Limite dichiarato, dalla 11c: i carichi di un'azione non hanno un identificatore, e il
+  // loro nome è **posizionale** («Fx del carico 2»). Un ⌘Z che toglie il primo carico lascia
+  // il fuoco su un nome che esiste ancora ma ora è di un altro carico. Il fuoco non si perde,
+  // il cursore sì: si sistema il giorno che un carico avrà un `id` suo.
   let editorAttuale = null;
 
   const chiave = (c) => c?.getAttribute?.("aria-label") ?? c?.textContent ?? null;

@@ -630,6 +630,9 @@ test("impostaTermine: un termine per azione, null lo toglie, zero resta", () => 
   assert.throws(() => impostaTermine(m, { id: 1, azione: 1, coefficiente: NaN }), ErroreComando);
   const doppia = { ...m, combinazioni: [{ ...m.combinazioni[0], termini: [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }] }] };
   assert.throws(() => impostaTermine(doppia, { id: 1, azione: 1, coefficiente: 2 }), /due termini sull'azione 1/);
+  // Svuotare **toglie entrambi**: è l'unica scrittura su una doppia che non perde un dato in
+  // silenzio. Scriverci un numero sopra sì, e resta rifiutata (la riga qui sopra).
+  assert.deepEqual(impostaTermine(doppia, { id: 1, azione: 1, coefficiente: null }).combinazioni[0].termini, []);
 });
 
 test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicono chi", () => {

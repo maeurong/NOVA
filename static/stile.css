@@ -116,7 +116,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    il pannello a 20rem). Stesso difetto già visto sui
    bottoni delle preimpostazioni, stesso rimedio: togliere la larghezza dal contenuto. */
 .editor-campi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
-.editor-campi legend, .editor-campi > .nota { grid-column: 1 / -1; }
+/* Anche `.avviso`: quello del carico termico è figlio diretto della griglia, e in una colonna
+   sola andava a capo otto volte di fianco a «gradiente». Una frase vuole la riga intera. */
+.editor-campi legend, .editor-campi > .nota, .editor-campi > .avviso { grid-column: 1 / -1; }
 /* Una colonna sola per i valori del materiale: le loro etichette portano il nome di norma
    («E, modulo elastico», «f_ctm») e l'unità, e a due colonne l'unità andava a capo da sola
    — misurato a 1440 × 900 col pannello a 20rem. I campi corti (b, h, «inf n», Ø) restano
@@ -124,7 +126,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .editor-valori { grid-template-columns: minmax(0, 1fr); }
 /* Il carico è un sotto-gruppo dentro «carichi»: il filetto a sinistra dice dove comincia e
    dove finisce senza una seconda cornice, e il rientro lo mette sotto la sua legenda. */
-.carico { border-left: 2px solid var(--tratto); padding-left: 6px; margin-top: 6px; }
+.carico { border-left: 1px solid var(--tratto); padding-left: 6px; margin-top: 6px; }
 .editor button { font: inherit; font-size: 11px; padding: 2px 8px; margin-top: 4px; border: 1px solid var(--tratto-forte);
   border-radius: 3px; background: var(--pannello); color: var(--inchiostro); }
 .editor input:focus-visible, .editor select:focus-visible, .editor button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }

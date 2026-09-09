@@ -555,9 +555,14 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   azioneEsistente(m, idAzione);
   // Un file può portare due termini sulla stessa azione (il deck li somma): sostituirli con uno
   // perderebbe un dato senza dirlo. Si rifiuta, e si dice dove correggere.
+  //
+  // Svuotare no: `coefficiente: null` li toglie **entrambi**, ed è l'unica scrittura su una
+  // doppia che non perde niente in silenzio. Rifiutare anche quella lasciava il campo
+  // dell'ispettore senza una sola mossa lecita — mostrava la somma e diceva «vuoto = non
+  // entra», e poi nemmeno il vuoto passava.
   const prima = vecchia.termini ?? [];  // sola lettura: la guardia e il posto del termine
-  if (prima.filter((t) => t.azione === idAzione).length > 1) {
-    throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file: l'interfaccia ne tiene uno per azione");
+  if (coefficiente !== null && prima.filter((t) => t.azione === idAzione).length > 1) {
+    throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file, o svuota il campo: l'interfaccia ne tiene uno per azione");
   }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
   const n = copia(m);
