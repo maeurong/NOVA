@@ -678,6 +678,26 @@ test("impostaTermine tiene l'ordine quando aggiorna un termine che c'è già", (
     "il termine aggiornato resta dov'era: un `push` lo manderebbe in coda");
 });
 
+/** Non basta che il modello ricevuto non cambi: la Storia tiene tutti gli snapshot, e un
+ *  oggetto **condiviso** fra due snapshot rompe il passato appena qualcuno lo muta. Il
+ *  riduttore deve tornare cloni anche di ciò che non ha toccato. */
+test("gli oggetti non toccati sono cloni, non riferimenti a quelli del modello vecchio", () => {
+  let m = creaAzione(creaCombinazione(conAzione(), { nome: "SLU" }), { nome: "neve", natura: "Q", categoria: "neve" });
+  m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.3 });
+  m = impostaTermine(m, { id: 1, azione: 2, coefficiente: 1.5 });
+  const n = impostaTermine(m, { id: 1, azione: 1, coefficiente: 2 });
+  assert.deepEqual(n.combinazioni[0].termini[1], m.combinazioni[0].termini[1], "uguale per valore");
+  assert.notEqual(n.combinazioni[0].termini[1], m.combinazioni[0].termini[1], "e un altro oggetto");
+
+  const base = conDueCarichi();
+  const piu = aggiungiCarico(base, { azione: 1, carico: { tipo: "nodale", nodo: 1, Fz: -1000 } });
+  assert.deepEqual(piu.azioni[0].carichi[0], base.azioni[0].carichi[0]);
+  assert.notEqual(piu.azioni[0].carichi[0], base.azioni[0].carichi[0]);
+  const mod = modificaCarico(base, { azione: 1, indice: 0, carico: { tipo: "distribuito", asta: 1, q: -99 } });
+  assert.deepEqual(mod.azioni[0].carichi[1], base.azioni[0].carichi[1]);
+  assert.notEqual(mod.azioni[0].carichi[1], base.azioni[0].carichi[1]);
+});
+
 test("i nomi entrano ripuliti dagli spazi, e la categoria d'uso è un testo", () => {
   const m = creaAzione(modelloVuoto(), { nome: "  spinta  ", natura: "Q", categoria: "  vento  " });
   assert.equal(m.azioni[0].nome, "spinta");

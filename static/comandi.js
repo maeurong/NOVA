@@ -451,7 +451,7 @@ const indiceValido = (a, indice) => {
   }
 };
 // L'analisi non ha ancora un editor (T6): il rimedio manda dove la si può correggere davvero.
-const NEL_FILE = "l'analisi si corregge nel file (.nova.json): togli quel caso, poi elimina";
+const NEL_FILE = "l'analisi si corregge nel file (.nova.json): togli quel riferimento, poi elimina";
 
 export function creaAzione(m, { nome, natura, categoria = null }) {
   const id = prossimoId(m, "azione");
@@ -508,7 +508,7 @@ export function eliminaAzione(m, { id }) {
   const caso = nomeCaso("azione", id);
   if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
   // La modale nomina l'azione per identificatore, non per caso: `analisiCheUsano` non la vede.
-  if (analisiConMassaDa(m, id).length) throw new ErroreComando(`l'azione ${id} dà massa a un'analisi modale`, "l'analisi si corregge nel file (.nova.json): togli quella massa, poi elimina");
+  if (analisiConMassaDa(m, id).length) throw new ErroreComando(`l'azione ${id} dà massa a un'analisi modale`, NEL_FILE);
   const n = copia(m);
   n.azioni = n.azioni.filter((a) => a.id !== id);
   return n;  // i contatori restano: un identificatore eliminato non si riusa
@@ -555,18 +555,21 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   azioneEsistente(m, idAzione);
   // Un file può portare due termini sulla stessa azione (il deck li somma): sostituirli con uno
   // perderebbe un dato senza dirlo. Si rifiuta, e si dice dove correggere.
-  const termini = vecchia.termini ?? [];
-  if (termini.filter((t) => t.azione === idAzione).length > 1) {
+  const prima = vecchia.termini ?? [];  // sola lettura: la guardia e il posto del termine
+  if (prima.filter((t) => t.azione === idAzione).length > 1) {
     throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file: l'interfaccia ne tiene uno per azione");
   }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
   const n = copia(m);
   const c = combinazioneEsistente(n, id);
-  c.termini = termini.filter((t) => t.azione !== idAzione);
+  // Si filtra da `c.termini`, che `copia` ha già clonato. Filtrando da `vecchia.termini` i
+  // termini non toccati resterebbero gli **stessi oggetti** del modello vecchio, e la Storia
+  // finirebbe con due snapshot che ne condividono uno: mutarlo riscriverebbe il passato.
+  c.termini = (c.termini ?? []).filter((t) => t.azione !== idAzione);
   if (coefficiente !== null) {
     // L'ordine dell'elenco è quello che si legge nell'albero: il termine aggiornato resta
     // dov'era, e solo quello nuovo va in coda.
-    const dove = termini.findIndex((t) => t.azione === idAzione);
+    const dove = prima.findIndex((t) => t.azione === idAzione);
     c.termini.splice(dove === -1 ? c.termini.length : dove, 0, { azione: idAzione, coefficiente });
   }
   return cambiata(vecchia, c) ? n : m;
