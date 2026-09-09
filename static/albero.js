@@ -70,6 +70,9 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     }
     gruppo("Combinazioni", m.combinazioni.length);
     for (const c of m.combinazioni) {
+      // `TIPI_COMBINAZIONE` e `NOME_TIPO_COMBINAZIONE` sono due costanti gemelle in
+      // `carichi.js` (righe 13 e 19-22): chi aggiunge un tipo alla prima e si scorda la
+      // seconda vedrebbe «undefined» qui. Il fallback stampa la chiave grezza in quel caso.
       righe.push({
         tipo: "combinazione", id: c.id,
         testo: `${c.nome} · ${c.tipo ? (NOME_TIPO_COMBINAZIONE[c.tipo] ?? c.tipo) : "senza tipo"} · ${plurale(c.termini.length, "termine", "termini")}${c.generata ? " · generata" : ""}`,

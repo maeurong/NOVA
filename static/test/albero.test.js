@@ -220,9 +220,10 @@ test("azione con categoria null: niente spazio doppio né «null» nel testo", (
   assert.ok(!t.some((s) => s.includes("null")), JSON.stringify(t));
 });
 
-// Ingresso degenere: un `tipo` di combinazione che non sta in `NOME_TIPO_COMBINAZIONE` (un
-// file scritto da una versione vecchia) stampa la chiave grezza, non «undefined».
-test("combinazione con tipo fuori dal dizionario: stampa la chiave grezza, non «undefined»", () => {
+// Ingresso degenere: un tipo che `TIPI_COMBINAZIONE` conosce e `NOME_TIPO_COMBINAZIONE` no:
+// la chiave grezza, non «undefined» — guardia contro la deriva fra le due costanti gemelle di
+// `carichi.js`, non contro un file vecchio (un file così è respinto prima di arrivare qui).
+test("un tipo che TIPI_COMBINAZIONE conosce e NOME_TIPO_COMBINAZIONE no: la chiave grezza, non «undefined»", () => {
   let m = creaCombinazione(modelloVuoto(), { nome: "SLU" });
   m.combinazioni[0].tipo = "eccezionale";
   const { elenco, albero } = alberoFinto();
