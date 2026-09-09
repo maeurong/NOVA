@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { creaAlbero } from "../albero.js";
 import { creaMateriale, creaSezione, creaNodo, creaAzione, aggiungiCarico, creaCombinazione } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
+import { daRisposta } from "../rilievo.js";
 
 // Il DOM finto di `pannello.test.js`, con in più `dataset`, `style` e `closest`.
 function elementoFinto() {
@@ -240,4 +241,51 @@ test("un tipo che TIPI_COMBINAZIONE conosce e NOME_TIPO_COMBINAZIONE no: la chia
   const { elenco, albero } = alberoFinto();
   albero.disegna(m);
   assert.ok(testi(elenco).includes("SLU · eccezionale · 0 termini"), JSON.stringify(testi(elenco)));
+});
+
+
+// --- ramo 11d: il ramo «Rilievo» ----------------------------------------------------------
+
+const rilievoVuoto = () => daRisposta({ scartate: [{ regione: 0, punti: 1, controllo: "x", valore: 1, soglia: 0.5, unita: "-", spiegazione: "" }], resoconto: { membrature: 0, aste: 0, nodi: 0, scartate: 8 } }, "lab/12_wall.json");
+
+test("con un rilievo l'albero apre col ramo «Rilievo», anche a modello vuoto, e la voce si seleziona", () => {
+  const { elenco, vuoto, albero, scelte } = alberoFinto();
+  albero.disegna(modelloVuoto(), { rilievo: rilievoVuoto(), selezione: { tipo: "rilievo", id: 0 } });
+  const t = testi(elenco);
+  assert.equal(t[0], "Rilievo");
+  assert.equal(t[1], "▸ 12_wall.json · nessuna membratura · 8 scartate");
+  assert.equal(vuoto.hidden, true);
+  assert.equal(elenco._figli[1].dataset.tipo, "rilievo");
+  assert.equal(elenco._figli[1].className, "numero scelto");
+  elenco.dispatch("click", { target: elenco._figli[1] });
+  assert.deepEqual(scelte.at(-1), ["rilievo", 0]);
+});
+
+test("senza rilievo l'albero non ha il ramo", () => {
+  const { elenco, albero } = alberoFinto();
+  albero.disegna(creaNodo(modelloVuoto(), { x: 0, z: 0 }), {});
+  assert.ok(!testi(elenco).includes("Rilievo"));
+});
+
+// Ingresso degenere: `resoconto: {}` (nessuna chiave) non è un errore, è zero membrature e
+// zero scartate — `riassunto` (Task 1) già lo gestisce, qui si verifica solo che l'albero lo
+// passi senza saltare in aria.
+test("rilievo con resoconto vuoto: nessuna membratura, 0 scartate, nessuna eccezione", () => {
+  const { elenco, albero } = alberoFinto();
+  const rilievo = daRisposta({}, "x/y.json");
+  assert.doesNotThrow(() => albero.disegna(modelloVuoto(), { rilievo }));
+  assert.ok(testi(elenco).includes("y.json · nessuna membratura · 0 scartate"), JSON.stringify(testi(elenco)));
+});
+
+// Ingresso degenere: con un modello pieno il ramo «Rilievo» viene comunque prima di «Nodi», e
+// i gruppi del modello non ne risentono.
+test("con un rilievo e un modello pieno, «Rilievo» viene prima di «Nodi» e gli altri gruppi restano", () => {
+  const { elenco, albero } = alberoFinto();
+  const m = conSezione();
+  m.nodi.push({ id: 1, nome: null, x: 0, y: 0, z: 0 });
+  albero.disegna(m, { rilievo: rilievoVuoto() });
+  const t = testi(elenco);
+  assert.ok(t.includes("Rilievo"), JSON.stringify(t));
+  assert.ok(t.indexOf("Rilievo") < t.indexOf("Nodi"), JSON.stringify(t));
+  assert.ok(t.includes("Sezioni") && t.includes("Materiali"), JSON.stringify(t));
 });
