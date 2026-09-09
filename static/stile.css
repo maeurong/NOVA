@@ -242,3 +242,25 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .storia-attiva { font-weight: 700; }
 /* Il futuro rifacibile: un comando nuovo lo cancella, e va previsto — non solo trovato dopo. */
 .storia-futuro { color: var(--testo-tenue); font-style: italic; }
+
+/* La palette: sopra le viste, non al posto loro. Fisso perché il body è una griglia con
+   `overflow: hidden` e non ha un contenitore posizionato. */
+#palette { position: fixed; top: 12vh; left: 50%; transform: translateX(-50%); width: min(34rem, 92vw);
+           background: var(--pannello); border: 1px solid var(--tratto-forte); border-radius: 4px;
+           box-shadow: 0 8px 24px rgba(20, 20, 20, 0.18); padding: 6px; z-index: 10; }
+#palette[hidden] { display: none; }
+#palette-campo { width: 100%; box-sizing: border-box; font: inherit; font-family: var(--mono); font-size: 14px;
+                 padding: 6px 8px; border: 1px solid var(--tratto-forte); border-radius: 3px;
+                 background: var(--fondo); color: var(--inchiostro); caret-color: var(--rosso); }
+#palette-campo:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#palette-voci { list-style: none; margin: 6px 0 0; padding: 0; max-height: 50vh; overflow: auto; }
+#palette-voci li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+                   padding: 4px 8px; border-radius: 3px; font-size: 13px; }
+#palette-voci li[aria-selected="true"] { outline: 2px solid var(--rosso); outline-offset: -2px; }
+#palette-voci li small { display: block; color: var(--testo-tenue); font-size: 11px; }
+#palette-voci li kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 0 5px; }
+/* «non ora»: il rosso è il filetto, la parola è il canale che conta. Il rosso come colore del
+   testo a 13 px non regge AA (4,28:1 su --fondo, `stile.css:133`), e il colore da solo non
+   basta comunque (WCAG 1.4.1). */
+#palette-voci li.non-ora { color: var(--testo-tenue); border-left: 3px solid var(--rosso); }
+#palette-voci li.nulla { color: var(--testo-tenue); }

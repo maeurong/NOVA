@@ -60,6 +60,16 @@
 </aside>
 
 <p id="messaggio" role="status" aria-live="polite"></p>
+<!-- La palette ⌘K (story 8, P3): non è una finestra che blocca — il modello resta sotto, e Esc la
+     chiude. Le voci non eseguibili adesso restano in lista con «non ora»: il tasto esiste, si
+     impara da qui, e Invio risponde con la stessa frase che darebbe il tasto. -->
+<div id="palette" role="dialog" aria-label="comandi" hidden>
+  <input id="palette-campo" type="text" role="combobox" aria-expanded="true" aria-controls="palette-voci"
+         aria-label="cerca un comando, anche con il valore: «sezione 300 × 500», «q -12,5»"
+         placeholder="comando, anche col valore: «sezione 300 × 500», «q -12,5»" spellcheck="false" autocomplete="off">
+  <ul id="palette-voci" role="listbox" aria-label="comandi trovati"></ul>
+</div>
+
 <!-- Il campo di comando: una riga sopra la barra, non una finestra che blocca (P2). `hidden`
      finché non serve, come ogni altro stato della pagina. Un `<form>` perché Invio che
      conferma è suo di natura, e un bottone in più direbbe quello che la barra dice già.
