@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   UNITA, modelloVuoto, prossimoId, nodo, asta, asteDelNodo, nodoVicino,
   sezione, materiale, asteDellaSezione, sezioniDelMateriale, vesteDi,
-  azione, combinazione, combinazioniDellAzione, analisiCheUsano, analisiConMassaDa, nomeCaso,
+  azione, azioneInVista, combinazione, combinazioniDellAzione, analisiCheUsano,
+  analisiConMassaDa, nomeCaso,
 } from "../modello.js";
 
 const conNodi = () => ({
@@ -121,4 +122,32 @@ test("la modale prende massa dall'azione per identificatore, non per nome di cas
   assert.equal(analisiCheUsano(m, "Z2").length, 0, "nessun `casi` la nomina: serve il lookup suo");
   assert.equal(analisiConMassaDa({ ...m, analisi: [{ tipo: "modale" }] }, 2).length, 0);
   assert.equal(analisiConMassaDa(modelloVuoto(), 2).length, 0);
+});
+
+// --- l'azione in vista: la regola sta nel modello, non in `app.js` -----------------------
+// «l'ultima scelta o creata, altrimenti l'ultima del modello»: era una riga di `app.js`, e
+// una riga di `app.js` non si prova senza il DOM. Qui si prova.
+
+const conAzioni = () => ({
+  ...modelloVuoto(),
+  contatori: { azione: 2 },
+  azioni: [{ id: 1, nome: "permanenti travi", natura: "G2", categoria: null, generata: false, carichi: [] },
+           { id: 2, nome: "spinta in testa", natura: "Q", categoria: "vento", generata: false, carichi: [] }],
+});
+
+test("azioneInVista: l'identificatore corrente vince, quando esiste", () => {
+  assert.equal(azioneInVista(conAzioni(), 1).nome, "permanenti travi");
+});
+
+// Ingresso degenere: un identificatore che non c'è più — ⌘Z ha disfatto la creazione.
+test("azioneInVista: un identificatore sparito ricade sull'ultima azione del modello", () => {
+  assert.equal(azioneInVista(conAzioni(), 99).nome, "spinta in testa");
+  assert.equal(azioneInVista(conAzioni(), null).nome, "spinta in testa");
+});
+
+// Ingresso degenere: nessuna azione nel modello. `null`, non `undefined`: `piano.disegna`
+// distingue «nessuna azione in vista» da un'azione senza nome.
+test("azioneInVista: un modello senza azioni dà null, non undefined", () => {
+  assert.equal(azioneInVista(modelloVuoto(), 1), null);
+  assert.equal(azioneInVista(modelloVuoto(), null), null);
 });

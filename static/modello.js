@@ -53,6 +53,10 @@ export const sezioniDelMateriale = (m, id) => m.sezioni.filter((s) => s.calcestr
  *  della 11b non portano il campo: il server lo riempie col default, e qui si fa lo stesso. */
 export const vesteDi = (m) => m.impostazioni_analisi?.veste ?? "media";
 export const azione = (m, id) => m.azioni.find((a) => a.id === id) ?? null;
+/** L'azione a cui `Q` dà il carico e di cui il piano disegna le frecce: quella scelta o creata
+ *  per ultima, altrimenti l'ultima del modello, altrimenti nessuna. La regola sta qui e non in
+ *  `app.js` perché è una regola sul modello, e là non si poteva provare senza il DOM. */
+export const azioneInVista = (m, idCorrente) => azione(m, idCorrente) ?? m.azioni.at(-1) ?? null;
 export const combinazione = (m, id) => m.combinazioni.find((c) => c.id === id) ?? null;
 export const combinazioniDellAzione = (m, id) => m.combinazioni.filter((c) => (c.termini ?? []).some((t) => t.azione === id));
 /** Le analisi che nominano quel caso: la statica in `casi` (`nova/modello.py:317`), la

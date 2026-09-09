@@ -3,8 +3,7 @@
 // Le costanti sono quelle di `nova/modello.py:231-306` **alla lettera**: `extra="forbid"`
 // rifiuta al salvataggio qualunque chiave o valore inventato qui.
 
-import { leggiEspressione } from "./numeri.js";
-import { cifre } from "./legame.js";
+import { leggiEspressione, conciso } from "./numeri.js";
 import { nodo, asta } from "./modello.js";
 
 export const NATURE = ["G1", "G2", "Q", "E"];
@@ -68,6 +67,26 @@ export function normalizzaCarico(c) {
   return { carico: { tipo, asta: c.asta, dT_uniforme: dT, gradiente }, messaggio: null };
 }
 
+/** Il carico appena nato del suo tipo, sul primo bersaglio del modello, o il messaggio che
+ *  dice cosa manca. Da lì si corregge nei campi, che si vedono — chiedere prima il nodo
+ *  vorrebbe dire un secondo campo per un valore che poi si cambia comunque. Passa da
+ *  `normalizzaCarico`: le chiavi e i default sono quelli dello schema, non una seconda lista.
+ *  La gravità è l'unico tipo senza riferimenti, e l'unico che nasce su un modello vuoto. */
+export function caricoVuoto(m, tipo) {
+  const primoNodo = m.nodi[0]?.id ?? null, primaAsta = m.aste[0]?.id ?? null;
+  if ((tipo === "nodale" || tipo === "cedimento") && primoNodo === null) return { carico: null, messaggio: "serve un nodo: premi N" };
+  if ((tipo === "distribuito" || tipo === "termico") && primaAsta === null) return { carico: null, messaggio: "serve un'asta" };
+  // Un tipo fuori elenco cade su `{ tipo }`, e il messaggio lo scrive `normalizzaCarico`: una
+  // seconda frase qui sarebbe una seconda verità sullo stesso elenco.
+  return normalizzaCarico({
+    nodale: { tipo, nodo: primoNodo },
+    cedimento: { tipo, nodo: primoNodo },
+    distribuito: { tipo, asta: primaAsta, q: 0 },
+    termico: { tipo, asta: primaAsta },
+    gravita: { tipo, fattore_z: -1 },  // la gravità tira in giù: è il caso che si scrive sempre
+  }[tipo] ?? { tipo });
+}
+
 /** «nome; natura; categoria». Il campo vuoto non è un testo sbagliato (`modo.js:esitoComando`). */
 export function leggiAzione(testo) {
   if (String(testo ?? "").trim() === "") return { azione: null, messaggio: null };
@@ -112,9 +131,9 @@ export function leggiCombinazione(testo) {
   return { combinazione: { nome, tipo }, messaggio: null };
 }
 
-// `cifre(-12.5)` stampa «-12,50» (due decimali sotto 100, `legame.js:49-52`): gli zeri in coda
-// dopo la virgola cadono, come fa `conciso` in `pannello.js:16`, e il meno diventa tipografico.
-const num = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "").replace("-", "−");
+// `conciso(-12.5)` è «-12,5» (`numeri.js`); qui in più il meno diventa tipografico, che è la
+// grafia del testo per una persona. `leggiNumero` lo rilegge: rientra dalla propria porta.
+const num = (v) => conciso(v).replace("-", "−");
 
 // Precondizione: un carico già passato da `normalizzaCarico` (chiavi complete); `direzione`
 // si difende da sola perché un file scritto a mano può ometterla.

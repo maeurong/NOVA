@@ -118,7 +118,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     return Math.max(vista.larghezza / w, vista.altezza / h);
   }
 
-  function disegna(m, { selezione = null, ghost = null, azione = null } = {}) {
+  // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
+  // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
+  function disegna(m, { selezione = null, ghost = null, azioneInVista = null } = {}) {
     inquadra(m, ghost);
     const s = millimetriPerPixel();
     const gruppo = el("g");
@@ -202,9 +204,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // e non entra in `estensione` — il riquadro non si muove quando si aggiunge un carico.
     // Le frecce stanno sopra i nodi perché la punta del nodale finisce sul nodo e un cerchio
     // pieno la coprirebbe; il ghost resta sotto: è un'anteprima, e ci sta un attimo.
-    if (azione) {
+    if (azioneInVista) {
       const L = 28 * s;
-      for (const f of frecceDeiCarichi(m, azione, L)) {
+      for (const f of frecceDeiCarichi(m, azioneInVista, L)) {
         const pa = schermo(f.a), pd = schermo(f.da);
         gruppo.append(el("line", { x1: pd.x, y1: pd.y, x2: pa.x, y2: pa.y, stroke: INCHIOSTRO,
                                    "stroke-width": 1.5 * s, class: "carico" }));
@@ -224,11 +226,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
     // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
     // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
-    const g = azione && (azione.carichi ?? []).find((c) => c.tipo === "gravita");
-    titolo.textContent = azione
-      ? `carichi: ${azione.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
+    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azioneInVista
+      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
       : "";
-    titolo.hidden = !azione;
+    titolo.hidden = !azioneInVista;
 
     svg.replaceChildren(gruppo);
   }

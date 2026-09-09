@@ -502,9 +502,11 @@ export function togliCarico(m, { azione: idAzione, indice }) {
 }
 
 export function eliminaAzione(m, { id }) {
-  azioneEsistente(m, id);
-  const usata = combinazioniDellAzione(m, id).map((c) => c.id);
-  if (usata.length) throw new ErroreComando(`l'azione ${id} la usano le combinazioni ${usata.join(", ")}`, "togli il termine dalle combinazioni, poi elimina");
+  const a = azioneEsistente(m, id);
+  // I nomi, non gli identificatori: nell'albero l'utente legge «SLU», e un «2, 3» nudo lo
+  // costringe a contare le righe per capire di quali combinazioni si parla.
+  const usata = combinazioniDellAzione(m, id).map((c) => `«${c.nome}»`);
+  if (usata.length) throw new ErroreComando(`l'azione «${a.nome}» la usano le combinazioni ${usata.join(", ")}`, "togli il termine dalle combinazioni, poi elimina");
   const caso = nomeCaso("azione", id);
   if (analisiCheUsano(m, caso).length) throw new ErroreComando(`l'azione ${id} la usa un'analisi, come caso ${caso}`, NEL_FILE);
   // La modale nomina l'azione per identificatore, non per caso: `analisiCheUsano` non la vede.
@@ -562,7 +564,9 @@ export function impostaTermine(m, { id, azione: idAzione, coefficiente }) {
   // entra», e poi nemmeno il vuoto passava.
   const prima = vecchia.termini ?? [];  // sola lettura: la guardia e il posto del termine
   if (coefficiente !== null && prima.filter((t) => t.azione === idAzione).length > 1) {
-    throw new ErroreComando(`la combinazione ${id} ha due termini sull'azione ${idAzione} (il deck li somma)`, "correggi il file, o svuota il campo: l'interfaccia ne tiene uno per azione");
+    // «il deck li somma» è gergo di dentro: chi legge sa cos'è un'analisi, non cos'è un deck.
+    throw new ErroreComando(`la combinazione «${vecchia.nome}» ha due termini sull'azione «${azione(m, idAzione).nome}»: i due si sommano nell'analisi`,
+                            "correggi il file: un termine per azione");
   }
   if (coefficiente !== null) numero(coefficiente, "il coefficiente");
   const n = copia(m);

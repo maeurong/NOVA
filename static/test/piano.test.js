@@ -218,7 +218,7 @@ test("creaPiano: l'azione in vista disegna le frecce e il titolo, senza toccare 
   assert.equal(linee(svg).length, 0, "senza azione in vista nessuna freccia");
   assert.equal(titolo.hidden, true, "senza azione in vista il titolo è nascosto");
   assert.equal(titolo.textContent, "", "senza azione in vista il titolo è vuoto");
-  piano.disegna(modello, { azione: modello.azioni[0] });
+  piano.disegna(modello, { azioneInVista: modello.azioni[0] });
   assert.equal(linee(svg).length, 3, "un distribuito porta tre frecce: a un quarto, a metà, a tre quarti");
   assert.equal(svg.getAttribute("viewBox"), riquadro, "il riquadro non si muove quando compare un carico");
   assert.equal(titolo.textContent, "carichi: permanenti travi");
@@ -230,7 +230,7 @@ test("creaPiano: la sola gravità non ha frecce ma sta nel titolo", () => {
   const { piano, svg, titolo } = pianoFinto();
   let modello = creaAzione(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { nome: "peso proprio", natura: "G1" });
   modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "gravita", fattore_z: -1 } });
-  piano.disegna(modello, { azione: modello.azioni[0] });
+  piano.disegna(modello, { azioneInVista: modello.azioni[0] });
   assert.equal(linee(svg).length, 0, "la gravità non ha una geometria da disegnare");
   assert.match(titolo.textContent, /carichi: peso proprio · g z ×−1/, "la gravità deve dirsi nel titolo");
 });
@@ -246,7 +246,7 @@ test("creaPiano: un nodale su un nodo sparito non si disegna, il resto sì", () 
     { tipo: "nodale", nodo: 99, Fx: 0, Fy: 0, Fz: -10000, Mx: 0, My: 0, Mz: 0 },
     { tipo: "distribuito", asta: 1, q: -12.5, direzione: "z" },
   ] };
-  piano.disegna(modello, { azione });
+  piano.disegna(modello, { azioneInVista: azione });
   assert.equal(linee(svg).length, 3, "restano le tre frecce del distribuito, nessuna per il nodo sparito");
   assert.equal(tutti(svg, "circle").length, 2, "i due nodi restano disegnati");
 });
@@ -258,7 +258,7 @@ test("creaPiano: un'azione i cui carichi puntano tutti nel vuoto tiene comunque 
     { tipo: "nodale", nodo: 99, Fx: 0, Fy: 0, Fz: -10000, Mx: 0, My: 0, Mz: 0 },
     { tipo: "distribuito", asta: 42, q: -12.5, direzione: "z" },
   ] };
-  piano.disegna(modello, { azione });
+  piano.disegna(modello, { azioneInVista: azione });
   assert.equal(linee(svg).length, 0, "nessun carico ha una geometria a cui appendersi");
   assert.equal(titolo.textContent, "carichi: residui", "l'azione esiste, e il titolo lo dice");
   assert.equal(titolo.hidden, false);
@@ -270,7 +270,7 @@ test("creaPiano: un'azione i cui carichi puntano tutti nel vuoto tiene comunque 
 test("creaPiano: un'azione su un modello senza nodi porta il titolo fuori dall'SVG", () => {
   const { piano, svg, titolo } = pianoFinto();
   const azione = { id: 1, nome: "vuota", natura: "Q", categoria: "vento", generata: false, carichi: [] };
-  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
+  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azioneInVista: azione }));
   assert.equal(titolo.textContent, "carichi: vuota");
   assert.equal(titolo.className, "carichi-titolo");
   assert.equal(titoliNellSvg(svg).length, 0, `nessun titolo dentro l'SVG: ${scritte(svg)}`);
@@ -290,7 +290,7 @@ test("creaPiano: senza azione il titolo è vuoto e nascosto, e nell'SVG non ce n
 test("creaPiano: un'azione senza la chiave carichi non solleva, e il titolo non parla di gravità", () => {
   const { piano, titolo } = pianoFinto();
   const azione = { id: 1, nome: "monca", natura: "G2", categoria: null, generata: false };
-  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azione }));
+  assert.doesNotThrow(() => piano.disegna(modelloVuoto(), { azioneInVista: azione }));
   assert.equal(titolo.textContent, "carichi: monca", "senza carichi non c'è gravità da dire");
 });
 
@@ -302,7 +302,7 @@ test("creaPiano: la freccia di un nodale si disegna sopra il cerchio del nodo", 
   const azione = { id: 1, nome: "vento", natura: "Q", categoria: "vento", generata: false, carichi: [
     { tipo: "nodale", nodo: 1, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 },
   ] };
-  piano.disegna(modello, { azione });
+  piano.disegna(modello, { azioneInVista: azione });
   const ordine = inOrdine(svg);
   const freccia = linee(svg).at(-1);
   const cerchio = tutti(svg, "circle").filter((c) => c.getAttribute("fill") !== "none").at(-1);

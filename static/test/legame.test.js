@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "../legame.js";
+import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "../legame.js";
+import { cifre } from "../numeri.js";
 
 const C25 = { tipo: "concrete02", fpc: -33, epsc0: -0.002, fpcu: -6.6, epsU: -0.0035, lambda: 0.1, ft: 2.6, Ets: 1300, Ec: 33000 };
 const B450 = { tipo: "steel02", Fy: 450, E: 200000, b: 0.0052, R0: 18, cR1: 0.925, cR2: 0.15, eps_ud: 0.0675, k: 1.15 };

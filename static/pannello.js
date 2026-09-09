@@ -2,22 +2,16 @@
 // con i sei gradi, le tre preimpostazioni e i tre editor della 11b (asta, sezione, materiale)
 // raddoppia due volte, e `app.js` ha già i due modi e la cucitura.
 
-import { leggiNumero, stampaNumero, millimetri } from "./numeri.js";
+import { leggiNumero, stampaNumero, millimetri, cifre, conciso } from "./numeri.js";
 import { nodo, asta, sezione, materiale, azione, combinazione, asteDellaSezione, vesteDi,
          nomeCaso } from "./modello.js";
 import { NATURE, TIPI_CARICO, DIREZIONI, TIPI_COMBINAZIONE, COMPONENTI, GRADI_CEDIMENTO,
          NOME_TIPO, NOME_TIPO_COMBINAZIONE } from "./carichi.js";
 import { LATI, VESTI, svgSezione, geometriaImpossibile } from "./sezione.js";
-import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva, cifre } from "./legame.js";
+import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "./legame.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
 
 const mm = (v) => `${millimetri(v)} mm`;
-/** «0,8» e non «0,800»: gli zeri in coda di un fattore di danno non dicono niente in più.
- *  Le cifre le sceglie `cifre` (`legame.js`), non una regola scritta un'altra volta qui: a
- *  tre decimali fissi un fattore di 0,0001 usciva come «0». Si tagliano solo gli zeri **dopo
- *  la virgola** — `,?0+$` da solo mangiava anche lo zero di «10». */
-const conciso = (v) => cifre(v).replace(/(,\d*?)0+$/, "$1").replace(/,$/, "");
-
 const CERCA = { nodo, asta, sezione, materiale, azione, combinazione };
 
 /** L'entità selezionata, o `null`. Le sei vie sono esplicite: un `else` che faceva cadere

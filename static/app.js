@@ -4,13 +4,13 @@
 // secondo nodo. `ponytail: ridisegno intero; si passa a un diff quando un modello vero
 // lo rende lento, non prima.`
 
-import { modelloVuoto, nodo, materiale, azione, vesteDi } from "./modello.js";
+import { modelloVuoto, nodo, materiale, azione, azioneInVista, vesteDi } from "./modello.js";
 import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rinomina, impostaVincolo,
          creaSezione, modificaSezione, impostaFila, assegnaSezione, eliminaSezione, creaMateriale,
          modificaMateriale, eliminaMateriale, impostaDanno, impostaVeste, materialiDiDefault,
          creaAzione, modificaAzione, eliminaAzione, aggiungiCarico, modificaCarico, togliCarico,
          creaCombinazione, modificaCombinazione, impostaTermine, eliminaCombinazione } from "./comandi.js";
-import { leggiAzione, leggiNodale, leggiDistribuito, leggiCombinazione, NOME_TIPO } from "./carichi.js";
+import { leggiAzione, leggiNodale, leggiDistribuito, leggiCombinazione, caricoVuoto, NOME_TIPO } from "./carichi.js";
 import { leggiDimensioni } from "./sezione.js";
 import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
 import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
@@ -41,7 +41,7 @@ let comando = null;
 // L'azione a cui `Q` dà il carico e di cui il piano disegna le frecce: l'ultima scelta o
 // creata, altrimenti l'ultima del modello. Una regola sola, scritta nell'aiuto del campo.
 let azioneCorrente = null;
-const azioneDestinazione = (m) => azione(m, azioneCorrente) ?? m.azioni[m.azioni.length - 1] ?? null;
+const azioneDestinazione = (m) => azioneInVista(m, azioneCorrente);
 // Niente `modificato` qui: lo deriva `file.js` confrontando il modello in memoria con quello
 // che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
 // per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
@@ -308,7 +308,11 @@ function conferma() {
   if (comando.tipo === "azione") return confermaAzione();
   if (comando.tipo === "carico") return confermaCarico();
   if (comando.tipo === "combinazione") return confermaCombinazione();
-  confermaPunto();  // `nodo` e `sposta`: la stessa grammatica, «x; z»
+  // `nodo` e `sposta`: la stessa grammatica, «x; z». Esplicito e non per caduta, perché un
+  // tipo nuovo dimenticato qui prendeva la grammatica del punto e leggeva «x; z» in un campo
+  // che chiedeva altro — in silenzio. Ora si rompe subito, e dice quale tipo manca.
+  if (comando.tipo === "nodo" || comando.tipo === "sposta") return confermaPunto();
+  throw new Error(`comando senza conferma: ${comando.tipo}`);
 }
 
 // Campo vuoto: niente da eseguire **e** niente da dire. Un testo che c'è ma non si legge
@@ -501,16 +505,8 @@ function confermaCombinazione() {
  *  per un valore che poi si cambia comunque. Senza bersaglio non nasce, e dice cosa manca. */
 function aggiungiCaricoVuoto(idAzione, tipo) {
   const m = corrente(cronologia);
-  const primoNodo = m.nodi[0]?.id ?? null, primaAsta = m.aste[0]?.id ?? null;
-  if ((tipo === "nodale" || tipo === "cedimento") && primoNodo === null) { dì("serve un nodo: premi N"); return; }
-  if ((tipo === "distribuito" || tipo === "termico") && primaAsta === null) { dì("serve un'asta"); return; }
-  const carico = {
-    nodale: { tipo, nodo: primoNodo },
-    cedimento: { tipo, nodo: primoNodo },
-    distribuito: { tipo, asta: primaAsta, q: 0 },
-    termico: { tipo, asta: primaAsta },
-    gravita: { tipo, fattore_z: -1 },  // la gravità tira in giù: è il caso che si scrive sempre
-  }[tipo];
+  const { carico, messaggio } = caricoVuoto(m, tipo);
+  if (!carico) { dì(messaggio); return; }
   const nome = azione(m, idAzione)?.nome ?? String(idAzione);
   esegui((s) => aggiungiCarico(s, { azione: idAzione, carico }), `carico ${NOME_TIPO[tipo] ?? tipo} → ${nome}`);
 }
@@ -544,6 +540,10 @@ function ridisegna() {
   // E il bersaglio di un comando aperto pure: ⌘Z lavora anche col campo aperto, e un campo
   // che chiede il nome di un nodo appena disfatto non ha più a chi parlare.
   if (comando?.bersaglio && !esiste(comando.bersaglio)) chiudiComando();
+  // E l'azione a cui il campo consegna il carico: `Q` la fissa quando si apre (`comando.azione`),
+  // e un ⌘Z col campo aperto la può portare via — `esiste` non la guarda, perché l'azione non è
+  // il bersaglio della selezione.
+  if (comando?.azione != null && !azione(m, comando.azione)) chiudiComando();
 
   // Un ghost solo, di due forme: la punta dell'asta — dal modo, o dal campo mentre si scrive
   // la lunghezza — oppure il punto in anteprima. Il secondo non è un `{da, dx, dz}`, non
@@ -551,7 +551,7 @@ function ridisegna() {
   // riconosce da `punto`.
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   rigaComando.hidden = !comando;
-  piano.disegna(m, { selezione, ghost, azione: azioneDestinazione(m) });
+  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m) });
   spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
   albero.disegna(m, { selezione });
   const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;

@@ -592,8 +592,11 @@ test("aggiungiCarico: normalizza, controlla i riferimenti, ammette il termico", 
   assert.throws(() => aggiungiCarico(m, { azione: 9, carico: { tipo: "gravita" } }), /l'azione 9 non esiste/);
   assert.deepEqual(aggiungiCarico(m, { azione: 1, carico: { tipo: "gravita" } }).azioni[0].carichi,
     [{ tipo: "gravita", fattore_x: 0, fattore_y: 0, fattore_z: 0 }], "la gravità non ha riferimenti da controllare");
-  // Story 26: il termico lo rifiuta il Check Model alla corsa, non il modello in memoria.
-  assert.doesNotThrow(() => aggiungiCarico(m, { azione: 1, carico: { tipo: "termico", asta: 1, dT_uniforme: 20 } }));
+  // Story 26: la verifica del modello rifiuta il termico alla corsa, non il modello in
+  // memoria — che però lo deve normalizzare come tutti gli altri: `doesNotThrow` da solo
+  // lasciava passare un carico salvato con le chiavi sbagliate.
+  assert.deepEqual(aggiungiCarico(m, { azione: 1, carico: { tipo: "termico", asta: 1, dT_uniforme: 20, colore: "rosso" } }).azioni[0].carichi,
+    [{ tipo: "termico", asta: 1, dT_uniforme: 20, gradiente: null }]);
   assert.deepEqual(m.azioni[0].carichi, [], "il modello ricevuto resta intatto");
 });
 
@@ -629,7 +632,10 @@ test("impostaTermine: un termine per azione, null lo toglie, zero resta", () => 
   assert.throws(() => impostaTermine(m, { id: 9, azione: 1, coefficiente: 1 }), /la combinazione 9 non esiste/);
   assert.throws(() => impostaTermine(m, { id: 1, azione: 1, coefficiente: NaN }), ErroreComando);
   const doppia = { ...m, combinazioni: [{ ...m.combinazioni[0], termini: [{ azione: 1, coefficiente: 1 }, { azione: 1, coefficiente: 0.5 }] }] };
-  assert.throws(() => impostaTermine(doppia, { id: 1, azione: 1, coefficiente: 2 }), /due termini sull'azione 1/);
+  // Il messaggio nomina la combinazione e l'azione, non i loro identificatori, e dice che
+  // cosa succede («si sommano nell'analisi») senza il gergo del deck.
+  assert.throws(() => impostaTermine(doppia, { id: 1, azione: 1, coefficiente: 2 }),
+                /la combinazione «SLU» ha due termini sull'azione «permanenti travi»: i due si sommano nell'analisi/);
   // Svuotare **toglie entrambi**: è l'unica scrittura su una doppia che non perde un dato in
   // silenzio. Scriverci un numero sopra sì, e resta rifiutata (la riga qui sopra).
   assert.deepEqual(impostaTermine(doppia, { id: 1, azione: 1, coefficiente: null }).combinazioni[0].termini, []);
@@ -638,7 +644,7 @@ test("impostaTermine: un termine per azione, null lo toglie, zero resta", () => 
 test("eliminaAzione ed eliminaCombinazione rifiutano se qualcuno le usa, e dicono chi", () => {
   let m = creaCombinazione(conAzione(), { nome: "SLU" });
   m = impostaTermine(m, { id: 1, azione: 1, coefficiente: 1.5 });
-  assert.throws(() => eliminaAzione(m, { id: 1 }), /combinazioni 1/);
+  assert.throws(() => eliminaAzione(m, { id: 1 }), /l'azione «permanenti travi» la usano le combinazioni «SLU»/);
   const conAnalisi = { ...m, analisi: [{ tipo: "statica", casi: ["C1"] }] };
   assert.throws(() => eliminaCombinazione(conAnalisi, { id: 1 }), /C1/);
   const libera = impostaTermine(m, { id: 1, azione: 1, coefficiente: null });

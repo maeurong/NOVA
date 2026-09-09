@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { NATURE, TIPI_CARICO, DIREZIONI, TIPI_COMBINAZIONE, COMPONENTI, normalizzaCarico, leggiAzione,
-         leggiNodale, leggiDistribuito, leggiCombinazione, testoCarico, frecceDeiCarichi } from "../carichi.js";
+         leggiNodale, leggiDistribuito, leggiCombinazione, testoCarico, frecceDeiCarichi,
+         caricoVuoto } from "../carichi.js";
 import { creaNodo, estrudi } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
-import { cifre } from "../legame.js";
+import { cifre } from "../numeri.js";
 
 // Una trave orizzontale 0→5000 (asta 1) e un pilastro 0→3000 in su (asta 2).
 const telaio = () => {
@@ -138,4 +139,52 @@ test("frecceDeiCarichi: lunghezza zero dà frecce degeneri, non un'eccezione", (
   const f = frecceDeiCarichi(telaio(), az, 0);
   assert.equal(f.length, 4);
   for (const k of f) assert.deepEqual(k.da, k.a);
+});
+
+// --- il carico vuoto del «+» dell'editor (fix di fine ramo, C16) -------------------------
+// La regola stava dentro `app.js`, dove per provarla serviva il DOM: quale bersaglio prende
+// un carico appena nato, e cosa si risponde quando quel bersaglio non c'è. È una regola sui
+// carichi, e sta con loro; `app.js` ne fa solo `dì` e `esegui`.
+
+const spoglio = () => ({ nodi: [], aste: [] });
+const soloUnNodo = () => ({ nodi: [{ id: 1, x: 0, y: 0, z: 0 }], aste: [] });
+
+test("caricoVuoto: il nodale nasce sul primo nodo, passato da normalizzaCarico", () => {
+  const { carico, messaggio } = caricoVuoto(telaio(), "nodale");
+  assert.equal(messaggio, null);
+  assert.deepEqual(carico, { tipo: "nodale", nodo: 1, Fx: 0, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 });
+});
+
+test("caricoVuoto: il distribuito nasce sulla prima asta, con q zero e direzione z", () => {
+  const { carico, messaggio } = caricoVuoto(telaio(), "distribuito");
+  assert.equal(messaggio, null);
+  assert.deepEqual(carico, { tipo: "distribuito", asta: 1, q: 0, direzione: "z" });
+});
+
+test("caricoVuoto: il cedimento prende il nodo, il termico l'asta", () => {
+  assert.equal(caricoVuoto(telaio(), "cedimento").carico.nodo, 1);
+  assert.equal(caricoVuoto(telaio(), "termico").carico.asta, 1);
+});
+
+// Ingresso degenere: la gravità non vuole nessun riferimento, quindi nasce anche su un
+// modello vuoto — ed è l'unico tipo che ci riesce.
+test("caricoVuoto: la gravità nasce su un modello vuoto, e tira in giù", () => {
+  assert.deepEqual(caricoVuoto(spoglio(), "gravita"),
+    { carico: { tipo: "gravita", fattore_x: 0, fattore_y: 0, fattore_z: -1 }, messaggio: null });
+});
+
+// Ingresso degenere: nessun bersaglio a cui appendere il carico. Il messaggio nomina il tasto.
+test("caricoVuoto: senza bersaglio il carico non nasce, e si dice cosa manca", () => {
+  assert.deepEqual(caricoVuoto(spoglio(), "nodale"), { carico: null, messaggio: "serve un nodo: premi N" });
+  assert.deepEqual(caricoVuoto(spoglio(), "cedimento"), { carico: null, messaggio: "serve un nodo: premi N" });
+  assert.deepEqual(caricoVuoto(soloUnNodo(), "distribuito"), { carico: null, messaggio: "serve un'asta" });
+  assert.deepEqual(caricoVuoto(soloUnNodo(), "termico"), { carico: null, messaggio: "serve un'asta" });
+});
+
+// Ingresso degenere: un tipo che non esiste — il select non lo produce, un file scritto a
+// mano sì. Messaggio, mai un'eccezione.
+test("caricoVuoto: un tipo sconosciuto dà il messaggio di normalizzaCarico, non solleva", () => {
+  const { carico, messaggio } = caricoVuoto(telaio(), "vento");
+  assert.equal(carico, null);
+  assert.match(messaggio, /«vento» sconosciuto/);
 });
