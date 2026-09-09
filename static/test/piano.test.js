@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { versoLibero, estensione, creaPiano } from "../piano.js";
 import { modelloVuoto } from "../modello.js";
-import { creaNodo, estrudi, creaAzione, aggiungiCarico } from "../comandi.js";
+import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -309,4 +309,70 @@ test("creaPiano: la freccia di un nodale si disegna sopra il cerchio del nodo", 
   assert.ok(freccia && cerchio, "servono una freccia e il cerchio del nodo");
   assert.ok(ordine.indexOf(freccia) > ordine.indexOf(cerchio),
     "la freccia deve venire dopo il cerchio del nodo, o il cerchio la copre");
+});
+
+// --- i simboli dei vincoli (11d/task 4) ---------------------------------------
+// Il triangolo del disegno tecnico sotto il nodo: pieno se il vincolo è dichiarato,
+// tratteggiato se è una proposta del rilievo. Doppio canale con l'ispettore, che la
+// parola la scrive (`docs/ricerca/07-ux-modellatore.md:154`); il tratteggio da solo
+// direbbe soltanto «diverso», non «proposto».
+
+const INCASTRO = { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true };
+const LIBERO = { ux: false, uy: false, uz: false, rx: false, ry: false, rz: false };
+const simboli = (svg, classe) => tutti(svg, "line").filter((l) => l.getAttribute("class") === classe);
+
+test("creaPiano: un vincolo dichiarato è pieno, una proposta è tratteggiata, il libero dichiarato non si disegna", () => {
+  const { piano, svg } = pianoFinto();
+  let modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 0, dz: 3000 });
+  modello = impostaVincolo(modello, { id: 1, vincolo: INCASTRO });
+  piano.disegna(modello, {});
+  assert.ok(simboli(svg, "vincolo").length >= 3, "il vincolo dichiarato deve avere un simbolo");
+  assert.equal(simboli(svg, "vincolo-proposto").length, 0, "senza proposte niente tratteggio");
+  const riquadro = svg.getAttribute("viewBox");
+  piano.disegna(modello, { proposte: [{ nodo: 2, vincolo: INCASTRO }, { nodo: 9, vincolo: INCASTRO }] });
+  const proposti = simboli(svg, "vincolo-proposto");
+  assert.ok(proposti.length >= 3 && proposti.every((l) => l.getAttribute("stroke-dasharray")),
+    "la proposta è un ghost: tratteggiata, e sul nodo 9 che non esiste non si disegna niente");
+  assert.equal(svg.getAttribute("viewBox"), riquadro, "il riquadro non si muove quando compare una proposta");
+  modello = impostaVincolo(modello, { id: 1, vincolo: LIBERO });
+  piano.disegna(modello, {});
+  assert.equal(simboli(svg, "vincolo").length, 0, "il libero dichiarato non ha niente da disegnare");
+});
+
+test("creaPiano: una proposta su un nodo già vincolato disegna solo il pieno", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = impostaVincolo(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { id: 1, vincolo: INCASTRO });
+  piano.disegna(modello, { proposte: [{ nodo: 1, vincolo: INCASTRO }] });
+  assert.equal(simboli(svg, "vincolo-proposto").length, 0, "il pieno vince: la proposta è già decisa");
+});
+
+// Ingresso degenere: nessun vincolo dichiarato e nessuna proposta.
+test("creaPiano: un nodo senza vincolo non porta nessun simbolo", () => {
+  const { piano, svg } = pianoFinto();
+  piano.disegna(creaNodo(modelloVuoto(), { x: 0, z: 0 }), {});
+  assert.equal(simboli(svg, "vincolo").length, 0);
+  assert.equal(simboli(svg, "vincolo-proposto").length, 0);
+});
+
+// I tratti di «terra» sono dell'incastro, non di ogni vincolo: un solo grado bloccato è
+// il triangolo nudo, tre linee. E il simbolo viene dopo il nodo, o il cerchio pieno del
+// nodo si mangerebbe il vertice.
+test("creaPiano: un vincolo che non è un incastro è il triangolo nudo, dopo il nodo", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = impostaVincolo(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { id: 1, vincolo: { ...LIBERO, uz: true } });
+  piano.disegna(modello, {});
+  const tratti = simboli(svg, "vincolo");
+  assert.equal(tratti.length, 3, "base e due obliqui, nessun tratto di terra");
+  const ordine = inOrdine(svg);
+  const cerchio = tutti(svg, "circle").at(-1);
+  assert.ok(ordine.indexOf(tratti[0]) > ordine.indexOf(cerchio), "il simbolo si disegna dopo il nodo");
+});
+
+// Ingresso degenere: il chiamante che non conosce ancora `proposte`.
+test("creaPiano: senza il parametro proposte non si solleva e non si tratteggia niente", () => {
+  const { piano, svg } = pianoFinto();
+  const modello = impostaVincolo(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { id: 1, vincolo: INCASTRO });
+  assert.doesNotThrow(() => piano.disegna(modello));
+  assert.doesNotThrow(() => piano.disegna(modello, { proposte: undefined }));
+  assert.equal(simboli(svg, "vincolo-proposto").length, 0);
 });
