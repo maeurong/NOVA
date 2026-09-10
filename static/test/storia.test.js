@@ -14,10 +14,10 @@ function elementoFinto() {
     addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
     dispatch(ev) { (listeners[ev] ?? []).forEach((fn) => fn()); },
     append(...figli) { this._figli.push(...figli); },
-    replaceChildren(...figli) { this._figli = figli; },
-    // Il vero `scrollIntoView` non esiste in Node: qui registra come è stato chiamato, che è
-    // l'unica cosa che il codice gli chiede (fix round 2, grave 2).
-    scrollIntoView(opzioni) { this._scrollato = opzioni ?? true; },
+    // Geometria finta: righe alte 20 px una sotto l'altra, elenco alto 100 px dall'alto della
+    // pagina. Lo scorrimento è del solo elenco (`scrollTop`), mai di un antenato.
+    offsetTop: 0, offsetHeight: 20, clientHeight: 100, scrollTop: 0,
+    replaceChildren(...figli) { this._figli = figli; figli.forEach((f, i) => { f.offsetTop = i * 20; }); },
   };
 }
 
@@ -31,9 +31,8 @@ test("disegna: una cronologia con una voce sola la mostra attiva, non uno spazio
   s.disegna([{ etichetta: "modello vuoto", attiva: true }]);
   assert.equal(elenco._figli.length, 1);
   assert.equal(elenco._figli[0].getAttribute("aria-current"), "true");
-  // Con una voce sola non c'è niente da scorrere, e `block: "nearest"` è proprio la forma
-  // che non muove nulla quando la voce è già in campo: nessuna barra, nessun salto.
-  assert.deepEqual(elenco._figli[0]._scrollato, { block: "nearest" });
+  // Con una voce sola non c'è niente da scorrere: la voce è già in campo, nessun salto.
+  assert.equal(elenco.scrollTop, 0);
 });
 
 // --- fix round 2, grave 2: la voce attiva resta nel campo visibile -------------
@@ -47,10 +46,10 @@ test("a venti comandi la voce attiva viene riportata in campo, non lasciata fuor
   const s = creaStoria(elenco, { suSalto: () => {} });
   const voci = Array.from({ length: 20 }, (_, i) => ({ etichetta: `comando ${i}`, attiva: i === 19 }));
   s.disegna(voci);
-  assert.deepEqual(elenco._figli[19]._scrollato, { block: "nearest" },
-                   "la voce attiva non viene riportata nel campo visibile");
-  // e solo lei: scorrere anche le altre le farebbe la guerra a vicenda
-  assert.equal(elenco._figli[0]._scrollato, undefined);
+  // Ventesima riga: dal px 380 al 400, l'elenco ne mostra 100: scorre di 300, non di più
+  // (`nearest`: il fondo della voce a filo del fondo dell'elenco).
+  assert.equal(elenco.scrollTop, 300, "la voce attiva non viene riportata nel campo visibile");
+  // e nessun antenato: il DOM finto non ha `scrollIntoView`, chiamarlo solleverebbe.
 });
 
 test("dopo un salto indietro è la nuova voce attiva a rientrare in campo", () => {
@@ -58,8 +57,13 @@ test("dopo un salto indietro è la nuova voce attiva a rientrare in campo", () =
   const s = creaStoria(elenco, { suSalto: () => {} });
   const voci = Array.from({ length: 20 }, (_, i) => ({ etichetta: `comando ${i}`, attiva: i === 2 }));
   s.disegna(voci);
-  assert.deepEqual(elenco._figli[2]._scrollato, { block: "nearest" });
-  assert.equal(elenco._figli[19]._scrollato, undefined);
+  // Da scrollTop 300 (dopo il ventesimo) la terza riga (40-60) sta sopra il campo: si risale a 40.
+  elenco.scrollTop = 300;
+  s.disegna(voci);
+  assert.equal(elenco.scrollTop, 40);
+  // Già in campo (40 ≤ 40 < 140): non si muove.
+  s.disegna(voci);
+  assert.equal(elenco.scrollTop, 40);
 });
 
 // --- 11c/F: le voci sono raggiungibili da tastiera, e lo dicono ---------------

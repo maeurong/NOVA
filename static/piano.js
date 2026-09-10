@@ -8,6 +8,7 @@
 import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
+import { GRADI, nomePreimpostazione } from "./vincoli.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -60,8 +61,10 @@ export function estensione(m, ghost = null) {
 
 /** Il verso in cui posare l'etichetta di un nodo: quello più lontano da tutte le sue aste.
  *  Un nodo isolato non ha vincoli e prende il primo, in alto a destra. */
-export function versoLibero(m, n) {
-  const direzioni = [];
+export function versoLibero(m, n, occupate = []) {
+  // `occupate`: versori che il chiamante sa già presi — il simbolo del vincolo sotto il nodo,
+  // per esempio, che non è un'asta ma occupa il basso quanto un'asta.
+  const direzioni = [...occupate];
   for (const a of asteDelNodo(m, n.id)) {
     const altro = nodo(m, a.nodo_i === n.id ? a.nodo_j : a.nodo_i);
     if (!altro) continue;
@@ -120,7 +123,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
 
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
-  function disegna(m, { selezione = null, ghost = null, azioneInVista = null } = {}) {
+  function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [] } = {}) {
     inquadra(m, ghost);
     const s = millimetriPerPixel();
     const gruppo = el("g");
@@ -172,6 +175,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }
     }
 
+    // I nodi che porteranno un simbolo di vincolo (dichiarato, o proposto e non dichiarato):
+    // l'etichetta del nodo non va in basso, dove il simbolo sta. Visto sul caso studio: il
+    // «piede sx» finiva sulla base del triangolo.
+    const dichiarati = new Set(m.nodi.filter((n) => n.vincolo && GRADI.some((g) => n.vincolo[g])).map((n) => n.id));
+    const conSimbolo = new Set(dichiarati);
+    for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const etichettate = new Set();
     for (const n of m.nodi) {
       const p = schermo(n);
@@ -188,7 +197,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
       if (!etichettate.has(posto)) {
         etichettate.add(posto);
-        const v = versoLibero(m, n);
+        const v = versoLibero(m, n, conSimbolo.has(n.id) ? [{ x: 0, z: -1 }] : []);
         const testo = el("text", {
           x: p.x + OFFSET_ETICHETTA * s * v.x, y: p.y - OFFSET_ETICHETTA * s * v.z, "font-size": 11 * s,
           fill: INCHIOSTRO, "font-family": MONO,
@@ -198,6 +207,32 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);
+    }
+
+    // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
+    // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
+    // e non rosso. Px costanti come le frecce: non entrano in `estensione`.
+    const simbolo = (n, incastro, classe, tratteggio) => {
+      const p = schermo(n);
+      const b = RAGGIO * 2 * s, w = RAGGIO * 3 * s;
+      const attr = { stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: classe,
+                     ...(tratteggio ? { "stroke-dasharray": `${3 * s} ${3 * s}` } : {}) };
+      gruppo.append(el("line", { x1: p.x - w, y1: p.y + b, x2: p.x + w, y2: p.y + b, ...attr }));
+      gruppo.append(el("line", { x1: p.x - w, y1: p.y + b, x2: p.x, y2: p.y, ...attr }));
+      gruppo.append(el("line", { x1: p.x + w, y1: p.y + b, x2: p.x, y2: p.y, ...attr }));
+      // I tratti di «terra» sono dell'incastro soltanto: è quel che lo distingue a colpo
+      // d'occhio da una cerniera, che lascia libere le rotazioni.
+      if (incastro) for (const k of [-1, 0, 1]) {
+        gruppo.append(el("line", { x1: p.x + k * w * 0.6, y1: p.y + b,
+                                   x2: p.x + k * w * 0.6 - 3 * s, y2: p.y + b + 4 * s, ...attr }));
+      }
+    };
+    for (const n of m.nodi) {
+      if (dichiarati.has(n.id)) simbolo(n, nomePreimpostazione(n.vincolo) === "incastro", "vincolo", false);
+    }
+    for (const p of proposte ?? []) {  // `null` non prende il default del parametro: si copre qui
+      const n = nodo(m, p.nodo);  // una proposta su un nodo sparito è una proposta che non si disegna
+      if (n && !dichiarati.has(n.id)) simbolo(n, nomePreimpostazione(p.vincolo) === "incastro", "vincolo-proposto", true);
     }
 
     // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello

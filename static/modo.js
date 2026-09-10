@@ -147,5 +147,8 @@ export function ghostDelComando(comando, modo) {
  *  Estrudendo però le frecce restano nostre, e sono il gesto che manca: la barra le nomina. */
 export function contestoBarra(modo, selezione, comando = null) {
   if (comando) return comando.tipo === "estrudi" ? "comando-direzione" : "comando";
-  return modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (selezione ? "selezione" : "sempre");
+  // Il rilievo (11d) si seleziona ma non è un'entità su cui i comandi di selezione esistano:
+  // con lui in ispettore la barra prometteva B/A/V/M/R/⌫, e nessuno di loro fa niente.
+  const entita = selezione && selezione.tipo !== "rilievo";
+  return modo ? (modo.tipo === "asta" ? "asta" : "ghost") : (entita ? "selezione" : "sempre");
 }

@@ -4,9 +4,10 @@ import { righe, prossimoVincolo, copiaPreimpostazione, presetPremuto, creaPannel
   from "../pannello.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto } from "../vincoli.js";
 import { creaNodo, estrudi, creaSezione, materialiDiDefault,
-         creaAzione, aggiungiCarico, creaCombinazione, impostaTermine } from "../comandi.js";
+         creaAzione, aggiungiCarico, creaCombinazione, impostaTermine, impostaVincolo } from "../comandi.js";
 import { modelloVuoto } from "../modello.js";
 import { leggiNumero, stampaNumero } from "../numeri.js";
+import { daRisposta } from "../rilievo.js";
 
 function elementoFinto() {
   const listeners = {};
@@ -174,7 +175,8 @@ test("presetPremuto: la preimpostazione giusta è premuta, le altre no", () => {
 
 const AZIONI = ["suVincolo", "suSezione", "suFila", "suAssegna", "suDanno", "suMateriale",
                 "suVeste", "suAvviso", "suAzione", "suCarico", "suTogliCarico",
-                "suAggiungiCarico", "suCombinazione", "suTermine"];
+                "suAggiungiCarico", "suCombinazione", "suTermine",
+                "suConfermaVincolo", "suConfermaTutti"];
 
 // Un registratore per azione: un solo argomento entra com'è (`suAvviso("…")`, `suVeste("media")`),
 // due o più entrano come lista (`suAssegna(1, null)` → `[1, null]`).
@@ -1427,4 +1429,208 @@ test("dopo «togli carico» il fuoco non cade su body", () => {
   p.disegna(m, { tipo: "azione", id: 1 });
   assert.notEqual(globalThis.document.activeElement, null);
   assert.ok(tutti(editor).includes(globalThis.document.activeElement));
+});
+
+// --- il rendiconto del rilievo (11d) ---
+//
+// Il rilievo non sta nel modello: vive accanto (`rilievo.js`), e arriva all'ispettore come
+// un'opzione di `disegna`, come il catalogo e il legame. Da qui i due casi che nessun altro
+// editor ha: la selezione può puntare a un'entità **assente** (nessun file importato), e
+// l'editor è fatto di soli bottoni — nessuna coppia etichetta+campo, quindi `CASI_EDITOR`
+// non lo può contare (i suoi cicli pretendono `coppie.length > 0`) e il test WCAG è suo.
+
+const INCASTRO = { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true };
+
+const rilievoDa = (r) => daRisposta(r, "tests/fixture/prior_sintetico/12_wall.json");
+
+const rilievoPieno = () => rilievoDa({
+  scartate: [{ regione: 2, punti: 3866, controllo: "costanza_sezione", valore: 0.31,
+               soglia: 0.15, unita: "-", spiegazione: "sintetico" }],
+  giunzioni: [{ nodo: 2, scostamento_nodo: 27.1733, distanza_proiezione: 153.6, cede: 2, resta: 1 }],
+  proposte_vincoli: [{ nodo: 1, vincolo: INCASTRO }, { nodo: 2, vincolo: INCASTRO }],
+  mancano: ["armature", "classe", "vincoli"],
+  resoconto: { membrature: 4, aste: 80, nodi: 80, scartate: 1, giunzioni_scartate: 0 },
+});
+
+test("righe del rilievo e testoOrigine con riferimento e nota", () => {
+  assert.deepEqual(righe(modelloVuoto(), { tipo: "rilievo", id: 0 }, { rilievo: rilievoPieno() })[0],
+                   ["file", "12_wall.json"]);
+  const m = CON_CERNIERA();
+  m.nodi[0].origine = { sorgente: "rilievo", riferimento: "12_wall.json", modificata: true,
+                        nota: "riempimento 1.00" };
+  assert.ok(righe(m, { tipo: "nodo", id: 1 })
+    .some(([k, v]) => k === "origine" && v === "rilievo (12_wall.json), modificata · riempimento 1.00"));
+});
+
+test("testoOrigine: sorgente sola, riferimento, nota, e niente", () => {
+  const conOrigine = (o) => {
+    const m = CON_CERNIERA();
+    m.nodi[0].origine = o;
+    return righe(m, { tipo: "nodo", id: 1 }).find(([k]) => k === "origine")[1];
+  };
+  assert.equal(conOrigine({ sorgente: "rilievo" }), "rilievo");
+  assert.equal(conOrigine({ sorgente: "rilievo", riferimento: "12_wall.json" }), "rilievo (12_wall.json)");
+  assert.equal(conOrigine({ sorgente: "utente", nota: "classe assunta" }), "utente · classe assunta");
+  assert.equal(conOrigine(null), "—");
+});
+
+test("rendiconto: scartate col filetto, mancano come gesti, proposte con conferma e conferma tutte", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: rilievoPieno() });
+  assert.equal(tutti(editor).filter((e) => e.className === "scartata").length, 1);
+  assert.ok(tutti(editor).some((e) => /armature — apri una sezione/.test(e.textContent)));
+  const conferme = tutti(editor).filter((e) => e.textContent === "conferma");
+  assert.equal(conferme.length, 2);
+  conferme[1].dispatch("click");
+  assert.deepEqual(chiamate.suConfermaVincolo, [2]);
+  tutti(editor).find((e) => e.textContent === "conferma tutte").dispatch("click");
+  assert.equal(chiamate.suConfermaTutti.length, 1);
+});
+
+test("rendiconto senza rilievo mostra il vuoto; il nodo con giunzione e proposta le dice", () => {
+  const { p, vuoto, dati } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, {});
+  assert.equal(vuoto.hidden, false);
+  p.disegna(CON_CERNIERA(), { tipo: "nodo", id: 2 }, { rilievo: rilievoPieno() });
+  const testi = dati._figli.map((e) => e.textContent);
+  assert.ok(testi.includes("giunzione") && testi.includes("vincolo proposto")
+            && testi.includes("incastro (dal rilievo)"));
+});
+
+test("rendiconto: ogni bottone ha un nome accessibile che comincia dal testo visibile, e i nomi sono unici (WCAG 2.5.3)", () => {
+  const { p, editor } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: rilievoPieno() });
+  const bottoni = tutti(editor).filter((e) => e.type === "button" || (e._attrs["aria-label"] && e.textContent));
+  const nomi = bottoni.map((b) => b._attrs["aria-label"] ?? b.textContent);
+  for (const b of bottoni) assert.ok((b._attrs["aria-label"] ?? b.textContent).startsWith(b.textContent), b.textContent);
+  assert.equal(new Set(nomi).size, nomi.length);
+});
+
+test("editor del nodo con una proposta aperta: il bottone conferma chiama suConfermaVincolo", () => {
+  const { p, editor, chiamate } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "nodo", id: 1 }, { rilievo: rilievoPieno() });
+  tutti(editor).find((e) => e.textContent === "conferma il vincolo proposto").dispatch("click");
+  assert.deepEqual(chiamate.suConfermaVincolo, [1]);
+});
+
+// Il prior che non ha dato niente: quattordici regioni bocciate e zero membrature. «mancano»
+// non può dire «niente: il rilievo ha dato tutto» — non ha dato nulla — e l'elenco dei gesti
+// manderebbe l'utente ad aprire una sezione che non esiste.
+test("rendiconto del prior vuoto: quattordici scartate, e «mancano» non promette niente", () => {
+  const r = rilievoDa({
+    scartate: Array.from({ length: 14 }, (_, i) => ({ regione: i + 1, punti: 100, controllo: "snellezza",
+                                                      valore: 1.2, soglia: 3, unita: "-", spiegazione: "troppo tozza" })),
+    mancano: ["armature", "classe", "vincoli"],
+    resoconto: { membrature: 0, aste: 0, nodi: 0, scartate: 14, giunzioni_scartate: 0 },
+  });
+  const { p, editor, dati } = pannelloFinto();
+  p.disegna(modelloVuoto(), { tipo: "rilievo", id: 0 }, { rilievo: r });
+  assert.equal(tutti(editor).filter((e) => e.className === "scartata").length, 14);
+  assert.deepEqual(righe(modelloVuoto(), { tipo: "rilievo", id: 0 }, { rilievo: r }).find(([k]) => k === "mancano"),
+                   ["mancano", "— (nessuna membratura importata)"]);
+  assert.ok(!tutti(editor).some((e) => /apri una sezione/.test(e.textContent ?? "")));
+  assert.ok(!dati._figli.some((e) => e.textContent === "niente: il rilievo ha dato tutto"));
+});
+
+test("rendiconto: con membrature e niente da completare «mancano» dice che il rilievo ha dato tutto", () => {
+  const r = rilievoDa({ mancano: [],
+                        resoconto: { membrature: 4, aste: 80, nodi: 80, scartate: 0, giunzioni_scartate: 0 } });
+  assert.deepEqual(righe(modelloVuoto(), { tipo: "rilievo", id: 0 }, { rilievo: r }).find(([k]) => k === "mancano"),
+                   ["mancano", "niente: il rilievo ha dato tutto"]);
+});
+
+// Ventuno proposte: un bottone per nodo più «conferma tutte». Confermato un vincolo, quel
+// nodo esce dall'elenco al ridisegno — l'elenco è ciò che resta **da decidere**, non lo
+// storico di ciò che il rilievo aveva proposto.
+test("rendiconto: ventuno proposte, ventuno bottoni, e il nodo confermato esce dall'elenco", () => {
+  let m = modelloVuoto();
+  for (let i = 0; i < 21; i += 1) m = creaNodo(m, { x: i * 100, z: 0 });
+  const r = rilievoDa({
+    proposte_vincoli: Array.from({ length: 21 }, (_, i) => ({ nodo: i + 1, vincolo: INCASTRO })),
+    mancano: ["vincoli"],
+    resoconto: { membrature: 21, aste: 20, nodi: 21, scartate: 0, giunzioni_scartate: 0 },
+  });
+  const { p, editor } = pannelloFinto();
+  p.disegna(m, { tipo: "rilievo", id: 0 }, { rilievo: r });
+  assert.equal(tutti(editor).filter((e) => e.textContent === "conferma").length, 21);
+  assert.equal(tutti(editor).filter((e) => e.textContent === "conferma tutte").length, 1);
+  const nomi = tutti(editor).filter((e) => e._attrs["aria-label"]).map((e) => e._attrs["aria-label"]);
+  assert.equal(new Set(nomi).size, nomi.length);
+  p.disegna(impostaVincolo(m, { id: 1, vincolo: INCASTRO }), { tipo: "rilievo", id: 0 }, { rilievo: r });
+  assert.equal(tutti(editor).filter((e) => e.textContent === "conferma").length, 20);
+  assert.ok(!tutti(editor).some((e) => (e._attrs["aria-label"] ?? "") === "conferma il vincolo proposto del nodo 1"));
+});
+
+// Una proposta sola: «conferma tutte» non compare — un bottone che fa quel che fa il bottone
+// di fianco è una scelta in più senza una decisione in più.
+test("rendiconto: con una proposta sola non c'è «conferma tutte»", () => {
+  const r = rilievoDa({ proposte_vincoli: [{ nodo: 1, vincolo: INCASTRO }],
+                        resoconto: { membrature: 1, aste: 1, nodi: 2, scartate: 0, giunzioni_scartate: 0 } });
+  const { p, editor } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: r });
+  assert.equal(tutti(editor).filter((e) => e.textContent === "conferma").length, 1);
+  assert.ok(!tutti(editor).some((e) => e.textContent === "conferma tutte"));
+});
+
+// Senza scartate, senza giunzioni, senza proposte i gruppi restano, con la loro nota: un
+// gruppo che sparisce lascia credere che il controllo non sia stato fatto.
+test("rendiconto senza niente da dire: le note al posto degli elenchi", () => {
+  const r = rilievoDa({ mancano: [],
+                        resoconto: { membrature: 4, aste: 80, nodi: 80, scartate: 0, giunzioni_scartate: 0 } });
+  const { p, editor } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: r });
+  const testi = tutti(editor).map((e) => e.textContent ?? "");
+  for (const atteso of ["nessuna regione scartata", "niente: il rilievo ha dato tutto", "nessuna giunzione",
+                        "nessuna proposta aperta",
+                        "il rendiconto vale per questa sessione: riaprendo il file non torna"]) {
+    assert.equal(testi.filter((t) => t === atteso).length, 1, atteso);
+  }
+});
+
+// `nota_vincoli` sta in due posti perché risponde a due domande diverse: nella `<dl>` è un
+// fatto del file, nel gruppo delle proposte è il motivo per cui non c'è niente da confermare.
+// Due volte nello stesso posto sarebbe rumore; una volta per posto no.
+test("rendiconto: la nota dei vincoli sta nella <dl> e nel gruppo, una volta per posto", () => {
+  const r = rilievoDa({ mancano: [],
+                        resoconto: { membrature: 4, aste: 80, nodi: 80, scartate: 0, giunzioni_scartate: 0,
+                                     nota_vincoli: "il prior non porta vincoli" } });
+  const { p, editor, dati } = pannelloFinto();
+  p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: r });
+  assert.deepEqual(righe(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: r }).filter(([k]) => k === "nota"),
+                   [["nota", "il prior non porta vincoli"]]);
+  assert.equal(dati._figli.filter((e) => e.textContent === "il prior non porta vincoli").length, 1);
+  assert.equal(tutti(editor).filter((e) => e.textContent === "il prior non porta vincoli").length, 1);
+});
+
+// Il nodo con la giunzione ma senza proposta: la giunzione è un fatto misurato e si dice, la
+// riga della proposta no — non c'è niente da proporre.
+test("righe del nodo: giunzione senza proposta, e la proposta tace sul vincolo dichiarato", () => {
+  const r = rilievoDa({ giunzioni: [{ nodo: 2, scostamento_nodo: 27.1733, distanza_proiezione: 153.6, cede: 2, resta: 1 }],
+                        proposte_vincoli: [{ nodo: 1, vincolo: INCASTRO }],
+                        resoconto: { membrature: 1, aste: 1, nodi: 2 } });
+  const chiavi = (id, m = CON_CERNIERA()) => righe(m, { tipo: "nodo", id }, { rilievo: r }).map(([k]) => k);
+  assert.ok(chiavi(2).includes("giunzione"));
+  assert.ok(!chiavi(2).includes("vincolo proposto"));
+  assert.deepEqual(righe(CON_CERNIERA(), { tipo: "nodo", id: 2 }, { rilievo: r }).find(([k]) => k === "giunzione"),
+                   ["giunzione", "scostamento 27,17 mm · membratura 2 cede a 1"]);
+  assert.ok(chiavi(1).includes("vincolo proposto"));
+  assert.ok(!chiavi(1).includes("giunzione"));
+  assert.ok(!chiavi(1, impostaVincolo(CON_CERNIERA(), { id: 1, vincolo: INCASTRO })).includes("vincolo proposto"));
+});
+
+// Il vincolo dichiarato è una decisione presa: il gruppo «dal rilievo» sparisce dall'editor,
+// altrimenti il bottone rifarebbe una scelta che l'utente ha già fatto.
+test("editorVincolo: con il vincolo dichiarato il gruppo «dal rilievo» non c'è", () => {
+  const { p, editor } = pannelloFinto();
+  const m = impostaVincolo(CON_CERNIERA(), { id: 1, vincolo: INCASTRO });
+  p.disegna(m, { tipo: "nodo", id: 1 }, { rilievo: rilievoPieno() });
+  assert.ok(!tutti(editor).some((e) => e.textContent === "conferma il vincolo proposto"));
+  assert.ok(!tutti(editor).some((e) => (e.textContent ?? "") === "dal rilievo"));
+});
+
+// I chiamanti a due argomenti restano validi: `righe(m, selezione)` non pretende le opzioni,
+// e senza rilievo il nodo torna le sue sei righe di sempre.
+test("righe: il terzo argomento è facoltativo", () => {
+  assert.equal(righe(CON_CERNIERA(), { tipo: "nodo", id: 1 }).length, 6);
+  assert.equal(righe(CON_CERNIERA(), { tipo: "rilievo", id: 0 }), null);
 });

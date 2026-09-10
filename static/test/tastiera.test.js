@@ -147,7 +147,7 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
   const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s",
-                "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "← ↑ → ↓": "ArrowUp" };
+                "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "⌘I": "i", "← ↑ → ↓": "ArrowUp" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const shift = v.tasto.startsWith("⇧");
@@ -413,6 +413,13 @@ test("D compare nella barra solo con un'asta selezionata", () => {
   for (const tipo of ["nodo", "sezione", "materiale", null]) {
     assert.ok(!vociDellaBarra("selezione", tipo).map((v) => v.codice).includes("danno"), String(tipo));
   }
+});
+
+test("⌘I importa, i nuda non fa niente, la voce sta nella barra di sempre", () => {
+  assert.equal(voceDaEvento({ key: "i", metaKey: true })?.codice, "importa");
+  assert.equal(voceDaEvento({ key: "i" }), null);
+  assert.ok(vociDellaBarra("sempre", null).some((v) => v.codice === "importa"));
+  assert.deepEqual(vociDellaBarra("comando").map((v) => v.codice), ["conferma", "annulla"]);
 });
 
 test("il filtro per tipo non tocca gli altri tasti della selezione", () => {

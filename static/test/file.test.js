@@ -33,6 +33,7 @@ function radiceFinta() {
     "#file-recenti": elementoFinto(),
     "#file-recenti-vuoto": elementoFinto(),
     "#file-apri": elementoFinto(),
+    "#file-importa": elementoFinto(),
   };
   return { elementi, querySelector: (sel) => elementi[sel] ?? null };
 }
@@ -454,6 +455,99 @@ test("il campo apre con Invio, e ignora gli altri tasti", async (t) => {
 test("stato: nomina il file aperto, non quello digitato nel campo", () => {
   assert.equal(testoStato({ percorso: "/tmp/aperto.json", impronta: "0137e564e9", modificato: false }),
     "aperto.json · impronta 0137e564");
+});
+
+// =====================================================================================
+// 11d — «importa» porta il prior di MeshRec, non un modello .nova.json
+// =====================================================================================
+
+test("importa: campo vuoto, richiesta in corso, 400 e successo", async () => {
+  const radice = radiceFinta();
+  const chiamate = { imp: [], err: [] };
+  const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione: (...a) => chiamate.imp.push(a), suErrore: (m) => chiamate.err.push(m) });
+  await f.importa("");
+  assert.deepEqual(chiamate.err, ["scrivi il percorso di un 12_wall.json"]);
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ fase: "importa", motivo: "il prior non porta la chiave `terna`" }) });
+  await f.importa("/x/12_wall.json");
+  assert.equal(chiamate.err.at(-1), "il prior non porta la chiave `terna`");
+  assert.equal(chiamate.imp.length, 0);
+  assert.equal(radice.querySelector("#file-importa").disabled, false, "il bottone torna disponibile anche dopo un 400");
+  assert.equal(radice.querySelector("#file-importa").textContent, "importa");
+  const risposta = { esito: "ok", modello: { nodi: [] }, scartate: [], giunzioni: [], proposte_vincoli: [], mancano: [], resoconto: {} };
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => risposta });
+  await f.importa("/x/12_wall.json");
+  assert.equal(chiamate.imp.length, 1);
+  assert.equal(chiamate.imp[0][0], "/x/12_wall.json");
+  assert.deepEqual(chiamate.imp[0][2], risposta);
+  assert.equal(radice.querySelector("#file-percorso").value, "", "il campo è la destinazione di «salva»: non deve puntare al prior");
+  assert.equal(radice.querySelector("#file-recenti").hidden, true, "un prior non è un modello recente");
+});
+
+// «un'operazione già in corso» già coperta sopra per `apri`/`salva`, stessa guardia `inCorso`
+// condivisa: qui si prova solo che «importa» ci passa sotto e non parte una seconda `fetch`.
+test("importa: una richiesta già in corso non ne apre una seconda", async () => {
+  const originale = globalThis.fetch;
+  const radice = radiceFinta();
+  let chiamate = 0;
+  globalThis.fetch = async () => { chiamate++; await new Promise((r) => setTimeout(r, 5)); return { ok: true, status: 200, json: async () => ({ modello: { nodi: [] } }) }; };
+  const detti = [];
+  const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione() {}, suErrore: (m) => detti.push(m) });
+  await Promise.all([f.importa("/x/12_wall.json"), f.importa("/x/12_wall.json")]);
+  assert.equal(chiamate, 1);
+  assert.match(detti[0], /già in corso/);
+  globalThis.fetch = originale;
+});
+
+test("importa: il server non risponde", async () => {
+  const originale = globalThis.fetch;
+  const radice = radiceFinta();
+  globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  const detti = [];
+  const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione() {}, suErrore: (m) => detti.push(m) });
+  await f.importa("/x/12_wall.json");
+  assert.deepEqual(detti, ["il server non risponde"]);
+  assert.equal(radice.querySelector("#file-importa").disabled, false, "il bottone torna disponibile anche dopo un rigetto della fetch");
+  assert.equal(radice.querySelector("#file-importa").textContent, "importa");
+  globalThis.fetch = originale;
+});
+
+test("importa: a errore il campo resta com'era, non viene svuotato né sovrascritto", async () => {
+  const originale = globalThis.fetch;
+  const radice = radiceFinta();
+  radice.querySelector("#file-percorso").value = "/tmp/precedente.json";
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ fase: "importa", motivo: "boh" }) });
+  const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione() {}, suErrore() {} });
+  await f.importa("/x/12_wall.json");
+  assert.equal(radice.querySelector("#file-percorso").value, "/tmp/precedente.json");
+  globalThis.fetch = originale;
+});
+
+test("importa: il bottone dice «importazione…» mentre gira, poi torna «importa»", async () => {
+  const originale = globalThis.fetch;
+  const radice = radiceFinta();
+  const bottone = radice.querySelector("#file-importa");
+  globalThis.fetch = async () => { await new Promise((r) => setTimeout(r, 5)); return { ok: true, status: 200, json: async () => ({ modello: { nodi: [] } }) }; };
+  const f = creaFile(radice, { suApertura() {}, suSalvataggio() {}, suImportazione() {}, suErrore() {} });
+  const inCorso = f.importa("/x/12_wall.json");
+  assert.equal(bottone.disabled, true);
+  assert.equal(bottone.textContent, "importazione…");
+  await inCorso;
+  assert.equal(bottone.disabled, false);
+  assert.equal(bottone.textContent, "importa");
+  globalThis.fetch = originale;
+});
+
+// `radiceFinta` vecchio, senza `#file-importa` in mappa: `creaFile` non deve sollevare.
+test("creaFile: una radice senza #file-importa non solleva", () => {
+  const elementi = {
+    "#file-percorso": elementoFinto(),
+    "#file-stato": elementoFinto(),
+    "#file-recenti": elementoFinto(),
+    "#file-recenti-vuoto": elementoFinto(),
+    "#file-apri": elementoFinto(),
+  };
+  const radiceVecchia = { elementi, querySelector: (sel) => elementi[sel] ?? null };
+  assert.doesNotThrow(() => creaFile(radiceVecchia, { suApertura() {}, suErrore() {}, suSalvataggio() {} }));
 });
 
 test("stato: un modello non ancora definito non è «modificato»", () => {

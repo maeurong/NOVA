@@ -10,25 +10,46 @@ import { NATURE, TIPI_CARICO, DIREZIONI, TIPI_COMBINAZIONE, COMPONENTI, GRADI_CE
 import { LATI, VESTI, svgSezione, geometriaImpossibile } from "./sezione.js";
 import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "./legame.js";
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
+import { righeScartate, giunzioneDelNodo, propostaPerNodo, proposteAperte, testoMancano,
+         testoGiunzione } from "./rilievo.js";
 
 const mm = (v) => `${millimetri(v)} mm`;
-const CERCA = { nodo, asta, sezione, materiale, azione, combinazione };
+const CERCA = { nodo, asta, sezione, materiale, azione, combinazione,
+                rilievo: (m, id, opzioni) => opzioni?.rilievo ?? null };
 
-/** L'entità selezionata, o `null`. Le sei vie sono esplicite: un `else` che faceva cadere
+/** L'entità selezionata, o `null`. Le sette vie sono esplicite: un `else` che faceva cadere
  *  tutto ciò che non è nodo su `aste.find` mostrava i numeri di un'asta con una **sezione**
- *  selezionata, perché gli identificatori delle due liste partono entrambi da 1. */
-function entitaSelezionata(m, selezione) {
-  return CERCA[selezione.tipo]?.(m, selezione.id) ?? null;
+ *  selezionata, perché gli identificatori delle due liste partono entrambi da 1. Il rilievo
+ *  non vive nel modello (arriva come opzione, come catalogo e legame): `CERCA.rilievo` pesca
+ *  da lì, non da `m`. */
+function entitaSelezionata(m, selezione, opzioni) {
+  return CERCA[selezione.tipo]?.(m, selezione.id, opzioni) ?? null;
 }
 
-/** «rilievo, modificata» / «utente» / «—». Senza `origine` non si inventa niente: il campo
- *  manca su tutto ciò che è stato disegnato prima della story 55. */
-const testoOrigine = (o) => (o ? `${o.sorgente}${o.modificata ? ", modificata" : ""}` : "—");
+/** «rilievo (12_wall.json), modificata · riempimento 1.00» / «utente · classe assunta» / «—».
+ *  Senza `origine` non si inventa niente: il campo manca su tutto ciò che è stato disegnato
+ *  prima della story 55. Il riferimento fra parentesi e la nota in coda rendono visibile la
+ *  story 53 («classe assunta») e la 52 (dispersione, riempimento). */
+const testoOrigine = (o) => {
+  if (!o) return "—";
+  const rif = o.riferimento ? ` (${o.riferimento})` : "";
+  return `${o.sorgente}${rif}${o.modificata ? ", modificata" : ""}${o.nota ? ` · ${o.nota}` : ""}`;
+};
 
-function righeDiNodo(m, n) {
-  return [["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
-          ["x", mm(n.x)], ["z", mm(n.z)], ["vincolo", descrizione(n.vincolo)],
-          ["origine", testoOrigine(n.origine)]];
+function righeDiNodo(m, n, { rilievo = null } = {}) {
+  const righe = [["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
+          ["x", mm(n.x)], ["z", mm(n.z)], ["vincolo", descrizione(n.vincolo)]];
+  if (rilievo) {
+    const g = giunzioneDelNodo(rilievo, n.id);
+    if (g) righe.push(["giunzione",
+      `scostamento ${conciso(g.scostamento_nodo)} mm · membratura ${g.cede} cede a ${g.resta}`]);
+    // Il vincolo dichiarato è una decisione presa: la proposta non si ripete su un nodo che
+    // ha già una risposta, dichiarata o «libero» (`vincoloVuoto()`, mai `null`/`undefined`).
+    const proposta = n.vincolo == null ? propostaPerNodo(rilievo, n.id) : null;
+    if (proposta) righe.push(["vincolo proposto", `${descrizione(proposta)} (dal rilievo)`]);
+  }
+  righe.push(["origine", testoOrigine(n.origine)]);
+  return righe;
 }
 
 /** «E ×0,8 · fc ×0,9 · martinetto 3», e senza nota niente separatore appeso. */
@@ -92,16 +113,39 @@ function righeDiCombinazione(m, c) {
           ["generata", c.generata ? "sì" : "no"]];
 }
 
+/** Il gesto per completare, non la parola grezza del rilievo: «mancano» è una lista di
+ *  decisioni, e ognuna dice dove andare a prenderla. */
+const GESTI_MANCANO = {
+  armature: "armature — apri una sezione e aggiungi le file",
+  classe: "classe — apri un materiale e scegli la classe",
+  vincoli: "vincoli — conferma le proposte qui sotto, o V su un nodo",
+};
+
+/** Senza membrature il rilievo non ha dato niente da completare: «mancano» non promette un
+ *  gesto («apri una sezione») su una sezione che non esiste. */
+function righeDiRilievo(m, r) {
+  const c = r.resoconto;
+  const righe = [["file", r.nome], ["membrature", String(c.membrature ?? 0)],
+          ["aste", String(c.aste ?? 0)], ["nodi", String(c.nodi ?? 0)],
+          ["regioni scartate", String(c.scartate ?? 0)],
+          ["giunzioni scartate", String(c.giunzioni_scartate ?? 0)],
+          ["mancano", c.membrature ? testoMancano(r.mancano) : "— (nessuna membratura importata)"]];
+  if (c.nota_vincoli) righe.push(["nota", c.nota_vincoli]);
+  return righe;
+}
+
 const RIGHE = { nodo: righeDiNodo, asta: righeDiAsta, sezione: righeDiSezione,
-                materiale: righeDiMateriale, azione: righeDiAzione, combinazione: righeDiCombinazione };
-const righeDe = (m, tipo, e) => RIGHE[tipo](m, e);
+                materiale: righeDiMateriale, azione: righeDiAzione, combinazione: righeDiCombinazione,
+                rilievo: righeDiRilievo };
+const righeDe = (m, tipo, e, opzioni) => RIGHE[tipo](m, e, opzioni);
 
 /** Le righe della `<dl>` per la selezione corrente, o `null` se punta a un oggetto sparito o
  *  a un tipo che l'ispettore non mostra — chi chiama azzera già la selezione, ma qui non ci
- *  si conta lo stesso. */
-export function righe(m, selezione) {
-  const e = entitaSelezionata(m, selezione);
-  return e ? righeDe(m, selezione.tipo, e) : null;
+ *  si conta lo stesso. Il terzo argomento è facoltativo: i chiamanti a due argomenti restano
+ *  validi, e senza `rilievo` un nodo torna le sue sei righe di sempre. */
+export function righe(m, selezione, opzioni = {}) {
+  const e = entitaSelezionata(m, selezione, opzioni);
+  return e ? righeDe(m, selezione.tipo, e, opzioni) : null;
 }
 
 /** Il vincolo con un solo grado cambiato, ricostruito sui sei — mai solo quello toccato:
@@ -239,7 +283,21 @@ const NOME_GRADO = {
   rx: "rotazione X (rx)", ry: "rotazione Y (ry)", rz: "rotazione Z (rz)",
 };
 
-function editorVincolo(m, n, azioni) {
+function editorVincolo(m, n, azioni, { rilievo = null } = {}) {
+  const elementi = [];
+  const controlli = [];
+
+  // In testa, e solo quando c'è ancora una scelta da fare: un vincolo dichiarato (anche
+  // «libero») è una decisione presa, e il bottone non deve rifarla.
+  const proposta = rilievo && n.vincolo == null ? propostaPerNodo(rilievo, n.id) : null;
+  if (proposta) {
+    const gr = gruppo("dal rilievo", "editor",
+      `il rilievo propone: ${descrizione(proposta)} — una lettura della geometria, non una misura`);
+    const b = bottone("conferma il vincolo proposto", () => azioni.suConfermaVincolo(n.id));
+    gr.append(b);
+    elementi.push(gr); controlli.push(b);
+  }
+
   const fila = document.createElement("fieldset");
   fila.className = "vincolo-preimpostazioni";
   const legendaFila = document.createElement("legend");
@@ -273,7 +331,73 @@ function editorVincolo(m, n, azioni) {
     caselle.push(c);
   }
 
-  return { elementi: [fila, gradi], controlli: [...bottoni, ...caselle] };
+  elementi.push(fila, gradi);
+  controlli.push(...bottoni, ...caselle);
+  return { elementi, controlli };
+}
+
+/** L'editor dell'entità «rilievo»: soli bottoni, nessun campo — il gesto è confermare o
+ *  lasciare, non scrivere un numero. Le scartate vengono prima di tutto (P1: il caso
+ *  principale è il rifiuto), poi ciò che manca, le giunzioni, le proposte da decidere. */
+function editorRilievo(m, r, azioni) {
+  const controlli = [];
+  const paragrafo = (classe, testo) => {
+    const p = document.createElement("p"); p.className = classe; p.textContent = testo; return p;
+  };
+
+  const scartate = gruppo("scartate", "editor rendiconto",
+    r.scartate.length ? null : "nessuna regione scartata");
+  for (const riga of righeScartate(r)) {
+    const box = document.createElement("div"); box.className = "scartata";
+    box.append(paragrafo("titolo", riga.titolo), paragrafo("numero", riga.valore),
+               paragrafo("nota", riga.spiegazione));
+    scartate.append(box);
+  }
+
+  // Senza membrature non c'è niente da completare: l'elenco dei gesti manderebbe ad aprire
+  // una sezione che non esiste.
+  const mancano = gruppo("dal rilievo mancano", "editor rendiconto",
+    !r.resoconto.membrature ? "nessuna membratura importata: niente da completare"
+      : r.mancano.length ? null : testoMancano(r.mancano));  // «niente: il rilievo ha dato tutto», mai un titolo nudo
+  if (r.resoconto.membrature && r.mancano.length) {
+    const ul = document.createElement("ul");
+    for (const voce of r.mancano) {
+      const li = document.createElement("li"); li.textContent = GESTI_MANCANO[voce] ?? voce;
+      ul.append(li);
+    }
+    mancano.append(ul);
+  }
+
+  const giunzioni = gruppo("giunzioni", "editor rendiconto",
+    r.giunzioni.length ? null : "nessuna giunzione");
+  for (const g of r.giunzioni) giunzioni.append(paragrafo("numero", testoGiunzione(g)));
+
+  // Ciò che resta **da decidere**, non lo storico di ciò che il rilievo aveva proposto: un
+  // nodo confermato esce di qui al ridisegno (`proposteAperte`).
+  const aperte = proposteAperte(r, m);
+  const proposte = gruppo("vincoli proposti", "editor rendiconto",
+    aperte.length ? "una lettura della geometria, non una misura: ogni conferma è un comando"
+                  : (r.resoconto.nota_vincoli ?? "nessuna proposta aperta"));
+  // «conferma tutte» con una sola proposta farebbe quel che fa il bottone di fianco: una
+  // scelta in più senza una decisione in più.
+  if (aperte.length > 1) {
+    const tutte = bottone("conferma tutte", () => azioni.suConfermaTutti());
+    tutte.setAttribute("aria-label", `conferma tutte le ${aperte.length} proposte di vincolo`);
+    proposte.append(tutte); controlli.push(tutte);
+  }
+  for (const p of aperte) {
+    const riga = document.createElement("div"); riga.className = "proposta";
+    riga.append(paragrafo("numero", `nodo ${p.nodo} · ${descrizione(p.vincolo)}`));
+    const b = bottone("conferma", () => azioni.suConfermaVincolo(p.nodo));
+    // Distinto per nodo: 21 bottoni «conferma» sono 21 nomi diversi (WCAG 2.5.3, e
+    // `creaPannello` li ritrova per nome dopo il ridisegno).
+    b.setAttribute("aria-label", `conferma il vincolo proposto del nodo ${p.nodo}`);
+    riga.append(b); controlli.push(b); proposte.append(riga);
+  }
+
+  const nota = gruppo("nota", "editor rendiconto",
+    "il rendiconto vale per questa sessione: riaprendo il file non torna");
+  return { elementi: [scartate, mancano, giunzioni, proposte, nota], controlli };
 }
 
 function editorAsta(m, a, azioni) {
@@ -645,7 +769,8 @@ function editorCombinazione(m, c, azioni) {
 }
 
 const EDITORI = { nodo: editorVincolo, asta: editorAsta, sezione: editorSezione,
-                  materiale: editorMateriale, azione: editorAzione, combinazione: editorCombinazione };
+                  materiale: editorMateriale, azione: editorAzione, combinazione: editorCombinazione,
+                  rilievo: editorRilievo };
 
 export function creaPannello({ dati, vuoto, editor }, azioni) {
   // L'editor in piedi ora, per ritrovare il controllo a fuoco dopo un `replaceChildren`:
@@ -672,9 +797,10 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
   const fuocoAttuale = () =>
     (editorAttuale?.controlli.includes(document.activeElement) ? chiave(document.activeElement) : null);
 
-  function disegna(m, selezione, { catalogo = null, legame = null, tabella = null } = {}) {
-    const e = selezione ? entitaSelezionata(m, selezione) : null;
-    const r = e ? righeDe(m, selezione.tipo, e) : null;
+  function disegna(m, selezione, { catalogo = null, legame = null, tabella = null, rilievo = null } = {}) {
+    const opzioni = { catalogo, legame, tabella, rilievo };
+    const e = selezione ? entitaSelezionata(m, selezione, opzioni) : null;
+    const r = e ? righeDe(m, selezione.tipo, e, opzioni) : null;
     vuoto.hidden = r !== null;
     dati.hidden = r === null;
     if (r === null) {
@@ -692,7 +818,7 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
     // campi dentro una lista di definizioni non sono né un termine né una descrizione, e uno
     // screen reader li leggerebbe come se lo fossero.
     const fuoco = fuocoAttuale();
-    const { elementi, controlli } = EDITORI[selezione.tipo](m, e, azioni, { catalogo, legame, tabella });
+    const { elementi, controlli } = EDITORI[selezione.tipo](m, e, azioni, opzioni);
     editor.replaceChildren(...elementi);
     editorAttuale = { controlli };
     editor.hidden = false;

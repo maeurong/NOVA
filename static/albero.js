@@ -4,6 +4,7 @@
 import { asteDelNodo, asteDellaSezione } from "./modello.js";
 import { millimetri as mm } from "./numeri.js";
 import { NOME_TIPO_COMBINAZIONE } from "./carichi.js";
+import { riassunto } from "./rilievo.js";
 
 export function creaAlbero(elenco, vuoto, { suSelezione }) {
   const scegli = (voce) => voce && suSelezione(voce.dataset.tipo, Number(voce.dataset.id));
@@ -20,11 +21,19 @@ export function creaAlbero(elenco, vuoto, { suSelezione }) {
     scegli(voce);
   });
 
-  function disegna(m, { selezione = null } = {}) {
+  function disegna(m, { selezione = null, rilievo = null } = {}) {
     const righe = [];
     // Un gruppo vuoto non compare: la divulgazione progressiva mostra i rami che ci sono, non
     // l'indice di quelli che non ci sono (P8, `docs/ricerca/07-ux-modellatore.md:149`).
     const gruppo = (nome, quante) => { if (quante) righe.push({ gruppo: nome }); };
+
+    // Il rendiconto del rilievo viene prima del modello: è da lì che il modello importato
+    // arriva, ed è l'unica voce che resta quando il rilievo non ha dato niente (P8: il ramo
+    // compare solo dopo un'importazione).
+    if (rilievo) {
+      righe.push({ gruppo: "Rilievo" });
+      righe.push({ tipo: "rilievo", id: 0, testo: riassunto(rilievo) });
+    }
 
     gruppo("Nodi", m.nodi.length);
     for (const n of m.nodi) {
