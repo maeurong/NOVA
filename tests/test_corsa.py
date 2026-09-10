@@ -367,3 +367,21 @@ def test_la_gravita_fuori_dai_casi_non_lascia_un_verdetto_di_convergenza_suo(tmp
               corsa.controlli(d, _caso({"1": [0.0] * 6}), registro)}
     assert ("convergenza", "Z3") not in chiavi
     assert ("convergenza", "Z1") in chiavi and ("convergenza", "pushover") in chiavi
+
+
+# --- 12/T1: scrivi_atomico lascia il file intero o niente ------------------------------------
+
+def test_scrivi_atomico_lascia_il_file_intero_o_niente(tmp_path, monkeypatch):
+    from nova.corsa import scrivi_atomico
+    import os
+    dest = tmp_path / "risultati.nova.risultati.json"
+    scrivi_atomico(dest, '{"a": 1}')
+    assert dest.read_text(encoding="utf-8") == '{"a": 1}'
+    assert not list(tmp_path.glob("*.tmp"))
+    # il rename cade: la destinazione tiene il contenuto di prima, non un troncato
+    def cade(*a, **k):
+        raise OSError("disco pieno")
+    monkeypatch.setattr(os, "replace", cade)
+    with pytest.raises(OSError):
+        scrivi_atomico(dest, '{"a": 2}')
+    assert dest.read_text(encoding="utf-8") == '{"a": 1}'

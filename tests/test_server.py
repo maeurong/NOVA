@@ -239,6 +239,13 @@ def test_sidecarprocesso_eof_da_errore_fase_sidecar():
         def readline(self):
             return ""  # EOF immediato
 
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
+
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
@@ -265,6 +272,13 @@ def test_sidecarprocesso_ignora_righe_di_unaltra_richiesta():
 
         def readline(self):
             return next(self._righe, "")
+
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
 
     class _FintoProcesso:
         stdin = _FintoStdin()
@@ -378,7 +392,7 @@ def test_sidecarprocesso_pipe_chiusa_diventa_errore_fase_sidecar():
 
     class _FintoProcesso:
         stdin = _FintoStdin()
-        stdout = None
+        stdout = iter(())  # scrivere in stdin fallisce prima di leggere: il thread lettore esce subito
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -397,6 +411,13 @@ def test_sidecarprocesso_riga_corrotta_diventa_errore_fase_sidecar():
             self._righe = iter(["questa non è una riga JSON\n"])
         def readline(self):
             return next(self._righe, "")
+
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
 
     class _FintoProcesso:
         stdin = _FintoStdin()
@@ -614,7 +635,8 @@ def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
     from nova.server import SidecarProcesso, create_app
 
     class _FintoProcesso:
-        stdin = stdout = None
+        stdin = None
+        stdout = iter(())
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     assert sp._lock.acquire(blocking=False)
@@ -781,3 +803,99 @@ def test_legame_personalizzato_non_scavalca_la_famiglia(cliente):
     assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
     for gergo in ("Traceback", "TypeError", "KeyError", "unsupported operand", "NoneType"):
         assert gergo not in motivo, motivo
+
+
+# --- 12/T1: il lettore col soffitto, e le fasi che arrivano mentre arrivano --------------------
+
+import io, threading, time
+
+
+class _StdoutLento:
+    """Uno stdout che consegna le righe quando glielo dici: `consegna(riga)`; `readline` aspetta."""
+    def __init__(self):
+        self._righe: list[str] = []
+        self._c = threading.Condition()
+    def consegna(self, riga: str) -> None:
+        with self._c:
+            self._righe.append(riga); self._c.notify()
+    def readline(self) -> str:
+        with self._c:
+            while not self._righe:
+                self._c.wait()
+            return self._righe.pop(0)
+    def __iter__(self):
+        while True:
+            r = self.readline()
+            if r == "":
+                return
+            yield r
+
+
+class _ProcessoFinto:
+    def __init__(self):
+        self.stdin = io.StringIO()
+        self.stdout = _StdoutLento()
+
+
+def _sp(soffitto_s=0.2):
+    from nova.server import SidecarProcesso
+    p = _ProcessoFinto()
+    return SidecarProcesso(avvia=lambda: p, soffitto_s=soffitto_s), p
+
+
+def test_un_sidecar_muto_e_un_errore_di_fase_sidecar_e_il_lock_si_libera():
+    sp, p = _sp(soffitto_s=0.2)
+    righe = sp.chiedi({"comando": "check", "modello": {}})
+    assert righe == [{"esito": "errore", "fase": "sidecar", "motivo": "nessuna risposta dal sidecar entro 0.2 s"}]
+    assert not sp._lock.locked()
+
+
+def test_le_fasi_arrivano_al_callback_mentre_arrivano_non_alla_fine():
+    sp, p = _sp(soffitto_s=2.0)
+    viste: list[tuple[float, str]] = []
+    esito: dict = {}
+
+    def corsa():
+        esito["righe"] = sp.chiedi({"comando": "corsa", "modello": {}},
+                                   su_fase=lambda ev: viste.append((time.perf_counter(), ev["nome"])))
+    t = threading.Thread(target=corsa); t.start()
+    p.stdout.consegna('{"id": 1, "evento": "fase", "nome": "check model"}\n')
+    time.sleep(0.05)
+    t_fase = time.perf_counter()
+    assert [n for _, n in viste] == ["check model"]          # già vista, e la corsa non è finita
+    assert t.is_alive()
+    p.stdout.consegna('{"id": 1, "esito": "ok", "secondi": 0.1}\n')
+    t.join(timeout=2)
+    assert esito["righe"][-1] == {"esito": "ok", "secondi": 0.1}
+    assert viste[0][0] < t_fase
+
+
+def test_una_riga_di_un_altro_id_non_conta_come_risposta():
+    sp, p = _sp(soffitto_s=1.0)
+    esito: dict = {}
+    t = threading.Thread(target=lambda: esito.update(righe=sp.chiedi({"comando": "check", "modello": {}})))
+    t.start()
+    p.stdout.consegna('{"id": 99, "esito": "ok"}\n')
+    p.stdout.consegna('{"id": 1, "esito": "rifiutato", "verdetti": []}\n')
+    t.join(timeout=2)
+    assert esito["righe"] == [{"esito": "rifiutato", "verdetti": []}]
+
+
+def test_stdout_chiuso_resta_l_errore_di_oggi():
+    sp, p = _sp(soffitto_s=1.0)
+    esito: dict = {}
+    t = threading.Thread(target=lambda: esito.update(righe=sp.chiedi({"comando": "check", "modello": {}})))
+    t.start()
+    p.stdout.consegna("")
+    t.join(timeout=2)
+    assert esito["righe"][-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+
+
+def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):
+    from nova.server import SidecarInProcesso
+    nomi: list[str] = []
+    righe = SidecarInProcesso().chiedi({"comando": "corsa", "modello": leggi_fixture("telaio_2x1.nova.json"),
+                                       "casi": None, "cartella": str(tmp_path / "c"), "solutore": "/nessun/OpenSees"},
+                                      su_fase=lambda ev: nomi.append(ev["nome"]))
+    assert nomi[0] == "check model"
+    assert righe[-1]["esito"] in ("assente", "errore", "ok")

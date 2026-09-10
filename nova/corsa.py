@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import math
+import os
 import re
 import subprocess
 import time
@@ -91,6 +92,15 @@ def _pulito(v):
     return v
 
 
+def scrivi_atomico(percorso: Path, testo: str) -> None:
+    """Il file dei risultati o è intero o non c'è (#20): tmp nella stessa cartella, poi
+    `os.replace`, che sullo stesso filesystem è atomico. Un `.tmp` rimasto è la prova di
+    un'interruzione, e `/api/risultati` non lo vede (cerca il nome finale)."""
+    tmp = percorso.with_suffix(percorso.suffix + ".tmp")
+    tmp.write_text(testo, encoding="utf-8")
+    os.replace(tmp, percorso)
+
+
 def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
            percorso_solutore: str | None = None, emetti=lambda ev: None) -> dict:
     """Scrive il deck, lancia il binario, legge le uscite. `hash_modello` è l'impronta del
@@ -152,7 +162,7 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
         # l'ultimo tentativo resta com'è: sotto soglia il verdetto è rosso, non un'eccezione
     assert risultati is not None  # `_tentativi` non rende mai la lista vuota
     risultati["run"]["secondi"] = time.perf_counter() - t0
-    (cartella / NOME_RISULTATI).write_text(json.dumps(risultati, ensure_ascii=False, indent=1), encoding="utf-8")
+    scrivi_atomico(cartella / NOME_RISULTATI, json.dumps(risultati, ensure_ascii=False, indent=1))
     return {"esito": "ok", "risultati": risultati, "secondi": risultati["run"]["secondi"]}
 
 

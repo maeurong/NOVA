@@ -34,6 +34,7 @@ import numpy as np
 
 from meshrec.core import solve
 from meshrec.core.config import SolutoreConfig
+from nova import corsa as _corsa
 from nova import inp as _inp
 from nova.corsa import non_applicabile, testo, verdetto  # stessa forma dei verdetti del telaio
 
@@ -132,8 +133,7 @@ def esegui(inp: str | Path, cartella: str | Path, percorso_solutore: str | None 
         return _errore(str(e), registro, cartella, t0)
     risultati = _componi(deck, copia, dat, blocchi, righe, registro, cartella)
     risultati["run"]["secondi"] = time.perf_counter() - t0
-    (cartella / NOME_RISULTATI).write_text(json.dumps(risultati, ensure_ascii=False, indent=1),
-                                           encoding="utf-8")
+    _corsa.scrivi_atomico(cartella / NOME_RISULTATI, json.dumps(risultati, ensure_ascii=False, indent=1))
     return {"esito": "ok", "risultati": risultati, "secondi": risultati["run"]["secondi"]}
 
 

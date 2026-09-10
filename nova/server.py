@@ -8,6 +8,7 @@ nova`), la cartella la genera sempre il server come `cartella_corse / run_id`.
 from __future__ import annotations
 
 import json
+import queue
 import re
 import secrets
 import subprocess
@@ -50,20 +51,31 @@ class SidecarInProcesso:
     def __init__(self, solutore: str | None = None):
         self.solutore = solutore
 
-    def chiedi(self, req: dict) -> list[dict]:
+    def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
         if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
             req = {**req, "solutore": self.solutore}
         righe: list[dict] = []
-        risposta = _sidecar.rispondi(req, righe.append)
-        righe.append(risposta)
+
+        def emetti(ev: dict) -> None:
+            if su_fase is not None:
+                su_fase(ev)
+            righe.append(ev)
+
+        righe.append(_sidecar.rispondi(req, emetti))
         return righe
 
 
-class SidecarProcesso:
-    """`python -m nova.sidecar` a vita lunga; una richiesta alla volta (lock: niente
-    coda finché la UI è una sola — ponytail, si aggiunge quando servirà davvero)."""
+SOFFITTO_S = 660.0   # `_corsa._TIMEOUT_S` (600) più un minuto: una riga di fase arriva a ogni gradino
 
-    def __init__(self, solutore: str | None = None, avvia: Callable[[], subprocess.Popen] | None = None):
+
+class SidecarProcesso:
+    """`python -m nova.sidecar` a vita lunga; una richiesta alla volta (lock non bloccante: la
+    seconda è un 409 subito). Le righe le legge un thread e le mette in coda: `chiedi` le
+    prende con un soffitto, così un sidecar muto è un errore di fase `sidecar` e non una
+    richiesta HTTP appesa per sempre (#20)."""
+
+    def __init__(self, solutore: str | None = None, avvia: Callable[[], subprocess.Popen] | None = None,
+                 soffitto_s: float = SOFFITTO_S):
         # `cwd` esplicito: il sottoprocesso deve trovare `nova.sidecar` a partire dalla
         # radice del pacchetto, non dalla cwd di chi ha lanciato `python -m nova`.
         avvia = avvia or (lambda: subprocess.Popen(
@@ -71,10 +83,22 @@ class SidecarProcesso:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1))
         self.p = avvia()
         self.solutore = solutore
+        self.soffitto_s = soffitto_s
         self.n = 0
         self._lock = threading.Lock()
+        self._righe: queue.Queue[str | None] = queue.Queue()
+        threading.Thread(target=self._leggi, daemon=True).start()
 
-    def chiedi(self, req: dict) -> list[dict]:
+    def _leggi(self) -> None:
+        # `for riga in stdout` legge riga per riga con `bufsize=1`; a EOF esce, e `None` in
+        # coda è il segnale che lo stdout è chiuso.
+        try:
+            for riga in self.p.stdout:
+                self._righe.put(riga)
+        finally:
+            self._righe.put(None)
+
+    def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
         # senza `blocking=False` la seconda richiesta resta appesa qui finché la prima non
         # finisce: una corsa di ccx può tenere il sidecar fino al suo timeout di mezz'ora
         if not self._lock.acquire(blocking=False):
@@ -91,16 +115,26 @@ class SidecarProcesso:
                 self.p.stdin.flush()
                 righe: list[dict] = []
                 while True:
-                    riga = self.p.stdout.readline()
-                    if not riga:
+                    try:
+                        riga = self._righe.get(timeout=self.soffitto_s)
+                    except queue.Empty:
+                        return [{"esito": "errore", "fase": "sidecar",
+                                 "motivo": f"nessuna risposta dal sidecar entro {self.soffitto_s:g} s"}]
+                    if riga is None or riga == "":
                         righe.append({"esito": "errore", "fase": "sidecar",
                                       "motivo": "il sidecar ha chiuso lo stdout"})
                         return righe
                     grezza = json.loads(riga)
                     if grezza.get("id") != rid:
+                        # riga in ritardo di una richiesta precedente andata in soffitto (R7):
+                        # il filtro sull'`id` la scarta, e resta lì solo se un secondo `chiedi`
+                        # arriva prima che il sidecar la scriva — riavvio del sidecar è debito
+                        # dichiarato, non coperto qui
                         continue
                     # `id` è solo correlazione del protocollo: non esce mai nel corpo HTTP.
                     d = {k: v for k, v in grezza.items() if k != "id"}
+                    if "evento" in d and su_fase is not None:
+                        su_fase(d)
                     righe.append(d)
                     if "evento" not in d:
                         return righe
