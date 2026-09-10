@@ -102,6 +102,12 @@ test("contestoBarra: senza modo, con selezione → 'selezione'", () => {
   assert.equal(contestoBarra(null, { tipo: "nodo", id: 1 }), "selezione");
 });
 
+// 11d: il rendiconto del rilievo si seleziona come le entità, ma non ha comandi di
+// selezione — la barra che prometteva «B estrudi» mentiva (story 14).
+test("contestoBarra: la selezione del rilievo non è una selezione per la barra → 'sempre'", () => {
+  assert.equal(contestoBarra(null, { tipo: "rilievo", id: 0 }), "sempre");
+});
+
 test("contestoBarra: modo estrusione → 'ghost', non 'asta'", () => {
   assert.equal(contestoBarra({ tipo: "estrusione", da: 1, dx: 0, dz: 1 }, { tipo: "nodo", id: 1 }), "ghost");
 });

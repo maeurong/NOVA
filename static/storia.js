@@ -25,9 +25,16 @@ export function creaStoria(elenco, { suSalto }) {
     elenco.replaceChildren(...righe);
     // L'elenco adesso scorre per conto suo (`stile.css`), quindi la voce attiva gli può
     // finire fuori: dalla diciassettesima in poi era fuori campo e non la riportava dentro
-    // niente. `block: "nearest"` e non `"center"`: se la voce si vede già non muove nulla —
-    // che è il caso normale, e una cronologia che salta a ogni comando è peggio del difetto.
-    righe[attivo]?.scrollIntoView?.({ block: "nearest" });
+    // niente. Si scorre **l'elenco**, a mano: `scrollIntoView` porta dentro anche ogni antenato
+    // che scorre, e dopo un'importazione (11d) trascinava `#pannello` in fondo — il rendiconto,
+    // che è la cosa da leggere, spariva sotto la Storia. Se la voce si vede già non muove
+    // nulla: una cronologia che salta a ogni comando è peggio del difetto.
+    const r = righe[attivo];
+    if (r) {
+      const sopra = r.offsetTop - elenco.offsetTop, sotto = sopra + r.offsetHeight;
+      if (sopra < elenco.scrollTop) elenco.scrollTop = sopra;
+      else if (sotto > elenco.scrollTop + elenco.clientHeight) elenco.scrollTop = sotto - elenco.clientHeight;
+    }
   }
 
   return { disegna };
