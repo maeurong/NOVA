@@ -236,7 +236,7 @@ const corsa = creaCorsa(document, {
   modello: () => corrente(cronologia),
   suVai: ({ tipo, id }) => scegli(tipo, id),
   suErrore: (msg) => dì(msg),
-  suEsito: () => { dì(null); ridisegna(); },   // «una corsa è già in corso» non sopravvive alla corsa finita
+  suEsito: () => ridisegna(),   // il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo
   // Un ghost aperto (estrusione o asta) va chiuso a mano prima di correre: vale per i bottoni
   // del blocco come per ⌘⏎, e `AVVISO_SECONDO_NODO` parlerebbe della cosa sbagliata.
   prima: () => (modo ? "chiudi il gesto (Esc) prima di correre" : null),

@@ -124,6 +124,11 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
   let lavoro = null;        // l'ultima corsa: {run_id, secondi, fin, fasi, modello, solido, cartella?}
   let verdetti = [];        // le righe a schermo (dal Check o dall'ultima corsa)
   let occupato = false;     // una verifica o un lavoro in corso: uno scatto alla volta, come `file.js`
+  let avvisato = false;     // «una corsa è già in corso» è a schermo: lo togliamo noi, a corsa finita
+  // Il messaggio è nostro, quindi lo puliamo noi — e solo quello: un `dì(null)` a ogni esito
+  // cancellerebbe anche un errore di sezione scritto mentre la corsa girava.
+  const avvisaOccupato = () => { avvisato = true; suErrore("una corsa è già in corso"); };
+  const pulisciAvviso = () => { if (avvisato) { avvisato = false; suErrore(null); } };
   let generazione = 0;      // `azzera()` la incrementa: una risposta di prima non si registra
   let salute = null, versione = null;
 
@@ -250,7 +255,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
   const fermo = () => { const perché = prima(); if (perché) suErrore(perché); return Boolean(perché); };
 
   async function corri() {
-    if (occupato) return suErrore("una corsa è già in corso");
+    if (occupato) return avvisaOccupato();
     if (fermo()) return;
     occupato = true; bottoni(false); bCorri.textContent = "corro…";
     try {
@@ -266,12 +271,12 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
       // Il 409 arriva da `chiediJson` col `motivo` del server, già in italiano.
       attesaEl.hidden = true; suErrore(e.message);
     } finally {
-      occupato = false; bottoni(true); bCorri.textContent = "corri";
+      occupato = false; bottoni(true); pulisciAvviso(); bCorri.textContent = "corri";
     }
   }
 
   async function verifica() {
-    if (occupato) return suErrore("una corsa è già in corso");
+    if (occupato) return avvisaOccupato();
     if (fermo()) return;
     occupato = true; bottoni(false); bVerifica.textContent = "verifico…";
     const mia = generazione;   // come in `lavora`: «apri» durante la verifica butta la risposta in ritardo
@@ -284,12 +289,12 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
     } catch (e) {
       suErrore(e.message);
     } finally {
-      occupato = false; bottoni(true); bVerifica.textContent = "verifica";
+      occupato = false; bottoni(true); pulisciAvviso(); bVerifica.textContent = "verifica";
     }
   }
 
   async function corriSolido() {
-    if (occupato) return suErrore("una corsa è già in corso");
+    if (occupato) return avvisaOccupato();
     // Niente `fermo()`: il solido gira su un `.inp` del disco, il ghost aperto non c'entra.
     const inp = (campoInp?.value ?? "").trim();
     // Non «un deck .inp»: l'estensione qui nessuno la controlla, e un messaggio non promette
@@ -305,7 +310,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
     } catch (e) {
       attesaEl.hidden = true; suErrore(e.message);
     } finally {
-      occupato = false; bottoni(true); bSolido.textContent = "corri il solido";
+      occupato = false; bottoni(true); pulisciAvviso(); bSolido.textContent = "corri il solido";
     }
   }
 

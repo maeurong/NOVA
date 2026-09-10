@@ -478,6 +478,21 @@ test("creaCorsa: corri mentre gira è un rifiuto che parla, senza richiesta", as
   assert.equal(spia.chiamate, 1, "rifiutare in silenzio è peggio che rifiutare; una seconda richiesta è peggio di entrambi");
   sblocca();
   await p;
+  // A corsa finita l'avviso se ne va — `suErrore(null)` — e solo perché era nostro.
+  assert.equal(errori.at(-1), null, "l'avviso «già in corso» non sopravvive alla corsa finita");
+  assert.equal(errori.length, 3);
+});
+
+test("creaCorsa: senza l'avviso «già in corso» una corsa finita non tocca il messaggio", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "h8", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "h8", stato: "finita", fasi: [], secondi: 1, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  await c.corri();
+  assert.deepEqual(errori, [], "nessun suErrore(null) gratuito: un messaggio altrui resterebbe");
 });
 
 test("creaCorsa: corri il solido — campo vuoto rifiuta; con il percorso fa la POST a /api/ccx e scrive la cartella", async () => {
