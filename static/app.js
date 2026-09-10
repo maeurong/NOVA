@@ -23,8 +23,9 @@ import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
-import { alternaIncastro } from "./vincoli.js";
+import { alternaIncastro, descrizione } from "./vincoli.js";
 import { stampaNumero, leggiEspressione, millimetri } from "./numeri.js";
+import { daRisposta, propostaPerNodo, proposteAperte, etichettaStoria } from "./rilievo.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -46,6 +47,9 @@ const azioneDestinazione = (m) => azioneInVista(m, azioneCorrente);
 // che è stato spedito su disco. Una variabile propria mente a ogni corsa del salvataggio, e
 // per tenerla onesta servirebbe un aggiornamento in ogni punto che tocca la cronologia.
 let percorso = null, impronta = null;
+// Il rendiconto dell'importazione: fuori dal modello e dalla cronologia (spec, «Importatore dal
+// prior» §3). Azzerato in `suApertura` — aprire un file lascia il rilievo di prima senza senso.
+let rilievo = null;
 
 // Il catalogo delle classi e i legami dei materiali vengono dal server, dove i numeri di
 // norma vivono già (`nova/catalogo.py`, `nova/legami.py`): qui non ce n'è nessuno. Il
@@ -150,6 +154,21 @@ const pannello = creaPannello(
     // Un numero illeggibile in un campo dell'editor è un avviso, non un comando: non entra
     // nella Storia e non tocca il modello — il campo si rimette da solo sul valore di prima.
     suAvviso: dì,
+    // Una voce della Storia per nodo, come un vincolo scritto a mano: ⌘Z le disfa una per una,
+    // che è il patto della cronologia lineare (nessuna voce composita solo per «conferma tutte»).
+    suConfermaVincolo: (id) => {
+      const v = propostaPerNodo(rilievo, id);
+      if (!v) return;
+      esegui((m) => impostaVincolo(m, { id, vincolo: v }), `vincolo del nodo ${id} dal rilievo: ${descrizione(v)}`);
+      ridisegna();
+    },
+    suConfermaTutti: () => {
+      for (const p of proposteAperte(rilievo, corrente(cronologia))) {
+        esegui((m) => impostaVincolo(m, { id: p.nodo, vincolo: p.vincolo }),
+               `vincolo del nodo ${p.nodo} dal rilievo: ${descrizione(p.vincolo)}`);
+      }
+      ridisegna();
+    },
   },
 );
 // Senza `await`, e non per eleganza: `import("./vendor/three.module.js")` sono 2 MB, e con
@@ -180,11 +199,27 @@ const file = creaFile(document, {
     // `azioneDestinazione` cadrebbe su un'omonima. Azzerata, il piano mostra l'ultima del file.
     azioneCorrente = null;
     percorso = p; impronta = i;
+    // Il rendiconto di un'importazione precedente non sopravvive a un file aperto sul serio.
+    rilievo = null;
     dì(null);
     ridisegna();
   },
   // Salvare non tocca né il modello né la cronologia: cambia solo l'impronta di riferimento.
   suSalvataggio: (p, i) => { percorso = p; impronta = i; dì(null); ridisegna(); },
+  // Il prior come modello: cronologia nuova (non è un `⌘Z` su ciò che c'era prima), nessun
+  // percorso — il modello non è su disco, e `⌘S` deve chiedere dove (`file.js:importa` ha già
+  // svuotato il campo, che porta ancora il percorso del prior).
+  suImportazione: (p, m, risposta) => {
+    cronologia = nuovaCronologia(m, etichettaStoria(daRisposta(risposta, p)));
+    rilievo = daRisposta(risposta, p);
+    chiudiComando();
+    selezione = { tipo: "rilievo", id: 0 };
+    modo = null;
+    azioneCorrente = null;
+    percorso = null; impronta = null;
+    dì(null);
+    ridisegna();
+  },
   suErrore: (msg) => dì(msg),
 });
 // Il percorso aperto, non il campo: il campo è la sorgente di `apri`. `null` solo finché
@@ -529,10 +564,11 @@ function esegui(fn, etichetta) {
 
 function ridisegna() {
   const m = corrente(cronologia);
-  // Sei tipi selezionabili da quando l'albero porta azioni e combinazioni: un tipo che
-  // non è nell'elenco non esiste, e la selezione cade — non solleva.
+  // Sette tipi selezionabili da quando l'albero porta anche il rilievo: un tipo che non è
+  // nell'elenco non esiste, e la selezione cade — non solleva.
   const esiste = (s) => ({ nodo: m.nodi, asta: m.aste, sezione: m.sezioni, materiale: m.materiali,
-                           azione: m.azioni, combinazione: m.combinazioni }[s.tipo] ?? [])
+                           azione: m.azioni, combinazione: m.combinazioni,
+                           rilievo: rilievo ? [{ id: 0 }] : [] }[s.tipo] ?? [])
     .some((e) => e.id === s.id);
   // Una selezione che punta a un oggetto sparito è peggio di nessuna selezione.
   if (selezione && !esiste(selezione)) selezione = null;
@@ -555,14 +591,16 @@ function ridisegna() {
   // riconosce da `punto`.
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   rigaComando.hidden = !comando;
-  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m) });
+  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
+                     proposte: rilievo ? proposteAperte(rilievo, m) : [] });
   spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
-  albero.disegna(m, { selezione });
+  albero.disegna(m, { selezione, rilievo });
   const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;
   pannello.disegna(m, selezione, {
     catalogo,
     legame: scelto ? legamePer(m, selezione.id) : null,
     tabella: scelto ? (tabelle.get(chiaveTabella(scelto)) ?? null) : null,
+    rilievo,
   });
   file.disegna({ percorso, impronta, modello: m });
   storia.disegna(etichette(cronologia));
@@ -648,6 +686,9 @@ function dispatchVoce(voce) {
   // scrive un nome non faceva niente e non diceva niente.
   if (voce.codice === "apri") { file.apri(); return; }
   if (voce.codice === "salva") { file.salva(percorso, corrente(cronologia)); return; }
+  // ⌘I sta con apri e salva, sopra la guardia del campo: da dentro il campo del percorso
+  // importa lo stesso, come ⌘O — è lì che il percorso del prior si scrive.
+  if (voce.codice === "importa") { file.importa(); return; }
 
   // ⌘K sta con apri e salva, sopra la guardia del campo: da dentro un comando aperto la palette
   // deve aprirsi lo stesso — è lì che serve di più, quando il comando in corso non è quello che
