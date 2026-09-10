@@ -306,6 +306,22 @@ def _stazioni(d: _deck.Deck, caso: str, cartella: Path) -> dict[str, list[dict]]
     return per_asta
 
 
+def _spostamenti_interni(d: _deck.Deck, U: np.ndarray) -> dict[str, list[dict]]:
+    """Per asta: gli spostamenti dei nodi che le `suddivisioni` inseriscono in mezzo — mai gli
+    estremi, che stanno già in `spostamenti`. `x_rel` è lunghezza cumulata su `L_asta`, come
+    `_stazioni`: vale anche se un giorno gli elementi di un'asta non sono uguali."""
+    per_asta: dict[str, list[dict]] = {}
+    for id_asta, tags in d.mappa_asta.items():
+        L_asta = sum(d.elementi[t - 1].L for t in tags)
+        offset, nodi = 0.0, []
+        for t in tags[:-1]:  # l'ultimo elemento finisce sull'estremo j: niente da aggiungere
+            e = d.elementi[t - 1]
+            offset += e.L
+            nodi.append({"x_rel": _numero(offset / L_asta), "u": [_numero(x) for x in U[e.j - 1]]})
+        per_asta[str(id_asta)] = nodi
+    return per_asta
+
+
 def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str,
                         hash_modello: str) -> dict:
     n_nodi = len(d.nodi)
@@ -317,6 +333,7 @@ def risultati_da_uscite(m: Modello, d: _deck.Deck, cartella: Path, registro: str
         per_caso[caso] = {
             "con_segno": True,
             "spostamenti": {str(tag_a_id[t]): [_numero(x) for x in U[t - 1]] for t in tag_a_id},
+            "spostamenti_interni": _spostamenti_interni(d, U),
             "reazioni": {str(tag_a_id[t]): [_numero(x) for x in R[t - 1]] for t in d.vincolati},
             "sollecitazioni": _stazioni(d, caso, cartella),
             # lo stato delle sezioni **all'ultimo passo** del caso: in una statica a passi è

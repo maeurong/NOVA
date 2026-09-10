@@ -183,8 +183,8 @@ def test_la_corsa_elastica_del_muro_1_non_ha_passi_ne_pushover(chiedi, binario_o
         v = next(x for x in ris["verdetti"]
                  if x["controllo"] == "convergenza" and x["caso"] == caso)
         assert v["esito"] == "non_applicabile" and "corsa elastica" in v["ragione"]
-        assert set(ris["per_caso"][caso]) == {"con_segno", "spostamenti", "reazioni",
-                                              "sollecitazioni", "stato_sezioni"}
+        assert set(ris["per_caso"][caso]) == {"con_segno", "spostamenti", "spostamenti_interni",
+                                              "reazioni", "sollecitazioni", "stato_sezioni"}
         assert ris["per_caso"][caso]["stato_sezioni"] == {}
     # C1 dedicato: senza spinta dichiarata il controllo esce lo stesso, non applicabile
     v = next(x for x in fin["verdetti_check"] if x["controllo"] == "pushover")

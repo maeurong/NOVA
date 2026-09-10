@@ -186,6 +186,7 @@ Un file per corsa, mai dentro il modello:
 ```
 run        {id, data, hash_modello, versione_opensees, deck, registro, mappa_tag{nodo, asta}}
 per_caso   [caso]{con_segno: true, spostamenti[nodo][6], reazioni[nodo][6],
+                  spostamenti_interni[asta][]{x_rel, u[6]},
                   sollecitazioni[asta][stazione]{x_rel, N, Vy, Vz, T, My, Mz}}
 modi       [n]{f, T, forma[nodo][3], massa_partecipante{x, y, z}, cumulata{x, y, z}}
 passi      [ ]{spostamento, taglio_base, spostamenti[nodo][6], stato_sezioni[asta][stazione], algoritmo}
@@ -195,6 +196,8 @@ verdetti   [ ]{controllo, oggetto?, stazione?, caso?, esito: passato | non_passa
 ```
 
 `hash_modello` diverso dall'impronta corrente = risultati stantii, mostrati in rosso, mai cancellati. Le stazioni sono i punti di integrazione (Lobatto) letti con un recorder per sezione, ricomposti sull'asta come `x_rel` fra 0 e 1.
+
+`spostamenti_interni` porta i nodi delle `suddivisioni`, che non hanno un id nel modello: la deformata fra due nodi del modello passa da lì, altrimenti sotto un distribuito è il 20 % più piatta del vero.
 
 Contratto della curva (T4): `passi[].spostamento` e `caduta.spostamento` sono **relativi** a `run.pushover.u0`, cioè allo spostamento che il nodo di controllo aveva dopo il caso di gravità; `passi[].spostamenti[nodo]` sono **assoluti**, perché quello è il campo di spostamento vero che si disegna. `u0` è la chiave che riconcilia i due zeri.
 

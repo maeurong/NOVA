@@ -618,3 +618,31 @@ def test_la_tolleranza_delle_fibre_non_cambia_il_risultato(chiedi, tmp_path, bin
 
     larga, stretta = freccia(1.0e-6, tmp_path / "a"), freccia(1.0e-12, tmp_path / "b")
     assert abs(larga - stretta) <= 1e-4 * abs(stretta), (larga, stretta)
+
+
+# --- debito #interfaccia-13: gli spostamenti dei nodi interni delle suddivisioni --------
+
+def test_gli_spostamenti_interni_portano_la_freccia_in_mezzeria(chiedi, tmp_path, binario_opensees):
+    """`trave_appoggiata.nova.json` ha `suddivisioni: 2`: un solo nodo interno, a metà luce.
+    Misurato il 05/09/2026 sullo stesso modello (nodo di mezzeria dichiarato invece che
+    generato): freccia −1,570949 mm. Qui l'oracolo è la fascia, non il valore esatto."""
+    fin = _corsa(chiedi, "trave_appoggiata.nova.json", tmp_path, casi=["Z1"])[-1]
+    assert fin["esito"] == "ok", fin
+    interni = fin["risultati"]["per_caso"]["Z1"]["spostamenti_interni"]["1"]
+    assert len(interni) == 1
+    assert interni[0]["x_rel"] == pytest.approx(0.5)
+    assert -1.65 < interni[0]["u"][2] < -1.50
+
+
+def test_gli_spostamenti_interni_ci_sono_per_ogni_asta_del_telaio(chiedi, tmp_path, binario_opensees):
+    """`telaio_2x1.nova.json` non ha suddivisioni dichiarate (default 1): la chiave c'è per
+    ogni asta di `mappa_tag.asta`, e ogni lista è vuota o ordinata per `x_rel` crescente."""
+    fin = _corsa(chiedi, "telaio_2x1.nova.json", tmp_path)[-1]
+    assert fin["esito"] == "ok", fin
+    ris = fin["risultati"]
+    interni = ris["per_caso"]["Z1"]["spostamenti_interni"]
+    assert set(interni) == set(ris["run"]["mappa_tag"]["asta"])
+    for lista in interni.values():
+        xrel = [n["x_rel"] for n in lista]
+        assert xrel == sorted(xrel)
+        assert all(0 < x < 1 for x in xrel)
