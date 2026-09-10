@@ -2,9 +2,14 @@
 // in testi per una persona. Puro. Vive **accanto** al modello, non dentro (spec v1, «Importatore
 // dal prior»; brief 2026-09-07 §3): non entra nel file, non entra nella cronologia.
 
-import { cifre, conciso } from "./numeri.js";
+import { cifre, conciso, stampaNumero, senzaZeriInCoda } from "./numeri.js";
 
-const num = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : conciso(v));
+const manca = (v) => v === null || v === undefined || !Number.isFinite(v);
+const num = (v) => (manca(v) ? "—" : conciso(v));
+// Le scartate: due decimali al massimo, senza zeri in coda. Nella stessa colonna «1,19» sta
+// sopra «0,57», e `conciso` (quattro decimali sotto 1) ci metteva «0,5717» — stessa unità, due
+// grafie. I millimetri delle giunzioni restano a `conciso`: «154 mm», non «153,6».
+const misura = (v) => (manca(v) ? "—" : senzaZeriInCoda(stampaNumero(v, { decimali: 2, migliaia: true })));
 
 /** La risposta di `POST /api/importa` nello stato che l'interfaccia tiene. Liste sempre
  *  presenti: un rendiconto senza `scartate` è un rendiconto con zero scartate, non un errore. */
@@ -26,7 +31,7 @@ export function daRisposta(risposta, percorso) {
 export function righeScartate(rilievo) {
   return rilievo.scartate.map((s) => ({
     titolo: `regione ${s.regione ?? "—"} · ${s.punti == null ? "—" : cifre(s.punti)} punti · ${s.controllo ?? "—"}`,
-    valore: `${num(s.valore)} contro soglia ${num(s.soglia)}${s.unita && s.unita !== "-" ? ` ${s.unita}` : ""}`,
+    valore: `${misura(s.valore)} contro soglia ${misura(s.soglia)}${s.unita && s.unita !== "-" ? ` ${s.unita}` : ""}`,
     spiegazione: s.spiegazione || "—",
   }));
 }

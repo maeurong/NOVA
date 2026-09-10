@@ -1580,7 +1580,8 @@ test("rendiconto senza niente da dire: le note al posto degli elenchi", () => {
   const { p, editor } = pannelloFinto();
   p.disegna(CON_CERNIERA(), { tipo: "rilievo", id: 0 }, { rilievo: r });
   const testi = tutti(editor).map((e) => e.textContent ?? "");
-  for (const atteso of ["nessuna regione scartata", "nessuna giunzione", "nessuna proposta aperta",
+  for (const atteso of ["nessuna regione scartata", "niente: il rilievo ha dato tutto", "nessuna giunzione",
+                        "nessuna proposta aperta",
                         "il rendiconto vale per questa sessione: riaprendo il file non torna"]) {
     assert.equal(testi.filter((t) => t === atteso).length, 1, atteso);
   }

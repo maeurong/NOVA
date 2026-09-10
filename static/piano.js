@@ -178,7 +178,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // I nodi che porteranno un simbolo di vincolo (dichiarato, o proposto e non dichiarato):
     // l'etichetta del nodo non va in basso, dove il simbolo sta. Visto sul caso studio: il
     // «piede sx» finiva sulla base del triangolo.
-    const conSimbolo = new Set(m.nodi.filter((n) => n.vincolo && GRADI.some((g) => n.vincolo[g])).map((n) => n.id));
+    const dichiarati = new Set(m.nodi.filter((n) => n.vincolo && GRADI.some((g) => n.vincolo[g])).map((n) => n.id));
+    const conSimbolo = new Set(dichiarati);
     for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const etichettate = new Set();
     for (const n of m.nodi) {
@@ -211,7 +212,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
     // e non rosso. Px costanti come le frecce: non entrano in `estensione`.
-    const dichiarati = new Set();
     const simbolo = (n, incastro, classe, tratteggio) => {
       const p = schermo(n);
       const b = RAGGIO * 2 * s, w = RAGGIO * 3 * s;
@@ -228,10 +228,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }
     };
     for (const n of m.nodi) {
-      if (n.vincolo && GRADI.some((g) => n.vincolo[g])) {
-        dichiarati.add(n.id);
-        simbolo(n, nomePreimpostazione(n.vincolo) === "incastro", "vincolo", false);
-      }
+      if (dichiarati.has(n.id)) simbolo(n, nomePreimpostazione(n.vincolo) === "incastro", "vincolo", false);
     }
     for (const p of proposte ?? []) {  // `null` non prende il default del parametro: si copre qui
       const n = nodo(m, p.nodo);  // una proposta su un nodo sparito è una proposta che non si disegna

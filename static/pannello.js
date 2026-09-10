@@ -294,7 +294,6 @@ function editorVincolo(m, n, azioni, { rilievo = null } = {}) {
     const gr = gruppo("dal rilievo", "editor",
       `il rilievo propone: ${descrizione(proposta)} — una lettura della geometria, non una misura`);
     const b = bottone("conferma il vincolo proposto", () => azioni.suConfermaVincolo(n.id));
-    b.setAttribute("aria-label", "conferma il vincolo proposto");
     gr.append(b);
     elementi.push(gr); controlli.push(b);
   }
@@ -358,7 +357,8 @@ function editorRilievo(m, r, azioni) {
   // Senza membrature non c'è niente da completare: l'elenco dei gesti manderebbe ad aprire
   // una sezione che non esiste.
   const mancano = gruppo("dal rilievo mancano", "editor rendiconto",
-    r.resoconto.membrature ? null : "nessuna membratura importata: niente da completare");
+    !r.resoconto.membrature ? "nessuna membratura importata: niente da completare"
+      : r.mancano.length ? null : testoMancano(r.mancano));  // «niente: il rilievo ha dato tutto», mai un titolo nudo
   if (r.resoconto.membrature && r.mancano.length) {
     const ul = document.createElement("ul");
     for (const voce of r.mancano) {
@@ -395,7 +395,7 @@ function editorRilievo(m, r, azioni) {
     riga.append(b); controlli.push(b); proposte.append(riga);
   }
 
-  const nota = gruppo("nota", "editor",
+  const nota = gruppo("nota", "editor rendiconto",
     "il rendiconto vale per questa sessione: riaprendo il file non torna");
   return { elementi: [scartate, mancano, giunzioni, proposte, nota], controlli };
 }

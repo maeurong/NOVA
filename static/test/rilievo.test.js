@@ -37,7 +37,10 @@ test("daRisposta: le liste a `null` esplicito sono liste vuote, non un errore", 
 test("righeScartate: valore contro soglia con l'unità, migliaia sui punti, trattino dove manca", () => {
   const [a, b] = righeScartate(vuoto());
   assert.equal(a.titolo, `regione 0 · ${cifre(4215879)} punti · costanza_sezione`, "la regione 0 è «regione 0», non «—»");
-  assert.equal(a.valore, "1,19 contro soglia 0,1 frazione");  // `cifre` sotto 100 tiene due decimali
+  assert.equal(a.valore, "1,19 contro soglia 0,1 frazione");  // due decimali al massimo, senza zeri in coda
+  // Sotto 1 non si sale a quattro decimali (`conciso` lo farebbe): stessa colonna, stessa grafia.
+  const [c] = righeScartate({ scartate: [{ regione: 6, punti: 2513, controllo: "costanza_sezione", valore: 0.5717, soglia: 0.1, unita: "frazione", spiegazione: "x" }] });
+  assert.equal(c.valore, "0,57 contro soglia 0,1 frazione");
   assert.equal(a.spiegazione, "dispersione relativa della sezione lungo l'asse");
   assert.equal(b.valore, "— contro soglia 0,5");
   assert.equal(b.spiegazione, "—");

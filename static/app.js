@@ -157,7 +157,7 @@ const pannello = creaPannello(
     // Una voce della Storia per nodo, come un vincolo scritto a mano: ⌘Z le disfa una per una,
     // che è il patto della cronologia lineare (nessuna voce composita solo per «conferma tutte»).
     suConfermaVincolo: (id) => {
-      const v = propostaPerNodo(rilievo, id);
+      const v = rilievo ? propostaPerNodo(rilievo, id) : null;  // senza rendiconto niente da confermare
       if (!v) return;
       esegui((m) => impostaVincolo(m, { id, vincolo: v }), `vincolo del nodo ${id} dal rilievo: ${descrizione(v)}`);
       ridisegna();
