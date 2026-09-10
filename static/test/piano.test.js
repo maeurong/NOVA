@@ -399,3 +399,206 @@ test("creaPiano: l'etichetta di un nodo con simbolo di vincolo non va in basso",
   const t2 = tutti(svg, "text").find((t) => t.textContent === "1");
   assert.ok(Number(t2.getAttribute("y")) <= Number(tutti(svg, "circle")[0].getAttribute("cy")), "vale anche per la proposta");
 });
+
+// --- lo strato dei risultati (giornata 13) ---------------------------------------
+const traveR = (() => { let mo = modelloVuoto(); mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 6000, z: 0 });
+  return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] }; })();
+const XI = [0, 0.1726731646, 0.5, 0.8273268354, 1];
+const xRel = [...XI.map((x) => x / 2), ...XI.slice(1).map((x) => 0.5 + x / 2)];
+const stazioniR = xRel.map((r) => ({ x_rel: r, N: 0, Vy: 0, Vz: 10 * (3000 - r * 6000), T: 0, My: 10 * r * 6000 * (6000 - r * 6000) / 2, Mz: 0 }));
+const Z1R = { spostamenti: { 1: [0, 0, 0, 0, 0.004, 0], 2: [0, 0, 0, 0, -0.004, 0] }, reazioni: { 1: [0, 0, 30000, 0, 0, 0], 2: [0, 0, 30000, 0, 0, 0] }, sollecitazioni: { 1: stazioniR } };
+const conRisultati = (vista, extra = {}) => ({ vista, caso: "Z1", perCaso: Z1R, scala: 100, auto: true, stantia: false, ...extra });
+const strato = (svg) => tutti(svg, "g").find((g) => g.getAttribute("class") === "risultati");
+const badgeDi = (contenitore) => contenitore._figli[2];
+
+test("piano con vista M: un poligono tratteggiato, nove ordinate di stazione, l'etichetta «45 kN·m» al picco", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const svg = contenitore._figli[0];
+  const g = strato(svg);
+  assert.ok(g, "lo strato «risultati» c'è");
+  const poligoni = tutti(g, "polygon");
+  assert.equal(poligoni.length, 1);
+  assert.ok(poligoni[0].getAttribute("stroke-dasharray"), "inchiostro tratteggiato (story 63)");
+  assert.equal(poligoni[0].getAttribute("stroke"), "#141414");
+  assert.equal(tutti(g, "line").filter((l) => l.getAttribute("class") === "stazione").length, 9);
+  const testi = tutti(g, "text").map((t) => t.textContent);
+  assert.ok(testi.includes("45 kN·m"), `il picco è scritto: ${testi}`);
+  const badge = badgeDi(contenitore);
+  assert.equal(badge.hidden, false);
+  assert.equal(badge.textContent, "M · Z1 · kN·m · lato teso");
+});
+
+test("piano con vista M: il picco sta sotto la trave (lato teso), l'etichetta non tocca le etichette dei nodi", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const svg = contenitore._figli[0];
+  const [poligono] = tutti(strato(svg), "polygon");
+  const punti = poligono.getAttribute("points").split(" ").map((p) => p.split(",").map(Number));
+  const yBase = punti[0][1];
+  assert.ok(punti.some(([, y]) => y > yBase + 1), "in SVG y cresce in basso: il diagramma sta sotto");
+  // Nessun `<text>` dello strato dei risultati ha lo stesso x e y di un'etichetta di nodo.
+  const nodi = tutti(svg, "g").filter((g) => g.getAttribute("data-tipo") === "nodo").flatMap((g) => tutti(g, "text"));
+  for (const t of tutti(strato(svg), "text")) for (const n of nodi) {
+    assert.ok(t.getAttribute("x") !== n.getAttribute("x") || t.getAttribute("y") !== n.getAttribute("y"));
+  }
+});
+
+test("piano con vista deformata: una polilinea tratteggiata per asta, le aste diventano ombra, il badge stampa la scala", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { scala: 120, auto: true }) });
+  const svg = contenitore._figli[0];
+  const polilinee = tutti(strato(svg), "polyline");
+  assert.equal(polilinee.length, 1);
+  assert.ok(polilinee[0].getAttribute("stroke-dasharray"));
+  const punti = polilinee[0].getAttribute("points").split(" ");
+  assert.equal(punti.length, 9, "otto segmenti di Hermite");
+  const aste = tutti(svg, "line").filter((l) => l.getAttribute("data-tipo") === "asta");
+  assert.equal(aste[0].getAttribute("stroke-opacity"), "0.3", "l'indeformata è l'ombra");
+  assert.equal(badgeDi(contenitore).textContent, "deformata · Z1 · ×120 (auto)");
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { scala: 50, auto: false }) });
+  assert.equal(badgeDi(contenitore).textContent, "deformata · Z1 · ×50 (a mano)");
+});
+
+test("piano stantio: strato e badge in rosso, la parola «stantia» nel badge", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("V", { stantia: true }) });
+  const svg = contenitore._figli[0];
+  const [poligono] = tutti(strato(svg), "polygon");
+  assert.equal(poligono.getAttribute("stroke"), "#b8321e");
+  const badge = badgeDi(contenitore);
+  assert.ok(badge.textContent.startsWith("stantia · V · Z1"));
+  assert.equal(badge.className, "risultati-badge stantia");
+});
+
+test("piano senza risultati o con vista nulla: nessuno strato, badge nascosto, aste piene", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: null });
+  assert.equal(strato(contenitore._figli[0]), undefined);
+  assert.equal(badgeDi(contenitore).hidden, true);
+  piano.disegna(traveR, { risultati: conRisultati(null) });
+  assert.equal(strato(contenitore._figli[0]), undefined);
+  piano.disegna(traveR, {});
+  const aste = tutti(contenitore._figli[0], "line").filter((l) => l.getAttribute("data-tipo") === "asta");
+  assert.equal(aste[0].getAttribute("stroke-opacity"), undefined);
+});
+
+test("piano con vista M: lo strato sta fra le aste e i nodi, non sopra i nodi", () => {
+  // Il DOM finto tiene i figli in ordine, quindi l'ordine di disegno **è** verificabile: senza
+  // questo test spostare `gruppo.append(g)` dopo il ciclo dei nodi resta verde, e in pagina il
+  // diagramma copre i cerchi cliccabili. (Il mutante che il piano dava per non uccidibile, R5.)
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const figli = contenitore._figli[0]._figli[0]._figli;   // svg → gruppo → i figli, in ordine
+  const tipi = figli.map((f) => f.getAttribute?.("data-tipo"));
+  const iStrato = figli.findIndex((f) => f.getAttribute?.("class") === "risultati");
+  assert.ok(iStrato > tipi.lastIndexOf("asta"), `strato ${iStrato} dopo l'ultima asta ${tipi.lastIndexOf("asta")}`);
+  assert.ok(iStrato < tipi.indexOf("nodo"), `strato ${iStrato} prima del primo nodo ${tipi.indexOf("nodo")}`);
+});
+
+test("piano con vista M su un pilastro: si legge Mz, e il diagramma non è una riga piatta", () => {
+  // La prova che una mappa costante non basta (R1): con `My` a 1e-9 il pilastro uscirebbe
+  // schiacciato sul proprio asse e il picco non si scriverebbe mai.
+  const pil = (() => { let mo = modelloVuoto(); mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 0, z: 3000 });
+    return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] }; })();
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: [
+    { x_rel: 0, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 6e6 },
+    { x_rel: 0.5, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 3e6 },
+    { x_rel: 1, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 0 }] } };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(pil, { risultati: conRisultati("M", { perCaso }) });
+  const g = strato(contenitore._figli[0]);
+  const xs = tutti(g, "polygon")[0].getAttribute("points").split(" ").map((p) => Number(p.split(",")[0]));
+  assert.ok(Math.max(...xs) - Math.min(...xs) > 1, `il diagramma ha larghezza: ${xs}`);
+  assert.ok(tutti(g, "text").map((t) => t.textContent).includes("6 kN·m"));
+});
+
+test("piano con risultati di un caso senza stazioni né spostamenti: strato vuoto, non solleva", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M", { perCaso: { spostamenti: {}, reazioni: {}, sollecitazioni: {} } }) });
+  assert.equal(tutti(strato(contenitore._figli[0]), "polygon").length, 0);
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: { spostamenti: {} }, scala: 1 }) });
+  assert.equal(tutti(strato(contenitore._figli[0]), "polyline").length, 1, "la deformata senza spostamenti è l'ombra, e si disegna");
+  assert.equal(tutti(strato(contenitore._figli[0]), "text").length, 0, "niente da scrivere su spostamenti nulli");
+});
+
+// Ingresso degenere: `perCaso` senza la chiave `sollecitazioni`, e stazioni di un'asta che nel
+// modello non c'è. Nessun poligono orfano, nessuna etichetta appesa al nulla, nessun errore.
+test("piano con vista M: sollecitazioni assenti o di un'asta fuori dal modello non disegnano niente", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  assert.doesNotThrow(() => piano.disegna(traveR, { risultati: conRisultati("M", { perCaso: { spostamenti: {}, reazioni: {} } }) }));
+  assert.equal(tutti(strato(contenitore._figli[0]), "polygon").length, 0);
+  assert.equal(tutti(strato(contenitore._figli[0]), "text").length, 0);
+  piano.disegna(traveR, { risultati: conRisultati("M", { perCaso: { spostamenti: {}, reazioni: {}, sollecitazioni: { 99: stazioniR } } }) });
+  assert.equal(tutti(strato(contenitore._figli[0]), "polygon").length, 0, "l'asta 99 non è nel modello");
+  assert.equal(tutti(strato(contenitore._figli[0]), "text").length, 0);
+});
+
+// Ingresso degenere: la scala dichiarata non dipende da cosa c'è da disegnare (story 36).
+test("piano con risultati e un modello senza aste: strato vuoto, e il badge si scrive lo stesso", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { risultati: conRisultati("M") });
+  const g = strato(contenitore._figli[0]);
+  assert.ok(g, "lo strato c'è anche senza niente da disegnarci dentro");
+  assert.equal(g._figli.length, 0);
+  const badge = badgeDi(contenitore);
+  assert.equal(badge.hidden, false);
+  assert.equal(badge.textContent, "M · Z1 · kN·m · lato teso");
+});
+
+// Ingresso degenere: il riquadro non ancora impaginato. `clientWidth`/`clientHeight` a 0 danno
+// `s` finito (`|| 1`, `piano.js:118-122`), quindi nessun `NaN` scritto in un attributo.
+test("piano con il riquadro a 0×0: nessun NaN nei punti, nelle ordinate, nelle etichette", () => {
+  const contenitore = contenitoreFinto();
+  contenitore.clientWidth = 0;
+  contenitore.clientHeight = 0;
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  assert.doesNotThrow(() => piano.disegna(traveR, { risultati: conRisultati("M") }));
+  const g = strato(contenitore._figli[0]);
+  for (const e of [...tutti(g, "polygon"), ...tutti(g, "line"), ...tutti(g, "text")]) {
+    for (const [k, v] of Object.entries(e._attrs)) assert.ok(!v.includes("NaN"), `${e.nome} ${k}="${v}"`);
+  }
+  assert.equal(badgeDi(contenitore).textContent, "M · Z1 · kN·m · lato teso");
+});
+
+// Ingresso degenere: un picco sotto il 2 % del massimo **globale**. `picchi` non lo filtra (la
+// sua soglia è del 5 % sull'asta), lo filtra `sottoSoglia` sul massimo di tutte le aste.
+test("piano con vista M: il picco sotto il 2 % del massimo globale non si scrive", () => {
+  let mo = modelloVuoto();
+  mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 6000, z: 0 }); mo = creaNodo(mo, { x: 12000, z: 0 });
+  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  const piccola = stazioniR.map((s) => ({ ...s, My: s.My * 0.01 }));
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: stazioniR, 2: piccola } };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(due, { risultati: conRisultati("M", { perCaso }) });
+  const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
+  assert.deepEqual(testi, ["45 kN·m"], `solo il picco grande resta scritto: ${testi}`);
+});
+
+// Ingresso degenere: più etichette dello stesso valore nello stesso punto. `disponi` ha quattro
+// versi per tre distanze; esaurite le posizioni libere l'ultima si nasconde invece di finire
+// addosso a un'altra — il valore resta nell'ispettore e nella striscia.
+test("piano con vista M: l'etichetta che non trova posto si nasconde, nessuna si sovrappone", () => {
+  const sette = { ...traveR, aste: Array.from({ length: 7 }, (_, k) => ({ id: k + 1, nodo_i: 1, nodo_j: 2 })) };
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: Object.fromEntries(sette.aste.map((a) => [a.id, stazioniR])) };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(sette, { risultati: conRisultati("M", { perCaso }) });
+  const g = strato(contenitore._figli[0]);
+  assert.equal(tutti(g, "polygon").length, 7, "i sette diagrammi si disegnano tutti");
+  const testi = tutti(g, "text");
+  assert.ok(testi.length < 7, `almeno un'etichetta nascosta: ${testi.length} di 7`);
+  const posti = testi.map((t) => `${t.getAttribute("x")}|${t.getAttribute("y")}|${t.getAttribute("text-anchor")}`);
+  assert.equal(new Set(posti).size, posti.length, "nessuna etichetta posata sopra un'altra");
+});

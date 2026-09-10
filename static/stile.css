@@ -56,6 +56,12 @@ body {
    `pointer-events: none` lascia che il clic sullo sfondo arrivi comunque al piano. */
 #piano .carichi-titolo { position: absolute; top: 6px; left: 8px; margin: 0;
                          font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
+/* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
+   V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
+   rosso e la parola: il rosso da solo non basta (story 63). */
+#piano .risultati-badge { position: absolute; top: 6px; right: 8px; margin: 0; text-align: right;
+                          font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
+#piano .risultati-badge.stantia { color: var(--rosso); }
 
 h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
      color: var(--testo-tenue); margin: 0 0 var(--passo); font-weight: 600; }

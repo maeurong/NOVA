@@ -9,6 +9,8 @@ import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
+import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, spostamentoMassimo } from "./risultati.js";
+import { disponi, sottoSoglia } from "./etichette.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -93,7 +95,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   titolo.className = "carichi-titolo";
   titolo.textContent = "";
   titolo.hidden = true;
-  contenitore.replaceChildren(svg, titolo);
+  // Il badge dei risultati, dall'altra parte: la scala della deformata e le unità sono
+  // dichiarate sempre, anche quando non c'è niente da disegnare (`docs/ricerca/07-ux-modellatore.md:99`).
+  const badge = document.createElement("p");
+  badge.className = "risultati-badge";
+  badge.hidden = true;
+  contenitore.replaceChildren(svg, titolo, badge);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -123,10 +130,14 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
 
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
-  function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [] } = {}) {
+  function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
     inquadra(m, ghost);
     const s = millimetriPerPixel();
     const gruppo = el("g");
+    // `vistaRis` e non `vista`: `vista` qui sopra è il **riquadro**, e serve al badge più giù.
+    const vistaRis = risultati?.vista ?? null;
+    const attivo = vistaRis ? risultati : null;
+    let stratoRisultati = null;
 
     for (const a of m.aste) {
       const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
@@ -138,7 +149,64 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         stroke: scelta ? ROSSO : INCHIOSTRO,
         "stroke-width": (scelta ? 3 : 2) * s,
         "stroke-linecap": "round", "data-tipo": "asta", "data-id": a.id,
+        // Con la deformata l'indeformata resta come ombra: si vede di quanto si è mosso, non
+        // solo dove sta adesso. L'asta selezionata no — quella è l'unica cosa piena e rossa.
+        ...(attivo && vistaRis === "deformata" && !scelta ? { "stroke-opacity": 0.3 } : {}),
       }));
+    }
+
+    // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili. Un solo
+    // colore, inchiostro; rosso quando la corsa è stantia — il rosso dice attenzione (story 63).
+    const richiesteEtichette = [];   // i picchi (o il massimo spostamento): li posa `disponi` dopo i nodi
+    if (attivo) {
+      const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
+      stratoRisultati = el("g", { class: "risultati", "data-vista": vistaRis });
+      const g = stratoRisultati;
+      const coppia = (p) => `${p.x},${p.y}`;
+      if (vistaRis === "deformata") {
+        for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
+          g.append(el("polyline", { class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
+                                    fill: "none", stroke: colore, "stroke-width": 2 * s,
+                                    "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+        }
+        const dmax = spostamentoMassimo(m, attivo.perCaso);
+        if (dmax > 0) {
+          const n = m.nodi.find((k) => { const u = attivo.perCaso.spostamenti?.[String(k.id)]; return u && Math.hypot(u[0], u[2]) === dmax; });
+          if (n) {
+            const u = attivo.perCaso.spostamenti[String(n.id)];
+            const p = schermo({ x: n.x + attivo.scala * u[0], z: n.z + attivo.scala * u[2] });
+            richiesteEtichette.push({ id: `u${n.id}`, x: p.x, y: p.y, testo: testoValore("deformata", dmax), priorita: 1 });
+          }
+        }
+      } else {
+        const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
+        let massimo = 0;
+        const diagrammi = diagramma(m, attivo.perCaso, vistaRis, scalaD);
+        for (const d of diagrammi) for (const p of d.punti) massimo = Math.max(massimo, Math.abs(p.valore));
+        for (const d of diagrammi) {
+          const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
+          const punti = d.punti.map((p) => schermo(p));
+          g.append(el("polygon", { class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
+                                   fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
+                                   "stroke-dasharray": `${5 * s} ${3 * s}` }));
+          // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38).
+          for (const p of d.punti) {
+            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel, z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
+            const q = schermo(p);
+            g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
+          }
+          // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
+          for (const picco of picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave)) {
+            if (sottoSoglia(picco.valore, massimo)) continue;
+            const p = d.punti.find((q) => q.x_rel === picco.x_rel);
+            if (!p) continue;
+            const q = schermo(p);
+            richiesteEtichette.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
+                                      priorita: Math.abs(picco.valore) / massimo });
+          }
+        }
+      }
+      gruppo.append(g);
     }
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
@@ -182,6 +250,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const conSimbolo = new Set(dichiarati);
     for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const etichettate = new Set();
+    // Gli ostacoli per le etichette dei risultati: i cerchi e le etichette dei nodi non si
+    // spostano (le posa `versoLibero`), quindi sono loro il terreno e i picchi ci girano attorno.
+    const ostacoli = [];
     for (const n of m.nodi) {
       const p = schermo(n);
       const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;
@@ -192,6 +263,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         cx: p.x, cy: p.y, r: (scelto ? RAGGIO * 1.6 : RAGGIO) * s,  // doppio canale: rosso e più grosso
         fill: scelto ? ROSSO : INCHIOSTRO,
       }));
+      ostacoli.push({ x0: p.x - RAGGIO * s, y0: p.y - RAGGIO * s, x1: p.x + RAGGIO * s, y1: p.y + RAGGIO * s });
       // Un'etichetta per posizione: due nodi coincidenti (da un file, non dai comandi)
       // scriverebbero due volte nello stesso punto, e il risultato è illeggibile.
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
@@ -204,9 +276,26 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           "text-anchor": v.x < -0.3 ? "end" : v.x > 0.3 ? "start" : "middle",
         });
         testo.textContent = n.nome ?? String(n.id);
+        // Il box dell'etichetta del nodo: `y` è la linea di base (niente `dominant-baseline`
+        // qui), quindi il testo sta **sopra** di essa.
+        const larghezza = testo.textContent.length * 6.6 * s, altezza = 11 * s;
+        const x = p.x + OFFSET_ETICHETTA * s * v.x, y = p.y - OFFSET_ETICHETTA * s * v.z;
+        const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
+        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y });
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);
+    }
+
+    // Il badge sta fuori dal `viewBox` ma sopra il piano: senza questo ostacolo un picco in alto
+    // a destra gli finisce sotto. `preserveAspectRatio="xMidYMid meet"` centra il riquadro, quindi
+    // il bordo del viewport in coordinate del `viewBox` è il centro più mezza misura in px per `s`.
+    if (attivo) {
+      const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
+      const destra = cx + (contenitore.clientWidth || 1) * s / 2;
+      const alto = cy - (contenitore.clientHeight || 1) * s / 2;
+      ostacoli.push({ x0: destra - (testoBadge(attivo).length * 6.6 + 8) * s, y0: alto,
+                      x1: destra, y1: alto + 20 * s });   // 6px di `top` + 14 di riga
     }
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
@@ -233,6 +322,22 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     for (const p of proposte ?? []) {  // `null` non prende il default del parametro: si copre qui
       const n = nodo(m, p.nodo);  // una proposta su un nodo sparito è una proposta che non si disegna
       if (n && !dichiarati.has(n.id)) simbolo(n, nomePreimpostazione(p.vincolo) === "incastro", "vincolo-proposto", true);
+    }
+
+    // Le etichette dei picchi: dopo i nodi, perché i loro cerchi e le loro etichette sono gli
+    // ostacoli. Una nascosta è meglio di due testi addosso — il valore resta nell'ispettore e
+    // nella striscia, e qui si perde solo la comodità di leggerlo sul disegno.
+    if (stratoRisultati && richiesteEtichette.length) {
+      const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
+      const richieste = richiesteEtichette.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s, altezza: 12 * s }));
+      for (const e of disponi(richieste, ostacoli, { passo: 6 * s })) {
+        if (e.nascosta) continue;
+        if (e.guida) stratoRisultati.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
+        const t = el("text", { class: "picco", x: e.x, y: e.y, "font-size": 11 * s, fill: colore, "font-family": MONO,
+                               "text-anchor": e.ancora, "dominant-baseline": "middle" });
+        t.textContent = e.testo;
+        stratoRisultati.append(t);
+      }
     }
 
     // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello
@@ -269,6 +374,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
       : "";
     titolo.hidden = !azioneInVista;
+
+    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
+    // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
+    badge.textContent = attivo ? testoBadge(attivo) : "";
+    badge.hidden = !attivo;
+    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
 
     svg.replaceChildren(gruppo);
   }
