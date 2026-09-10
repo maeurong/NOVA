@@ -1,6 +1,7 @@
-// Le etichette dei risultati posate senza sovrapporsi: priorità, quattro versi a tre distanze,
-// linea guida oltre il primo passo, nascosta quando non c'è posto. Deterministico: stessi
-// ingressi, stesso disegno (`piano.js`, «a parità di punteggio vince la prima»).
+// Le etichette dei risultati posate senza sovrapporsi: priorità, otto versi a tre distanze — i
+// quattro assiali, poi le quattro diagonali —, linea guida oltre il primo passo e sempre in
+// diagonale, nascosta quando non c'è posto. Deterministico: stessi ingressi, stesso disegno
+// (`piano.js`, «a parità di punteggio vince la prima»).
 //
 // Coordinate dello schermo SVG (`y` in basso), in mm del `viewBox`: chi chiama converte i pixel.
 
@@ -11,27 +12,41 @@ export const siSovrappongono = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.
 export const sottoSoglia = (v, massimo, soglia = 0.02) =>
   !massimo || !Number.isFinite(v) || !Number.isFinite(massimo) || Math.abs(v) < soglia * Math.abs(massimo);
 
-// I quattro versi, nell'ordine fisso in cui si provano: sopra, destra, sotto, sinistra.
-const VERSI = [
+// I quattro versi assiali, nell'ordine fisso in cui si provano: sopra, destra, sotto, sinistra.
+const ASSIALI = [
   { dx: 0, dy: -1, ancora: "middle" },
   { dx: 1, dy: 0, ancora: "start" },
   { dx: 0, dy: 1, ancora: "middle" },
   { dx: -1, dy: 0, ancora: "end" },
 ];
 
-/** L'ordine in cui provare i quattro versi. Con un `preferito` — un versore in coordinate schermo,
- *  che non serve normalizzare — si parte da quello dei quattro che gli somiglia di più, e gli altri
+// E quattro diagonali, **dopo** gli assiali e nel loro ordine fisso: alto-destra, basso-destra,
+// basso-sinistra, alto-sinistra. Servono da quando anche le linee dei diagrammi sono ostacoli: alla
+// base di un pilastro del MURO 1 il nome del nodo, il simbolo del vincolo e le ordinate di due aste
+// prendono tutti e quattro gli assi a tutte e tre le distanze, e il picco spariva del tutto.
+// In diagonale il posto c'è, e ci si arriva con la guida — che lì serve davvero, perché fuori
+// dagli assi il legame fra il numero e il suo punto non si legge da sé.
+const DIAGONALI = [
+  { dx: 1, dy: -1, ancora: "start" },
+  { dx: 1, dy: 1, ancora: "start" },
+  { dx: -1, dy: 1, ancora: "end" },
+  { dx: -1, dy: -1, ancora: "end" },
+];
+
+/** L'ordine in cui provare gli otto versi. Con un `preferito` — un versore in coordinate schermo,
+ *  che non serve normalizzare — si parte dall'**assiale** che gli somiglia di più, e gli altri
  *  restano nel solito ordine: chi chiede sa da che parte è il vuoto (un picco lo punta fuori dal
  *  proprio diagramma) ma non deve poter imporre una posizione occupata. A parità di somiglianza
- *  vince il primo dei quattro, così il disegno resta identico a parità di stato. */
+ *  vince il primo dei quattro, così il disegno resta identico a parità di stato. Le diagonali
+ *  vengono dopo, sempre nello stesso ordine: sono il ripiego, non una scelta. */
 const versiPer = (preferito) => {
-  if (!Number.isFinite(preferito?.dx) || !Number.isFinite(preferito?.dy)) return VERSI;
-  let migliore = VERSI[0], punteggio = -Infinity;
-  for (const v of VERSI) {
+  if (!Number.isFinite(preferito?.dx) || !Number.isFinite(preferito?.dy)) return [...ASSIALI, ...DIAGONALI];
+  let migliore = ASSIALI[0], punteggio = -Infinity;
+  for (const v of ASSIALI) {
     const p = v.dx * preferito.dx + v.dy * preferito.dy;
     if (p > punteggio) { punteggio = p; migliore = v; }
   }
-  return [migliore, ...VERSI.filter((v) => v !== migliore)];
+  return [migliore, ...ASSIALI.filter((v) => v !== migliore), ...DIAGONALI];
 };
 
 /** Il box di un testo ancorato in (x, y): `y` è il **centro verticale** del box, e chi disegna
@@ -69,7 +84,10 @@ export function disponi(richieste, ostacoli = [], { passo = 6, limiti = null } =
           if ([...listaOstacoli, ...posate.map((p) => p.box)].some((o) => siSovrappongono(box, o))) continue;
           // La guida arriva al bordo del box che guarda il punto: da sopra è `y1`, da sotto `y0`.
           const bordo = v.dy < 0 ? box.y1 : box.y0;
-          const guida = multiplo === 1 ? null
+          // Guida da oltre il primo passo, e **sempre** in diagonale: lì l'etichetta non sta su
+          // nessuno dei due assi del punto, e senza un filo che la lega si legge come un numero
+          // qualunque messo in un buco.
+          const guida = multiplo === 1 && !(v.dx && v.dy) ? null
             : { x1: r.x, y1: r.y, x2: v.dx ? x : r.x, y2: v.dy ? bordo : r.y };
           scelta = { x, y, ancora: v.ancora, box, guida };
           break cerca;

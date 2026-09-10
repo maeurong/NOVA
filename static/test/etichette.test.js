@@ -167,3 +167,28 @@ test("disponi: il preferito occupato non blocca — si passa agli altri versi ne
   assert.equal(p.nascosta, false);
   assert.ok(p.box.y1 <= 100 - 6 + 1e-9, "scartato «sotto», resta il primo dei soliti: sopra");
 });
+
+// --- gli otto versi (coda dei debiti) ---------------------------------------------
+// Con le linee dei diagrammi fra gli ostacoli, alla base di un pilastro i quattro assi sono tutti
+// presi a tutte e tre le distanze: senza le diagonali il picco spariva.
+
+test("disponi: bloccati i quattro assi, l'etichetta va in diagonale invece di nascondersi", () => {
+  // Tre barriere che coprono le posizioni assiali a ogni distanza — l'etichetta è larga 60 e alta
+  // 12, il passo 6 — e lasciano libero l'angolo in alto a destra.
+  const ostacoli = [box(60, 60, 105, 100), box(101, 95, 900, 130), box(60, 101, 105, 140)];
+  const [p] = disponi([richiesta("a", 100, 100)], ostacoli, { passo: 6 });
+  assert.equal(p.nascosta, false, "in diagonale il posto c'è");
+  assert.equal(p.ancora, "start", "alto-destra è la prima diagonale");
+  assert.ok(p.box.x0 >= 100 && p.box.y1 <= 100, `alto e a destra del punto: ${JSON.stringify(p.box)}`);
+  assert.ok(p.guida, "in diagonale la guida c'è sempre, anche al primo passo");
+  assert.deepEqual([p.guida.x1, p.guida.y1], [100, 100], "e parte dal punto");
+});
+
+test("disponi: cinque etichette sullo stesso punto ci stanno tutte, e il disegno non cambia", () => {
+  // Quattro assi più le diagonali: dove prima la quinta si nascondeva, ora c'è posto.
+  const cinque = () => [1, 2, 3, 4, 5].map((k) => richiesta(k, 100, 100));
+  const poste = disponi(cinque(), [], { passo: 6 });
+  nessunaSovrapposizione(poste);
+  assert.ok(poste.every((p) => !p.nascosta), `cinque posti ci sono: ${poste.map((p) => p.nascosta)}`);
+  assert.deepEqual(disponi(cinque(), [], { passo: 6 }), poste, "stessi ingressi, stesso disegno");
+});

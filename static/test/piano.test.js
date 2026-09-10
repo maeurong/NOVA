@@ -810,11 +810,12 @@ test("piano con vista M: la trave e il pilastro all'angolo non scrivono due volt
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   piano.disegna(angolo, { risultati: conRisultati("M", { perCaso: perCasoAngolo }) });
   const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
-  // «Al più una», non «esattamente una»: da quando le linee dei diagrammi sono ostacoli (debito 3)
-  // allo spigolo si incrociano tre tratti e l'etichetta lì non trova più posto — su questa
-  // geometria escono **zero** volte, non due. Il doppione non è più riproducibile nel DOM finto, e
-  // la fusione resta come guardia: se domani il posto si libera, non ne escono due.
-  assert.ok(testi.filter((t) => t === "2,5 kN·m").length <= 1, `mai due volte: ${testi}`);
+  // «Esattamente una», di nuovo, e la storia in tre righe: con le linee dei diagrammi fra gli
+  // ostacoli allo spigolo si incrociano tre tratti, i quattro versi assiali erano tutti presi a
+  // tutte e tre le distanze e l'etichetta usciva **zero** volte — l'assert era stato allentato a
+  // «al più una». Con gli otto versi la diagonale libera c'è, il picco torna, e con lui il doppione
+  // torna osservabile: la fusione ha di nuovo un test che la uccide.
+  assert.equal(testi.filter((t) => t === "2,5 kN·m").length, 1, `una volta sola: ${testi}`);
 });
 
 // Preesistente dalla 11b, chiuso qui perché la giornata promette zero testo tagliato: l'etichetta
@@ -953,4 +954,55 @@ test("piano: un'asta con la sezione ruotata non entra nei diagrammi, e il badge 
   piano.disegna(ruotata, { risultati: conRisultati("deformata", { scala: 100 }) });
   assert.equal(tutti(strato(contenitore._figli[0]), "polyline").length, 1);
   assert.equal(badgeDi(contenitore).textContent, "deformata · Z1 · ×100 (auto)");
+});
+
+
+// --- il simbolo del vincolo è un ostacolo (coda dei debiti) -----------------------
+// Sul MURO 1 «−0,1021 kN·m» al piede sinistro finiva sopra il triangolo del vincolo. `versoLibero`
+// lo sapeva già (l'etichetta del nodo non va in basso dove c'è il simbolo); `disponi` no. La
+// geometria è quella del caso studio: piede di pilastro d'angolo, con nome, vincolo e due diagrammi
+// che ci si incrociano sopra.
+const INCASTRO_TOTALE = { ux: true, uy: true, uz: true, rx: true, ry: true, rz: true };
+const angoloVincolato = (() => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 0, z: 3000 }, { x: 4000, z: 3000 }]) mo = creaNodo(mo, p);
+  return { ...mo,
+    nodi: mo.nodi.map((n) => (n.id === 1 ? { ...n, nome: "piede sx", vincolo: INCASTRO_TOTALE } : n)),
+    aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+})();
+const staAngolo = (x_rel, M) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My: M, Mz: M });
+const perCasoPiede = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+  1: [staAngolo(0, -0.693e6), staAngolo(0.5, -0.3e6), staAngolo(1, 0)],   // il pilastro: picco al piede
+  2: [staAngolo(0, 0), staAngolo(0.5, 2e6), staAngolo(1, 0)] } };         // la trave: il massimo globale
+
+const pianoDelPiede = () => {
+  const contenitore = contenitoreFinto();
+  contenitore.clientWidth = 360;   // `#piano` a 1280 px, come sul caso studio
+  creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} })
+    .disegna(angoloVincolato, { risultati: conRisultati("M", { perCaso: perCasoPiede }) });
+  return contenitore._figli[0];
+};
+
+test("piano con vista M: un picco non finisce sopra il triangolo di un vincolo", () => {
+  const svg = pianoDelPiede();
+  const [, , larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / 360, altezza / 600);
+  // Il box del simbolo come lo mette `piano.js`: mezza larghezza `RAGGIO·3·s`, dal nodo fino sotto
+  // i tratti di terra (`RAGGIO·2·s + 4·s`). Il nodo 1 è l'unico vincolato.
+  const c = tutti(svg, "circle").filter((x) => x.getAttribute("fill") !== "none")[0];
+  const x = Number(c.getAttribute("cx")), y = Number(c.getAttribute("cy"));
+  const simbolo = { x0: x - 15 * s, y0: y, x1: x + 15 * s, y1: y + 14 * s };
+  const testi = tutti(strato(svg), "text");
+  assert.ok(testi.length >= 1, "il picco si scrive: il test non è vuoto");
+  for (const t of testi) {
+    assert.ok(!siSovrappongono(boxTesto(t, s), simbolo), `«${t.textContent}» finisce sopra il vincolo`);
+  }
+});
+
+// La geometria che sul MURO 1 faceva sparire il picco: fra nome del nodo, vincolo e le ordinate di
+// due aste, senza le diagonali di `disponi` i quattro assi sono tutti presi e l'etichetta non si
+// scrive affatto.
+test("piano con vista M: il picco alla base di un pilastro d'angolo trova posto", () => {
+  const testi = tutti(strato(pianoDelPiede()), "text").map((t) => t.textContent);
+  assert.ok(testi.includes("-0,693 kN·m"), `il picco del piede è posato: ${testi}`);
 });

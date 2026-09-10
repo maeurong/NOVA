@@ -420,6 +420,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const simbolo = (n, incastro, classe, tratteggio) => {
       const p = schermo(n);
       const b = RAGGIO * 2 * s, w = RAGGIO * 3 * s;
+      // Il simbolo occupa il basso del nodo quanto un'asta, e finora nessuno lo diceva a `disponi`:
+      // sul MURO 1 «−0,1021 kN·m» finiva sopra il triangolo del piede sinistro. `versoLibero` lo
+      // sapeva già (l'etichetta del nodo non va in basso dove c'è il simbolo); ora lo sanno anche
+      // i picchi. Il box arriva sotto i tratti di terra dell'incastro, che sono la parte più bassa.
+      ostacoli.push({ x0: p.x - w, y0: p.y, x1: p.x + w, y1: p.y + b + 4 * s });
       const attr = { stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: classe,
                      ...(tratteggio ? { "stroke-dasharray": `${3 * s} ${3 * s}` } : {}) };
       gruppo.append(el("line", { x1: p.x - w, y1: p.y + b, x2: p.x + w, y2: p.y + b, ...attr }));
