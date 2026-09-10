@@ -137,6 +137,59 @@ def test_telaio_2x1_nessuna_etichetta_sovrapposta_in_ogni_vista(chrome_e_server,
         assert coppie == [], f"vista {vista}, etichette sovrapposte a {larghezza}: {coppie}"
 
 
+# `app.js` non ha un file di test suo (nessun `app.test.js`): il banco di prova è il fumo, e sono
+# questi tre a coprirne le cuciture — il fuoco del campo, l'azzeramento dei risultati, la verifica.
+
+
+def test_le_cifre_della_vista_non_finiscono_nel_campo_di_comando(chrome_e_server):
+    """Campo aperto e senza fuoco: `2` non posa il nodo né si scrive nel campo."""
+    porta, cdp = chrome_e_server
+    r = copione("campoSenzaFuoco", porta, cdp)
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["dopo"] == t["prima"], "nessun nodo nuovo: il campo non ha confermato da sé"
+    assert "2" not in t["campo"], f"la cifra non entra nel campo: {t['campo']!r}"
+    assert t["campo"] == "0; 0", f"e quel che si stava scrivendo resta: {t['campo']!r}"
+    assert t["strati"] == 0, "senza corsa non c'è niente da disegnare"
+    # Misurato: `#messaggio` resta **vuoto**, non dice «nessuna corsa da mostrare». Col campo di
+    # comando aperto la cifra non arriva a `dispatchVoce`, quindi quel ramo (`app.js`,
+    # `codice === "vista"`) non si esegue: lo raggiunge solo la cifra premuta a campo chiuso.
+    # Qui conta che non si sia rotto niente in silenzio, e la riga muta è la prova.
+    assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
+
+
+def test_aprire_un_altro_modello_butta_i_risultati_della_corsa_di_prima(chrome_e_server, binario_opensees):
+    """Numeri veri sul telaio sbagliato sarebbero il difetto peggiore: i risultati si azzerano."""
+    porta, cdp = chrome_e_server
+    r = copione("azzera", porta, cdp,
+                fixture=str(FIXTURE / "trave_appoggiata.nova.json"),
+                secondo=str(FIXTURE / "telaio_2x1.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["conRisultati"]["controlli"] is True
+    assert t["conRisultati"]["strati"] == 1, "prima dell'apertura il piano disegna M"
+    assert t["dopoApertura"]["controlli"] is False, "il blocco «Risultati» sparisce"
+    assert t["dopoApertura"]["vuoto"] is True, "e resta lo stato vuoto"
+    assert t["dopoApertura"]["strati"] == 0, "nessuno strato sopra il telaio nuovo"
+
+
+def test_la_verifica_del_modello_non_butta_i_risultati_in_vista(chrome_e_server, binario_opensees):
+    """`⇧⌘⏎` verifica, non corre: quel che si sta guardando resta dov'è."""
+    porta, cdp = chrome_e_server
+    r = copione("verifica", porta, cdp, fixture=str(FIXTURE / "trave_appoggiata.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["prima"]["poligoni"] >= 1, "prima della verifica lo strato M c'è"
+    assert t["dopo"]["poligoni"] == t["prima"]["poligoni"], "e dopo è ancora lì"
+    assert t["dopo"]["badge"] == t["prima"]["badge"], f"badge cambiato: {t['prima']['badge']!r} → {t['dopo']['badge']!r}"
+    assert t["dopo"]["controlli"] is True
+
+
+
+
 def test_chrome_assente_salta_col_motivo(monkeypatch, tmp_path):
     monkeypatch.setattr("test_fumo_chrome._chrome", lambda: None)
     gen = chrome_e_server.__wrapped__(tmp_path)

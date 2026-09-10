@@ -54,6 +54,89 @@ const COPIONI = {
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { ultima, etichette, badge, sovrapposte, messaggio };
   },
+
+  // `app.js` non ha un file di test suo: il banco di prova è qui. Tre copioni per tre cuciture
+  // che nessun test JS tocca — il campo di comando che perde il fuoco, l'azzeramento dei
+  // risultati quando cambia il modello, e la verifica che non li butta via.
+
+  // Il campo di comando aperto e **senza fuoco**: le cifre della vista non devono finirci dentro
+  // né posare il nodo che si stava scrivendo. È la cucitura fra `tastiera.js` e il campo.
+  async campoSenzaFuoco() {
+    await apri(url, arg.cdp);
+    await tasto("n");
+    await scrivi("0; 0");
+    const prima = await ev(`document.querySelectorAll("#piano svg circle").length`);
+    await ev(`document.activeElement.blur()`);
+    await pausa(100);
+    await tasto("2");
+    await pausa(200);
+    return {
+      prima,
+      dopo: await ev(`document.querySelectorAll("#piano svg circle").length`),
+      campo: await ev(`document.getElementById("comando-campo").value`),
+      messaggio: await ev(`document.getElementById("messaggio").textContent`),
+      strati: await ev(`document.querySelectorAll("#piano svg g.risultati").length`),
+    };
+  },
+
+  // Aprire un altro modello butta i risultati della corsa di prima: sono di un altro telaio, e
+  // mostrarli sopra questo sarebbe il difetto peggiore che ci sia — numeri veri, telaio sbagliato.
+  async azzera() {
+    await apri(url, arg.cdp);
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 90000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await tasto("2");
+    await pausa(200);
+    const conRisultati = {
+      controlli: await ev(`!document.getElementById("risultati-controlli").hidden`),
+      strati: await ev(`document.querySelectorAll("#piano svg g.risultati").length`),
+    };
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.secondo)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 2`, 10000);
+    await pausa(300);
+    return {
+      conRisultati,
+      dopoApertura: {
+        controlli: await ev(`!document.getElementById("risultati-controlli").hidden`),
+        strati: await ev(`document.querySelectorAll("#piano svg g.risultati").length`),
+        vuoto: await ev(`!document.getElementById("risultati-vuoto").hidden`),
+      },
+      messaggio: await ev(`document.getElementById("messaggio").textContent`),
+    };
+  },
+
+  // `⇧⌘⏎` verifica il modello: non è una corsa nuova e non deve toccare i risultati in vista.
+  async verifica() {
+    await apri(url, arg.cdp);
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 90000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await tasto("2");
+    await pausa(200);
+    const prima = {
+      poligoni: await ev(`document.querySelectorAll("#piano svg g.risultati polygon").length`),
+      badge: await ev(`document.querySelector("#piano .risultati-badge").textContent`),
+    };
+    await tasto("Enter", { meta: true, shift: true });
+    await pausa(800);
+    return {
+      prima,
+      dopo: {
+        poligoni: await ev(`document.querySelectorAll("#piano svg g.risultati polygon").length`),
+        badge: await ev(`document.querySelector("#piano .risultati-badge").textContent`),
+        controlli: await ev(`!document.getElementById("risultati-controlli").hidden`),
+      },
+      messaggio: await ev(`document.getElementById("messaggio").textContent`),
+    };
+  },
 };
 
 let esito;
