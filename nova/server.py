@@ -8,11 +8,13 @@ nova`), la cartella la genera sempre il server come `cartella_corse / run_id`.
 from __future__ import annotations
 
 import json
+import queue
 import re
 import secrets
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Annotated, Callable
 
@@ -50,37 +52,91 @@ class SidecarInProcesso:
     def __init__(self, solutore: str | None = None):
         self.solutore = solutore
 
-    def chiedi(self, req: dict) -> list[dict]:
+    def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
         if self.solutore and req.get("comando") not in _COMANDI_SENZA_SOLUTORE:
             req = {**req, "solutore": self.solutore}
         righe: list[dict] = []
-        risposta = _sidecar.rispondi(req, righe.append)
-        righe.append(risposta)
+
+        def emetti(ev: dict) -> None:
+            if su_fase is not None:
+                su_fase(ev)
+            righe.append(ev)
+
+        righe.append(_sidecar.rispondi(req, emetti))
         return righe
 
 
-class SidecarProcesso:
-    """`python -m nova.sidecar` a vita lunga; una richiesta alla volta (lock: niente
-    coda finché la UI è una sola — ponytail, si aggiunge quando servirà davvero)."""
+SOFFITTO_S = 660.0   # `_corsa._TIMEOUT_S` (600) più un minuto: una riga di fase arriva a ogni gradino
 
-    def __init__(self, solutore: str | None = None, avvia: Callable[[], subprocess.Popen] | None = None):
+
+class SidecarProcesso:
+    """`python -m nova.sidecar` a vita lunga; una richiesta alla volta (lock non bloccante: la
+    seconda è un 409 subito). Le righe le legge un thread e le mette in coda: `chiedi` le
+    prende con un soffitto, così un sidecar muto è un errore di fase `sidecar` e non una
+    richiesta HTTP appesa per sempre (#20)."""
+
+    def __init__(self, solutore: str | None = None, avvia: Callable[[], subprocess.Popen] | None = None,
+                 soffitto_s: float = SOFFITTO_S):
         # `cwd` esplicito: il sottoprocesso deve trovare `nova.sidecar` a partire dalla
         # radice del pacchetto, non dalla cwd di chi ha lanciato `python -m nova`.
         avvia = avvia or (lambda: subprocess.Popen(
             [sys.executable, "-m", "nova.sidecar"], cwd=str(STATICI.parent),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1))
-        self.p = avvia()
+        self._avvia = avvia
         self.solutore = solutore
+        self.soffitto_s = soffitto_s
         self.n = 0
         self._lock = threading.Lock()
+        self._rotto = False      # dopo un soffitto o uno stdout chiuso: al comando successivo si riparte
+        self.riavvii = 0
+        self._parti()
 
-    def chiedi(self, req: dict) -> list[dict]:
+    def _parti(self) -> None:
+        self.p = self._avvia()
+        self._righe: queue.Queue[str | None] = queue.Queue()
+        threading.Thread(target=self._leggi, args=(self.p, self._righe), daemon=True).start()
+
+    @staticmethod
+    def _leggi(p, righe: queue.Queue) -> None:
+        # `for riga in stdout` legge riga per riga con `bufsize=1`; a EOF esce, e `None` in
+        # coda è il segnale che lo stdout è chiuso. Processo e coda sono **quelli** di questo
+        # lettore: dopo un riavvio il vecchio thread non scrive nella coda nuova.
+        try:
+            for riga in p.stdout:
+                righe.put(riga)
+        finally:
+            righe.put(None)
+
+    def _riavvia(self) -> None:
+        """«Riavvio del sidecar al comando successivo» (ricerca 03:121): il processo di prima è
+        muto o morto, e tenerlo vorrebbe dire pagare il soffitto a ogni richiesta per la vita
+        del server. Il vecchio si termina (se sa farlo), il nuovo parte con la sua coda."""
+        try:
+            self.p.terminate()
+            self.p.wait(timeout=2)
+        except subprocess.TimeoutExpired:   # un sidecar che ignora SIGTERM a metà analisi
+            self.p.kill()
+            try:
+                self.p.wait(timeout=1)   # raccolto: un ucciso senza `wait` resta zombie
+            except Exception:
+                pass
+        except Exception:
+            pass   # già morto, o un processo che non si lascia toccare: il nuovo parte lo stesso
+        self._parti()
+        self._rotto = False
+        self.riavvii += 1
+
+    def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
         # senza `blocking=False` la seconda richiesta resta appesa qui finché la prima non
         # finisce: una corsa di ccx può tenere il sidecar fino al suo timeout di mezz'ora
         if not self._lock.acquire(blocking=False):
             raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
                                              "motivo": "il sidecar è occupato da un'altra corsa"})
         try:
+            # Rotto per un soffitto o uno stdout chiuso, **o uscito** (ucciso, crash): `poll()`
+            # lo dice prima di scrivere su una pipe che non ha più nessuno dall'altra parte.
+            if self._rotto or self.p.poll() is not None:
+                self._riavvia()
             self.n += 1
             rid = self.n
             corpo = {**req, "id": rid}
@@ -91,20 +147,40 @@ class SidecarProcesso:
                 self.p.stdin.flush()
                 righe: list[dict] = []
                 while True:
-                    riga = self.p.stdout.readline()
-                    if not riga:
+                    try:
+                        riga = self._righe.get(timeout=self.soffitto_s)
+                    except queue.Empty:
+                        self._rotto = True   # il prossimo comando riparte da un sidecar nuovo
+                        return [{"esito": "errore", "fase": "sidecar",
+                                 "motivo": f"nessuna risposta dal sidecar entro {self.soffitto_s:g} s"}]
+                    if riga is None or riga == "":
+                        # Il sentinella si rimette in coda: un sidecar **morto** deve rispondere
+                        # «stdout chiuso» a ogni richiesta, subito — consumato una volta sola,
+                        # la seconda aspettava il soffitto intero (660 s) e mentiva sul motivo.
+                        self._righe.put(None)
+                        self._rotto = True   # morto: il prossimo comando riparte da un sidecar nuovo
                         righe.append({"esito": "errore", "fase": "sidecar",
                                       "motivo": "il sidecar ha chiuso lo stdout"})
                         return righe
                     grezza = json.loads(riga)
                     if grezza.get("id") != rid:
+                        # riga in ritardo di una richiesta precedente andata in soffitto (R7):
+                        # il filtro sull'`id` la scarta, e resta lì solo se un secondo `chiedi`
+                        # arriva prima che il sidecar la scriva — riavvio del sidecar è debito
+                        # dichiarato, non coperto qui
                         continue
                     # `id` è solo correlazione del protocollo: non esce mai nel corpo HTTP.
                     d = {k: v for k, v in grezza.items() if k != "id"}
+                    if "evento" in d and su_fase is not None:
+                        su_fase(d)
                     righe.append(d)
                     if "evento" not in d:
                         return righe
             except Exception as e:  # pipe chiusa, riga non JSON: un errore di dominio, non un 500 muto
+                # `BrokenPipeError` sulla scrittura è il sidecar morto (misurato con `pkill` sotto il
+                # server): senza questo il riavvio non partiva mai, perché il morto non arrivava né
+                # al soffitto né allo stdout chiuso.
+                self._rotto = True
                 return [{"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}]
         finally:
             self._lock.release()
@@ -159,10 +235,70 @@ class ConfrontoReq(_CorpoBase):
     mappa_casi: dict = Field(default_factory=dict)
 
 
-def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
+def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None,
+               sidecar_lungo=None, max_lavori: int = 20) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
     cartella_corse.mkdir(parents=True, exist_ok=True)
+    # Il sidecar lungo prende le corse; l'altro resta libero per salute, check, importa e
+    # confronto. Uno solo: è quello di prima.
+    lungo = sidecar_lungo or sidecar
+    lavori: dict[str, dict] = {}
+    lavori_lock = threading.Lock()
+
+    def _pota() -> None:
+        # Sotto lock. I lavori finiti restano leggibili dalla `GET` finché sono gli ultimi
+        # `max_lavori`: il più vecchio se ne va (192 kB di `fin` per una pushover, e in una
+        # seduta lunga non tornavano più). I risultati veri stanno sul disco, in `corse/`.
+        finiti = sorted((r for r, l in lavori.items() if l["stato"] == "finita"), key=lambda r: lavori[r]["t0"])
+        for r in finiti[:max(0, len(finiti) - max_lavori)]:
+            del lavori[r]
+
+    def _avvia_lavoro(req: dict) -> dict:
+        """Un lavoro alla volta: la seconda corsa è un 409 subito, e chi gira non se ne accorge."""
+        with lavori_lock:
+            in_corso = next((r for r, l in lavori.items() if l["stato"] == "in corso"), None)
+            if in_corso:
+                # Il motivo dice cosa fare: una sola corsa alla volta, e quella in corso finisce da
+                # sé. Il `run_id` accanto è per riagganciarsi con la `GET`: `corsa.js` lo fa.
+                raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
+                                                 "motivo": "un'altra corsa è in corso: una sola alla volta, aspetta che finisca",
+                                                 "run_id": in_corso, "comando": lavori[in_corso]["comando"]})
+            run_id = secrets.token_hex(6)
+            cartella = str(cartella_corse / run_id)
+            lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None,
+                      "cartella": cartella,   # per tutti: anche la corsa del telaio ha una cartella sul disco
+                      "comando": req["comando"]}   # `corsa` o `ccx`: chi si riaggancia deve sapere a cosa
+            lavori[run_id] = lavoro
+        req = {**req, "cartella": cartella}
+
+        def corri() -> None:
+            def su_fase(ev: dict) -> None:
+                nome = ev.get("nome")   # un evento senza nome non è una fase: non fa morire la corsa
+                if nome:
+                    with lavori_lock:
+                        lavoro["fasi"].append(nome)
+            try:
+                fin = _finale(lungo.chiedi(req, su_fase))
+            except HTTPException as e:   # il 409 del lock del sidecar: è un esito, non un 500
+                fin = (e.detail if isinstance(e.detail, dict)
+                       else {"esito": "errore", "fase": "sidecar", "motivo": str(e.detail)})
+            except Exception as e:
+                # Un thread non ha nessuno a cui risalire. Senza questo ramo il lavoro resta
+                # «in corso» per sempre, ogni corsa dopo è 409, e la UI interroga in eterno.
+                fin = {"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}
+            with lavori_lock:
+                lavoro["fin"] = fin
+                lavoro["stato"] = "finita"
+                _pota()
+
+        try:
+            threading.Thread(target=corri, daemon=True).start()
+        except Exception:   # `can't start new thread`: il lavoro non esiste, non è «in corso»
+            with lavori_lock:
+                lavori.pop(run_id, None)
+            raise
+        return {"run_id": run_id, "stato": "in corso", "cartella": cartella}
 
     # DNS rebinding: un sito che risolve un nome verso 127.0.0.1 potrebbe far leggere/scrivere
     # modelli al browser di chi ci naviga sopra. Solo l'`Host` locale (con la porta vera, se
@@ -203,24 +339,30 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         percorso = str(Path(corpo.percorso).resolve())
         return _o_400(_finale(sidecar.chiedi({"comando": "importa", "percorso": percorso})))
 
-    @app.post("/api/corsa")
+    @app.post("/api/corsa", status_code=202)
     def corsa(corpo: CorsaReq):
-        run_id = secrets.token_hex(6)
-        righe = sidecar.chiedi({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi,
-                                "cartella": str(cartella_corse / run_id)})
-        fin = _o_400(_finale(righe))
-        return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+        return _avvia_lavoro({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi})
 
-    @app.post("/api/ccx")
+    @app.post("/api/ccx", status_code=202)
     def ccx(corpo: CcxReq):
         """Il deck del solido, dal disco dell'utente locale: `..` è lecito, il file si legge
         e basta, e la copia nella cartella della corsa si chiama sempre `solido.inp`."""
-        run_id = secrets.token_hex(6)
-        righe = sidecar.chiedi({"comando": "ccx", "inp": str(Path(corpo.inp).resolve()),
-                                "cartella": str(cartella_corse / run_id)})
-        fin = _o_400(_finale(righe))
-        return {"run_id": run_id, "cartella": str(cartella_corse / run_id),
-                "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+        return _avvia_lavoro({"comando": "ccx", "inp": str(Path(corpo.inp).resolve())})
+
+    @app.get("/api/corsa/{run_id}")
+    def stato_corsa(run_id: str):
+        with lavori_lock:   # `_pota` cancella da un altro thread: appartenenza e lettura nello stesso lock
+            l = lavori.get(run_id) if _RUN_ID_RE.fullmatch(run_id) else None
+            if l is None:
+                raise HTTPException(404, detail={"motivo": f"nessuna corsa {run_id}"})
+            l = dict(l)
+            fasi = list(l["fasi"])
+        base = {"run_id": run_id, "stato": l["stato"], "fasi": fasi, "cartella": l["cartella"], "comando": l["comando"]}
+        if l["stato"] == "in corso":
+            return {**base, "secondi": time.perf_counter() - l["t0"]}
+        fin = _o_400({**l["fin"]})   # 400 per modello|importa|confronto|deck, come sulla POST di prima
+        # i secondi del sidecar quando ci sono (il caso normale), i trascorsi altrimenti
+        return {**base, "secondi": time.perf_counter() - l["t0"], **fin}
 
     @app.post("/api/confronto")
     def confronto(corpo: ConfrontoReq):

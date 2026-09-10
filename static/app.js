@@ -13,7 +13,7 @@ import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rin
 import { leggiAzione, leggiNodale, leggiDistribuito, leggiCombinazione, caricoVuoto, NOME_TIPO } from "./carichi.js";
 import { leggiDimensioni } from "./sezione.js";
 import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
-import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo, nomeTasto } from "./tastiera.js";
 import { creaPalette } from "./palette.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
@@ -21,6 +21,7 @@ import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
+import { creaCorsa } from "./corsa.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro, descrizione } from "./vincoli.js";
@@ -189,6 +190,8 @@ const storia = creaStoria($("storia-elenco"), {
 const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
+    // Un modello nuovo (aperto o importato) non porta con sé l'ultima corsa di un altro (R5).
+    corsa.azzera();
     // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
     // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
     // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
@@ -212,6 +215,7 @@ const file = creaFile(document, {
   suImportazione: (p, m, risposta) => {
     cronologia = nuovaCronologia(m, etichettaStoria(daRisposta(risposta, p)));
     rilievo = daRisposta(risposta, p);
+    corsa.azzera();  // idem: una cronologia nuova non porta l'ultima corsa (R5)
     chiudiComando();
     selezione = { tipo: "rilievo", id: 0 };
     modo = null;
@@ -225,6 +229,25 @@ const file = creaFile(document, {
 // Il percorso aperto, non il campo: il campo è la sorgente di `apri`. `null` solo finché
 // non c'è nessun modello aperto, ed è l'unica volta in cui salva legge il campo.
 $("file-salva").addEventListener("click", () => file.salva(percorso, corrente(cronologia)));
+
+// La corsa: `modello` letta al gesto (non qui), `suVai` riusa la stessa `scegli` di piano e
+// albero, `suEsito` si limita a ridisegnare — la versione di OpenSees la aggiorna `corsa.js` da sé.
+const corsa = creaCorsa(document, {
+  modello: () => corrente(cronologia),
+  suVai: ({ tipo, id }) => scegli(tipo, id),
+  suErrore: (msg) => dì(msg),
+  suEsito: () => ridisegna(),   // il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo
+  // Un ghost aperto (estrusione o asta) va chiuso a mano prima di correre: vale per i bottoni
+  // del blocco come per ⌘⏎, e `AVVISO_SECONDO_NODO` parlerebbe della cosa sbagliata.
+  prima: () => (modo ? "chiudi il gesto (Esc) prima di correre" : null),
+});
+// La riga del solutore prima di qualunque gesto. Un secondo tentativo dopo un attimo: un
+// ricaricamento mentre la `verifica` di prima è ancora sul sidecar prende un 409, e senza il
+// secondo giro la riga restava «in verifica…» per sempre (visto sul Chrome headless).
+const chiediSalute = (ritenta) => chiediJson("/api/salute")
+  .then((s) => corsa.impostaSolutore(s.solutore))
+  .catch((e) => { if (ritenta) setTimeout(() => chiediSalute(false), 1500); else dì(e.message); });
+chiediSalute(true);
 
 // La palette non è un secondo programma: passa voce e valore ai rami del tasto, e l'esito è
 // quello del tasto **a gesto chiuso**. **R2** — se esegue, abbandona campo e modo insieme:
@@ -603,6 +626,7 @@ function ridisegna() {
     rilievo,
   });
   file.disegna({ percorso, impronta, modello: m });
+  corsa.disegna({ modello: m });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
 }
@@ -615,6 +639,7 @@ function disegnaBarra() {
     const span = document.createElement("span");
     span.className = "tasto";
     const kbd = document.createElement("kbd"); kbd.textContent = v.tasto;
+    kbd.setAttribute("aria-label", nomeTasto(v.tasto));   // «comando invio», non i nomi Unicode dei glifi
     span.append(kbd, document.createTextNode(v.etichetta));
     if (v.aiuto) {
       const aiuto = document.createElement("span");
@@ -708,6 +733,12 @@ function dispatchVoce(voce) {
   // con un clic nel piano, e da lì un tasto aprirebbe un secondo comando lasciando due
   // anteprime appese. Torna nel campo.
   if (comando) { campoComando.focus(); return; }
+
+  // Corri e verifica sotto la guardia del campo (un ⌘⏎ mentre si scrive un comando è un Invio
+  // sbagliato, non una corsa); la guardia del modo sta in `creaCorsa` (`prima`), una volta sola
+  // per tasti e bottoni.
+  if (voce.codice === "corri") { corsa.corri(); return; }
+  if (voce.codice === "verifica") { corsa.verifica(); return; }
 
   // Qui sotto il modo può essere solo l'asta: l'estrusione vive con il campo aperto, e col
   // campo aperto si è già tornati indietro alla riga sopra. Passano conferma, annulla e la

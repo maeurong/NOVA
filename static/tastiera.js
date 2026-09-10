@@ -21,6 +21,8 @@ export const TASTI = [
   { codice: "apri",      tasto: "⌘O",    etichetta: "apri",      aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "salva",     tasto: "⌘S",    etichetta: "salva",     aiuto: null,              contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "importa",   tasto: "⌘I",    etichetta: "importa",   aiuto: "il 12_wall.json scritto nel campo", contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "verifica",  tasto: "⇧⌘⏎",  etichetta: "verifica",  aiuto: "il Check Model",  contesto: "salvo-ghost", modificatore: "comando" },
+  { codice: "corri",     tasto: "⌘⏎",   etichetta: "corri",     aiuto: "tutte le analisi del modello", contesto: "salvo-ghost", modificatore: "comando" },
   // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
   // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
   // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
@@ -74,9 +76,12 @@ const SENZA_MODIFICATORE = new Map([
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
   ["arrowleft", "direzione"], ["arrowright", "direzione"],
 ]);
-const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"], ["k", "palette"], ["i", "importa"]]);
-// Solo ⇧⌘Z ha un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
-const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"]]);
+// `enter` è qui **e** in `SENZA_MODIFICATORE`: il modificatore le separa prima del `get`
+// (`voceDaEvento`), quindi Invio nudo resta «conferma» del ghost e ⌘⏎ lancia la corsa.
+const CON_COMANDO = new Map([["o", "apri"], ["s", "salva"], ["z", "disfa"], ["k", "palette"], ["i", "importa"],
+                             ["enter", "corri"]]);
+// Solo ⇧⌘Z e ⇧⌘⏎ hanno un senso qui: ⇧⌘S resta «salva con nome» del browser, ⇧⌘O non è nostro.
+const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"], ["enter", "verifica"]]);
 
 // Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
@@ -133,6 +138,17 @@ export function voceDaEvento(evento) {
 // e per la stessa ragione — la barra stampa solo ciò che funziona (story 14): `seleziona`
 // compare anche in asta, dove `G` **è** il gesto; `direzione` compare solo col ghost, perché
 // in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
+/** Il nome accessibile di un tasto: «⇧⌘⏎» a voce è «maiuscolo comando invio», non «upwards white
+ *  arrow place of interest sign return symbol». Le lettere restano lettere; i glifi diventano
+ *  parole, nell'ordine in cui si premono. */
+const PAROLE_DEI_GLIFI = [["⇧", "maiuscolo "], ["⌘", "comando "], ["⏎", "invio"], ["⌫", "cancella"],
+                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"]];
+export const nomeTasto = (tasto) => {
+  let nome = String(tasto ?? "");
+  for (const [glifo, parola] of PAROLE_DEI_GLIFI) nome = nome.split(glifo).join(parola);
+  return nome.trim();
+};
+
 export const vociDellaBarra = (contesto, tipoSelezionato = null) =>
   TASTI.filter((v) => {
     // Prima di tutto il resto: una voce che vale per un solo tipo di selezione non compare

@@ -1,3 +1,4 @@
+import { nomeTasto } from "./tastiera.js";
 // La palette ⌘K (story 8, P3): cerca ogni comando per nome, mostra la scorciatoia accanto, e
 // accetta il valore nella query — «sezione 300 × 500», «q -12,5». Non esegue niente da sé:
 // passa voce e valore a `app.js`, che li serve con lo stesso ramo del tasto.
@@ -53,6 +54,7 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
     if (!ora) nome.append(document.createTextNode(" · non ora"));
     if (r.voce.aiuto) { const s = document.createElement("small"); s.textContent = r.voce.aiuto; nome.append(s); }
     const kbd = document.createElement("kbd"); kbd.textContent = r.voce.tasto;
+    kbd.setAttribute("aria-label", nomeTasto(r.voce.tasto));
     li.append(nome, kbd);
     return li;
   }
@@ -110,7 +112,9 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
   campo.addEventListener("keydown", (ev) => {
     if (ev.key === "ArrowDown") evidenzia(Math.min(risultati.length - 1, attiva + 1));
     else if (ev.key === "ArrowUp") evidenzia(Math.max(0, attiva - 1));
-    else if (ev.key === "Enter") scegli(attiva);
+    // Solo l'Invio nudo sceglie: `⌘⏎`/`⇧⌘⏎` sono corri e verifica (giornata 12) e qui dentro
+    // non fanno niente — né la scelta né la corsa, perché il tasto non risale.
+    else if (ev.key === "Enter") { if (!(ev.metaKey || ev.ctrlKey || ev.shiftKey)) scegli(attiva); }
     else if (ev.key === "Escape" || ev.key === "Tab") chiudi();
     else return;  // le lettere restano al campo, e non arrivano al listener globale perché `daControllo` le lascia lì
     ev.preventDefault(); ev.stopPropagation();

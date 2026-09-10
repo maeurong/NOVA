@@ -28,7 +28,13 @@ export async function chiediJson(rotta, corpo) {
     body: JSON.stringify(corpo),
   }).catch(() => { throw new Error("il server non risponde"); });
   const dati = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(messaggioErrore(dati, r.status));
+  if (!r.ok) {
+    // Il messaggio resta il `motivo`; il corpo intero e lo stato viaggiano sull'errore: il 409
+    // della corsa porta il `run_id` a cui riagganciarsi, il 400 di `fase: deck` i verdetti.
+    const e = new Error(messaggioErrore(dati, r.status));
+    e.dati = dati; e.stato = r.status;
+    throw e;
+  }
   return dati;
 }
 
@@ -183,7 +189,9 @@ export function creaFile(radice, { suApertura, suSalvataggio, suImportazione, su
   }
 
   campo.addEventListener("keydown", (ev) => {
-    if (ev.key !== "Enter") return;
+    // Solo l'Invio nudo apre: `⌘⏎` è «corri» (giornata 12) e risale al listener globale, e
+    // riaprire il file sotto una corsa azzerava i verdetti appena mostrati.
+    if (ev.key !== "Enter" || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
     ev.preventDefault();
     apri();
   });

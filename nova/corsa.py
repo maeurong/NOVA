@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import math
+import os
 import re
 import subprocess
 import time
@@ -69,6 +70,29 @@ def verifica(percorso: str | None) -> dict:
             "motivo": prova["motivo"], "dove_prenderlo": dove}
 
 
+def _num_it(x) -> str:
+    """«112 500», «-20 000», «0» sotto un micro-newton: le somme delle reazioni come le legge
+    una persona, non come le stampa `repr` («-2.2737367544323206e-13»)."""
+    if x is None or not math.isfinite(x):
+        return "—"
+    if abs(x) < 1e-6:
+        return "0"
+    s = f"{x:,.2f}".replace(",", " ").replace(".", ",").rstrip("0").rstrip(",")
+    return "0" if s.lstrip("-").strip("0 ,") == "" else s   # «-0» di un millinewton è peggio di «0»
+
+
+def _terna(t) -> str:
+    return "(" + ", ".join(_num_it(x) for x in t) + ")"
+
+
+def _scarto(x) -> str:
+    """Il rapporto fra scarto e carico: a due cifre in notazione scientifica con la virgola
+    («2,12e-18»), perché è quasi sempre piccolissimo o è il difetto."""
+    if x is None or not math.isfinite(x):
+        return "—"
+    return f"{x:.2e}".replace(".", ",")
+
+
 def _numero(x) -> float | None:
     """`null` al posto di `inf`/`nan`: il JSON standard non li ha e `JSON.parse` rifiuta la riga.
 
@@ -89,6 +113,15 @@ def _pulito(v):
     if isinstance(v, (list, tuple)):
         return [_pulito(x) for x in v]
     return v
+
+
+def scrivi_atomico(percorso: Path, testo: str) -> None:
+    """Il file dei risultati o è intero o non c'è (#20): tmp nella stessa cartella, poi
+    `os.replace`, che sullo stesso filesystem è atomico. Un `.tmp` rimasto è la prova di
+    un'interruzione, e `/api/risultati` non lo vede (cerca il nome finale)."""
+    tmp = percorso.with_suffix(percorso.suffix + ".tmp")
+    tmp.write_text(testo, encoding="utf-8")
+    os.replace(tmp, percorso)
 
 
 def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
@@ -152,7 +185,7 @@ def esegui(m: Modello, casi: list[str], cartella: Path, hash_modello: str,
         # l'ultimo tentativo resta com'è: sotto soglia il verdetto è rosso, non un'eccezione
     assert risultati is not None  # `_tentativi` non rende mai la lista vuota
     risultati["run"]["secondi"] = time.perf_counter() - t0
-    (cartella / NOME_RISULTATI).write_text(json.dumps(risultati, ensure_ascii=False, indent=1), encoding="utf-8")
+    scrivi_atomico(cartella / NOME_RISULTATI, json.dumps(risultati, ensure_ascii=False, indent=1))
     return {"esito": "ok", "risultati": risultati, "secondi": risultati["run"]["secondi"]}
 
 
@@ -523,7 +556,8 @@ def controlli(d: _deck.Deck, per_caso: dict, registro: str, modi: list[dict] | N
         atteso = tuple(-x for x in d.carico_totale[caso])
         c = solve.controlla_reazioni(reazioni, atteso, solve._TOLLERANZA_REAZIONI)
         v.append(verdetto("reazioni", c, caso,
-                           f"Σ reazioni {c['somma']} contro Σ carichi {atteso}, scarto {c['scarto_relativo']}"))
+                           f"Σ reazioni {_terna(c['somma'])} contro Σ carichi {_terna(atteso)}, "
+                           f"scarto {_scarto(c['scarto_relativo'])}"))
         # nessuno spostamento non è uno spostamento nullo: `None` dichiara «non verificato»
         v.append(_verdetto_spostamenti(d, dati["spostamenti"], dimensione, caso))
         v.append(_verdetto_convergenza(d, caso, registro))

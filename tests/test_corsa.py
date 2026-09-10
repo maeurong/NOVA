@@ -367,3 +367,34 @@ def test_la_gravita_fuori_dai_casi_non_lascia_un_verdetto_di_convergenza_suo(tmp
               corsa.controlli(d, _caso({"1": [0.0] * 6}), registro)}
     assert ("convergenza", "Z3") not in chiavi
     assert ("convergenza", "Z1") in chiavi and ("convergenza", "pushover") in chiavi
+
+
+# --- 12/T1: scrivi_atomico lascia il file intero o niente ------------------------------------
+
+def test_scrivi_atomico_lascia_il_file_intero_o_niente(tmp_path, monkeypatch):
+    from nova.corsa import scrivi_atomico
+    import os
+    dest = tmp_path / "risultati.nova.risultati.json"
+    scrivi_atomico(dest, '{"a": 1}')
+    assert dest.read_text(encoding="utf-8") == '{"a": 1}'
+    assert not list(tmp_path.glob("*.tmp"))
+    # il rename cade: la destinazione tiene il contenuto di prima, non un troncato
+    def cade(*a, **k):
+        raise OSError("disco pieno")
+    monkeypatch.setattr(os, "replace", cade)
+    with pytest.raises(OSError):
+        scrivi_atomico(dest, '{"a": 2}')
+    assert dest.read_text(encoding="utf-8") == '{"a": 1}'
+
+
+# --- 12/debiti: le ragioni delle reazioni si leggono, non si decifrano ----------------------------
+
+def test_le_somme_delle_reazioni_sono_in_notazione_italiana():
+    assert corsa._num_it(112500.0) == "112 500"
+    assert corsa._num_it(-20000.0) == "-20 000"
+    assert corsa._num_it(-2.2737367544323206e-13) == "0"
+    assert corsa._num_it(56315.9355444) == "56 315,94"
+    assert corsa._num_it(float("nan")) == "—"
+    assert corsa._terna((-0.0, 0.0, 112500.0)) == "(0, 0, 112 500)"
+    assert corsa._scarto(2.116053207415873e-18) == "2,12e-18"
+    assert corsa._scarto(None) == "—"

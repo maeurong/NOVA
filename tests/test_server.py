@@ -29,6 +29,26 @@ def _app_con_solutore(tmp_path, percorso_solutore):
                        raise_server_exceptions=False, base_url="http://127.0.0.1")
 
 
+def _attendi(cliente, run_id: str, secondi: float = 60.0) -> dict:
+    """Il lavoro dalla 12 è asincrono: la `POST` torna subito, l'esito si legge dalla `GET`."""
+    import time
+    t0 = time.perf_counter()
+    while True:
+        r = cliente.get(f"/api/corsa/{run_id}")
+        assert r.status_code in (200, 400), r.text
+        d = r.json()
+        if d.get("stato") == "finita" or r.status_code == 400:
+            return d
+        assert time.perf_counter() - t0 < secondi, f"il lavoro {run_id} non finisce"
+        time.sleep(0.01)
+
+
+def _corsa(cliente, corpo: dict) -> dict:
+    r = cliente.post("/api/corsa", json=corpo)
+    assert r.status_code == 202, r.text
+    return _attendi(cliente, r.json()["run_id"])
+
+
 # --- Step 1 del brief (baseline) --------------------------------------------
 
 def test_salute(cliente):
@@ -63,9 +83,9 @@ def test_apri_un_file_che_non_esiste_e_404(cliente, tmp_path):
 
 
 def test_corsa_e_risultati(cliente, binario_opensees):
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200 and r.json()["esito"] == "ok"
-    run_id = r.json()["run_id"]
+    r = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r["esito"] == "ok"
+    run_id = r["run_id"]
     r2 = cliente.get(f"/api/risultati/{run_id}")
     assert r2.status_code == 200 and r2.json()["run"]["hash_modello"]
 
@@ -165,8 +185,8 @@ def test_impronta_di_salva_uguale_a_hash_modello_di_una_corsa(cliente, tmp_path,
     p = tmp_path / "corsa.nova.json"
     m = leggi_fixture("telaio_2x1.nova.json")
     r_salva = cliente.post("/api/modello/salva", json={"percorso": str(p), "modello": m})
-    r_corsa = cliente.post("/api/corsa", json={"modello": m})
-    run_id = r_corsa.json()["run_id"]
+    r_corsa = _corsa(cliente, {"modello": m})
+    run_id = r_corsa["run_id"]
     r_ris = cliente.get(f"/api/risultati/{run_id}")
     assert r_salva.json()["impronta"] == r_ris.json()["run"]["hash_modello"]
 
@@ -188,9 +208,7 @@ def test_check_corpo_non_oggetto_e_4xx_con_motivo(cliente):
 # riga 11: corsa con solutore assente -> 200 esito: assente e dove_prenderlo
 def test_corsa_con_solutore_assente(tmp_path):
     cliente = _app_con_solutore(tmp_path, str(tmp_path / "non_esiste_nessun_binario"))
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200
-    corpo = r.json()
+    corpo = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert corpo["esito"] == "assente" and "dove_prenderlo" in corpo
 
 
@@ -199,9 +217,7 @@ def test_corsa_con_solutore_non_eseguibile_e_200_fase_solutore(tmp_path):
     finto = tmp_path / "finto_opensees"
     finto.write_text("non e' un eseguibile", encoding="utf-8")
     cliente = _app_con_solutore(tmp_path, str(finto))
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200
-    corpo = r.json()
+    corpo = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert corpo["esito"] == "errore" and corpo["fase"] == "solutore" and "coda_log" in corpo
 
 
@@ -239,9 +255,17 @@ def test_sidecarprocesso_eof_da_errore_fase_sidecar():
         def readline(self):
             return ""  # EOF immediato
 
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
+
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -266,9 +290,17 @@ def test_sidecarprocesso_ignora_righe_di_unaltra_richiesta():
         def readline(self):
             return next(self._righe, "")
 
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
+
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -282,6 +314,13 @@ def test_create_app_fallisce_allavvio_se_static_manca(tmp_path):
         create_app(SidecarInProcesso(), tmp_path / "corse", statici=tmp_path / "non_esiste")
 
 
+def _finto_sidecar(terminato: list):
+    """Un finto **nuovo** a ogni chiamata, e `terminate` accoda l'identità del sottoprocesso:
+    con un finto solo, due `terminate()` sullo stesso passerebbero per due sidecar terminati."""
+    p = type("P", (), {"terminate": lambda self: terminato.append(id(self))})()
+    return type("F", (), {"p": p})()
+
+
 # riga 17: python -m nova con porta occupata -> messaggio che nomina la porta, non traceback di uvicorn
 def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_path):
     import nova.__main__ as m
@@ -292,15 +331,37 @@ def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_pa
         raise OSError(48, "Address already in use")
 
     terminato = []
-    finto_sidecar = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
 
     monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(_bind_occupato)}))
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto_sidecar)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar(terminato))
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
     with pytest.raises(SystemExit) as exc:
         m.main(["--porta", "8765"])
     assert "8765" in str(exc.value)
-    assert terminato == [True]  # il sottoprocesso del sidecar non resta orfano
+    # due sottoprocessi **distinti**, non due volte lo stesso
+    assert len(terminato) == 2 and terminato[0] != terminato[1]
+
+
+def test_main_se_il_secondo_sidecar_non_parte_il_primo_non_resta_orfano(monkeypatch, tmp_path):
+    """Il secondo `SidecarProcesso` stava fuori dal `try`: se il suo `Popen` sollevava, il primo
+    restava orfano e il commento dentro il `try` diceva il contrario."""
+    import nova.__main__ as m
+
+    monkeypatch.chdir(tmp_path)
+    terminato = []
+    fatti = []
+
+    def _fabbrica(**k):
+        fatti.append(True)
+        if len(fatti) == 2:
+            raise OSError("nessun python per il secondo sidecar")
+        return _finto_sidecar(terminato)
+
+    monkeypatch.setattr(m, "SidecarProcesso", _fabbrica)
+    with pytest.raises(SystemExit) as exc:
+        m.main([])
+    assert "nessun python per il secondo sidecar" in str(exc.value)
+    assert len(terminato) == 1   # il primo è terminato lo stesso, e il secondo non esiste
 
 
 # riga 18: corpo di /api/corsa con solutore o cartella -> ignorati (extra="forbid" -> 422), mai inoltrati
@@ -378,7 +439,8 @@ def test_sidecarprocesso_pipe_chiusa_diventa_errore_fase_sidecar():
 
     class _FintoProcesso:
         stdin = _FintoStdin()
-        stdout = None
+        stdout = iter(())  # scrivere in stdin fallisce prima di leggere: il thread lettore esce subito
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -398,9 +460,17 @@ def test_sidecarprocesso_riga_corrotta_diventa_errore_fase_sidecar():
         def readline(self):
             return next(self._righe, "")
 
+        def __iter__(self):  # il thread lettore itera lo stdout, non chiama più readline() a mano
+            while True:
+                r = self.readline()
+                if r == "":
+                    return
+                yield r
+
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -454,8 +524,7 @@ def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_pat
 
     monkeypatch.chdir(tmp_path)
     terminato = []
-    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar(terminato))
 
     def _static_assente(*a, **k):
         raise RuntimeError("Directory 'static' does not exist")
@@ -463,7 +532,9 @@ def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_pat
     monkeypatch.setattr(m, "create_app", _static_assente)
     with pytest.raises(SystemExit) as exc:
         m.main([])
-    assert "static" in str(exc.value) and terminato == [True]
+    # tutti e due i sidecar, il breve e il lungo, e sono due sottoprocessi distinti
+    assert "static" in str(exc.value)
+    assert len(terminato) == 2 and terminato[0] != terminato[1]
 
 
 def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
@@ -471,8 +542,7 @@ def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
     visti = []
-    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: None})()})()
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar([]))
     monkeypatch.setattr(m, "create_app", lambda _s, cartella, **k: visti.append(cartella))
     monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(lambda *a, **k: None)}))
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
@@ -532,8 +602,8 @@ def _trave() -> Path:
 
 def test_ccx_gira_nella_cartella_della_corsa(cliente, tmp_path, binario_ccx):
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["esito"] == "ok" and corpo["fasi"] == ["copio il deck", "lancio ccx", "leggo .dat e .frd"]
     cartella = tmp_path / "corse" / corpo["run_id"]
     assert (cartella / "solido.inp").is_file() and (cartella / "risultati_solido.json").is_file()
@@ -547,15 +617,22 @@ def test_ccx_accetta_un_percorso_con_puntini_e_lo_copia_come_solido(cliente, tmp
     dentro.mkdir()
     (dentro / "mio.inp").write_bytes(_trave().read_bytes())
     r = cliente.post("/api/ccx", json={"inp": f"{dentro}/../giu/mio.inp"})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["esito"] == "ok"
     assert Path(corpo["risultati"]["run"]["deck"]).name == "solido.inp"
 
 
 def test_ccx_con_un_inp_che_non_esiste(cliente, tmp_path):
     r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
-    assert r.status_code == 400 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    d = _attendi(cliente, rid)
+    assert d["esito"] == "errore" and d["fase"] == "deck"
+    # il 400 arriva dalla `GET`, e resta lo stesso a ogni ripetizione: il codice va asserito,
+    # non solo il corpo — senza `_o_400` la `GET` renderebbe 200 con lo stesso corpo
+    g = cliente.get(f"/api/corsa/{rid}")
+    assert g.status_code == 400 and g.json()["fase"] == "deck"
 
 
 def test_ccx_rifiuta_la_cartella_dal_corpo(cliente):
@@ -569,13 +646,14 @@ def test_il_solutore_di_opensees_non_finisce_dentro_ccx(tmp_path, binario_ccx):
     eseguibile, e la corsa deve riuscire lo stesso perché ccx si cerca nel PATH."""
     cliente = _app_con_solutore(tmp_path, str(_trave()))
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200 and r.json()["esito"] == "ok", r.text
+    assert r.status_code == 202, r.text
+    assert _attendi(cliente, r.json()["run_id"])["esito"] == "ok"
 
 
 def test_i_risultati_del_solido_si_rileggono_dal_run_id(cliente, tmp_path, binario_ccx):
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["cartella"] == str(tmp_path / "corse" / corpo["run_id"])
     riletti = cliente.get(f"/api/risultati/{corpo['run_id']}")
     assert riletti.status_code == 200, riletti.text
@@ -604,7 +682,11 @@ def test_ccx_con_un_deck_rifiutato_e_400_non_200(cliente, tmp_path):
     """C6: `fase: deck` è un errore di chi ha scritto il deck, come `modello` e `importa`:
     200 lo faceva sembrare una corsa andata a buon fine."""
     r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
-    assert r.status_code == 400 and r.json()["fase"] == "deck"
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    _attendi(cliente, rid)
+    g = cliente.get(f"/api/corsa/{rid}")
+    assert g.status_code == 400 and g.json()["fase"] == "deck"
 
 
 def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
@@ -614,7 +696,8 @@ def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
     from nova.server import SidecarProcesso, create_app
 
     class _FintoProcesso:
-        stdin = stdout = None
+        stdin = None
+        stdout = iter(())
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     assert sp._lock.acquire(blocking=False)
@@ -638,9 +721,9 @@ def test_risultati_di_una_pushover_e_il_json_intero(cliente, binario_opensees):
         {"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 4, "dof": "ux",
          "incremento": 2.0, "spostamento_max": 20.0, "caso_gravita": "Z1"},
     ]
-    r = cliente.post("/api/corsa", json={"modello": modello})
-    assert r.status_code == 200 and r.json()["esito"] == "ok", r.json()
-    r2 = cliente.get(f"/api/risultati/{r.json()['run_id']}")
+    r = _corsa(cliente, {"modello": modello})
+    assert r["esito"] == "ok", r
+    r2 = cliente.get(f"/api/risultati/{r['run_id']}")
     assert r2.status_code == 200
     ris = r2.json()
     assert len(ris["passi"]) == 10 and ris["caduta"] is None
@@ -781,3 +864,376 @@ def test_legame_personalizzato_non_scavalca_la_famiglia(cliente):
     assert "C25/30" in motivo and "calcestruzzo" in motivo and "acciaio" in motivo
     for gergo in ("Traceback", "TypeError", "KeyError", "unsupported operand", "NoneType"):
         assert gergo not in motivo, motivo
+
+
+# --- 12/T1: il lettore col soffitto, e le fasi che arrivano mentre arrivano --------------------
+
+import io, threading, time
+
+
+class _StdoutLento:
+    """Uno stdout che consegna le righe quando glielo dici: `consegna(riga)`; `readline` aspetta."""
+    def __init__(self):
+        self._righe: list[str] = []
+        self._c = threading.Condition()
+    def consegna(self, riga: str) -> None:
+        with self._c:
+            self._righe.append(riga); self._c.notify()
+    def readline(self) -> str:
+        with self._c:
+            while not self._righe:
+                self._c.wait()
+            return self._righe.pop(0)
+    def __iter__(self):
+        while True:
+            r = self.readline()
+            if r == "":
+                return
+            yield r
+
+
+class _ProcessoFinto:
+    """Quel che `SidecarProcesso` chiede a un `Popen`: stdin, stdout, `poll`, `terminate`, `wait`."""
+    def __init__(self, uscito=None):
+        self.stdin = io.StringIO()
+        self.stdout = _StdoutLento()
+        self.uscito = uscito
+        self.terminato = False
+
+    def poll(self):
+        return self.uscito
+
+    def terminate(self):
+        self.terminato = True
+
+    def wait(self, timeout=None):
+        return self.uscito if self.uscito is not None else 0
+
+    def kill(self):
+        self.ucciso = True
+
+
+def _sp(soffitto_s=0.2):
+    from nova.server import SidecarProcesso
+    p = _ProcessoFinto()
+    return SidecarProcesso(avvia=lambda: p, soffitto_s=soffitto_s), p
+
+
+def test_un_sidecar_muto_e_un_errore_di_fase_sidecar_e_il_lock_si_libera():
+    sp, p = _sp(soffitto_s=0.2)
+    righe = sp.chiedi({"comando": "check", "modello": {}})
+    assert righe == [{"esito": "errore", "fase": "sidecar", "motivo": "nessuna risposta dal sidecar entro 0.2 s"}]
+    assert not sp._lock.locked()
+
+
+def test_le_fasi_arrivano_al_callback_mentre_arrivano_non_alla_fine():
+    sp, p = _sp(soffitto_s=2.0)
+    viste: list[tuple[float, str]] = []
+    esito: dict = {}
+
+    def corsa():
+        esito["righe"] = sp.chiedi({"comando": "corsa", "modello": {}},
+                                   su_fase=lambda ev: viste.append((time.perf_counter(), ev["nome"])))
+    t = threading.Thread(target=corsa); t.start()
+    p.stdout.consegna('{"id": 1, "evento": "fase", "nome": "check model"}\n')
+    time.sleep(0.05)
+    t_fase = time.perf_counter()
+    assert [n for _, n in viste] == ["check model"]          # già vista, e la corsa non è finita
+    assert t.is_alive()
+    p.stdout.consegna('{"id": 1, "esito": "ok", "secondi": 0.1}\n')
+    t.join(timeout=2)
+    assert esito["righe"][-1] == {"esito": "ok", "secondi": 0.1}
+    assert viste[0][0] < t_fase
+
+
+def test_una_riga_di_un_altro_id_non_conta_come_risposta():
+    sp, p = _sp(soffitto_s=1.0)
+    esito: dict = {}
+    t = threading.Thread(target=lambda: esito.update(righe=sp.chiedi({"comando": "check", "modello": {}})))
+    t.start()
+    p.stdout.consegna('{"id": 99, "esito": "ok"}\n')
+    p.stdout.consegna('{"id": 1, "esito": "rifiutato", "verdetti": []}\n')
+    t.join(timeout=2)
+    assert esito["righe"] == [{"esito": "rifiutato", "verdetti": []}]
+
+
+# --- 12/debiti: il sidecar riparte al comando successivo (ricerca 03:121, R7) ------------------
+
+def _sp_riavviabile(soffitto_s=0.2):
+    from nova.server import SidecarProcesso
+    processi: list[_ProcessoFinto] = []
+
+    def avvia():
+        processi.append(_ProcessoFinto())
+        return processi[-1]
+    return SidecarProcesso(avvia=avvia, soffitto_s=soffitto_s), processi
+
+
+def _rispondi_in_un_attimo(processi: list, riga: str) -> None:
+    """L'ultimo processo **allo sparo** del timer, non alla chiamata: il riavvio lo crea dentro `chiedi`."""
+    threading.Timer(0.05, lambda: processi[-1].stdout.consegna(riga)).start()
+
+
+def test_dopo_un_soffitto_il_comando_successivo_riparte_da_un_sidecar_nuovo():
+    sp, processi = _sp_riavviabile(soffitto_s=0.2)
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1]["fase"] == "sidecar"   # muto: soffitto
+    assert len(processi) == 1
+    # il secondo comando parte su un processo nuovo, e quello risponde
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
+    righe = sp.chiedi({"comando": "check", "modello": {}})
+    assert len(processi) == 2 and sp.riavvii == 1
+    assert processi[0].terminato, "il vecchio si termina"
+    assert righe[-1] == {"esito": "ok"}
+    assert not sp._lock.locked()
+
+
+def test_dopo_una_pipe_rotta_sulla_scrittura_il_comando_successivo_riparte():
+    """Misurato dal vivo con `pkill -f nova.sidecar` sotto il server: la scrittura su stdin
+    solleva `BrokenPipeError` e finisce nell'`except` generico — che prima non segnava il
+    sidecar come rotto, e il riavvio non partiva mai."""
+    from nova.server import SidecarProcesso
+
+    class _StdinRotto:
+        def write(self, _):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self):
+            pass
+
+    processi: list = []
+
+    def avvia():
+        p = _ProcessoFinto()
+        if not processi:
+            p.stdin = _StdinRotto()
+        processi.append(p)
+        return p
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
+    assert "BrokenPipeError" in sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"]
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert len(processi) == 2 and sp.riavvii == 1
+
+
+def test_un_processo_uscito_si_riavvia_prima_di_scrivere():
+    """`poll()` non `None` = il figlio è uscito: si riparte prima di toccare la pipe."""
+    from nova.server import SidecarProcesso
+
+    processi: list = []
+
+    def avvia():
+        p = _ProcessoFinto(uscito=137 if not processi else None)
+        processi.append(p)
+        return p
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
+    _rispondi_in_un_attimo(processi, '{"id": 1, "esito": "ok"}\n')
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert len(processi) == 2
+
+
+def test_un_sidecar_che_ignora_il_terminate_viene_ucciso_al_riavvio():
+    """`Popen.wait(timeout=2)` **solleva** `TimeoutExpired`, non torna `None`: il `kill()` sta nel
+    ramo dell'eccezione, o non parte mai."""
+    import subprocess
+    from nova.server import SidecarProcesso
+
+    class _Testardo(_ProcessoFinto):
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired("sidecar", timeout)
+
+    processi: list = []
+
+    def avvia():
+        processi.append(_Testardo() if not processi else _ProcessoFinto())
+        return processi[-1]
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=0.2)
+    sp.chiedi({"comando": "check", "modello": {}})   # muto: soffitto
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert processi[0].terminato and getattr(processi[0], "ucciso", False), "terminate, poi kill"
+
+
+def test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte():
+    sp, processi = _sp_riavviabile(soffitto_s=1.0)
+    processi[0].stdout.consegna("")
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+    # **subito**, non dopo il soffitto: il riavvio non aspetta il morto (`wait` con tetto, `kill`)
+    t0 = time.perf_counter()
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert time.perf_counter() - t0 < 0.5, "senza aspettare il soffitto"
+    assert len(processi) == 2
+
+
+def test_stdout_chiuso_resta_l_errore_di_oggi():
+    sp, p = _sp(soffitto_s=1.0)
+    esito: dict = {}
+    t = threading.Thread(target=lambda: esito.update(righe=sp.chiedi({"comando": "check", "modello": {}})))
+    t.start()
+    p.stdout.consegna("")
+    t.join(timeout=2)
+    assert esito["righe"][-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+    # Uno stdout chiuso segna il sidecar come rotto: il comando successivo riparte da un
+    # processo nuovo (`test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte`), non
+    # aspetta il soffitto sul morto.
+    assert sp._rotto is True
+
+
+def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):
+    from nova.server import SidecarInProcesso
+    nomi: list[str] = []
+    righe = SidecarInProcesso().chiedi({"comando": "corsa", "modello": leggi_fixture("telaio_2x1.nova.json"),
+                                       "casi": None, "cartella": str(tmp_path / "c"), "solutore": "/nessun/OpenSees"},
+                                      su_fase=lambda ev: nomi.append(ev["nome"]))
+    assert nomi[0] == "check model"
+    assert righe[-1]["esito"] in ("assente", "errore", "ok")
+
+
+# --- 12/T2: la corsa come lavoro: 202, fasi mentre arrivano, salute libera, 409 --------------
+
+class _SidecarFermo:
+    """Un sidecar che emette «check model», poi aspetta il via: serve a guardare il lavoro a metà.
+
+    `partito` è l'appiglio del test: `time.sleep(0.05)` sarebbe una scommessa sullo scheduler,
+    e un rosso a intermittenza costa più di un rosso (R3 dell'annotazione)."""
+    def __init__(self):
+        self.via = threading.Event()
+        self.partito = threading.Event()
+    def chiedi(self, req, su_fase=None):
+        if req["comando"] == "verifica":
+            return [{"esito": "assente", "percorso": None, "motivo": "finto", "dove_prenderlo": "—"}]
+        if su_fase:
+            su_fase({"evento": "fase", "nome": "check model"})
+        self.partito.set()
+        self.via.wait(timeout=5)
+        return [{"evento": "fase", "nome": "check model"}, {"esito": "ok", "secondi": 0.5, "risultati": {}}]
+
+
+def _cliente_con_lavoro_fermo(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    fermo = _SidecarFermo()
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=fermo),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    return c, fermo
+
+
+def test_la_corsa_torna_subito_e_la_get_dice_la_fase_mentre_gira(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    r = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r.status_code == 202 and r.json()["stato"] == "in corso"
+    rid = r.json()["run_id"]
+    assert fermo.partito.wait(2), "il thread del lavoro non è partito"
+    g = c.get(f"/api/corsa/{rid}").json()
+    assert g["stato"] == "in corso" and g["fasi"] == ["check model"] and g["secondi"] >= 0
+    assert "esito" not in g
+    fermo.via.set()
+    d = _attendi(c, rid)
+    assert d["esito"] == "ok" and d["secondi"] == 0.5 and d["fasi"] == ["check model"]
+
+
+def test_salute_e_check_restano_liberi_mentre_una_corsa_gira(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    assert c.get("/api/salute").status_code == 200
+    assert c.post("/api/check", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 200
+    fermo.via.set(); _attendi(c, rid)
+
+
+def test_una_seconda_corsa_mentre_una_gira_e_409(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    r2 = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r2.status_code == 409 and "in corso" in r2.json()["motivo"]
+    # chi ricarica la pagina a metà corsa si riaggancia dal `run_id` che il 409 porta
+    assert r2.json()["run_id"] == rid
+    assert r2.json()["comando"] == "corsa", "chi si riaggancia deve sapere a che lavoro"
+    assert c.get(f"/api/corsa/{rid}").json()["comando"] == "corsa"
+    # anche il solido passa dallo stesso lavoro: un sidecar solo, una corsa alla volta
+    assert c.post("/api/ccx", json={"inp": str(_trave())}).status_code == 409
+    fermo.via.set(); _attendi(c, rid)
+    # finita la prima, la seconda parte
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+def test_i_lavori_finiti_si_potano_oltre_max_lavori(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", max_lavori=2),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    ids = [_corsa(c, {"modello": leggi_fixture("telaio_2x1.nova.json")})["run_id"] for _ in range(3)]
+    assert c.get(f"/api/corsa/{ids[0]}").status_code == 404, "il più vecchio se n'è andato"
+    assert c.get(f"/api/corsa/{ids[1]}").status_code in (200, 400)
+    assert c.get(f"/api/corsa/{ids[2]}").status_code in (200, 400)
+    assert "cartella" in c.get(f"/api/corsa/{ids[2]}").json(), "la cartella c'è anche per il telaio"
+
+
+def test_get_di_una_corsa_ignota_o_malformata_e_404(cliente):
+    assert cliente.get("/api/corsa/abc").status_code == 404
+    assert cliente.get("/api/corsa/0123456789ab").status_code == 404
+
+
+def test_con_il_sidecar_in_processo_la_get_dice_subito_finita_con_le_fasi(cliente):
+    d = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert d["stato"] == "finita" and d["fasi"][0] == "check model"
+
+
+def test_un_rifiuto_del_check_e_una_corsa_finita_con_i_verdetti(cliente):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 99, "x": 5000.0, "z": 5000.0})   # nodo libero
+    d = _corsa(cliente, {"modello": m})
+    assert d["esito"] == "rifiutato"
+    assert any(v["controllo"] == "nodi_liberi" and v["esito"] == "non_passato" for v in d["verdetti_check"])
+
+
+class _SidecarCheScoppia:
+    """Il sidecar in processo non ha nessuna rete: un `ValueError` di `_carica`, un `KeyError`
+    su un evento storto, e l'eccezione scappa dal thread del lavoro."""
+    def chiedi(self, req, su_fase=None):
+        raise RuntimeError("il sidecar è esploso")
+
+
+def test_uneccezione_nel_thread_chiude_il_lavoro_invece_di_bloccare_il_server(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=_SidecarCheScoppia()),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    d = _attendi(c, rid, secondi=5)   # il finto solleva subito: senza il ramo il lavoro non finisce mai
+    assert d["stato"] == "finita" and d["esito"] == "errore" and d["fase"] == "sidecar"
+    assert "RuntimeError" in d["motivo"]
+    # senza il ramo l'unico lavoro resta «in corso» per sempre, e ogni corsa dopo è 409
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+class _SidecarInSoffitto:
+    """Il soffitto del Task 1: `chiedi` **rende** l'errore, non lo solleva."""
+    def chiedi(self, req, su_fase=None):
+        return [{"esito": "errore", "fase": "sidecar", "motivo": "nessuna risposta dal sidecar entro 660 s"}]
+
+
+def test_lerrore_del_soffitto_chiude_il_lavoro_e_il_prossimo_parte(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=_SidecarInSoffitto()),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    d = _attendi(c, rid)
+    assert d["stato"] == "finita" and d["esito"] == "errore" and d["fase"] == "sidecar"
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+def test_un_thread_che_non_parte_non_lascia_il_lavoro_in_corso(cliente, monkeypatch):
+    """`Thread.start()` può sollevare (`can't start new thread`): senza la potatura il lavoro
+    resta «in corso» per sempre e ogni corsa dopo è 409."""
+    import nova.server as ns
+
+    class _ThreadCheNonParte:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    # solo il nome `threading` dentro `nova.server`: il modulo vero resta com'è per TestClient
+    monkeypatch.setattr(ns, "threading", type("T", (), {"Thread": _ThreadCheNonParte}))
+    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r.status_code == 500
+    monkeypatch.undo()
+    assert cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
