@@ -12,7 +12,7 @@
 
 **Ricerca che questo piano applica** (`docs/ricerca/index.md`, riga 19, ricerca 07): `07-ux-modellatore.md:93` (NNG: sotto 1 s nessun indicatore, sopra 10 s fasi nominate senza percentuale), `:100` (verifica fallita = doppio canale: colore **e** parola **e** riga), `:101` (verifiche in chiaro: il controllo che contraddice accanto al numero), `:152` (P5: fasi nominate, durata misurata, errore con rimando al registro), `:169` (analisi: non bloccante, fasi nominate, esito con durata misurata). Mappa wayfinder #31: la 12 continua T5; la passata sull'uso viene dopo la 15.
 
-**Ramo:** `feat/interfaccia-12-check-corsa` da `main` a `f5a41e1`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-12` (venv pronto, `nova ok 3.12.13`). PR verso `main`.
+**Ramo:** il piano lo chiamava `feat/interfaccia-12-check-corsa`, ma il ramo che **esiste** è `feat/interfaccia-12-importatore` — il nome è stato copiato da quello dell'11d (`feat/interfaccia-11d-importatore`) e non dice più di che giornata è (vedi l'annotazione, §0). Da `main` a `f5a41e1`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-12` (venv pronto, `nova ok 3.12.13`). PR verso `main`.
 
 ## Global Constraints
 
@@ -35,7 +35,7 @@
 
 ## Quel che il backend dà già, e non va reinventato
 
-- `nova/server.py:61-110` `SidecarProcesso`: lock unico non bloccante → 409 `{"esito":"errore","fase":"sidecar","motivo":"il sidecar è occupato da un'altra corsa"}` (`:80-82`); `chiedi(req)` scrive una riga su stdin e legge con `readline()` finché non arriva la riga senza `evento` (`:90-106`), raccogliendo gli eventi di fase in `righe`; nessun timeout sul `readline` (`:94`). `SidecarInProcesso` (`:46-58`) chiama `_sidecar.rispondi(req, righe.append)` in memoria: è quello dei test.
+- `nova/server.py:62-110` `SidecarProcesso`: lock unico non bloccante → 409 `{"esito":"errore","fase":"sidecar","motivo":"il sidecar è occupato da un'altra corsa"}` (`:80-82`); `chiedi(req)` scrive una riga su stdin e legge con `readline()` finché non arriva la riga senza `evento` (`:90-106`), raccogliendo gli eventi di fase in `righe`; nessun timeout sul `readline` (`:94`). `SidecarInProcesso` (`:47-59`) chiama `_sidecar.rispondi(req, righe.append)` in memoria: è quello dei test.
 - `nova/server.py:191-193` `/api/salute` → `{"nova": versione, "solutore": {esito: ok|rotto|assente, percorso, motivo, dove_prenderlo}}` (`nova/corsa.py:62-70`; `DOVE_PRENDERLO["opensees"]` in `meshrec/core/solve.py:1213-1227`). `:195-197` `/api/check {modello}` → `{"esito": "ok"|"rifiutato", "verdetti": [...]}`, 400 con `fase: "modello"`. `:206-212` `/api/corsa {modello, casi?}` sincrona → `{"run_id", "fasi": [...], ...fin}`; `:214-223` `/api/ccx {inp}` sincrona → `{"run_id", "cartella", "fasi", ...fin}`; `_o_400` (`:183-189`): 400 per `fase` ∈ modello|importa|confronto|deck, **200** per `fase: "solutore"` e `esito: "assente"`.
 - `nova/sidecar.py:132-147` `comando_corsa(req, emetti)`: emette `{"evento":"fase","nome":"check model"}`, fa il Check, se rifiutato torna `{"esito":"rifiutato","verdetti_check":[…],"secondi"}` senza solutore; altrimenti `esito = _corsa.esegui(...)` con `verdetti_check` aggiunto. Le fasi della corsa: `"scrivo il deck e lancio OpenSees"` / `"… (modale, N modi)"` (`nova/corsa.py:159`), `"leggo i recorder"` (`:134`); di `ccx`: `"copio il deck"`, `"lancio ccx"`, `"leggo .dat e .frd"` (`nova/ccx.py:94,110,126`).
 - `nova/corsa.py:155-156`: `(cartella / NOME_RISULTATI).write_text(json.dumps(risultati, …))` poi `{"esito": "ok", "risultati": risultati, "secondi": …}`; `nova/ccx.py:135-137` idem con `NOME_RISULTATI = "risultati_solido.json"`. `_errore_solutore` (`corsa.py:237`) → `{"esito":"errore","fase":"solutore","motivo","coda_log"(ultimi 2000 caratteri)}`; `_TIMEOUT_S = 600` (`corsa.py:40`), `1800` per ccx (`ccx.py:57`).
@@ -43,10 +43,10 @@
 - `nova/__main__.py:31-43`: un solo `SidecarProcesso`, `create_app(sidecar, Path.cwd() / "corse", porta=porta)`, `terminate()` nel `finally`.
 - `tests/test_server.py:19-30` fixture `cliente` con `SidecarInProcesso`; `:610-627` il 409 di `/api/salute` col lock preso (resta valido: è il sidecar breve); i test che oggi fanno `POST /api/corsa` e leggono la risposta sincrona: `:66`, `:168`, `:191`, `:202`, `:308`, `:314`, `:446`, `:641`; `POST /api/ccx`: `:534`, `:549`, `:557`, `:562`, `:571`, `:576`, `:606`. Il Task 2 li adegua con un helper che attende la fine del lavoro.
 - `static/file.js:24-33` `chiediJson(rotta, corpo?)`: GET senza corpo, POST altrimenti; rete caduta → `Error("il server non risponde")`; risposta non ok → `Error(dati.motivo || "il server ha risposto N")`. `:73` `inCorso`, `:171` e `:181` il bottone «importazione…» disabilitato e ripristinato nel `finally`: **il modello di «corro…»**.
-- `static/app.js:100-102` `$`, `messaggio`, `dì`; `:109` `scegli(tipo, id)` (passa da `esitoScelta`: è la porta di «vai»); `:182-188` `creaStoria`; `:189-231` `creaFile` con `suApertura`/`suImportazione` (dove l'ultima corsa si azzera); `:239` `VOCI_PALETTE = TASTI.filter(…)` (le voci nuove entrano da sole); `:553-563` `esegui`; `:565-607` `ridisegna` (in coda `file.disegna`, `storia.disegna`, `disegnaBarra`); `:631` il listener `keydown`; `:666-` `dispatchVoce`: `apri`/`salva`/`importa` a `:687-691` **sopra** la guardia del campo, `palette` a `:696`.
-- `static/tastiera.js:20-45` `TASTI` (`importa` a `:23` con `modificatore: "comando"`, `contesto: "salvo-ghost"`); `:77` `CON_COMANDO`, `:79` `CON_COMANDO_E_SHIFT` (solo `z`); `:118-131` `voceDaEvento`; `:136-155` `vociDellaBarra`. Test in `static/test/tastiera.test.js` (`:77-95` le prove di ⌘/⇧⌘, `:149-150` la sonda dei tasti).
-- `static/index.html:47-57` il pannello destro: `<h2>Selezione</h2>`, `#pannello-dati`, `#pannello-editor`, «Unità», «Storia» (`#storia-elenco`); `:63` `#messaggio` con `aria-live`. `static/stile.css:47` `#pannello`, `:60-61` `h2`, `:63` `.numero`, `:158` `.avviso` (filetto rosso), `:165-168` `.rendiconto .scartata` (il filetto come `.avviso`, testo inchiostro), `:187` `.vuoto`, `:225` `.staccato`, `:239-243` `.file-azioni` e i suoi bottoni, `:244` `#file-stato`, `:262` `#storia-elenco`.
-- `static/test/file.test.js:9-52`: `elementoFinto()` con `dispatch`, `radiceFinta()` con `querySelector`, `fetchFinta({dati, ritardo, ok, stato})` che conta chiamate e corpi — **da copiare** in `corsa.test.js`, non da importare (i test non condividono moduli: quattro DOM finti dichiarati nell'Esito della 11c).
+- `static/app.js:100-102` `$`, `messaggio`, `dì`; `:109` `scegli(tipo, id)` (passa da `esitoScelta`: è la porta di «vai»); `:182-188` `creaStoria`; `:189-224` `creaFile` con `suApertura`/`suImportazione` (dove l'ultima corsa si azzera); `:239` `VOCI_PALETTE = TASTI.filter(…)` (le voci nuove entrano da sole); `:553-563` `esegui`; `:565-608` `ridisegna` (in coda `file.disegna`, `storia.disegna`, `disegnaBarra`); `:631` il listener `keydown`; `:666-` `dispatchVoce`: `apri`/`salva`/`importa` a `:687-691` **sopra** la guardia del campo, `palette` a `:696`.
+- `static/tastiera.js:14-50` `TASTI` (`importa` a `:23` con `modificatore: "comando"`, `contesto: "salvo-ghost"`); `:77` `CON_COMANDO`, `:79` `CON_COMANDO_E_SHIFT` (solo `z`); `:117-130` `voceDaEvento`; `:136-155` `vociDellaBarra`. Test in `static/test/tastiera.test.js` (`:77-96` le prove di ⌘/⇧⌘, `:149-150` la sonda dei tasti).
+- `static/index.html:49-61` il pannello destro: `<h2>Selezione</h2>`, `#pannello-dati`, `#pannello-editor`, «Unità», «Storia» (`#storia-elenco`); `:63` `#messaggio` con `aria-live`. `static/stile.css:47` `#pannello`, `:60-61` `h2`, `:63` `.numero`, `:158` `.avviso` (filetto rosso), `:165-168` `.rendiconto .scartata` (il filetto come `.avviso`, testo inchiostro), `:187` `.vuoto`, `:225` `.staccato`, `:239-243` `.file-azioni` e i suoi bottoni, `:244` `#file-stato`, `:265` `#storia-elenco`.
+- `static/test/file.test.js:9-53`: `elementoFinto()` con `dispatch`, `radiceFinta()` con `querySelector`, `fetchFinta({dati, ritardo, ok, stato})` che conta chiamate e corpi — **da copiare** in `corsa.test.js`, non da importare (i test non condividono moduli: quattro DOM finti dichiarati nell'Esito della 11c).
 
 ## Sei decisioni prese qui, non da scoprire in browser
 
@@ -56,6 +56,427 @@
 4. **Il blocco «Corsa» è fisso nel pannello destro, sopra la Storia** (story 7). Dall'alto: stato del solutore; i due bottoni; l'attesa (solo mentre gira); l'ultima corsa; i verdetti. Con niente da dire, uno stato vuoto che insegna il gesto («Premi ⌘⏎ per lanciare tutte le analisi del modello, ⇧⌘⏎ per il solo Check Model»).
 5. **«Stantia» è l'identità dello snapshot, non l'impronta.** `creaCorsa` tiene `lavoro.modello` = l'oggetto immutabile passato a «corri»; a ogni `disegna({modello})` è stantia se `modello !== lavoro.modello`. `⌘Z` fino a quello snapshot la fa tornare fresca; «apri» e una cronologia nuova la azzerano. Equivale all'impronta (stesso oggetto ⇒ stessa impronta) senza una rotta in più.
 6. **«Corri il solido» è il minimo**: un campo per il percorso del `.inp` e un bottone nel blocco; stesso lavoro, stessa attesa, stessi errori; esito «corsa del solido · 7,5 s · cartella …». Niente vista del solido (T7), niente verdetti (ccx non ne produce).
+
+## Annotazione dell'architect (10/09/2026)
+
+Scritta nel worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-12`, ramo
+`feat/interfaccia-12-check-corsa`, HEAD **`f084120`** (`f5a41e1` è il padre, il merge della 11d su
+`main`). Ogni riga `file:riga` citata dal piano è stata aperta contro
+il codice a `f5a41e1`; la sezione 1 elenca le quattordici che non combaciavano, già corrette nel
+testo. Punti di partenza **rimisurati qui**, non ricordati: `node --test` sui diciannove file di
+`static/test/` → **610 pass, 0 fail**; pytest sull'intera `tests/` → **695 passed, 3 skipped in
+42,92 s** (698 raccolti, i tre skip sono `wall_model.inp` non versionato). Le righe 30 e 31 del piano
+combaciano tutte e due. Nota d'attrezzo: `pytest -q` in questo repo **non stampa il riepilogo** —
+per leggere i conteggi serve `--tb=no -rs` senza `-q`, altrimenti chi chiude la giornata non ha un
+numero da confrontare.
+
+### 0. Il ramo non si chiama come la giornata
+
+Premessa del brief e riga 15 del piano: ramo `feat/interfaccia-12-check-corsa`. Il ramo che esiste è
+**`feat/interfaccia-12-importatore`** (`git -C … branch --show-current`), e accanto a lui stanno
+`feat/interfaccia-11c` **e** `feat/interfaccia-11c-azioni`: è la seconda volta che un ramo di questa
+serie porta il nome di un'altra giornata. Il nome è stato copiato da `feat/interfaccia-11d-importatore`
+e la 12 non importa niente — importa il Check Model e la corsa. **Non l'ho rinominato**: rinominare
+sposta anche la PR, ed è una decisione di chi la apre. Ma va deciso **prima** del dispatch: un ramo
+che mente sul proprio contenuto è il primo posto dove si va a cercare quando fra un mese si chiede
+«dov'è finito il Check Model». La riga 15 del piano ora dice la verità; il ramo no.
+
+### 1. I puntamenti che non combaciavano
+
+Quattordici, in ventuno punti del testo. Nessuno cambia *cosa* fare; tutti cambiano *dove guardare*,
+ed è il tipo di errore che costa mezz'ora a chi apre il file e non trova quello che il piano
+promette. Corretti nel testo del piano.
+
+| citato | vero | dove |
+|---|---|---|
+| `nova/server.py:61-110` `SidecarProcesso` | **62-110** (61 è vuota) | riga 38, Task 1 *Files*, Task 1 step 3 |
+| `nova/server.py:46-58` `SidecarInProcesso` | **47-59** | riga 38, Task 1 *Files* |
+| `SidecarInProcesso.chiedi` `:52-58` | **53-59** | Task 1 step 3 |
+| «lo stdout chiuso, com'è oggi» `:96-98` | **95-98** (`if not riga:` è la 95) | Task 1, ingressi degeneri |
+| `create_app` `:160`, rotte `:160-223` | **162**, **162-223** | Task 2 *Files*, Task 2 step 4 |
+| `static/app.js:189-231` `creaFile` | **189-224** | riga 46 |
+| `static/app.js:565-607` `ridisegna` | **565-608** (`file.disegna` è a 605, esatta) | riga 46 |
+| `static/app.js:190-227` `suApertura`/`suImportazione` | **190-206** e **212-222** | Task 5 *Interfaces* |
+| `static/tastiera.js:20-45` `TASTI` | **14-50** (`importa` a `:23` è esatta) | riga 47, Task 4 *Files* |
+| `static/tastiera.js:118-131` `voceDaEvento` | **117-130** | riga 47 |
+| `static/test/tastiera.test.js:77-95` | **77-96** | riga 47 |
+| `static/index.html:47-57` il pannello | **49-61** (l'innesto è fra `:58` e `:59`) | riga 48, Task 4 *Files* |
+| `static/stile.css:262` `#storia-elenco` | **265** | riga 48 |
+| `static/test/file.test.js:9-52` | **9-53** | riga 49, Task 4 step 1 |
+
+E un conteggio: il Task 4 dice «i dodici id» e ne elenca **tredici** (corretto). Sempre nel Task 4:
+tredici `test(` in coda a `corsa.test.js`, uno scritto per esteso e **dodici** come commento — non
+undici; vedi R8.
+
+**Combaciano invece**, verificate in questa sessione e da non rileggere: `nova/server.py` `:3-6` il
+ruling di sicurezza, `:35` `_RUN_ID_RE`, `:80-82` il lock non bloccante, `:90-106` il ciclo di
+`chiedi` con il `readline()` a `:94` senza timeout, `:107-108` l'`except Exception`, `:113` `_finale`,
+`:183-189` `_o_400`, `:191-193` `/api/salute`, `:195-197` `/api/check`, `:199-204` `/api/importa`,
+`:206-212` `/api/corsa`, `:214-223` `/api/ccx`; `nova/sidecar.py:132-147` `comando_corsa`;
+`nova/corsa.py` `:40` `_TIMEOUT_S = 600`, `:134` «leggo i recorder», `:155-156` la scrittura,
+`:159` `_fase`, `:237` `_errore_solutore`, `:306` `versione_opensees` dentro `risultati["run"]` (la
+chiave che il Task 4 legge esiste); `nova/ccx.py` `:57` `_TIMEOUT_S = 1800`, `:94`/`:110`/`:126` le
+tre fasi, `:135-137` la scrittura; `nova/check.py:16-20` `_v` e `:81-284` `check_model`, con i
+**sedici** controlli distinti contati uno per uno e le forme dell'`oggetto` esattamente come la riga
+42 le descrive (`nodo_su_asta` rende `[id_nodo, id_asta]` a `:156`, `carico_termico` rende
+`(id_azione, id_asta)` a `:239`, `armatura_mancante` id di sezione a `:254`); `nova/__main__.py:31-43`;
+`tests/test_server.py` `:19-30` la fixture, `:610-627` il 409 col suo `_FintoProcesso` che ha davvero
+`stdout = None`, `:634-651` la pushover, e **tutti e quindici** i numeri di riga delle `POST` da
+adeguare (66, 168, 191, 202, 308, 314, 446, 641 per `corsa`; 534, 549, 557, 562, 571, 576, 606 per
+`ccx`); `static/file.js` `:24-33` `chiediJson`, `:73` `inCorso`, `:116` `occupato()`, `:171`/`:181`
+il bottone «importazione…»; `static/app.js` `:100-102`, `:109` `scegli`, `:182-188` `creaStoria`,
+`:239` `VOCI_PALETTE`, `:553-563` `esegui`, `:631` il `keydown` con il `preventDefault` a `:649`,
+`:666-696` `dispatchVoce` con `apri`/`salva`/`importa` a `:687-691` e `palette` a `:696`;
+`static/tastiera.js` `:77` `CON_COMANDO` (dove `enter` **non** c'è: la casella è libera), `:79`
+`CON_COMANDO_E_SHIFT`, `:104-115` `daControllo` che a `:107` lascia passare il modificatore di
+comando, `:136-155` `vociDellaBarra`, e `test/tastiera.test.js:149-150` la sonda dei tasti;
+`static/numeri.js:182-195`; `static/index.html:63` `#messaggio`; `static/stile.css` `:47`, `:60-63`,
+`:158`, `:165-168`, `:187`, `:225`, `:239-244`; `docs/ricerca/index.md:19` (ricerca 07) e le cinque
+righe di `07-ux-modellatore.md` — `:93`, `:100`, `:101`, `:152`, `:169` — tutte e cinque esatte.
+
+### 2. I contratti fra task, e i sette che non combaciavano
+
+Il piano dichiara le interfacce due volte: nelle *Interfaces* a parole, e nel blocco di codice sotto.
+Dove le due stesure divergono, chi esegue copia il codice e legge le parole — e ci crede.
+
+- **T1 → T2 — `chiedi(req, su_fase)`**: combacia. La firma dichiarata è `su_fase=None` e il Task 2
+  la chiama posizionale, `lungo.chiedi(req, su_fase)`. Il *seam* è qui, ed è quello giusto: il
+  callback è l'unica cosa nuova che il chiamante deve sapere per vedere le fasi mentre arrivano.
+- **T1 → T2 — `occupato()`: non combacia, e va cancellato** (R9). Il Task 1 lo produceva su due
+  classi, il Task 2 lo dichiarava fra i *Consumes*, e **nessuna riga del Task 2 lo chiama**: il 409
+  lo decide il dizionario `lavori`, come la decisione 2 dice apposta. Prova di cancellazione: tolto,
+  non ricompare complessità da nessuna parte. Tolto da `SidecarProcesso`, da `SidecarInProcesso`, da
+  `_SidecarFermo` e dai *Consumes* del Task 2.
+- **T2 → T4 — le forme HTTP**: combaciano tutte, verificate una per una. `POST` → 202
+  `{run_id, stato}` (+`cartella` per ccx) contro la `fetchSequenza` del test del Task 4; `GET` in
+  corso → `{run_id, stato, fasi, secondi}` **senza** `esito` (il test lo asserisce, e `base` non lo
+  porta); `GET` finita → `{...base, secondi, ...fin}`; 400 sul `GET` per `fase ∈ modello|importa|
+  confronto|deck`; 409 con `motivo: "un'altra corsa è in corso"`, che `chiediJson` (`file.js:31`)
+  rende come `e.message` **già in italiano** — la traduzione difensiva nel `catch` di `corri()` è
+  per il solo 409 senza corpo, e la nota del piano lo dice bene. Una cosa che il piano non dice e
+  che vale scritta: `fasi` si riempie **solo** da `su_fase`, mentre la vecchia `POST` sincrona la
+  ricavava dalle `righe` (`server.py:212`). Le due strade danno lo stesso elenco perché
+  `sidecar.rispondi` passa a `emetti` esattamente ciò che accoda — e `_SidecarFermo`, che emette una
+  fase da `su_fase` e la ripete in `righe`, lo prova: il test si aspetta `["check model"]`, una sola.
+- **T2 — `_avvia_lavoro` aveva due firme nello stesso step** (R10): il blocco di codice la
+  dichiarava `(req, extra: dict)` e nove righe sotto il piano si correggeva da sé in
+  `(req, con_cartella: bool)`. Vale la seconda; i corpi delle due rotte e il `return` sono stati
+  riscritti di conseguenza.
+- **T3 → T4 — `testoSolutore`**: non combaciava. Dichiarata `testoSolutore(salute)`, scritta
+  `testoSolutore(salute, versione = null)`, chiamata a due argomenti dal Task 4. Corretta la
+  dichiarazione.
+- **T3 → T4 — i *Consumes***: il Task 3 dichiarava `cifre` **e** `conciso` da `numeri.js`, il suo
+  modulo importa solo `conciso` (che chiama `cifre` da sé, `numeri.js:195`); il Task 4 dichiarava
+  «`cifre` per i secondi» e non importa niente da `numeri.js`. Corretti tutti e due. È lo stesso
+  difetto trovato nell'11d, punto 6: le *Interfaces* elencano ciò che sembra servire, il codice
+  importa ciò che serve.
+- **T4 → T5 — il ritorno di `creaCorsa`**: non combaciava. La riga delle *Interfaces* ne elencava
+  sei, il codice ne rende **sette**, e la settima è `impostaSolutore` — proprio quella che il Task 5
+  chiama con la risposta di `/api/salute`. Corretta.
+- **T4 → T5 — `suVai`** (R11): il piano scriveva `suVai: ({tipo, id}) => { scegli(tipo, id);
+  ridisegna(); }`, ma `scegli` (`app.js:109-124`) chiama già `ridisegna()` in coda. Due passate di
+  disegno per clic. Corretto in `suVai: ({tipo, id}) => scegli(tipo, id)`.
+- **T4 → T5 — i tipi di «vai»**: combaciano. `OGGETTO_PER_CONTROLLO` e `TIPI_NEL_DICT` producono
+  quattro tipi soli — `nodo`, `asta`, `sezione`, `azione` — e `ARTICOLO` ne copre quattro; `scegli`
+  li accetta tutti (`selezione = {tipo, id}` senza elenco), e `esiste` in `ridisegna`
+  (`app.js:567-570`) conosce tutti e quattro, quindi un «vai» su un oggetto sparito fa cadere la
+  selezione invece di sollevare — che è l'ingresso degenere del Task 5, verificato nel codice.
+
+### 3. I rischi, con il loro ruling
+
+**R1 — il thread lettore regge, e `terminate()` non lo lascia appeso.** *Ruling: si fa com'è
+scritto.* `text=True` dà un `TextIOWrapper` e in Python 3 `for riga in stdout` **è** `readline()`:
+la trappola del read-ahead nascosto era di Python 2. `bufsize=1` è il line-buffering, e conta sullo
+**stdin** che scriviamo — il `flush()` c'è già (`server.py:91`). A `terminate()` il figlio muore, la
+pipe va in EOF, il `for` finisce e il `finally` mette `None` in coda; e il thread è `daemon`, quindi
+non trattiene l'uscita neppure se restasse fermo. *Costo se sbagliato*: ogni richiesta finirebbe sul
+soffitto invece che sulla risposta — un server che pare vivo e non risponde mai. **Coda del ruling**:
+in `__main__` i due `SidecarProcesso(...)` stanno fuori dal `try`, quindi se il **secondo** `Popen`
+fallisce il primo resta orfano. Lasciato com'è, dichiarato: stesso `sys.executable` e stesso comando,
+o falliscono tutti e due o nessuno.
+
+**R2 — il thread del lavoro ha una sola via d'uscita catturata, e non basta.** *Ruling: l'`except`
+del thread deve prendere anche `Exception`, non solo `HTTPException`.* Il piano cattura il 409 del
+lock e nient'altro. Ma `SidecarInProcesso.chiedi` **non ha nessuna rete**: `_sidecar.rispondi` lascia
+risalire tutto — un `ValueError` di `_carica` su un modello storto, un `KeyError` di `su_fase` su un
+evento senza `nome` — e `SidecarProcesso.chiedi` la sua rete ce l'ha solo *dentro* il `try` interno.
+Un'eccezione che scappa dal thread non ha nessuno a cui risalire: il lavoro resta `stato: "in corso"`
+**per sempre**, ogni corsa successiva è 409 «un'altra corsa è in corso» finché il server non
+riparte, e l'interfaccia interroga in eterno con i bottoni spenti. *Costo se sbagliato*: un difetto
+solo, e il prodotto è morto — e nessun test lo prende. Applicato allo step 4 del Task 2, con il suo
+ingresso degenere e il mutante 11.
+
+**R3 — `TestClient` e i thread: il thread parte, ma il test non deve scommetterci.** *Ruling: niente
+`time.sleep(0.05)`; `_SidecarFermo` prende un secondo `Event`, `partito`, e il test fa
+`assert fermo.partito.wait(2)`.* `_avvia_lavoro` chiama `start()` **prima** di rendere il 202,
+quindi quando il client legge la risposta il thread esiste già; ma *quanto* ha girato dipende dallo
+scheduler, e 50 ms sono una scommessa. Sul resto nessun problema: `TestClient` serve le rotte sync in
+un threadpool anyio, il lavoro è un `threading.Thread` normale e non dipende dal portale — nessun
+deadlock. *Costo se sbagliato*: un rosso a intermittenza in una suite di una persona sola, cioè il
+modo più caro di smettere di credere ai test. Due righe.
+
+**R4 — il 400 sul `GET` è idempotente, e va bene.** *Ruling: `_o_400` resta sul `GET`, e i due test
+del `fase: "deck"` devono asserire il **codice**, non solo il corpo.* Il corpo del lavoro finito non
+cambia più, quindi ogni `GET` dopo il primo 400 dà lo stesso 400: è un fatto stabile, non una
+condizione di corsa. Ma se il test riscritto legge solo `d["fase"] == "deck"`, il mutante 4
+sopravvive — senza `_o_400` la `GET` rende **200 con lo stesso corpo** e l'asserzione passa lo
+stesso. *Costo se sbagliato*: un mutante dichiarato rosso che è verde, cioè una prova che mente.
+**Costo dichiarato e non risolto oggi**: `chiediJson` tiene solo `dati.motivo` e butta il resto,
+quindi sul `fase: "deck"` l'interfaccia mostra il motivo e perde i `verdetti_check` che
+`comando_corsa` ha già messo nello stesso corpo — l'utente legge «una sola pushover per modello» e
+non vede i sedici verdetti che glielo spiegano. In coda al piano, fra i debiti.
+
+**R5 — «stantia» per identità dello snapshot: accettabile, e per una ragione più forte di quella
+scritta.** *Ruling: si tiene l'identità, non l'impronta.* Il caso che il brief teme — «apri» dello
+stesso file che crea un altro oggetto e marca stantia una corsa ancora buona — **non nasce**, perché
+`suApertura` chiama `corsa.azzera()` (Task 5) e dopo un'apertura non c'è nessun lavoro da marcare.
+Dentro una cronologia sola l'identità è poi *esatta*, non approssimata: `applica`
+(`cronologia.js:20`) rende `c` **invariata** quando il riduttore restituisce lo stesso oggetto,
+quindi un comando che non cambia niente non invecchia la corsa; e `indietro`/`avanti`
+(`cronologia.js:28-29`) riusano gli **stessi** oggetti snapshot, quindi `⌘Z` fino allo snapshot della
+corsa la fa tornare fresca davvero, non per caso. *Costo se sbagliato*: solo se qualcuno toglie
+`azzera()` da `suApertura` — e quello è già un ingresso degenere del Task 5.
+
+**R6 — `⌘⏎` e `⇧⌘⏎` sono liberi, ma la premessa era falsa.** *Ruling: si prendono tutti e due.*
+Correzione della premessa del brief: **un `<form>` nella pagina c'è**, `static/index.html:88`
+`<form id="comando" hidden>`. La conclusione regge lo stesso, per tre ragioni indipendenti: in Chrome
+su Mac `⌘⏎` e `⇧⌘⏎` sono gesti da **link** (apri in scheda nuova, in secondo o in primo piano) e la
+pagina non ha un solo `<a>`; `app.js:649` chiama `preventDefault()` **prima** di `eseguiVoce`, quindi
+nessun default del browser sopravvive al dispatch; e dentro `#comando-campo` il tasto arriva sì fino
+a `dispatchVoce` (`daControllo` lascia passare il modificatore, `tastiera.js:107`), ma lo ferma la
+guardia del campo (`app.js:710`), che rimette il fuoco e torna. In `CON_COMANDO` (`tastiera.js:77`)
+`enter` non c'è: `o, s, z, k, i` e basta. *Costo se sbagliato*: una scheda vuota che si apre mentre
+la corsa parte — rumoroso, non silenzioso: la prima prova del Task 6 lo vede.
+
+**R7 — la coda non svuotata: sì, il filtro sull'`id` le scarta.** *Ruling: sì, e i due costi vanno
+scritti invece che scoperti.* Le righe in ritardo della richiesta 1 arrivano alla 2 e cadono sul
+`if grezza.get("id") != rid: continue` — è il filtro che il protocollo ha già
+(`docs/ricerca/03-stack-tecnico.md:195`). I due costi: (1) ogni riga stantia **rimette in moto** il
+`get(timeout=self.soffitto_s)`, quindi la richiesta 2 può aspettare più del soffitto se la 1 sputa
+righe a raffica; (2) dopo un soffitto il **processo** è ancora impegnato sulla richiesta 1, quindi la
+2 entra in coda dietro di lei dentro il sidecar, e con un sidecar davvero piantato ogni corsa
+successiva costa 660 s e finisce in errore, per la vita del server. La ricerca 03 (`:121`) chiede
+«riavvio del sidecar al comando successivo» e il piano non lo fa. *Non ucciderlo oggi*: il soffitto è
+l'ultima rete, non il caso normale, e riavviare vuol dire rifare anche il thread lettore. Il debito
+va in coda al piano con il suo nome — fatto.
+
+**R8 — i dodici corpi-commento sono una specifica, non un segnaposto.** *Ruling: l'implementer li
+scrive **per esteso**, e il reviewer li conta.* In coda a `corsa.test.js` il Task 4 mette tredici
+`test(`: uno scritto, dodici come commento (il piano diceva undici). Numero da verificare al
+commit: `grep -c '^test(' static/test/corsa.test.js` deve dare **13** più i test del Task 3.
+*Costo se sbagliato*: dodici comportamenti dichiarati e non provati, in un file dove **cinque dei
+dieci mutanti** puntano proprio lì (6, 7, 8, 9 e, di riflesso, 10).
+
+**R9 — `occupato()` non passa la prova di cancellazione.** Vedi §2. *Costo se sbagliato*: due metodi
+morti su un'interfaccia che tre classi devono soddisfare per sempre.
+
+**R10 — `_avvia_lavoro` a due firme.** Vedi §2. *Costo se sbagliato*: si copia il primo blocco, il
+`cartella: None` finisce nel corpo della `POST /api/ccx` e la riga «corsa del solido … · cartella
+null» arriva fino al browser.
+
+**R11 — `suVai` disegnava due volte.** Vedi §2. *Costo se sbagliato*: nessuno visibile, due passate
+di disegno per clic. È il tipo di riga che poi si copia per anni.
+
+**R12 — il CSS del blocco riscrive regole che `stile.css` ha già.** *Ruling: `#corsa label` entra nel
+selettore di `#file label` (`:232`), `#corsa-inp` in quello di `#file-percorso, #comando-campo`
+(`:233`) e nel suo `:focus-visible` (`:237`).* Tre selettori estesi al posto di sei righe nuove.
+*Costo se sbagliato*: due definizioni della stessa casella di testo, che divergono al primo ritocco
+della palette e nessuno se ne accorge finché non le si guardano vicine.
+
+**R13 — la fine della corsa non la sente nessuno.** *Ruling: `aria-live="polite"` su `#corsa-ultima`,
+e **solo** lì.* L'errore passa già da `dì()` (`#messaggio`, `aria-live`, `index.html:63`), ma l'esito
+buono non lo annuncia niente: chi non guarda lo schermo non sa che la corsa è finita. I secondi che
+salgono ogni 500 ms in una regione viva sarebbero invece rumore continuo, e le fasi si riscrivono
+per intero a ogni giro. Un attributo. *Costo se sbagliato*: un attributo di troppo; al contrario, la
+fine di un'attesa invisibile a chi ascolta.
+
+**R14 — il cronometro sfarfalla a quattro decimali.** *Ruling: `testoAttesa` arrotonda al decimo,
+`testoUltima` no.* Sotto 1 `cifre` dà **quattro** decimali (`numeri.js:183`), quindi l'attesa
+scriverebbe «0,5231 s» e ballerebbero tre cifre a ogni giro di polling. La durata **misurata** resta
+intera: «1,25 s» è un fatto del server, e il test del Task 4 lo asserisce alla lettera. *Costo se
+sbagliato*: un numero che balla mentre l'utente aspetta, cioè il contrario esatto di «attesa
+parlante» (`07-ux-modellatore.md:152`).
+
+**R15 — `fetchSequenza` muore sulla prima `GET` se copia `fetchFinta` alla lettera.** *Ruling: la
+`fetch` finta accoda `opzioni.body ? JSON.parse(opzioni.body) : null`.* `fetchFinta`
+(`file.test.js:44-53`) fa `JSON.parse(opzioni.body)` senza guardia perché finora ogni chiamata era
+una `POST`; ma `chiediJson` senza corpo passa `{}` (`file.js:25`), e `JSON.parse(undefined)`
+**solleva**. Il `null` tiene anche `spia.corpi` allineato a `spia.rotte`, che è quello che il primo
+test asserisce (`spia.corpi[0]`). *Costo se sbagliato*: il primo test del Task 4 muore con un
+`SyntaxError` che non c'entra niente con `creaCorsa`, e ci si perde mezz'ora a cercarlo in
+`corsa.js`.
+
+### 4. Gli ingressi degeneri: cosa c'era, cosa manca, cosa non era verificabile
+
+Cinque task su sei scrivono codice e tutti e cinque avevano la sezione, tutti sopra il minimo di due
+righe con condizione **e** oracolo: T1 cinque, T2 sei, T3 nove, T4 undici, T5 quattro. Il **Task 6
+non scrive codice** (`Files: nessuno`) e porta già la forma rigida `- nessun ingresso esterno`: non
+si tocca.
+
+**Due righe avevano un oracolo sbagliato o non verificabile**, riscritte:
+
+- T1 — «`scrivi_atomico` con `os.replace` che solleva → **la destinazione non esiste**» contraddice
+  il test dello step 5, che asserisce che la destinazione **tiene il contenuto di prima**. Sono i due
+  casi (prima scrittura, riscrittura), e l'oracolo li deve dire tutti e due.
+- T2 — «con `SidecarInProcesso` il thread finisce **prima** che il client faccia la prima `GET`» non
+  è un oracolo, è una scommessa sullo scheduler. Riscritto: la prima `GET` può dire l'una o l'altra,
+  e `_attendi` arriva a `finita` in tutti e due i casi.
+
+**Sei righe che nessun task enumerava**, aggiunte al task indicato:
+
+- T1 — `due chiedi di fila sullo stesso sidecar dopo un soffitto → le righe in ritardo della prima
+  (id 1) non entrano nella risposta della seconda: le scarta il filtro sull'id` (è R7, e senza questa
+  riga il comportamento resta un'assunzione).
+- T2 — `il sidecar solleva un'eccezione qualunque dentro chiedi (non un HTTPException) → il lavoro
+  diventa finita con esito: "errore", fase: "sidecar", e la corsa successiva parte` (è R2, la riga
+  più importante della giornata).
+- T3 — `testoAttesa({fasi: []}, 1000) senza avvioMs → 0 s, mai «NaN s»`.
+- T3 — `righeVerdetti con un esito fuori dai tre → parola è l'esito stesso e la riga resta, non
+  sparisce` (il `?? String(x.esito)` c'è nel codice e non lo prova nessuno).
+- T4 — `la GET risponde 404 a metà polling (server riavviato sotto) → suErrore("nessuna corsa <id>"),
+  l'attesa sparisce, nessun lavoro registrato, i bottoni tornano attivi` (il piano copriva la rete
+  caduta, non il server ripartito — e in una giornata di prove il server riparte spesso).
+
+**Per chi dispaccia**: qui la sezione è `**Ingressi degeneri:**` in grassetto, ma
+`dispatch-gate.py` pretende nel brief il **titolo** `## Ingressi degeneri`. Si copia il contenuto
+sotto un titolo, non il grassetto. Stessa nota dell'11d, stesso hook.
+
+### 5. Chi esegue, con quale modello, in quale ordine
+
+| task | subagente | modello | skill-gate | giro | comincia dopo |
+|---|---|---|---|---|---|
+| 1 — `server.py` lettore + `corsa.py`/`ccx.py` atomici | `backend-engineer` | `sonnet` | **sì** | A | — |
+| 2 — i lavori, il secondo sidecar, `__main__` | `backend-engineer` | **`opus`** | **sì** | B | 1 |
+| 3 — le pure di `corsa.js` | `frontend-engineer` | `sonnet` | **sì** | A | — |
+| 4 — `creaCorsa`, il blocco, `⌘⏎`/`⇧⌘⏎` | `frontend-engineer` | **`opus`** | **sì**, `impeccable` in modo **Operate** | B | 3 |
+| 5 — la cucitura in `app.js` | `frontend-engineer` | `sonnet` | **sì**, `impeccable` in modo **Operate** | C | 1, 2, 3, 4 |
+| 6 — la prova a mano | **il controller**, col browser | — | — | D | 5 |
+
+**I giri del piano sono giusti, confermati: A = 1 ‖ 3, B = 2 ‖ 4, C = 5, D = 6.** Verificato file per
+file che dentro un giro nessun implementer scrive dove scrive l'altro:
+
+| file | unico task che lo scrive |
+|---|---|
+| `nova/server.py` | 1 (il lettore), poi 2 (i lavori) — **mai insieme**: da qui l'arco 2 ← 1 |
+| `nova/corsa.py`, `nova/ccx.py`, `tests/test_corsa.py` | 1 |
+| `nova/__main__.py` | 2 |
+| `tests/test_server.py` | 1 (in coda), poi 2 (l'helper e i quindici adeguamenti) — **mai insieme** |
+| `static/corsa.js`, `static/test/corsa.test.js` | 3 (le pure), poi 4 (`creaCorsa`) — **mai insieme** |
+| `static/index.html`, `static/stile.css`, `static/tastiera.js`, `static/test/tastiera.test.js` | 4 |
+| `static/app.js` | 5 |
+
+Il Task 4 **non dipende dal codice** del Task 2, solo dalle sue forme: i suoi test hanno una `fetch`
+finta, e il contratto sta scritto in §2. Per questo B è un parallelo vero e non un finto parallelo.
+
+**I modelli.** Il tetto settimanale di `opus` del 09/09 sera potrebbe essere ancora chiuso, quindi
+`sonnet` è il default e `opus` va chiesto solo dove il piano lascia davvero da decidere. Restano due:
+
+- **Task 2 in `opus`**: è l'unico task dove il piano si contraddice da solo (due firme di
+  `_avvia_lavoro`), dove entra la concorrenza vera (un thread, due lock, un dizionario condiviso),
+  dove va aggiunto un ramo che il piano non aveva (R2), e dove quindici test esistenti vanno
+  riscritti **uno per uno** con un salto da sincrono ad asincrono. È il task che, sbagliato, blocca
+  il server per sempre.
+- **Task 4 in `opus`**: è il più grande e il meno scritto — dodici corpi di test da scrivere per
+  esteso, un DOM finto nuovo con sei capacità in più, una `fetch` a sequenza, ~150 righe di
+  `creaCorsa`, il CSS, l'HTML, la tastiera. Cinque mutanti su dieci puntano qui.
+
+Gli altri tre stanno in `sonnet` perché il codice è **scritto per intero nel piano** e i test pure:
+il Task 1 (lettore e `scrivi_atomico`), il Task 3 (funzioni pure con i loro test già stesi), il Task
+5 (dieci righe di cucitura, tutte elencate nelle *Interfaces*). **Se `opus` è chiuso**, il Task 2 e
+il Task 4 si dispacciano su `sonnet` lo stesso: sono anche i due che questa annotazione ha specificato
+di più (R2, R3, R4, R8, R10, R15 stanno tutti lì), e il divario si copre con quelle righe. Ciò che
+**non** va fatto è dispacciarli con il piano com'era.
+
+**Skill-gate `sì` su tutti e cinque i task che scrivono codice**, nessuna deroga: nessuno di questi
+è meccanico. Quale skill, lo sceglie l'agente assegnato — `impeccable` in modo **Operate** è
+l'unica nominata, sui due task che toccano superficie che una persona guarda (4 e 5), come chiede il
+brief. `impeccable`: mai «cream palette», la palette è quella dei Global Constraints (riga 21), e il
+rosso è il **filetto**, non il testo.
+
+### 6. La ricerca che regge ogni task
+
+Aperto `docs/ricerca/index.md` prima di annotare: la **03** è alla riga **15**, la **07** alla riga
+**19**. Le cinque righe di `07` che il piano cita in testa sono esatte tutte e cinque (`:93`, `:100`,
+`:101`, `:152`, `:169`), e la mappa dei dieci principi è la stessa dell'11c e dell'11d: 148 = P1,
+149 = P2, 150 = P3, 151 = P4, **152 = P5**, 155 = P8.
+
+**Il piano dichiarava una ricerca sola, la 07, e per T1-T2 non ne aveva nessuna. Ne ha una**, e non
+di sponda: la **03** è la ricerca che ha deciso il sidecar, e parla proprio di quello che il Task 1
+costruisce.
+
+| task | riferimento | perché conta qui |
+|---|---|---|
+| 1 | `docs/ricerca/03-stack-tecnico.md:121` | «il ponte deve trattare la morte del figlio come esito normale: `exit_code`, ultime N righe stderr, stato "fallito", riavvio del sidecar al comando successivo» — il soffitto e `fase: "sidecar"` sono le prime due metà; il riavvio è la terza, e resta debito (R7) |
+| 1 (il filtro `id`) | `docs/ricerca/03-stack-tecnico.md:195` | «una riga JSON per richiesta su stdin, una o più righe JSON su stdout con lo stesso `id`»: è il patto che rende innocue le righe in ritardo dopo un soffitto |
+| 2 | `docs/ricerca/07-ux-modellatore.md:169` | «Analisi: non-blocking, fasi nominate, esito con durata misurata» — il lavoro con `202` **è** il non-blocking, e `secondi` del sidecar **è** la durata misurata |
+| 2 (il secondo sidecar) | `docs/ricerca/03-stack-tecnico.md:121` | «il solutore **deve** vivere in un processo separato dalla UI»: due sidecar sono la stessa regola applicata due volte, così `/api/salute` non muore dietro una pushover |
+| 3 | `docs/ricerca/07-ux-modellatore.md:100` | doppio canale: `PAROLA` **è** il canale testuale che affianca il punto rosso, e `righeVerdetti` non rende mai una `ragione` vuota |
+| 3 (il «vai») | `docs/ricerca/07-ux-modellatore.md:101` | «il controllo che contraddice accanto al numero»: `vai` porta l'utente **sull'oggetto** che il verdetto nomina, invece di lasciargli cercare il nodo 3 in un albero |
+| 4 | `docs/ricerca/07-ux-modellatore.md:152` | P5, attesa parlante mai percentuale inventata: fasi nominate, cronometro, «corro…» sul bottone, errore col motivo del server e il registro sotto un `<details>` |
+| 4 (sotto il secondo) | `docs/ricerca/07-ux-modellatore.md:93` | NNG: sotto 1 s nessun indicatore, sopra 10 s fasi senza percentuale — è perché sul telaio 2×1 l'attesa quasi non si vede, e va bene così |
+| 5 | `docs/ricerca/07-ux-modellatore.md:149` | P2, seleziona poi agisci, nessuna finestra che blocca: «vai» passa da `scegli`, la stessa porta di ogni altra selezione, e la corsa non apre niente |
+| 6 | `docs/ricerca/07-ux-modellatore.md:169` | la prova a mano verifica esattamente quella riga, sul telaio 2×1, sul MURO 1 e su un modello malato |
+
+**Sei task su sei con un riferimento, nessun «nessuno».** Come l'11c e l'11d, e all'opposto della
+misura dell'08/09 (nove ricerche, un piano che ne cita una una volta).
+
+### 7. I mutanti: due che non provano quello che dicono, uno che manca
+
+Corretti nell'elenco in coda al piano.
+
+- **Mutante 1 non fa rosso, fa appendere.** Togliere il `timeout=self.soffitto_s` non manda in rosso
+  il test del sidecar muto: lo lascia bloccato su `queue.get()` **per sempre**, e un test appeso non
+  è una prova (né si distingue da una suite lenta). Il mutante che vale è l'altro: **tieni** il
+  timeout e togli il solo `except queue.Empty` — l'eccezione finisce nell'`except Exception` esterno,
+  il motivo diventa «Empty: » invece di «nessuna risposta dal sidecar entro 0.2 s», e il test è rosso
+  in 0,2 s.
+- **Mutante 4 sopravvive** se il test riscritto legge solo `d["fase"]`. Vedi R4: serve
+  `assert g.status_code == 400`.
+- **Mutante 11, nuovo**: l'`except Exception` del thread tolto, con un sidecar finto che solleva un
+  `RuntimeError`. Oggi non lo prende nessuno, ed è il difetto che blocca il server per sempre (R2).
+
+Gli altri otto sono uccidibili dai test come sono scritti, verificato uno per uno. Due meritano una
+nota: il **7** (`stantia` con `JSON.stringify`) muore solo perché il test usa `{ ...m }`, cioè una
+copia **strutturalmente identica** — con un modello diverso passerebbe, e il commento nel piano lo
+dice bene; il **9** (`generazione` non guardata) muore solo se il corpo-commento del test `azzera`
+viene scritto davvero (R8).
+
+### 8. I debiti, per il ticket di chiusura
+
+Dichiarati dal piano stesso, in coda: SSE, la coda con id (#22), il selettore dei casi, la vista del
+solido (T7), il rendering dei risultati (13), `articolo` nei verdetti, «Annulla» di una corsa,
+l'importazione con la stessa attesa. Aggiunti là dalla presente annotazione: il riavvio del sidecar
+dopo un soffitto, i `verdetti_check` persi sul 400, la potatura di `lavori`.
+
+Visti qui e non scritti da nessuna parte:
+
+1. **«Annulla» manca, ed è l'unico pezzo di P5 che manca.** `07-ux-modellatore.md:152` chiede cinque
+   cose e la giornata ne dà quattro: fasi nominate ✓, durata misurata ✓, errore col rimando al
+   registro ✓, niente percentuale ✓, **«Annulla sempre vivo» ✗**. Il piano lo mette fuori seduta per
+   il motivo giusto (il sidecar non ha un comando d'interruzione, e il tetto è il timeout di
+   OpenSees), ma sul MURO 1 questo vuol dire che chi ha lanciato per sbaglio aspetta e basta. Va
+   detto che manca per un buco nel **protocollo**, non per una scelta d'interfaccia.
+2. **Il Task 5 non ha un solo test automatico.** Sei innesti in `app.js`, quattro ingressi degeneri,
+   un ramo nuovo in `dispatchVoce`, e l'unico oracolo è la prova a mano del Task 6. **È la quarta
+   giornata di fila**: voce 8 dell'11b, voce 3 dell'11c, voce 1 dell'11d, questa. Il task più cucito
+   è ancora il meno protetto, e non è un caso isolato ma la forma del piano.
+3. **Il 409 dice due frasi diverse per la stessa cosa.** Il rifiuto locale di `creaCorsa` dice «una
+   corsa è già in corso», il 409 del server dice «un'altra corsa è in corso». Sono davvero due casi
+   (io sto già correndo / qualcun altro sta correndo), ma con una sola scheda aperta l'utente non
+   può distinguerli, e leggerà due messaggi per un solo fatto.
+4. **Una seconda scheda rompe il patto senza dirlo.** «Un lavoro alla volta» vive nel dizionario
+   `lavori` del server, quindi vale su **tutte** le schede; ma l'ultima corsa e i verdetti vivono in
+   `corsa.js`, cioè per scheda. Due schede sullo stesso server: la seconda vede 409 senza sapere
+   perché, e il suo blocco «Corsa» resta vuoto mentre una corsa gira davvero.
+5. **`fasi` può ripetersi e nessuno lo dichiara.** La modale rilancia OpenSees a scala di modi
+   (`corsa.py:_tentativi`), quindi «scrivo il deck e lancio OpenSees (modale, N modi)» esce più volte
+   con N diversi. L'`<ol>` li mostra tutti, ed è giusto — ma è anche il caso che il Task 6 step 5 si
+   aspetta senza averlo mai scritto in un contratto.
+
+**Per il roster** (meta-roster, non scope di questo piano): il debito 2 è alla **quarta** occorrenza
+consecutiva, e l'11d lo aveva già segnalato. Il ruolo che scrive la cucitura non ha oggi un modo di
+provarla che non sia un browser e una persona. Vale guardarlo con `self-improving-agent` **prima**
+della 13, non dopo: alla quinta non è più un debito, è la definizione del processo.
 
 ## Struttura dei file
 
@@ -78,7 +499,7 @@ Giri: A = Task 1 ‖ Task 3; B = Task 2 ‖ Task 4; C = Task 5; D = Task 6 (prov
 ### Task 1: `SidecarProcesso` — il lettore col soffitto, il callback di fase, la scrittura atomica
 
 **Files:**
-- Modify: `nova/server.py:61-110` (`SidecarProcesso`), `nova/server.py:46-58` (`SidecarInProcesso.chiedi` accetta `su_fase`)
+- Modify: `nova/server.py:62-110` (`SidecarProcesso`), `nova/server.py:47-59` (`SidecarInProcesso.chiedi` accetta `su_fase`)
 - Modify: `nova/corsa.py:155` e `nova/ccx.py:135` (scrittura atomica), `nova/corsa.py` (funzione `scrivi_atomico`)
 - Test: `tests/test_server.py` (in coda), `tests/test_corsa.py` (in coda, per `scrivi_atomico`)
 
@@ -91,10 +512,11 @@ Giri: A = Task 1 ‖ Task 3; B = Task 2 ‖ Task 4; C = Task 5; D = Task 6 (prov
 
 **Ingressi degeneri:**
 - il sidecar non risponde entro `soffitto_s` → `[{"esito":"errore","fase":"sidecar","motivo":"nessuna risposta dal sidecar entro N s"}]`, il lock è libero subito dopo, il processo non viene ucciso (è del chiamante)
-- il sidecar chiude lo stdout → `{"esito":"errore","fase":"sidecar","motivo":"il sidecar ha chiuso lo stdout"}` (com'è oggi, `:96-98`)
+- il sidecar chiude lo stdout → `{"esito":"errore","fase":"sidecar","motivo":"il sidecar ha chiuso lo stdout"}` (com'è oggi, `:95-98`)
 - `su_fase` assente → nessuna chiamata, `righe` uguale a oggi
 - `su_fase` che solleva → l'eccezione **non** uccide la lettura: si prende nel `except Exception` di `chiedi` (`:107-108`) come oggi per le righe non JSON; documentato, non protetto oltre
-- `scrivi_atomico` con `os.replace` che solleva → la destinazione non esiste e il `.tmp` resta (è la prova dell'interruzione), l'eccezione risale
+- `scrivi_atomico` con `os.replace` che solleva → la destinazione resta com'era (assente se non c'era, col contenuto di prima se c'era), il `.tmp` resta — è la prova dell'interruzione — e l'eccezione risale
+- due `chiedi` di fila sullo stesso sidecar dopo un soffitto → le righe in ritardo della prima (`id` 1) non entrano nella risposta della seconda: le scarta il filtro sull'`id`
 
 - [ ] **Step 1: Test rossi del lettore** — in coda a `tests/test_server.py`:
 
@@ -199,7 +621,7 @@ def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):
 
 - [ ] **Step 2: Rosso** — `… -m pytest tests/test_server.py -k "muto or callback or altro_id or stdout_chiuso or su_fase" -p no:cacheprovider -q`: `TypeError` su `soffitto_s`/`su_fase`.
 
-- [ ] **Step 3: Il lettore** — in `nova/server.py`, sostituisci `SidecarProcesso` (`:61-110`) con:
+- [ ] **Step 3: Il lettore** — in `nova/server.py`, sostituisci `SidecarProcesso` (`:62-110`) con:
 
 ```python
 SOFFITTO_S = 660.0   # `_corsa._TIMEOUT_S` (600) più un minuto: una riga di fase arriva a ogni gradino
@@ -232,9 +654,6 @@ class SidecarProcesso:
                 self._righe.put(riga)
         finally:
             self._righe.put(None)
-
-    def occupato(self) -> bool:
-        return self._lock.locked()
 
     def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
         if not self._lock.acquire(blocking=False):
@@ -275,7 +694,7 @@ class SidecarProcesso:
             self._lock.release()
 ```
 
-e `import queue` fra gli import (`:10-16`). In `SidecarInProcesso.chiedi` (`:52-58`):
+e `import queue` fra gli import (`:10-16`). In `SidecarInProcesso.chiedi` (`:53-59`):
 
 ```python
     def chiedi(self, req: dict, su_fase: Callable[[dict], None] | None = None) -> list[dict]:
@@ -290,9 +709,6 @@ e `import queue` fra gli import (`:10-16`). In `SidecarInProcesso.chiedi` (`:52-
 
         righe.append(_sidecar.rispondi(req, emetti))
         return righe
-
-    def occupato(self) -> bool:
-        return False
 ```
 
 Nota sul test 409 esistente (`tests/test_server.py:610-627`): il suo `_FintoProcesso` ha `stdout = None`, e il thread lettore farebbe `for riga in None` → `TypeError` nel thread (innocuo ma sporco). Cambia quel finto in `stdout = iter(())` (un iterabile vuoto): il lettore esce subito e mette `None` in coda; il test resta com'è.
@@ -341,11 +757,11 @@ def scrivi_atomico(percorso: Path, testo: str) -> None:
 ### Task 2: la corsa come lavoro, e il secondo sidecar
 
 **Files:**
-- Modify: `nova/server.py:160-223` (`create_app`, le rotte `corsa` e `ccx`), `nova/__main__.py:31-43`
+- Modify: `nova/server.py:162-223` (`create_app`, le rotte `corsa` e `ccx`), `nova/__main__.py:31-43`
 - Test: `tests/test_server.py` (helper `_attendi`, i test elencati sopra, i test nuovi)
 
 **Interfaces:**
-- Consumes: `SidecarProcesso.chiedi(req, su_fase)`, `occupato()` (Task 1).
+- Consumes: `SidecarProcesso.chiedi(req, su_fase)` (Task 1). **Non** `occupato()`: il 409 lo decide il dizionario `lavori`, come dice la decisione 2 — vedi R9 dell'annotazione.
 - Produces:
   - `create_app(sidecar, cartella_corse, statici=STATICI, porta=None, sidecar_lungo=None)`; `lungo = sidecar_lungo or sidecar`.
   - `POST /api/corsa {modello, casi?}` → **202** `{"run_id": "<12 hex>", "stato": "in corso"}`; **409** `{"esito":"errore","fase":"sidecar","motivo":"un'altra corsa è in corso"}` se un lavoro è in corso; 422 come oggi per i corpi malformati.
@@ -359,7 +775,8 @@ def scrivi_atomico(percorso: Path, testo: str) -> None:
 - `GET` di un lavoro finito con `fase: "deck"` → 400 con il corpo del sidecar (com'era sulla `POST` sincrona)
 - `POST /api/corsa` mentre un lavoro è in corso → 409 immediato, il lavoro in corso non si accorge di niente
 - il sidecar risponde con l'errore del soffitto (Task 1) → il lavoro diventa `finita` con `esito: "errore", fase: "sidecar"`, e il lavoro successivo **può partire** (il lock del sidecar è libero)
-- `POST /api/corsa` con `SidecarInProcesso` → il thread finisce prima che il client faccia la prima `GET`: la `GET` dice subito `finita` con le fasi complete
+- `POST /api/corsa` con `SidecarInProcesso` → la prima `GET` può dire «in corso» o «finita» (dipende dallo scheduler, e il test non deve sceglierne una): `_attendi` arriva a `finita` con le fasi complete in tutti e due i casi
+- il sidecar solleva un'eccezione qualunque dentro `chiedi` (non un `HTTPException`) → il lavoro diventa `finita` con `esito: "errore", fase: "sidecar"`, e la corsa successiva parte
 - `su_fase` riempie `fasi` **mentre** la corsa gira: la `GET` a metà corsa le mostra (prova con un sidecar finto fermo su un `Event`)
 
 - [ ] **Step 1: L'helper e i test adeguati** — in `tests/test_server.py`, dopo `_app_con_solutore` (`:26-30`):
@@ -391,7 +808,7 @@ Poi adegua i test che oggi leggono la `POST` sincrona, uno per uno (i numeri di 
 - `:189-194` (solutore assente) e `:198-205` (solutore rotto, `coda_log`): erano 200 sincroni; ora `d = _corsa(cliente, ...)` e le stesse asserzioni su `d` (il `GET` è 200: `assente` e `fase: solutore` non sono 400, come prima).
 - `:307-317` (campi extra → 422) e `:445-449` (caso con a capo → 422): restano sulla `POST`, invariati.
 - `:634-651` pushover: `r = _corsa(cliente, {"modello": modello})`, `r["esito"] == "ok"`, poi `/api/risultati/{r['run_id']}` come oggi.
-- `/api/ccx` a `:534`, `:571`, `:576` (giro riuscito) e `:549` (`..` lecito): `r = cliente.post("/api/ccx", ...)`, `assert r.status_code == 202`, poi `d = _attendi(cliente, r.json()["run_id"])` e le asserzioni su `d` (compreso `d["cartella"]`); `:557` e `:606` (`fase: deck` → 400): il 400 arriva dalla `GET`: `d = _attendi(...)` ritorna il corpo con `d["fase"] == "deck"` — riscrivi l'asserzione così; `:562` (`cartella` nel corpo → 422): invariato.
+- `/api/ccx` a `:534`, `:571`, `:576` (giro riuscito) e `:549` (`..` lecito): `r = cliente.post("/api/ccx", ...)`, `assert r.status_code == 202`, poi `d = _attendi(cliente, r.json()["run_id"])` e le asserzioni su `d` (compreso `d["cartella"]`); `:557` e `:606` (`fase: deck` → 400): il 400 arriva dalla `GET`, e va **asserito come 400**, non solo letto — `rid = cliente.post(...).json()["run_id"]`, `_attendi(cliente, rid)`, poi `g = cliente.get(f"/api/corsa/{rid}")` con `assert g.status_code == 400 and g.json()["fase"] == "deck"`. Senza l'asserzione sullo stato il mutante 4 sopravvive (R4 dell'annotazione); `:562` (`cartella` nel corpo → 422): invariato.
 
 - [ ] **Step 2: Test nuovi** — in coda a `tests/test_server.py`:
 
@@ -399,18 +816,21 @@ Poi adegua i test che oggi leggono la `POST` sincrona, uno per uno (i numeri di 
 # --- 12/T2: la corsa come lavoro: 202, fasi mentre arrivano, salute libera, 409 --------------
 
 class _SidecarFermo:
-    """Un sidecar che emette «check model», poi aspetta il via: serve a guardare il lavoro a metà."""
+    """Un sidecar che emette «check model», poi aspetta il via: serve a guardare il lavoro a metà.
+
+    `partito` è l'appiglio del test: `time.sleep(0.05)` sarebbe una scommessa sullo scheduler,
+    e un rosso a intermittenza costa più di un rosso (R3 dell'annotazione)."""
     def __init__(self):
         self.via = threading.Event()
+        self.partito = threading.Event()
     def chiedi(self, req, su_fase=None):
         if req["comando"] == "verifica":
             return [{"esito": "assente", "percorso": None, "motivo": "finto", "dove_prenderlo": "—"}]
         if su_fase:
             su_fase({"evento": "fase", "nome": "check model"})
+        self.partito.set()
         self.via.wait(timeout=5)
         return [{"evento": "fase", "nome": "check model"}, {"esito": "ok", "secondi": 0.5, "risultati": {}}]
-    def occupato(self):
-        return False
 
 
 def _cliente_con_lavoro_fermo(tmp_path):
@@ -426,7 +846,7 @@ def test_la_corsa_torna_subito_e_la_get_dice_la_fase_mentre_gira(tmp_path):
     r = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert r.status_code == 202 and r.json()["stato"] == "in corso"
     rid = r.json()["run_id"]
-    time.sleep(0.05)
+    assert fermo.partito.wait(2), "il thread del lavoro non è partito"
     g = c.get(f"/api/corsa/{rid}").json()
     assert g["stato"] == "in corso" and g["fasi"] == ["check model"] and g["secondi"] >= 0
     assert "esito" not in g
@@ -473,7 +893,7 @@ def test_un_rifiuto_del_check_e_una_corsa_finita_con_i_verdetti(cliente):
 
 - [ ] **Step 3: Rosso** — `-k "torna_subito or restano_liberi or seconda_corsa or ignota or dice_subito or rifiuto_del_check"`: 405/404 sulla `GET`, 200 invece di 202.
 
-- [ ] **Step 4: I lavori** — in `nova/server.py`, la firma di `create_app` (`:160`) diventa
+- [ ] **Step 4: I lavori** — in `nova/server.py`, la firma di `create_app` (`:162`) diventa
 
 ```python
 def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None,
@@ -487,14 +907,16 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
     lavori: dict[str, dict] = {}
     lavori_lock = threading.Lock()
 
-    def _avvia_lavoro(req: dict, extra: dict) -> dict:
+    def _avvia_lavoro(req: dict, con_cartella: bool = False) -> dict:
         """Un lavoro alla volta: la seconda corsa è un 409 subito, e chi gira non se ne accorge."""
         with lavori_lock:
             if any(l["stato"] == "in corso" for l in lavori.values()):
                 raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
                                                  "motivo": "un'altra corsa è in corso"})
             run_id = secrets.token_hex(6)
-            lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None, **extra}
+            lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None}
+            if con_cartella:
+                lavoro["cartella"] = str(cartella_corse / run_id)
             lavori[run_id] = lavoro
         req = {**req, "cartella": str(cartella_corse / run_id)}
 
@@ -503,16 +925,20 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
                 with lavori_lock:
                     lavoro["fasi"].append(ev["nome"])
             try:
-                righe = lungo.chiedi(req, su_fase)
-                fin = _finale(righe)
+                fin = _finale(lungo.chiedi(req, su_fase))
             except HTTPException as e:   # il 409 del lock del sidecar, se mai: è un esito, non un 500
                 fin = e.detail if isinstance(e.detail, dict) else {"esito": "errore", "fase": "sidecar", "motivo": str(e.detail)}
+            except Exception as e:
+                # R2: un thread non ha nessuno a cui risalire. Senza questo ramo il lavoro resta
+                # «in corso» per sempre, ogni corsa dopo è 409, e la UI interroga in eterno.
+                fin = {"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}
             with lavori_lock:
                 lavoro["fin"] = fin
                 lavoro["stato"] = "finita"
 
         threading.Thread(target=corri, daemon=True).start()
-        return {"run_id": run_id, "stato": "in corso", **extra}
+        return {"run_id": run_id, "stato": "in corso",
+                **({"cartella": lavoro["cartella"]} if con_cartella else {})}
 ```
 
 (`import time` fra gli import.) Le rotte:
@@ -520,14 +946,13 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
 ```python
     @app.post("/api/corsa", status_code=202)
     def corsa(corpo: CorsaReq):
-        return _avvia_lavoro({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi}, {})
+        return _avvia_lavoro({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi})
 
     @app.post("/api/ccx", status_code=202)
     def ccx(corpo: CcxReq):
         """Il deck del solido, dal disco dell'utente locale: `..` è lecito, il file si legge
         e basta, e la copia nella cartella della corsa si chiama sempre `solido.inp`."""
-        return _avvia_lavoro({"comando": "ccx", "inp": str(Path(corpo.inp).resolve())},
-                             {"cartella": None})   # riempita sotto: il run_id nasce dentro
+        return _avvia_lavoro({"comando": "ccx", "inp": str(Path(corpo.inp).resolve())}, con_cartella=True)
 
     @app.get("/api/corsa/{run_id}")
     def stato_corsa(run_id: str):
@@ -544,15 +969,7 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         return {**base, "secondi": fin.get("secondi", time.perf_counter() - l["t0"]), **fin}
 ```
 
-Per `cartella` di ccx: in `_avvia_lavoro`, dopo aver generato `run_id`, se `"cartella" in extra` metti `lavoro["cartella"] = str(cartella_corse / run_id)` e ritorna quel valore nel corpo della `POST` (`{"run_id", "stato", "cartella"}`). Scrivilo così, senza il segnaposto `None`:
-
-```python
-            lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None}
-            if con_cartella:
-                lavoro["cartella"] = str(cartella_corse / run_id)
-```
-
-con `_avvia_lavoro(req: dict, con_cartella: bool = False)` e `return {"run_id": run_id, "stato": "in corso", **({"cartella": lavoro["cartella"]} if con_cartella else {})}`.
+(Una firma sola, `con_cartella: bool`: nel piano ce n'erano due, e la seconda si correggeva da sé nove righe sotto — R10 dell'annotazione. `secrets` è già importato (`server.py:12`); `time` e `queue` no.)
 
 - [ ] **Step 5: `__main__`** — `nova/__main__.py:31-43`:
 
@@ -580,12 +997,12 @@ con `_avvia_lavoro(req: dict, con_cartella: bool = False)` e `return {"run_id": 
 - Test: `static/test/corsa.test.js`
 
 **Interfaces:**
-- Consumes: `cifre`, `conciso` (`static/numeri.js:182-195`).
+- Consumes: `conciso` (`static/numeri.js:195`) — `cifre` (`:182`) **non** si importa: `conciso` la chiama già.
 - Produces (tutte esportate da `static/corsa.js`):
   - `OGGETTO_PER_CONTROLLO`: `{ nodi_coincidenti: "nodo", aste_sconnesse: "asta", aste_lunghezza_zero: "asta", aste_duplicate: "asta", nodi_liberi: "nodo", nodo_su_asta: "nodo", sezione_nulla: "asta", armatura_mancante: "sezione", carico_termico: "azione", vincoli_dedotti: "nodo" }` — il tipo dell'oggetto **selezionabile**; delle coppie si prende il primo elemento; `riferimenti` e `pushover` si leggono dai dict (`sezione` → sezione, `azione` → azione, `nodo`/`nodo_controllo` → nodo, `asta` → asta; `analisi`/`caso`/`calcestruzzo`/`acciaio` → nessun «vai»: il materiale non è selezionabile dall'ispettore).
   - `PAROLA = { passato: "passato", non_passato: "non passato", non_applicabile: "non applicabile" }`.
   - `righeVerdetti(verdetti) -> [{ controllo, esito, parola, ragione, rimedio, caso, vai: {tipo, id} | null, chiave }]` — una riga per verdetto; `vai` dal primo oggetto; `chiave` = `${controllo}|${caso ?? ""}` (per la coppia `(controllo, caso)` dei C3, dove `convergenza` esce per ogni caso a fibre); `ragione` mai vuota («—» se manca).
-  - `testoSolutore(salute) -> string`: `{esito:"ok", percorso}` → `OpenSees · <percorso>` (con `versione` se la si conosce: `OpenSees 3.8.0 · <percorso>`); `assente` → `OpenSees assente — <dove_prenderlo>`; `rotto` → `OpenSees rotto: <motivo>`; `null`/`undefined` → `solutore: in verifica…`.
+  - `testoSolutore(salute, versione = null) -> string`: `{esito:"ok", percorso}` → `OpenSees · <percorso>` (con `versione` se la si conosce: `OpenSees 3.8.0 · <percorso>`); `assente` → `OpenSees assente — <dove_prenderlo>`; `rotto` → `OpenSees rotto: <motivo>`; `null`/`undefined` → `solutore: in verifica…`.
   - `testoAttesa(lavoro, adessoMs) -> { fasi: string[], corrente: string | null, secondi: string }` — `secondi` = `conciso((adessoMs - lavoro.avvioMs) / 1000)` + « s»; `corrente` = l'ultima fase o `null`.
   - `testoUltima(lavoro) -> string`: `corsa <run_id> · 3,2 s` (`conciso(lavoro.secondi)`), per il solido `corsa del solido <run_id> · 7,5 s`; rifiutata → `corsa <run_id> · rifiutata dal Check Model`; errore → `corsa <run_id> · errore in <fase>: <motivo>`; assente → `corsa <run_id> · OpenSees assente`.
   - `stantia(lavoro, modello) -> boolean`: `Boolean(lavoro && lavoro.modello !== modello)`; senza lavoro `false`.
@@ -601,6 +1018,8 @@ con `_avvia_lavoro(req: dict, con_cartella: bool = False)` e `return {"run_id": 
 - `testoAttesa(lavoro, adessoMs)` con `adessoMs < avvioMs` → `0 s`, non un negativo
 - `stantia(null, m)` → `false`; `stantia(lavoro, undefined)` → `true` (un modello che non c'è non è quello della corsa)
 - `verdettiDi({})` → `[]`
+- `testoAttesa({ fasi: [] }, 1000)` senza `avvioMs` → `0 s`, mai «NaN s»
+- `righeVerdetti` con un `esito` fuori dai tre → `parola` è l'esito stesso e la riga resta, non sparisce
 
 - [ ] **Step 1: Test rossi** — `static/test/corsa.test.js`:
 
@@ -765,10 +1184,16 @@ export function testoSolutore(salute, versione = null) {
 }
 
 const secondiTesto = (s) => `${conciso(Math.max(0, s))} s`;
+// R14: sotto 1 s `cifre` dà quattro decimali (`numeri.js:183`), e un cronometro che scrive
+// «0,5231 s» ogni mezzo secondo è rumore, non attesa parlante. L'attesa arrotonda al decimo;
+// la durata **misurata** (`testoUltima`) no: «1,25 s» è un fatto del server.
+const secondiAttesa = (s) => `${conciso(Math.round(Math.max(0, s) * 10) / 10)} s`;
 
 export function testoAttesa(lavoro, adessoMs) {
   const fasi = lavoro.fasi ?? [];
-  return { fasi, corrente: fasi.length ? fasi[fasi.length - 1] : null, secondi: secondiTesto((adessoMs - lavoro.avvioMs) / 1000) };
+  const trascorsi = (adessoMs - lavoro.avvioMs) / 1000;
+  return { fasi, corrente: fasi.length ? fasi[fasi.length - 1] : null,
+           secondi: secondiAttesa(Number.isFinite(trascorsi) ? trascorsi : 0) };
 }
 
 export function testoUltima(lavoro) {
@@ -797,13 +1222,13 @@ export const verdettiDi = (fin) => [...(fin?.verdetti_check ?? []), ...(fin?.ris
 ### Task 4: `creaCorsa` — il blocco «Corsa» nel pannello, il lavoro con il polling, `⌘⏎` e `⇧⌘⏎`
 
 **Files:**
-- Modify: `static/corsa.js` (in coda: `creaCorsa`), `static/index.html:47-57` (il blocco fra «Unità» e «Storia»), `static/stile.css` (in coda), `static/tastiera.js:20-45,77-79`
+- Modify: `static/corsa.js` (in coda: `creaCorsa`), `static/index.html:49-61` (il blocco fra «Unità» e «Storia», cioè fra la riga `:58` delle unità e l'`<h2>` della Storia a `:59`), `static/stile.css` (in coda), `static/tastiera.js:14-50,77-79`
 - Test: `static/test/corsa.test.js` (in coda), `static/test/tastiera.test.js`
 
 **Interfaces:**
-- Consumes: le pure del Task 3; `chiediJson` (`static/file.js:24-33`); `cifre` per i secondi.
+- Consumes: le pure del Task 3; `chiediJson` (`static/file.js:24-33`). Nessun import da `numeri.js`: i secondi passano tutti da `testoAttesa`/`testoUltima`.
 - Produces:
-  - `creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio = () => Date.now(), attesaMs = 500 })` → `{ verifica(), corri(), corriSolido(), disegna({ modello }), azzera(), inCorso() }`.
+  - `creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio = () => Date.now(), attesaMs = 500 })` → `{ verifica(), corri(), corriSolido(), disegna({ modello }), azzera(), impostaSolutore(salute, versione), inCorso() }` — sette, non sei: `impostaSolutore` è quella che il Task 5 chiama con `/api/salute`.
     - `modello()` → lo snapshot corrente (`corrente(cronologia)` in `app.js`): si legge **al momento del gesto**.
     - `verifica()`: `POST /api/check {modello}` → i verdetti nel blocco (senza «ultima corsa»); il bottone «verifica» dice «verifico…» finché dura.
     - `corri()`: `POST /api/corsa {modello, casi: null}` → 202 → interroga `GET /api/corsa/{run_id}` ogni `attesaMs` finché `stato === "finita"`; mentre gira: attesa con fasi e cronometro (aggiornato a ogni giro di polling — non serve un timer a parte), i bottoni disabilitati, «corri» dice «corro…»; a fine: `lavoro = {run_id, secondi, fin, fasi, modello: <snapshot>, solido: false}`, i verdetti da `verdettiDi(fin)`, `suEsito(lavoro)`.
@@ -830,7 +1255,7 @@ export const verdettiDi = (fin) => [...(fin?.verdetti_check ?? []), ...(fin?.ris
       <ol id="corsa-fasi" aria-label="fasi della corsa"></ol>
       <p id="corsa-secondi" class="numero"></p>
     </div>
-    <p id="corsa-ultima" class="numero" hidden></p>
+    <p id="corsa-ultima" class="numero" aria-live="polite" hidden></p>
     <details id="corsa-registro" hidden><summary>registro del solutore</summary><pre id="corsa-coda"></pre></details>
     <p class="vuoto" id="corsa-vuoto">Premi <kbd>⌘⏎</kbd> per lanciare tutte le analisi del modello, <kbd>⇧⌘⏎</kbd> per il solo Check Model.</p>
     <ul id="corsa-verdetti" aria-label="verdetti" hidden></ul>
@@ -858,9 +1283,10 @@ export const verdettiDi = (fin) => [...(fin?.verdetti_check ?? []), ...(fin?.ris
 - `verifica()` con risposta `{esito: "ok", verdetti: [...]}` → i verdetti anche se tutti passati (sedici righe: il verde si vede)
 - `disegna({modello})` senza lavoro → la riga dell'ultima resta `hidden`, lo stato vuoto visibile solo se non ci sono nemmeno verdetti
 - `azzera()` durante un lavoro → il lavoro finisce ma non si registra (`generazione` incrementata: la risposta arriva a un'altra generazione e si butta)
+- la `GET` risponde 404 a metà polling (server riavviato sotto) → `suErrore("nessuna corsa <id>")`, l'attesa sparisce, nessun lavoro registrato, i bottoni tornano attivi
 - il `keydown` di `⌘⏎` dentro il campo di comando → **non** corre (sotto la guardia del campo in `dispatchVoce`, Task 5): `daControllo` lo lascia passare (`metaKey`), è `app.js` che lo ferma
 
-- [ ] **Step 1: Test rossi** — in coda a `static/test/corsa.test.js`, copiando il DOM finto di `file.test.js:9-52` (con `disabled`, `hidden`, `textContent`, `_attrs`, `setAttribute`, `replaceChildren`, `append`, `querySelector` sulla radice per i dodici id: `#corsa-solutore`, `#corsa-verifica`, `#corsa-corri`, `#corsa-inp`, `#corsa-corri-solido`, `#corsa-attesa`, `#corsa-fasi`, `#corsa-secondi`, `#corsa-ultima`, `#corsa-registro`, `#corsa-coda`, `#corsa-vuoto`, `#corsa-verdetti`) e una `fetch` finta **a sequenza**: `fetchSequenza([{stato: 202, dati: {...}}, {stato: 200, dati: {...}}, ...])` che risponde nell'ordine e registra rotta e corpo. I test:
+- [ ] **Step 1: Test rossi** — in coda a `static/test/corsa.test.js`, copiando il DOM finto di `file.test.js:9-53` (con `disabled`, `hidden`, `textContent`, `_attrs`, `setAttribute`, `replaceChildren`, `append`, `querySelector` sulla radice per i tredici id: `#corsa-solutore`, `#corsa-verifica`, `#corsa-corri`, `#corsa-inp`, `#corsa-corri-solido`, `#corsa-attesa`, `#corsa-fasi`, `#corsa-secondi`, `#corsa-ultima`, `#corsa-registro`, `#corsa-coda`, `#corsa-vuoto`, `#corsa-verdetti`) e una `fetch` finta **a sequenza**: `fetchSequenza([{stato: 202, dati: {...}}, {stato: 200, dati: {...}}, ...])` che risponde nell'ordine e registra rotta e corpo. I test:
 
 ```js
 test("creaCorsa: corri fa la POST, interroga finché non è finita, e scrive fasi, secondi e verdetti", async () => {
@@ -1095,6 +1521,9 @@ Nota su `modello: m` nell'oggetto ritornato da `lavora` e su `stantia`: `m` è l
 /* Il blocco «Corsa» (giornata 12). Le fasi sono un elenco ordinato: la corrente in grassetto
    con `aria-current`; i verdetti a doppio canale — il punto (pieno, vuoto, rosso) e la parola.
    Il rosso resta un filetto o un punto, mai il colore del testo (AA a 11 px). */
+/* R12: `#corsa label` va aggiunta al selettore di `#file label` (`:232`), `#corsa-inp` a quello
+   di `#file-percorso, #comando-campo` (`:233`) e al suo `:focus-visible` (`:237`). Le tre righe
+   qui sotto sono la forma **da non scrivere**: restano per dire cosa devono valere. */
 #corsa label { display: block; font-size: 11px; color: var(--testo-tenue); margin: 8px 0 4px; }
 #corsa-inp { width: 100%; font-family: var(--mono); font-size: 12px; background: var(--pannello);
              color: var(--inchiostro); border: 1px solid var(--tratto-forte); padding: 3px 6px; box-sizing: border-box; }
@@ -1135,9 +1564,9 @@ Nota su `modello: m` nell'oggetto ritornato da `lavora` e su `stantia`: `m` è l
 **Interfaces:**
 - Consumes: `creaCorsa` (Task 4), `scegli` (`app.js:109`), `corrente(cronologia)`, `chiediJson`.
 - Produces:
-  - `const corsa = creaCorsa(document, { modello: () => corrente(cronologia), suVai: ({ tipo, id }) => { scegli(tipo, id); ridisegna(); }, suErrore: (msg) => dì(msg), suEsito: () => ridisegna() });` subito dopo `creaFile` (`:231`).
+  - `const corsa = creaCorsa(document, { modello: () => corrente(cronologia), suVai: ({ tipo, id }) => scegli(tipo, id), suErrore: (msg) => dì(msg), suEsito: () => ridisegna() });` subito dopo `creaFile` (`:231`).
   - All'avvio: `chiediJson("/api/salute").then((s) => corsa.impostaSolutore(s.solutore)).catch((e) => dì(e.message));` — la riga del solutore dice «OpenSees · percorso» prima di qualunque gesto.
-  - `suApertura` e `suImportazione` (`:190-227`): `corsa.azzera();` — l'ultima corsa non sopravvive a un altro modello.
+  - `suApertura` (`:190-206`) e `suImportazione` (`:212-222`): `corsa.azzera();` — l'ultima corsa non sopravvive a un altro modello.
   - `ridisegna` (`:605` circa, accanto a `file.disegna`): `corsa.disegna({ modello: m });`.
   - `dispatchVoce` (`:687-691`): **sotto** la guardia del campo (non accanto ad `apri`/`salva`): `if (voce.codice === "corri") { corsa.corri(); return; }` e `if (voce.codice === "verifica") { corsa.verifica(); return; }` — un `⌘⏎` mentre si scrive un comando è un Invio sbagliato, non una corsa.
   - `scegli(tipo, id)` per `sezione`/`azione`: già gestito da `esitoScelta` per tipo stringa (`modo.js:64`); nessuna aggiunta.
@@ -1175,17 +1604,18 @@ Nota su `modello: m` nell'oggetto ritornato da `lavora` e su `stantia`: `m` è l
 
 Con controllo nullo verde prima di ogni mutante; copia del file prima, ripristino dalla copia.
 
-1. `server.py:SidecarProcesso.chiedi` — `queue.Empty` non gestito (timeout tolto) → «un sidecar muto…» rosso (il test aspetta oltre il soffitto).
+1. `server.py:SidecarProcesso.chiedi` — **tieni** il `timeout=self.soffitto_s` e togli il solo `except queue.Empty`: la `queue.Empty` finisce nell'`except Exception` esterno e il motivo diventa «Empty: » invece di «nessuna risposta dal sidecar entro 0.2 s» → rosso in 0,2 s. (Togliere il *timeout*, come diceva la prima stesura, non fa rosso: fa **appendere** il test per sempre, e un test appeso non è una prova.)
 2. `server.py:SidecarProcesso.chiedi` — `su_fase` chiamata **dopo** il ciclo invece che dentro → «le fasi arrivano al callback mentre arrivano» rosso.
 3. `server.py:_avvia_lavoro` — il controllo «un lavoro in corso» tolto → «una seconda corsa … è 409» rosso.
-4. `server.py:stato_corsa` — `_o_400` tolto dal `GET` → il test di `fase: deck` (ex `:606`) rosso.
+4. `server.py:stato_corsa` — `_o_400` tolto dal `GET` → il test di `fase: deck` (ex `:606`) rosso **solo se** quel test asserisce `status_code == 400` (R4): leggendo il solo `d["fase"]` il mutante passa, perché senza `_o_400` la `GET` rende 200 con lo stesso corpo.
 5. `corsa.py:scrivi_atomico` — `write_text` diretto sulla destinazione → «lascia il file intero o niente» rosso.
 6. `corsa.js:vaiDi` — il primo elemento della coppia sostituito dal secondo → «vai dal primo oggetto» rosso.
 7. `corsa.js:stantia` — `!==` → `JSON.stringify(a) !== JSON.stringify(b)` → «è l'identità dello snapshot» rosso.
 8. `corsa.js:creaCorsa.lavora` — il `while` che si ferma alla prima `GET` senza guardare `stato` → «interroga finché non è finita» rosso.
 9. `corsa.js:creaCorsa` — `generazione` non guardata → «azzera … una risposta in ritardo non lo riporta» rosso.
-10. `tastiera.js` — `["enter", "corri"]` messo in `SENZA_MODIFICATORE` → «Invio nudo resta conferma» rosso.
+10. `tastiera.js` — `["enter", "corri"]` messo in `SENZA_MODIFICATORE` → «Invio nudo resta conferma» rosso (una `Map` tiene l'ultima chiave uguale: `conferma` viene scavalcata).
+11. `server.py:_avvia_lavoro` — l'`except Exception` del thread tolto, con un sidecar finto che solleva un `RuntimeError` → rosso l'ingresso degenere nuovo del Task 2 («il sidecar solleva un'eccezione qualunque»). Senza quel test non lo prende nessuno, ed è il difetto che blocca il server per sempre (R2).
 
 ## Fuori da questa seduta
 
-SSE (deciso polling). La coda con id per il sidecar (#22 resta aperto per quella parte: `/api/salute` e `/api/check` sono liberi, una seconda corsa è 409). Il selettore dei casi. La vista del solido (T7). Il rendering dei risultati e la deformata (13). `articolo` nei verdetti (`None` oggi). «Annulla» di una corsa in corso (P5 lo chiede: il sidecar non ha un comando di interruzione; il timeout di OpenSees è il tetto). L'importazione con la stessa attesa parlante (oggi «importazione…» sul bottone basta: dura meno di un secondo).
+Il **riavvio del sidecar dopo un soffitto** (`docs/ricerca/03-stack-tecnico.md:121` lo chiede alla lettera: «riavvio del sidecar al comando successivo»): dopo un soffitto il processo resta impegnato sulla richiesta di prima, e ogni corsa successiva costa 660 s e finisce in errore per la vita del server. I **`verdetti_check` persi sul 400**: `chiediJson` (`file.js:31`) tiene solo `dati.motivo`, quindi su `fase: "deck"` l'interfaccia mostra il motivo e butta i verdetti che lo spiegano. La **potatura di `lavori`**: ogni corsa lascia in RAM il suo `fin` intero, e una pushover del 2×1 pesa 192 kB (`tests/test_server.py:79`). SSE (deciso polling). La coda con id per il sidecar (#22 resta aperto per quella parte: `/api/salute` e `/api/check` sono liberi, una seconda corsa è 409). Il selettore dei casi. La vista del solido (T7). Il rendering dei risultati e la deformata (13). `articolo` nei verdetti (`None` oggi). «Annulla» di una corsa in corso (P5 lo chiede: il sidecar non ha un comando di interruzione; il timeout di OpenSees è il tetto). L'importazione con la stessa attesa parlante (oggi «importazione…» sul bottone basta: dura meno di un secondo).
