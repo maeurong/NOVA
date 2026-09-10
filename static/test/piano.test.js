@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { versoLibero, estensione, creaPiano } from "../piano.js";
 import { modelloVuoto } from "../modello.js";
 import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
+import { siSovrappongono } from "../etichette.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -654,8 +655,8 @@ const telaio43 = (() => {
 })();
 const stazione = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
 const perCaso43 = { spostamenti: {}, reazioni: {}, sollecitazioni: {
-  1: [stazione(0, 0), stazione(0.5, 80e6), stazione(1, 0)],           // trave bassa: il diagramma scende
-  3: [stazione(0, -100e6), stazione(0.5, -50e6), stazione(1, 0)] } }; // trave alta: sale verso il badge
+  1: [stazione(0, 0), stazione(0.5, 100e6), stazione(1, 0)],         // trave bassa: il massimo globale, e scende
+  3: [stazione(0, -55e6), stazione(0.5, -27.5e6), stazione(1, 0)] } };  // trave alta: sale di 352 mm, sotto il badge
 
 test("piano 4:3: il badge è un ostacolo, e nessun picco finisce sotto il suo testo", () => {
   const contenitore = contenitoreFinto();
@@ -667,16 +668,83 @@ test("piano 4:3: il badge è un ostacolo, e nessun picco finisce sotto il suo te
   assert.equal(badge.hidden, false);
   // Il box del badge come lo calcola il codice: `viewBox` {−960, −720, 9920, 7440}, s = 12,4;
   // il viewport è centro ± mezza misura in px per `s`, e con il 4:3 combacia col `viewBox`.
+  // Il badge sta su una riga sua: parte 22 px sotto il bordo, non a filo (fix round 2), ed è
+  // alto una riga sola. La larghezza non è tagliata: la scala non si tronca.
   const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
-  const x1 = cx + 800 * s / 2, y0 = cy - 600 * s / 2;
-  const scatola = { x0: x1 - (badge.textContent.length * 6.6 + 8) * s, y0, x1, y1: y0 + 20 * s };
+  const x1 = cx + 800 * s / 2, bordo = cy - 600 * s / 2;
+  const scatola = { x0: x1 - (badge.textContent.length * 6.6 + 8) * s, y0: bordo + 22 * s, x1, y1: bordo + 36 * s };
   assert.deepEqual([scatola.x0, scatola.y0, scatola.x1, scatola.y1].map((v) => Math.round(v * 10) / 10),
-                   [6814.8, -720, 8960, -472], "il box misurato in review");
+                   [6814.8, -447.2, 8960, -273.6], "22 px sotto il bordo, alto una riga");
   const testi = tutti(strato(contenitore._figli[0]), "text");
   assert.ok(testi.length >= 1, "il picco della trave bassa si scrive: il test non è vuoto");
+  // Il **box**, non il punto d'ancoraggio: un'etichetta ancorata appena sopra il badge ci finisce
+  // sotto lo stesso con la sua metà bassa, ed è quello che si legge sovrapposto.
   for (const t of testi) {
-    const x = Number(t.getAttribute("x")), y = Number(t.getAttribute("y"));
-    assert.ok(x < scatola.x0 || x > scatola.x1 || y < scatola.y0 || y > scatola.y1,
-      `«${t.textContent}» in (${x}, ${y}) finisce sotto il badge`);
+    assert.ok(!siSovrappongono(boxTesto(t, s), scatola), `«${t.textContent}» finisce sotto il badge`);
   }
+});
+
+// --- fix round 2 -----------------------------------------------------------------
+
+// Il box di un `<text>` come lo intende chi lo posa: `dominant-baseline: middle` centra sul
+// punto, la linea di base (l'assenza dell'attributo) lo tiene sopra. Serve a confrontare fra
+// loro etichette posate da mani diverse — nodi, picchi, carichi.
+const boxTesto = (t, s) => {
+  const x = Number(t.getAttribute("x")), y = Number(t.getAttribute("y"));
+  const larghezza = t.textContent.length * 6.6 * s, altezza = 11 * s;
+  const ancora = t.getAttribute("text-anchor") ?? "start";
+  const x0 = ancora === "end" ? x - larghezza : ancora === "middle" ? x - larghezza / 2 : x;
+  const mezzo = t.getAttribute("dominant-baseline") === "middle";
+  return { x0, x1: x0 + larghezza, y0: mezzo ? y - altezza / 2 : y - altezza, y1: mezzo ? y + altezza / 2 : y };
+};
+const millimetriPerPixelDi = (svg) => {
+  const [, , larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
+  return Math.max(larghezza / 800, altezza / 600);
+};
+
+// Il fumo del Task 6 sul telaio 2×1 a 1280 px: «Fx 20 000 N» finiva addosso all'etichetta del
+// nodo 4 e al picco. Le etichette dei carichi non passavano da `disponi` e non erano ostacoli.
+test("piano: l'etichetta di un carico passa da `disponi` e non si sovrappone a nessun'altra", () => {
+  const azione = { id: 1, nome: "vento", natura: "Q", categoria: "vento", generata: false, carichi: [
+    { tipo: "nodale", nodo: 4, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 },
+  ] };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(telaio43, { azioneInVista: azione, risultati: conRisultati("M", { perCaso: perCaso43 }) });
+  const svg = contenitore._figli[0];
+  const s = millimetriPerPixelDi(svg);
+  const testi = tutti(svg, "text");
+  assert.ok(testi.some((t) => t.textContent.startsWith("Fx")), `l'etichetta del carico si scrive: ${testi.map((t) => t.textContent)}`);
+  for (let i = 0; i < testi.length; i++) for (let j = i + 1; j < testi.length; j++) {
+    assert.ok(!siSovrappongono(boxTesto(testi[i], s), boxTesto(testi[j], s)),
+      `«${testi[i].textContent}» e «${testi[j].textContent}» si sovrappongono`);
+  }
+});
+
+// Il carico è il contorno, il picco è il soggetto: a parità di posto vince il picco.
+test("piano: fra un picco e un carico che si contendono il posto, il picco resta dov'è", () => {
+  const azione = { id: 1, nome: "vento", natura: "Q", categoria: "vento", generata: false, carichi: [
+    { tipo: "nodale", nodo: 4, Fx: 20000, Fy: 0, Fz: 0, Mx: 0, My: 0, Mz: 0 },
+  ] };
+  const senza = contenitoreFinto(), con = contenitoreFinto();
+  creaPiano(senza, { suSelezione: () => {}, suSfondo: () => {} })
+    .disegna(telaio43, { risultati: conRisultati("M", { perCaso: perCaso43 }) });
+  creaPiano(con, { suSelezione: () => {}, suSfondo: () => {} })
+    .disegna(telaio43, { azioneInVista: azione, risultati: conRisultati("M", { perCaso: perCaso43 }) });
+  const posti = (contenitore) => tutti(strato(contenitore._figli[0]), "text")
+    .map((t) => `${t.textContent}@${t.getAttribute("x")},${t.getAttribute("y")}`);
+  assert.deepEqual(posti(con), posti(senza), "il carico non sposta i picchi");
+});
+
+// Ingresso degenere: il primo disegno arriva prima che il layout misuri il riquadro. Con `|| 1`
+// `s` valeva l'intero modello per pixel e **tutto** — cerchi, ostacoli, larghezza delle
+// etichette — usciva grande quanto il telaio: nessun picco entrava nei limiti e sparivano tutti.
+test("piano con il riquadro non ancora misurato: i picchi si scrivono lo stesso", () => {
+  const contenitore = contenitoreFinto();
+  contenitore.clientWidth = 0;
+  contenitore.clientHeight = 0;
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
+  assert.deepEqual(testi, ["45 kN·m"], `il picco c'è anche senza misura del riquadro: ${testi}`);
 });

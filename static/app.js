@@ -678,6 +678,17 @@ function ridisegna() {
   disegnaBarra();
 }
 
+// Il piano si disegna in millimetri per pixel: cambiata la finestra, `s` cambia e con lui tratti,
+// etichette e ostacoli — ma nessuno lo ridisegnava, e il disegno restava della misura di prima.
+// Una volta per frame: `resize` arriva a raffica durante il trascinamento del bordo, e un
+// ridisegno per evento vuol dire ridisegnare l'albero e i pannelli decine di volte al secondo.
+let ridisegnoInCoda = false;
+window.addEventListener("resize", () => {
+  if (ridisegnoInCoda) return;
+  ridisegnoInCoda = true;
+  requestAnimationFrame(() => { ridisegnoInCoda = false; ridisegna(); });
+});
+
 function disegnaBarra() {
   const contesto = contestoBarra(modo, selezione, comando);
   // Il tipo della selezione, non solo il contesto: `D` esiste sulla sola asta, e una barra

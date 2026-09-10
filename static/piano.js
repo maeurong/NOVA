@@ -20,6 +20,12 @@ const RAGGIO = 5;          // px del nodo, in coordinate schermo
 // ma non sul verso assiale puro (su/giù/dx/sx), dove l'offset è tutto su un asse solo e
 // l'etichetta tocca il proprio cerchio — misurato, 6px di sovrapposizione reale.
 const OFFSET_ETICHETTA = 16;
+// Il riquadro da usare finché il layout non l'ha misurato. Con `|| 1` (com'era) `s` diventava
+// l'intero modello per pixel, e **ogni** misura in px — tratti, cerchi, etichette, ostacoli —
+// usciva grande quanto il telaio: nessun picco trovava posto e sparivano tutti. Un riquadro
+// nominale è un'ipotesi, ma è coerente per tutto il disegno, e il `resize` di `app.js` ridisegna
+// con la misura vera appena c'è.
+const LARGHEZZA_NOMINALE = 800, ALTEZZA_NOMINALE = 600;
 
 // Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
 // vince la prima, e il disegno resta identico a parità di stato.
@@ -125,9 +131,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   /** Millimetri per pixel. Con `preserveAspectRatio="… meet"` il riquadro ci sta **intero**,
    *  quindi comanda il lato più stretto: prendere la sola larghezza dà tratti ed etichette
    *  della misura sbagliata in un riquadro alto e magro, che è come nasce a 1280 px. */
+  const pixelDelRiquadro = () => ({ w: contenitore.clientWidth || LARGHEZZA_NOMINALE,
+                                    h: contenitore.clientHeight || ALTEZZA_NOMINALE });
   function millimetriPerPixel() {
-    const w = Math.max(contenitore.clientWidth || 1, 1);
-    const h = Math.max(contenitore.clientHeight || 1, 1);
+    const { w, h } = pixelDelRiquadro();
     return Math.max(vista.larghezza / w, vista.altezza / h);
   }
 
@@ -318,18 +325,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // `viewBox` non è il ritaglio: con `preserveAspectRatio="xMidYMid meet"` a ritagliare è il
     // **viewport**, che contiene il riquadro e coincide con lui sul lato stretto. In coordinate
     // del `viewBox` è il centro più mezza misura in pixel per `s`.
-    const larghezzaPx = contenitore.clientWidth || 1, altezzaPx = contenitore.clientHeight || 1;
+    const { w: larghezzaPx, h: altezzaPx } = pixelDelRiquadro();
     const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
     const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
                        x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
-    // I numeri vengono da `stile.css`, `.carichi-titolo` e `.risultati-badge`: `top: 6px` più una
-    // riga di 14 fanno 20 di altezza; `left`/`right: 8px` più ~6,6 px per carattere del mono a
-    // 11px fanno la larghezza, fino al `max-width: 45%` che il CSS impone. Se là cambiano, qui
-    // le etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
-    const striscia = (testo) => Math.min((testo.length * 6.6 + 8) * s, 0.45 * larghezzaPx * s);
-    const alta = { y0: viewport.y0, y1: viewport.y0 + 20 * s };
-    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - striscia(badge.textContent), x1: viewport.x1, ...alta });
-    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + striscia(titolo.textContent), ...alta });
+    // I numeri vengono da `stile.css`, `.carichi-titolo` e `.risultati-badge`: `left`/`right: 8px`
+    // più ~6,6 px per carattere del mono a 11px fanno la larghezza, una riga è alta 14. Il titolo
+    // sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta a `top: 22`, su una riga sua, e
+    // non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a passare
+    // sotto il testo senza che nessun test se ne accorga.
+    const larghezzaTesto = (testo) => (testo.length * 6.6 + 8) * s;
+    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaTesto(badge.textContent), x1: viewport.x1,
+                                       y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
+    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
+                                        x1: viewport.x0 + Math.min(larghezzaTesto(titolo.textContent), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
@@ -357,24 +366,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       if (n && !dichiarati.has(n.id)) simbolo(n, nomePreimpostazione(p.vincolo) === "incastro", "vincolo-proposto", true);
     }
 
-    // Le etichette dei picchi: dopo i nodi, perché i loro cerchi e le loro etichette sono gli
-    // ostacoli. Una nascosta è meglio di due testi addosso — il valore resta nell'ispettore e
-    // nella striscia, e qui si perde solo la comodità di leggerlo sul disegno.
-    if (stratoRisultati && richiesteEtichette.length) {
-      const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
-      const richieste = richiesteEtichette.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s, altezza: 12 * s }));
-      // `limiti`: il viewport è ciò che ritaglia l'SVG. Un'etichetta spinta oltre non è `nascosta`
-      // — è posata e invisibile, e tiene occupato un posto contro le altre.
-      for (const e of disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport })) {
-        if (e.nascosta) continue;
-        if (e.guida) stratoRisultati.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
-        const t = el("text", { class: "picco", x: e.x, y: e.y, "font-size": 11 * s, fill: colore, "font-family": MONO,
-                               "text-anchor": e.ancora, "dominant-baseline": "middle" });
-        t.textContent = e.testo;
-        stratoRisultati.append(t);
-      }
-    }
-
     // I carichi dell'azione in vista, in px costanti: una freccia non è una misura del modello
     // e non entra in `estensione` — il riquadro non si muove quando si aggiunge un carico.
     // Le frecce stanno sopra i nodi perché la punta del nodale finisce sul nodo e un cerchio
@@ -393,11 +384,40 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         }
         if (f.testo) {
           // `ancora`, se c'è, sta sopra la coda più alta dell'asta (`carichi.js`): due carichi
-          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo.
+          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo. Il punto
+          // però non basta: sul telaio 2×1 a 1280 px «Fx 20 000 N» finiva addosso all'etichetta
+          // del nodo 4 e al picco. Il testo passa da `disponi` insieme ai picchi, che di
+          // priorità ne hanno di più — sono il soggetto della vista, il carico è il contorno.
           const pt = f.ancora ? schermo(f.ancora) : pd;
-          const t = el("text", { x: pt.x + 4 * s, y: pt.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
-          t.textContent = f.testo; gruppo.append(t);
+          richiesteEtichette.push({ id: `c${richiesteEtichette.length}`, x: pt.x, y: pt.y, testo: f.testo,
+                                    priorita: 0.5, carico: true });
         }
+      }
+    }
+
+    // Le etichette, tutte in una chiamata sola: picchi e carichi si contendono lo stesso spazio,
+    // e due `disponi` separate non lo saprebbero. Ostacoli: i cerchi e le etichette dei nodi (che
+    // non si spostano), le due strisce di testo, e il ritaglio del viewport come `limiti` — oltre
+    // il bordo un'etichetta non è `nascosta`, è posata e invisibile, e tiene occupato un posto.
+    // Una nascosta è meglio di due testi addosso: il valore resta nell'ispettore e nella striscia.
+    if (richiesteEtichette.length) {
+      // Un pixel di margine per lato, e la riga intera (14) invece del solo occhio (12): la
+      // larghezza per carattere è una stima del mono a 11px, e uno spazio fine unificatore
+      // (`millimetri`, «20 000») non misura come una cifra. Misurato sul telaio 2×1 a 1920 px:
+      // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel.
+      const richieste = richiesteEtichette.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s + 2 * s, altezza: 14 * s }));
+      const poste = disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport });
+      for (let k = 0; k < poste.length; k++) {   // `disponi` rende un elemento per richiesta, in ordine
+        const e = poste[k];
+        if (e.nascosta) continue;
+        const carico = richiesteEtichette[k].carico;
+        const dove = carico ? gruppo : stratoRisultati;
+        const colore = !carico && attivo.stantia ? ROSSO : INCHIOSTRO;
+        if (e.guida) dove.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
+        const t = el("text", { class: carico ? "carico-testo" : "picco", x: e.x, y: e.y, "font-size": 11 * s,
+                               fill: colore, "font-family": MONO, "text-anchor": e.ancora, "dominant-baseline": "middle" });
+        t.textContent = e.testo;
+        dove.append(t);
       }
     }
 
