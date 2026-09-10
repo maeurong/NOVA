@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo, nomeTasto } from "../tastiera.js";
+import { VISTE } from "../risultati.js";
 
 // I glifi dei tasti a voce sono parole: lo screen reader legge «comando invio», non i nomi
 // Unicode dei simboli. Le lettere restano lettere.
@@ -474,6 +475,21 @@ test("vista: le cifre 0-4 senza modificatore sono la voce «vista»; con ⌘ no;
   assert.ok(vociDellaBarra("selezione", "nodo", { risultati: true }).some((v) => v.codice === "vista"));
   assert.ok(!vociDellaBarra("ghost", null, { risultati: true }).some((v) => v.codice === "vista"));
   assert.equal(nomeTasto("0-4"), "0-4");
+});
+
+// L'aiuto della barra è la terza scrittura dell'elenco delle viste: le altre due sono le
+// `value` dei radio in `index.html` e la tavola di `dispatchVoce`, che ora deriva da `VISTE`.
+// Legarlo qui vuol dire che una vista in più fa fallire questo test invece di uscire zoppa
+// a schermo — che è quel che sarebbe successo con quattro copie a mano.
+test("vista: l'aiuto della barra nomina tutte le viste di `VISTE`, con la loro cifra e nel loro ordine", () => {
+  const aiuto = TASTI.find((v) => v.codice === "vista").aiuto;
+  assert.ok(aiuto.includes("0 niente"), `«0 niente» manca in «${aiuto}»`);
+  let da = 0;
+  for (const [k, vista] of VISTE.entries()) {
+    const dove = aiuto.indexOf(`${k + 1} ${vista}`, da);
+    assert.ok(dove >= da, `«${k + 1} ${vista}» manca (o è fuori ordine) in «${aiuto}»`);
+    da = dove;
+  }
 });
 
 // La voce non apre nessun campo: è la condizione che la coda di `eseguiVoce` guarda (R4).

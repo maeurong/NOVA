@@ -29,7 +29,7 @@ export function creaEsito(radice, { suCambio }) {
   scalaEl.addEventListener("change", cambio);
   for (const r of radio()) r.addEventListener("change", cambio);
 
-  function disegna({ risultati, modello }) {
+  function disegna({ risultati }) {
     stato = risultati;
     vuotoEl.hidden = Boolean(risultati);
     controlliEl.hidden = !risultati;
@@ -48,7 +48,11 @@ export function creaEsito(radice, { suCambio }) {
     for (const r of radio()) r.checked = r.value === (risultati.vista ?? "");
     if (document.activeElement !== scalaEl) scalaEl.value = risultati.scalaMano === null ? "" : String(risultati.scalaMano).replace(".", ",");
     equilibrioEl.textContent = testoEquilibrio(dati, caso);
-    void modello;
+    // Il select è stato corretto sul primo caso: lo stato deve seguirlo, o il blocco mostra
+    // `Z1` mentre il piano disegna il caso che non c'è (cioè niente). In coda a questo giro e
+    // non qui dentro: `suCambio` richiama `ridisegna`, che sta ancora girando — la seconda
+    // passata finirebbe sotto la prima, che riprenderebbe con la vista vecchia in mano.
+    if (caso !== risultati.caso) queueMicrotask(() => suCambio({ caso, vista: risultati.vista, scalaMano: risultati.scalaMano }));
   }
   return { disegna };
 }
@@ -79,9 +83,14 @@ export function creaSrotolato(contenitore) {
     // (`millimetriPerPixel`, `:118-122`). Un `viewBox` con `preserveAspectRatio="none"` stira
     // il disegno a tutta larghezza e con lui i glifi e i cerchi delle stazioni — a 1280 px la
     // colonna del piano è larga ~400 px contro i 1000 del `viewBox`, cioè testo schiacciato di
-    // 2,4 a 1 (R7). ponytail: la striscia si rimisura al prossimo `ridisegna`, quindi un
-    // ridimensionamento della finestra senza toccare niente la lascia della larghezza di prima.
-    const W = Math.max(contenitore.clientWidth || 0, 200), H = 96, M = 14;
+    // 2,4 a 1 (R7). ponytail: la striscia si rimisura al prossimo `ridisegna` — che dalla 13
+    // arriva anche dal `resize` (`app.js`), quindi la larghezza segue la finestra.
+    //
+    // `clientWidth || 200` e **mai** un massimo con 200: la larghezza misurata non si supera
+    // mai, o l'SVG sfora il contenuto e (con `min-width: auto` sulla traccia) la allarga, e il
+    // giro dopo si misura più larga — +16 px a ogni ridisegno, senza tetto. I 200 valgono per
+    // il solo contenitore non ancora impaginato, dove `clientWidth` è 0.
+    const W = contenitore.clientWidth || 200, H = 96, M = 14;
     const svg = el("svg", { width: W, height: H, "aria-label": `M srotolato dell'asta ${asta.id}` });
     const y0 = H / 2;
     const y = (v) => (massimo > 0 ? y0 + (v / massimo) * (H / 2 - M) : y0);   // M positivo verso il basso: il lato teso
@@ -90,6 +99,9 @@ export function creaSrotolato(contenitore) {
     svg.append(el("polygon", { points: [`0,${y0}`, ...punti.map((q) => `${x(q.x_rel)},${y(q.valore)}`), `${W},${y0}`].join(" "),
                                fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
     for (const q of punti) svg.append(el("circle", { cx: x(q.x_rel), cy: y(q.valore), r: 2.5, fill: colore }));
+    // Niente `disponi`: i picchi sono al massimo due e `picchi` rende il secondo **solo** se ha
+    // segno opposto al primo (`risultati.js`), quindi uno sta sopra la linea e l'altro sotto e
+    // non possono sovrapporsi. Un posatore qui sarebbe codice che non risolve niente.
     for (const picco of picchi(stazioni, chiave)) {
       const sopra = picco.valore > 0;   // il testo dalla parte opposta al diagramma, che qui è sotto per M > 0
       const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,

@@ -47,7 +47,9 @@ body {
    colonna del piano. `#spazio` prende le due righe — `min-height: 0` qui sotto gli resta. */
 #viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr auto;
           min-width: 0; min-height: 0; }
-#spazio { grid-row: 1 / -1; }
+/* La colonna scritta, non lasciata all'auto-placement: con la sola `grid-row` lo spazio si
+   piazzava in colonna 1 e i due riquadri si scambiavano (misurato a 1280: piano x=600). */
+#spazio { grid-column: 2; grid-row: 1 / -1; }
 #pannello { grid-area: pannello; border-left: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
 #barra  { grid-area: barra; border-top: 1px solid var(--tratto); padding: calc(var(--passo) / 2) var(--passo);
           display: flex; gap: calc(var(--passo) * 2); flex-wrap: wrap; align-items: baseline; }
@@ -56,11 +58,18 @@ body {
 #piano { border-right: 1px solid var(--tratto); }
 /* La striscia dell'M srotolato: sotto il piano, nella sua colonna, alta quanto il suo SVG.
    Si disegna in pixel (`esito.js`), quindi niente `width: 100%` sull'SVG — la larghezza gliela
-   dà `clientWidth` di questo riquadro. */
+   dà `clientWidth` di questo riquadro.
+   **Niente padding orizzontale, e `min-width: 0`.** Con `box-sizing: border-box` (`:18`)
+   `clientWidth` conta anche il padding: l'SVG usciva di 16 px dal contenuto, la traccia `1fr`
+   con `min-width: auto` cresceva per contenerlo, e il giro dopo `clientWidth` era più grande —
+   +16 px a ogni ridisegno senza tetto (misurato 375 → 487 in otto giri). */
 #srotolato { border-right: 1px solid var(--tratto); border-top: 1px solid var(--tratto);
-             padding: 4px 8px; min-height: 0; }
+             padding: 4px 0; min-height: 0; min-width: 0; }
 #srotolato svg { display: block; }
-#srotolato .titolo { margin: 0 0 2px; font: 11px var(--mono); color: var(--inchiostro); }
+/* Il rientro del titolo sta qui e non nel padding del riquadro: quello allargherebbe
+   `clientWidth`, che è la larghezza con cui la striscia si disegna. Gli stessi 8 px di
+   `.carichi-titolo` (`:75`), che nella colonna sopra fa lo stesso mestiere. */
+#srotolato .titolo { margin: 0 0 2px; padding-left: 8px; font: 11px var(--mono); color: var(--inchiostro); }
 #srotolato .titolo.stantia { color: var(--rosso); }
 #piano svg { width: 100%; height: 100%; display: block; }
 /* Il titolo dei carichi sta sopra l'SVG, non dentro: nel `viewBox` scalava coi millimetri e
@@ -265,7 +274,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* R12: il campo del deck e la sua etichetta entrano nei selettori che già ci sono, invece di
    ricopiarne le dichiarazioni. Due campi che si somigliano per copia divergono al primo
    ripensamento: questi sono lo stesso controllo e devono restare tali. */
-#file label, #corsa label, #risultati label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
+/* `#risultati-controlli > label` e non `#risultati label`: le etichette dei radio della vista
+   sono figlie del `<fieldset>` e la loro regola è `.vincolo-gradi label` (`:112`), che un
+   selettore con un id batte per specificità — uscivano a blocco, tenui e a 11 px. */
+#file label, #corsa label, #risultati-controlli > label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
 #file-percorso, #comando-campo, #corsa-inp, #risultati-scala, #risultati-caso {
                  width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);

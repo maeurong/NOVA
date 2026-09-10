@@ -89,10 +89,10 @@ test("creaEsito: senza risultati lo stato vuoto; con risultati il select dei cas
   const { radice, el } = radiceFinta();
   const cambi = [];
   const esito = creaEsito(radice, { suCambio: (c) => cambi.push(c) });
-  esito.disegna({ risultati: null, modello: {} });
+  esito.disegna({ risultati: null });
   assert.equal(el("#risultati-vuoto").hidden, false);
   assert.equal(el("#risultati-controlli").hidden, true);
-  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]), modello: {} });
+  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]) });
   assert.equal(el("#risultati-vuoto").hidden, true);
   assert.equal(el("#risultati-controlli").hidden, false);
   assert.deepEqual(el("#risultati-caso")._figli.map((o) => o.value), ["Z1", "Z2"]);
@@ -106,7 +106,7 @@ test("creaEsito: cambiare caso, vista o scala chiama suCambio con i tre valori; 
   const { radice, el } = radiceFinta();
   const cambi = [];
   const esito = creaEsito(radice, { suCambio: (c) => cambi.push(c) });
-  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]), modello: {} });
+  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]) });
   el("#risultati-caso").value = "Z2"; el("#risultati-caso").dispatch("change");
   assert.deepEqual(cambi.at(-1), { caso: "Z2", vista: "deformata", scalaMano: null });
   const radioM = radice.querySelectorAll('input[name="vista"]').find((r) => r.value === "M");
@@ -133,28 +133,34 @@ test("creaEsito: senza risultati un cambio non chiama suCambio, e il campo a fuo
   const { radice, el } = radiceFinta();
   const cambi = [];
   const esito = creaEsito(radice, { suCambio: (c) => cambi.push(c) });
-  esito.disegna({ risultati: null, modello: {} });
+  esito.disegna({ risultati: null });
   el("#risultati-scala").dispatch("change");
   assert.equal(cambi.length, 0);
-  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), scalaMano: 50 }, modello: {} });
+  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), scalaMano: 50 } });
   assert.equal(el("#risultati-scala").value, "50");
   globalThis.document.activeElement = el("#risultati-scala");
   el("#risultati-scala").value = "12";
-  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), scalaMano: 50 }, modello: {} });
+  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), scalaMano: 50 } });
   assert.equal(el("#risultati-scala").value, "12", "il campo a fuoco resta com'è");
   globalThis.document.activeElement = null;
 });
 
-test("creaEsito: un ridisegno con lo stesso caso non riscrive il select (il fuoco resta), con un caso sparito torna al primo", () => {
+test("creaEsito: un ridisegno con lo stesso caso non riscrive il select (il fuoco resta), con un caso sparito torna al primo e lo stato lo segue", async () => {
   const { radice, el } = radiceFinta();
-  const esito = creaEsito(radice, { suCambio: () => {} });
-  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]), modello: {} });
+  const cambi = [];
+  const esito = creaEsito(radice, { suCambio: (c) => cambi.push(c) });
+  esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]) });
   const opzioniPrima = el("#risultati-caso")._figli;
-  esito.disegna({ risultati: { ...risultatiDi(["Z1", "Z2"]), caso: "Z2" }, modello: {} });
+  esito.disegna({ risultati: { ...risultatiDi(["Z1", "Z2"]), caso: "Z2" } });
   assert.equal(el("#risultati-caso")._figli, opzioniPrima, "stesse opzioni: non si ricostruiscono");
   assert.equal(el("#risultati-caso").value, "Z2");
-  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), caso: "Z9" }, modello: {} });
+  assert.equal(cambi.length, 0, "un caso che c'è non fa parlare nessuno");
+  esito.disegna({ risultati: { ...risultatiDi(["Z1"]), caso: "Z9", vista: "M", scalaMano: 50 } });
   assert.equal(el("#risultati-caso").value, "Z1");
+  // La correzione arriva in coda al giro, non dentro: `suCambio` richiama `ridisegna`, che sta
+  // ancora girando. Senza questo il blocco mostrerebbe Z1 e il piano il caso che non c'è.
+  await Promise.resolve();
+  assert.deepEqual(cambi.at(-1), { caso: "Z1", vista: "M", scalaMano: 50 });
 });
 
 test("creaSrotolato: senza risultati nascosta; con risultati e nessuna asta il gesto; con l'asta il diagramma e il picco scritto", () => {
@@ -201,4 +207,25 @@ test("creaSrotolato: il pilastro legge `Mz`, e un contenitore largo 0 disegna co
   assert.equal(svg.getAttribute("width"), "200", "clientWidth a 0: larghezza minima, mai 0 né NaN");
   assert.ok(tutti(svg, "text").map((t) => t.textContent).includes("21 kN·m"), "la chiave del pilastro è Mz");
   for (const p of svg._figli) for (const v of Object.values(p._attrs)) assert.ok(!v.includes("NaN"), `NaN in ${v}`);
+});
+
+// La striscia non deve **mai** poter allargare la colonna che la misura: l'SVG più largo del
+// contenuto faceva crescere la traccia `1fr`, e il giro dopo `clientWidth` era più grande —
+// +16 px a ogni ridisegno, senza tetto (misurato dal reviewer: 375 → 487 in otto giri).
+test("creaSrotolato: nessuna coordinata esce dalla larghezza misurata, e ridisegnare non la fa crescere", () => {
+  const contenitore = contenitoreFinto(375);
+  const striscia = creaSrotolato(contenitore);
+  const modello = { nodi: [{ id: 1, x: 0, z: 0 }, { id: 2, x: 6000, z: 0 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
+  const perCaso = { sollecitazioni: { 1: [{ x_rel: 0, My: 0 }, { x_rel: 0.5, My: 45e6 }, { x_rel: 1, My: -12e6 }] } };
+  const quadro = { vista: "M", caso: "Z1", perCaso, stantia: false };
+  for (let giro = 0; giro < 8; giro++) {
+    striscia.disegna({ risultati: quadro, modello, selezione: { tipo: "asta", id: 1 } });
+    const svg = contenitore._figli.find((f) => f.nome === "svg");
+    assert.ok(Number(svg.getAttribute("width")) <= 375, `giro ${giro}: ${svg.getAttribute("width")} px`);
+    for (const e of tutti(svg, "line").concat(tutti(svg, "circle"), tutti(svg, "text"))) {
+      for (const [k, v] of Object.entries(e._attrs)) {
+        if (["x", "x1", "x2", "cx"].includes(k)) assert.ok(Number(v) >= 0 && Number(v) <= 375, `${k}=${v}`);
+      }
+    }
+  }
 });

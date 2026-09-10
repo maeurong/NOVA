@@ -23,7 +23,7 @@ import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { creaCorsa, stantia } from "./corsa.js";
 import { creaEsito, creaSrotolato } from "./esito.js";
-import { casiDi, scalaAuto, puntiDeformata } from "./risultati.js";
+import { VISTE, casiDi, scalaAuto, puntiDeformata } from "./risultati.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro, descrizione } from "./vincoli.js";
@@ -672,7 +672,7 @@ function ridisegna() {
   });
   file.disegna({ percorso, impronta, modello: m });
   corsa.disegna({ modello: m });
-  esito.disegna({ risultati, modello: m });
+  esito.disegna({ risultati });
   srotolato.disegna({ risultati: inVista, modello: m, selezione });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
@@ -812,9 +812,14 @@ function dispatchVoce(voce, valore = null) {
   // guardia del modo, invece: guardare i diagrammi non è un secondo gesto sul disegno.
   if (voce.codice === "vista") {
     if (!risultati) { dì("nessuna corsa da mostrare: ⌘⏎ la lancia"); return; }
-    const scelta = { 0: null, 1: "deformata", 2: "M", 3: "V", 4: "N" }[String(valore ?? "").trim()];
-    if (scelta === undefined) { dì("la vista è 0, 1, 2, 3 o 4"); return; }
-    risultati = { ...risultati, vista: scelta };
+    // `[null, ...VISTE]` e non una tavola scritta a mano: quella era la quarta copia
+    // dell'elenco delle viste, e il giorno di una vista in più tre copie su quattro sarebbero
+    // rimaste indietro in silenzio. `0` è «niente», poi `VISTE` nel suo ordine.
+    const tavola = [null, ...VISTE];
+    const testo = String(valore ?? "").trim();
+    const i = testo === "" ? NaN : Number(testo);
+    if (!Number.isInteger(i) || i < 0 || i >= tavola.length) { dì(`la vista è una cifra da 0 a ${tavola.length - 1}`); return; }
+    risultati = { ...risultati, vista: tavola[i] };
     dì(null); ridisegna();
     return;
   }
