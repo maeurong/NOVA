@@ -9,7 +9,8 @@ import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
-import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima } from "./risultati.js";
+import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima,
+         asteRuotate } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -157,18 +158,31 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
    *  si scrivono qui: si accodano a `richieste`, che `disegna` posa con `disponi` dopo i nodi,
    *  quando i loro cerchi e i loro nomi sono ostacoli noti. Un solo colore, inchiostro; rosso
    *  quando la corsa è stantia — il rosso dice attenzione (story 63). */
-  function stratoDeiRisultati(m, attivo, vistaRis, s, richieste) {
+  function stratoDeiRisultati(m, attivo, vistaRis, s, richieste, linee) {
     const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
+    // Il bbox di un segmento, con un pixel di margine per lato. Le linee del disegno — le ordinate
+    // di stazione, i tratti fra due stazioni, la polilinea della deformata — sono ostacoli quanto
+    // un cerchio: un'etichetta che ci passa sopra si legge barrata (visto su MURO 1). Il rettangolo
+    // di un segmento obliquo è più largo del segmento: è la lettura pessimista, e costa qualche
+    // etichetta spostata invece di qualcuna illeggibile.
+    // ponytail: bbox e non distanza punto-segmento. Su un diagramma quasi piatto — che è il caso
+    // che conta — le due coincidono; su una diagonale lunga il bbox prende anche l'aria attorno,
+    // e allora si passa alla distanza vera.
+    const segmento = (a, b) => linee.push({ x0: Math.min(a.x, b.x) - s, y0: Math.min(a.y, b.y) - s,
+                                            x1: Math.max(a.x, b.x) + s, y1: Math.max(a.y, b.y) + s });
+    const spezzata = (punti) => { for (let k = 1; k < punti.length; k++) segmento(punti[k - 1], punti[k]); };
     // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
     // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
     const g = el("g", { class: "risultati", "pointer-events": "none" });
     const coppia = (p) => `${p.x},${p.y}`;
     if (vistaRis === "deformata") {
       for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
+        const punti = d.punti.map((p) => schermo(p));
         g.append(el("polyline", {
-          class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
+          class: "deformata", points: punti.map(coppia).join(" "),
           fill: "none", stroke: colore, "stroke-width": 2 * s,
           "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+        spezzata(punti);
       }
       // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
       // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
@@ -193,6 +207,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
           fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
           "stroke-dasharray": `${5 * s} ${3 * s}` }));
+        spezzata(punti);   // il contorno del diagramma: un'etichetta non ci va sopra
         // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
         // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
         for (const p of d.punti) {
@@ -200,12 +215,17 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * r, z: d.base[0].z + (d.base[1].z - d.base[0].z) * r });
           const q = schermo(p);
           g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
+          segmento(b, q);
         }
         // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
-        for (const picco of picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave)) {
-          if (sottoSoglia(picco.valore, massimo)) continue;
+        picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave).forEach((picco, ordine) => {
+          // Il picco **principale** di un'asta si scrive sempre: è il numero che quell'asta ha da
+          // dire, e tacerlo perché un'altra asta è più caricata lascia una trave muta accanto a un
+          // pilastro grosso. La soglia vale per il secondo picco, quello di segno opposto, che è
+          // un di più. `forEach` e non `for…of`: serve l'indice, e `continue` diventa `return`.
+          if (ordine > 0 && sottoSoglia(picco.valore, massimo)) return;
           const p = d.punti.find((q) => q.x_rel === picco.x_rel);
-          if (!p) continue;
+          if (!p) return;
           const q = schermo(p);
           // Il verso preferito: dalla base del diagramma verso il picco, cioè **fuori** dal
           // poligono. Senza, l'etichetta parte da «sopra» e su un diagramma disegnato in su la
@@ -217,7 +237,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           richieste.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
                                     priorita: 1 + Math.abs(picco.valore) / massimo,
                                     preferito: { dx: q.x - b.x, dy: q.y - b.y } });
-        }
+        });
       }
     }
     return g;
@@ -276,7 +296,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
 
     // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili.
     const richiesteEtichette = [];   // picchi e carichi: li posa `disponi` dopo i nodi, insieme
-    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, richiesteEtichette) : null;
+    const lineeDelDisegno = [];      // i bbox delle linee dei diagrammi: ostacoli come i cerchi
+    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, richiesteEtichette, lineeDelDisegno) : null;
     if (stratoRisultati) gruppo.append(stratoRisultati);
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
@@ -322,7 +343,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const etichettate = new Set();
     // Gli ostacoli per le etichette dei risultati: i cerchi e le etichette dei nodi non si
     // spostano (le posa `versoLibero`), quindi sono loro il terreno e i picchi ci girano attorno.
-    const ostacoli = [];
+    const ostacoli = [...lineeDelDisegno];
     for (const n of m.nodi) {
       const p = schermo(n);
       const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;
@@ -370,7 +391,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     titolo.hidden = !azioneInVista;
     // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
     // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
-    badge.textContent = attivo ? testoBadge(attivo) : "";
+    badge.textContent = attivo ? testoBadge({ ...attivo, ruotate: asteRuotate(m) }) : "";
     badge.hidden = !attivo;
     badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
 

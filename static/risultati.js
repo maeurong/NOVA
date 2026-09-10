@@ -140,22 +140,35 @@ export function scalaAuto(m, perCaso, frazione = 0.05) {
  *  pilastri `|My|max ≤ 2,2e-9` e `|Mz|max` fino a 2,1e7; travi `|Mz|max ≤ 9,3e-10` e `|My|max`
  *  fino a 5,4e7. Con una mappa costante `{M:"My"}` ogni pilastro sarebbe una riga piatta.
  *
- *  ponytail: `verticale` guarda `e1` **proiettato nel piano x–z**, il deck guarda l'asse `a` in
- *  3D e poi ruota la terna di `rotazione_deg`. Un'asta con `y_i ≠ y_j`, o con la sezione ruotata,
- *  può quindi prendere la chiave sbagliata e uscire come una riga piatta. Nessun modello del repo
- *  ci casca (`muro_1`: `y = 0`, `rotazione_deg = 0`), e finché il piano di lavoro è uno solo la
- *  proiezione basta. Il giorno del fuori-piano, la chiave la deve dire il server insieme alle
- *  stazioni — non ri-derivarla qui. */
+ *  `verticale` si decide sull'asse **in 3D**, `|a·ẑ| / |a|`, con la `y` dei nodi dentro: è la
+ *  stessa riga del deck (`nova/deck.py:428`, `abs(asse[2]) > _COSENO_VERTICALE`). Guardando la
+ *  sola proiezione su x–z, una controventatura che sale di 3 m salendo di 4 in `y` usciva
+ *  «verticale» qui e trave là, con la chiave sbagliata e un diagramma piatto. La terna del
+ *  disegno resta nel piano: quel che si vede è l'alzado.
+ *
+ *  ponytail: resta fuori `rotazione_deg`. La terna del deck ruota attorno all'asse, e con una
+ *  rotazione che non sia multipla di 180° nessuna delle due coppie di chiavi è quella giusta:
+ *  quell'asta non si disegna affatto (`diagramma`), invece di mostrarne una sbagliata. Il giorno
+ *  del fuori-piano vero, la chiave la deve dire il server insieme alle stazioni. */
 export function assiDi(i, j) {
   const L = Math.hypot(j.x - i.x, j.z - i.z);
   if (!(L > 0)) return null;
   const e1 = { x: (j.x - i.x) / L, z: (j.z - i.z) / L };
   const e2 = { x: -e1.z, z: e1.x };
-  const verticale = Math.abs(e1.z) > COSENO_VERTICALE;
+  const dy = (Number(j.y) || 0) - (Number(i.y) || 0);
+  const verticale = Math.abs(j.z - i.z) / Math.hypot(L, dy) > COSENO_VERTICALE;
   const s = verticale ? -1 : (Math.sign(e1.x) || 1);
   return { L, e1, e2, verticale, n: { x: s * e2.x, z: s * e2.z },
            M: verticale ? "Mz" : "My", V: verticale ? "Vy" : "Vz", N: "N" };
 }
+
+/** Una sezione ruotata di un angolo che non sia multiplo di 180° porta la terna del solutore fuori
+ *  dal piano del disegno: né `My`/`Vz` né `Mz`/`Vy` sono la flessione che si vede. Quell'asta i
+ *  diagrammi la saltano, e il badge lo dice — un diagramma sbagliato è peggio di uno assente. */
+export const sezioneRuotata = (a) => {
+  const g = Number(a?.rotazione_deg);
+  return Number.isFinite(g) && ((g % 180) + 180) % 180 !== 0;
+};
 
 /** La deformata per asta, con le funzioni di forma di Hermite nel piano (`docs/ricerca/03-stack-tecnico.md:94`):
  *  spostamento assiale lineare, trasversale cubico dalle frecce e dalle rotazioni degli estremi.
@@ -238,9 +251,16 @@ function asteConAssi(m, perCaso, vista) {
     if (!i || !j) continue;
     const t = assiDi(i, j);
     if (!t) continue;
+    if (sezioneRuotata(a)) continue;   // la chiave sarebbe sbagliata: si conta, non si disegna
     fuori.push({ a, i, j, t, chiave: t[vista], stazioni: stazioniDi(perCaso, a.id) });
   }
   return fuori;
+}
+
+/** Quante aste i diagrammi saltano per via della sezione ruotata. Il badge lo stampa: un'asta che
+ *  manca dal disegno senza che nessuno lo dica è un'asta che si legge come «zero». */
+export function asteRuotate(m) {
+  return (m?.aste ?? []).filter(sezioneRuotata).length;
 }
 
 /** Millimetri per unità (N o N·mm) che portano il massimo a `frazione` del lato maggiore.
@@ -254,24 +274,33 @@ export function scalaDiagrammaAuto(m, perCaso, vista, frazione = 0.08) {
   return massimo > 0 ? frazione * latoMaggiore(m) / massimo : 0;
 }
 
-/** I diagrammi per stazione. M positivo (fibre tese) verso **−n**, V e N verso **+n**, dove `n`
- *  è l'asse trasversale del solutore (`assiDi`): sotto una trave qualunque sia l'ordine dei suoi
- *  nodi, a sinistra di un pilastro che sale. `chiave` esce insieme ai punti perché chi disegna
- *  i picchi e la striscia deve leggere le stesse stazioni con lo stesso nome. */
+/** I diagrammi per stazione, e da che parte sta il positivo.
+ *
+ *  **M** sul lato teso: verso **−n**, dove `n` è l'asse trasversale del solutore (`assiDi`). È
+ *  sotto una trave qualunque sia l'ordine dei suoi nodi, e a sinistra di un pilastro che sale.
+ *
+ *  **V e N** verso **e2**, la normale sinistra di i→j, e non su `n`: la convenzione del taglio e
+ *  dello sforzo assiale è già nel segno del valore («+ verso i→j», «+ trazione»), e appendere
+ *  anche il lato all'asse del solutore la faceva cambiare da asta ad asta — su un telaio il
+ *  positivo del taglio stava sopra le travi e a sinistra dei pilastri, e la legenda del badge
+ *  valeva per metà disegno. Con `e2` il lato è uno solo, dichiarabile in una riga.
+ *
+ *  `chiave` esce insieme ai punti perché chi disegna i picchi e la striscia deve leggere le stesse
+ *  stazioni con lo stesso nome. */
 export function diagramma(m, perCaso, vista, scalaD) {
   controllaVista(vista);
-  const verso = vista === "M" ? -1 : 1;
   const fuori = [];
   for (const { a, i, j, t, chiave, stazioni } of asteConAssi(m, perCaso, vista)) {
     if (stazioni.length === 0) continue;
-    const { L, e1, n } = t;
+    const { L, e1, e2, n } = t;
+    const lato = vista === "M" ? { x: -n.x, z: -n.z } : e2;
     const punti = stazioni.map((s) => {
       const valore = Number.isFinite(s[chiave]) ? s[chiave] : 0;
       // Una stazione con `x_rel` guasto sta sul nodo i: il poligono resta chiuso invece di
       // portarsi dietro un NaN che cancella tutto il `points` dell'asta.
       const r = Number.isFinite(s.x_rel) ? s.x_rel : 0;
-      const d = verso * valore * scalaD;
-      return { x: i.x + e1.x * r * L + n.x * d, z: i.z + e1.z * r * L + n.z * d, x_rel: s.x_rel, valore };
+      const d = valore * scalaD;
+      return { x: i.x + e1.x * r * L + lato.x * d, z: i.z + e1.z * r * L + lato.z * d, x_rel: s.x_rel, valore };
     });
     fuori.push({ id: a.id, chiave, base: [{ x: i.x, z: i.z }, { x: j.x, z: j.z }], punti });
   }
@@ -302,11 +331,18 @@ export function testoValore(vista, v) {
   return `${conciso(v / fattore)} ${unita}`.trim();
 }
 
-const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j", N: "kN · + trazione" };
-export function testoBadge({ vista, caso, scala, auto, stantia = false }) {
+// Il lato del positivo sta nella legenda perché ora è uno solo per tutto il disegno (`diagramma`):
+// scritto «a sinistra di i→j» si legge sul disegno senza contare i nodi.
+const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j, a sinistra di i→j",
+                  N: "kN · + trazione, a sinistra di i→j" };
+export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0 }) {
   if (!vista) return "";
   const coda = vista === "deformata" ? `×${conciso(scala)} (${auto ? "auto" : "a mano"})` : LEGENDA[vista];
-  return `${stantia ? "stantia · " : ""}${vista} · ${caso} · ${coda}`;
+  // Le aste che i diagrammi saltano vanno dette: una che manca senza avviso si legge come «zero».
+  // La deformata invece le disegna — è in terna globale e la rotazione della sezione non la tocca.
+  const salti = ruotate > 0 && vista !== "deformata"
+    ? ` · ${ruotate} ${ruotate === 1 ? "asta" : "aste"} con sezione ruotata non ${ruotate === 1 ? "disegnata" : "disegnate"}` : "";
+  return `${stantia ? "stantia · " : ""}${vista} · ${caso} · ${coda}${salti}`;
 }
 
 const kN = (v) => `${conciso(v / 1e3)} kN`;

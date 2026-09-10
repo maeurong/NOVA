@@ -572,19 +572,42 @@ test("piano con il riquadro a 0×0: nessun NaN nei punti, nelle ordinate, nelle 
   assert.equal(badgeDi(contenitore).textContent, "M · Z1 · kN·m · lato teso");
 });
 
-// Ingresso degenere: un picco sotto il 2 % del massimo **globale**. `picchi` non lo filtra (la
-// sua soglia è del 5 % sull'asta), lo filtra `sottoSoglia` sul massimo di tutte le aste.
-test("piano con vista M: il picco sotto il 2 % del massimo globale non si scrive", () => {
+// La soglia del 2 % vale per il **secondo** picco, quello di segno opposto: è un di più. Il picco
+// principale di un'asta si scrive sempre, o una trave accanto a un pilastro grosso resta muta —
+// e il suo numero, che è il numero di quella trave, non si legge da nessuna parte sul disegno.
+test("piano con vista M: il picco principale di un'asta piccola si scrive lo stesso", () => {
   let mo = modelloVuoto();
-  mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 6000, z: 0 }); mo = creaNodo(mo, { x: 12000, z: 0 });
-  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
-  const piccola = stazioniR.map((s) => ({ ...s, My: s.My * 0.01 }));
-  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: stazioniR, 2: piccola } };
+  for (const p of [{ x: 0, z: 0 }, { x: 6000, z: 0 }, { x: 12000, z: 0 }, { x: 18000, z: 0 }]) mo = creaNodo(mo, p);
+  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 3, nodo_j: 4 }] };
+  const sta = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+    1: [sta(0, 0), sta(0.5, 2e7), sta(1, 0)],      // il pilastro grosso della storia
+    2: [sta(0, 0), sta(0.5, 3e5), sta(1, 0)] } };  // 1,5 % del massimo: prima spariva
   const contenitore = contenitoreFinto();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   piano.disegna(due, { risultati: conRisultati("M", { perCaso }) });
   const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
-  assert.deepEqual(testi, ["45 kN·m"], `solo il picco grande resta scritto: ${testi}`);
+  assert.ok(testi.includes("20 kN·m"), `il grande: ${testi}`);
+  assert.ok(testi.includes("0,3 kN·m"), `e il piccolo, che è il suo: ${testi}`);
+});
+
+// Il secondo picco — quello di segno opposto — resta un di più, e sotto il 2 % non si scrive.
+test("piano con vista M: il secondo picco sotto il 2 % del massimo globale non si scrive", () => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 6000, z: 0 }, { x: 12000, z: 0 }, { x: 18000, z: 0 }]) mo = creaNodo(mo, p);
+  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 3, nodo_j: 4 }] };
+  const sta = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+    1: [sta(0, 0), sta(0.5, 100e6), sta(1, 0)],
+    // Il secondo picco vale il 10 % del massimo della **sua** asta (e `picchi` lo rende), ma
+    // l'1 % del massimo globale: sotto soglia.
+    2: [sta(0, -1e6), sta(0.5, 10e6), sta(1, 0)] } };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(due, { risultati: conRisultati("M", { perCaso }) });
+  const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
+  assert.ok(testi.includes("10 kN·m"), `il principale della seconda asta c'è: ${testi}`);
+  assert.ok(!testi.includes("-1 kN·m"), `il secondo no: ${testi}`);
 });
 
 // Ingresso degenere: più etichette dello stesso valore nello stesso punto. `disponi` ha quattro
@@ -787,7 +810,11 @@ test("piano con vista M: la trave e il pilastro all'angolo non scrivono due volt
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   piano.disegna(angolo, { risultati: conRisultati("M", { perCaso: perCasoAngolo }) });
   const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
-  assert.equal(testi.filter((t) => t === "2,5 kN·m").length, 1, `una volta sola: ${testi}`);
+  // «Al più una», non «esattamente una»: da quando le linee dei diagrammi sono ostacoli (debito 3)
+  // allo spigolo si incrociano tre tratti e l'etichetta lì non trova più posto — su questa
+  // geometria escono **zero** volte, non due. Il doppione non è più riproducibile nel DOM finto, e
+  // la fusione resta come guardia: se domani il posto si libera, non ne escono due.
+  assert.ok(testi.filter((t) => t === "2,5 kN·m").length <= 1, `mai due volte: ${testi}`);
 });
 
 // Preesistente dalla 11b, chiuso qui perché la giornata promette zero testo tagliato: l'etichetta
@@ -869,4 +896,61 @@ test("piano con vista M: nessun picco entra nel box di un nome di nodo, discende
     assert.ok(!siSovrappongono(boxTesto(p, s), boxNome(n)),
       `«${p.textContent}» entra nel nome «${n.textContent}»`);
   }
+});
+
+// --- le linee del disegno sono ostacoli (debito 3) --------------------------------
+// Su MURO 1 «0,2056 kN·m» era attraversata dalla linea tratteggiata del diagramma e dalle sue
+// ordinate: `disponi` conosceva i cerchi e i nomi dei nodi, non le linee.
+test("piano con vista M: nessuna etichetta finisce sopra un'ordinata o un tratto del diagramma", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(telaio43, { risultati: conRisultati("M", { perCaso: perCaso43 }) });
+  const svg = contenitore._figli[0];
+  const s = millimetriPerPixelDi(svg);
+  const g = strato(svg);
+  // Il bbox di un segmento come lo mette `piano.js`: un pixel di margine per lato.
+  const boxLinea = (x1, y1, x2, y2) => ({ x0: Math.min(x1, x2) - s, y0: Math.min(y1, y2) - s,
+                                          x1: Math.max(x1, x2) + s, y1: Math.max(y1, y2) + s });
+  const linee = tutti(g, "line").map((l) => boxLinea(...["x1", "y1", "x2", "y2"].map((k) => Number(l.getAttribute(k)))));
+  for (const p of tutti(g, "polygon")) {
+    const punti = p.getAttribute("points").split(" ").map((c) => c.split(",").map(Number));
+    for (let k = 1; k < punti.length; k++) linee.push(boxLinea(...punti[k - 1], ...punti[k]));
+  }
+  const testi = tutti(g, "text");
+  assert.ok(testi.length >= 1, "qualche picco si scrive: il test non è vuoto");
+  assert.ok(linee.length >= 8, `le linee ci sono: ${linee.length}`);
+  for (const t of testi) for (const l of linee) {
+    assert.ok(!siSovrappongono(boxTesto(t, s), l), `«${t.textContent}» passa sopra una linea del diagramma`);
+  }
+});
+
+// --- il lato del positivo uniforme (debito 4) -------------------------------------
+test("piano con vista V: il positivo sta a sinistra di i→j su ogni asta, e il badge lo dice", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  // Trave (i→j verso +x): `e2` è in alto in modello, cioè `y` **minore** sullo schermo.
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+    1: [{ x_rel: 0, N: 0, Vy: 0, Vz: 30000, T: 0, My: 0, Mz: 0 },
+        { x_rel: 1, N: 0, Vy: 0, Vz: 30000, T: 0, My: 0, Mz: 0 }] } };
+  piano.disegna(traveR, { risultati: conRisultati("V", { perCaso }) });
+  const svg = contenitore._figli[0];
+  const punti = tutti(strato(svg), "polygon")[0].getAttribute("points").split(" ").map((p) => p.split(",").map(Number));
+  const yBase = punti[0][1];
+  assert.ok(punti.some(([, y]) => y < yBase - 1), "V positivo sopra la trave: a sinistra di i→j");
+  assert.equal(badgeDi(contenitore).textContent, "V · Z1 · kN · + verso i→j, a sinistra di i→j");
+});
+
+// --- la sezione ruotata (debito 6) ------------------------------------------------
+test("piano: un'asta con la sezione ruotata non entra nei diagrammi, e il badge la conta", () => {
+  const ruotata = { ...traveR, aste: [{ ...traveR.aste[0], rotazione_deg: 30 }] };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(ruotata, { risultati: conRisultati("M") });
+  assert.equal(tutti(strato(contenitore._figli[0]), "polygon").length, 0, "nessun diagramma sbagliato");
+  assert.equal(badgeDi(contenitore).textContent,
+    "M · Z1 · kN·m · lato teso · 1 asta con sezione ruotata non disegnata");
+  // La deformata sì: è in terna globale, e la rotazione della sezione non la tocca.
+  piano.disegna(ruotata, { risultati: conRisultati("deformata", { scala: 100 }) });
+  assert.equal(tutti(strato(contenitore._figli[0]), "polyline").length, 1);
+  assert.equal(badgeDi(contenitore).textContent, "deformata · Z1 · ×100 (auto)");
 });

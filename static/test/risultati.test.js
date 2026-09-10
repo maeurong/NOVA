@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { VISTE, assiDi, casiDi, scala125, latoMaggiore, spostamentoMassimo, frecciaMassima, scalaAuto, puntiDeformata,
+import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, spostamentoMassimo, frecciaMassima, scalaAuto, puntiDeformata,
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato } from "../risultati.js";
 
@@ -137,11 +137,14 @@ test("diagramma su un pilastro verticale: si legge Mz (non My), e M positivo sta
   assert.equal(dM.punti[0].valore, 2e6);
   // n = (+1, 0), M positivo verso −n: il lato teso di un pilastro spinto verso +x è quello a −x.
   assert.ok(dM.punti[0].x < 0 && Math.abs(dM.punti[0].x + 200) < 1e-9, `x = ${dM.punti[0].x}`);
+  // V e N stanno **sempre** a sinistra di i→j (`e2`), non sull'asse del solutore: il lato è uno
+  // solo per tutto il disegno e la legenda del badge lo può dichiarare in una riga. Un pilastro
+  // che sale ha `e2 = (−1, 0)`, quindi il positivo va a −x.
   const [dV] = diagramma(pilastro, perCaso, "V", 1e-2);
   assert.equal(dV.chiave, "Vy");
-  assert.ok(dV.punti[0].x > 0, "V positivo verso +n");
+  assert.ok(dV.punti[0].x < 0, `V positivo a sinistra di i→j: x = ${dV.punti[0].x}`);
   const [dN] = diagramma(pilastro, perCaso, "N", 1e-2);
-  assert.ok(dN.punti[0].x < 0, "N negativo (compressione) verso −n");
+  assert.ok(dN.punti[0].x > 0, "N negativo (compressione): dalla parte opposta, cioè +x");
 });
 
 test("diagramma: il verso di M non dipende dall'ordine dei nodi — sotto la trave in tutti e due i casi", () => {
@@ -202,10 +205,47 @@ test("testoBadge: la scala sempre stampata, la legenda una volta, «stantia» da
   assert.equal(testoBadge({ vista: "deformata", caso: "Z1", scala: 120, auto: true }), "deformata · Z1 · ×120 (auto)");
   assert.equal(testoBadge({ vista: "deformata", caso: "Z1", scala: 50, auto: false }), "deformata · Z1 · ×50 (a mano)");
   assert.equal(testoBadge({ vista: "M", caso: "Z1" }), "M · Z1 · kN·m · lato teso");
-  assert.equal(testoBadge({ vista: "V", caso: "Z1" }), "V · Z1 · kN · + verso i→j");
-  assert.equal(testoBadge({ vista: "N", caso: "Z1" }), "N · Z1 · kN · + trazione");
+  // Il lato del positivo è nella legenda perché ora è uno solo per tutto il disegno.
+  assert.equal(testoBadge({ vista: "V", caso: "Z1" }), "V · Z1 · kN · + verso i→j, a sinistra di i→j");
+  assert.equal(testoBadge({ vista: "N", caso: "Z1" }), "N · Z1 · kN · + trazione, a sinistra di i→j");
   assert.equal(testoBadge({ vista: "M", caso: "Z1", stantia: true }), "stantia · M · Z1 · kN·m · lato teso");
   assert.equal(testoBadge({ vista: null }), "");
+});
+
+test("testoBadge: le aste con la sezione ruotata si contano, e non nella deformata", () => {
+  assert.equal(testoBadge({ vista: "M", caso: "Z1", ruotate: 1 }),
+    "M · Z1 · kN·m · lato teso · 1 asta con sezione ruotata non disegnata");
+  assert.equal(testoBadge({ vista: "V", caso: "Z1", ruotate: 3 }),
+    "V · Z1 · kN · + verso i→j, a sinistra di i→j · 3 aste con sezione ruotata non disegnate");
+  assert.equal(testoBadge({ vista: "M", caso: "Z1", ruotate: 0 }), "M · Z1 · kN·m · lato teso");
+  assert.equal(testoBadge({ vista: "deformata", caso: "Z1", scala: 1, auto: true, ruotate: 2 }),
+    "deformata · Z1 · ×1 (auto)", "la deformata è in terna globale: la rotazione non la tocca");
+});
+
+test("assiDi: il verticale si decide in 3D, con la y dei nodi dentro", () => {
+  // La stessa riga del deck (`nova/deck.py:428`): `abs(asse[2]) > 0,999` sull'asse **3D**.
+  const obliqua = assiDi({ x: 0, y: 0, z: 0 }, { x: 0, y: 4000, z: 3000 });
+  assert.equal(obliqua.verticale, false, "3000 su 5000 di asse: 0,6, altro che verticale");
+  assert.deepEqual([obliqua.M, obliqua.V], ["My", "Vz"]);
+  const quasi = assiDi({ x: 0, y: 0, z: 0 }, { x: 0, y: 10, z: 6000 });
+  assert.equal(quasi.verticale, true, "10 mm di sbieco su 6 m restano un pilastro");
+  assert.deepEqual([quasi.M, quasi.V], ["Mz", "Vy"]);
+  // `y` assente vale 0, che è come nascono i nodi del piano di lavoro.
+  assert.equal(assiDi({ x: 0, z: 0 }, { x: 0, z: 3000 }).verticale, true);
+});
+
+test("aste con la sezione ruotata: fuori dai diagrammi, dentro la deformata", () => {
+  const ruotata = { nodi: trave.nodi, aste: [{ id: 1, nodo_i: 1, nodo_j: 2, rotazione_deg: 30 }] };
+  assert.equal(asteRuotate(ruotata), 1);
+  assert.deepEqual(diagramma(ruotata, Z1, "M", 1), [], "la chiave sarebbe sbagliata: non si disegna");
+  assert.equal(scalaDiagrammaAuto(ruotata, Z1, "M"), 0, "e non entra nemmeno nella scala");
+  assert.equal(puntiDeformata(ruotata, Z1, 1)[0].punti.length, 9, "la deformata sì: è in terna globale");
+  // 0 e 180 non ruotano la terna nel piano: quelle aste si disegnano.
+  for (const g of [0, 180, -180, 360, null, undefined]) {
+    const dritta = { nodi: trave.nodi, aste: [{ id: 1, nodo_i: 1, nodo_j: 2, rotazione_deg: g }] };
+    assert.equal(asteRuotate(dritta), 0, `rotazione_deg ${g} non è una rotazione`);
+    assert.equal(diagramma(dritta, Z1, "M", 1).length, 1);
+  }
 });
 
 test("righeSpostamenti e righeReazioni: sei componenti in due righe, unità su ogni numero", () => {
