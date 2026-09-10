@@ -208,7 +208,9 @@ async function finoA(condizione, quanti = 500) {
   throw new Error("la condizione non si è mai avverata");
 }
 
-const zero = { modello: () => ({}), suVai: () => {}, suErrore: () => {}, suEsito: () => {}, attesaMs: 1 };
+// `modello()` stabile come `corrente(cronologia)`: un oggetto nuovo a ogni lettura farebbe «stantia» ogni corsa.
+const M0 = { nodi: [] };
+const zero = { modello: () => M0, suVai: () => {}, suErrore: () => {}, suEsito: () => {}, attesaMs: 1 };
 
 test("creaCorsa: corri fa la POST, interroga finché non è finita, e scrive fasi, secondi e verdetti", async () => {
   const m = { nodi: [{ id: 1 }] };
@@ -291,18 +293,54 @@ test("creaCorsa: stantia — dopo un altro snapshot la riga porta la parola e la
   assert.ok(!el("#corsa-ultima").className.includes("stantia"));
 });
 
-test("creaCorsa: 409 dice che un'altra corsa è in corso e libera i bottoni", async () => {
+test("creaCorsa: 409 senza run_id dice che un'altra corsa è in corso e libera i bottoni", async () => {
   const spia = fetchSequenza([{ stato: 409, dati: { motivo: "un'altra corsa è in corso" } }]);
   const { radice, el } = radiceCorsa();
   const errori = [];
   const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
   await c.corri();
   assert.deepEqual(errori, ["un'altra corsa è in corso"]);
-  assert.equal(spia.chiamate, 1, "il 409 ferma tutto sulla POST: nessun polling di una corsa che non è nostra");
+  assert.equal(spia.chiamate, 1, "senza un run_id non c'è niente a cui riagganciarsi");
   assert.equal(el("#corsa-corri").disabled, false);
   assert.equal(el("#corsa-verifica").disabled, false);
   assert.equal(el("#corsa-corri-solido").disabled, false);
   assert.equal(el("#corsa-ultima").textContent, "");
+});
+
+// La pagina ricaricata a metà corsa: la POST prende un 409 col `run_id` e la UI si riaggancia
+// con la GET invece di restare cieca fino alla fine. Lo snapshot non lo conosce: stantia.
+test("creaCorsa: 409 con run_id riaggancia la corsa in corso e la porta a fine, stantia", async () => {
+  const m = { nodi: [] };
+  const spia = fetchSequenza([
+    { stato: 409, dati: { motivo: "un'altra corsa è in corso: una sola alla volta, aspetta che finisca", run_id: "b2b2b2b2b2b2" } },
+    { stato: 200, dati: { run_id: "b2b2b2b2b2b2", stato: "in corso", fasi: ["leggo i recorder"], secondi: 4 } },
+    { stato: 200, dati: { run_id: "b2b2b2b2b2b2", stato: "finita", fasi: ["leggo i recorder"], secondi: 4.5, esito: "ok", verdetti_check: [v("unita", "passato")], risultati: { verdetti: [] } } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const errori = [], esiti = [];
+  const c = creaCorsa(radice, { ...zero, modello: () => m, suErrore: (t) => errori.push(t), suEsito: (l) => esiti.push(l) });
+  await c.corri();
+  assert.deepEqual(spia.rotte, ["/api/corsa", "/api/corsa/b2b2b2b2b2b2", "/api/corsa/b2b2b2b2b2b2"]);
+  assert.equal(errori[0], "una corsa era già in corso: la seguo da qui");
+  assert.equal(esiti.length, 1);
+  assert.equal(esiti[0].run_id, "b2b2b2b2b2b2");
+  assert.equal(el("#corsa-ultima").textContent, "corsa b2b2b2b2b2b2 · 4,5 s · stantia", "non sappiamo su che snapshot ha girato");
+  assert.equal(el("#corsa-verdetti")._figli.length, 1);
+});
+
+// R4: il 400 di `fase: deck` porta i verdetti del Check che l'hanno preceduto — si mostrano.
+test("creaCorsa: il 400 con verdetti_check mostra i verdetti oltre al motivo", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "c3c3c3c3c3c3", stato: "in corso" } },
+    { stato: 400, dati: { esito: "errore", fase: "deck", motivo: "una sola pushover per modello", verdetti_check: [v("pushover", "non_passato", { rimedio: "tienine una" })] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  await c.corri();
+  assert.deepEqual(errori, ["una sola pushover per modello"]);
+  assert.equal(el("#corsa-verdetti")._figli.length, 1, "il verdetto che spiega il 400 si vede");
+  assert.equal(el("#corsa-corri").disabled, false);
 });
 
 // Due modi di perdere il polling a metà, stesso oracolo: nessun lavoro registrato. La rete

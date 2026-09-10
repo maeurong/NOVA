@@ -18,7 +18,7 @@ export const OGGETTO_PER_CONTROLLO = Object.freeze({
 // `azione` col nodo sparito, `combinazione` con l'azione sparita), e `nodo`/`asta`/`azione` in
 // seconda posizione sono proprio ciò che manca (`nova/check.py:167-179`). Con la sola `analisi`
 // non c'è niente da selezionare, tranne il `nodo_controllo` della pushover (`:205-223`).
-const CONTENITORI = [["combinazione", "combinazione"], ["sezione", "sezione"], ["azione", "azione"]];
+const CONTENITORI = ["combinazione", "sezione", "azione"];   // la chiave del dict è il tipo
 
 export const PAROLA = Object.freeze({ passato: "passato", non_passato: "non passato", non_applicabile: "non applicabile" });
 
@@ -30,7 +30,7 @@ function vaiDi(verdetto) {
     // c'è ma è vincolato nella direzione di spinta (`:58-60`): solo il secondo si può selezionare.
     if (primo.nodo_controllo !== undefined && primo.nodo_controllo !== null) return primo.dof !== undefined ? { tipo: "nodo", id: primo.nodo_controllo } : null;
     if (primo.analisi !== undefined) return null;
-    for (const [chiave, tipo] of CONTENITORI) if (primo[chiave] !== undefined && primo[chiave] !== null) return { tipo, id: primo[chiave] };
+    for (const tipo of CONTENITORI) if (primo[tipo] !== undefined && primo[tipo] !== null) return { tipo, id: primo[tipo] };
     return null;
   }
   const tipo = OGGETTO_PER_CONTROLLO[verdetto.controllo];
@@ -216,12 +216,27 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
 
   const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  /** La POST del lavoro. Un 409 con `run_id` è una corsa già in corso sul server (la pagina
+   *  ricaricata a metà, o un'altra scheda): ci si riaggancia invece di rifiutare — lo snapshot
+   *  su cui gira non lo sappiamo, quindi il lavoro nasce senza modello, cioè stantio. */
+  async function avvia(rotta, corpo) {
+    try {
+      const r = await chiediJson(rotta, corpo);
+      return { ...r, riagganciata: false };
+    } catch (e) {
+      if (e.stato === 409 && e.dati?.run_id) return { run_id: e.dati.run_id, cartella: e.dati.cartella ?? null, riagganciata: true };
+      throw e;
+    }
+  }
+
   /** Il lavoro: la POST, poi la `GET` ogni `attesaMs` finché non è finita. Ritorna il lavoro
-   *  registrato, o `null` se nel frattempo `azzera()` ha cambiato generazione. */
-  async function lavora(rotta, corpo, solido) {
-    const m = modello();          // letto **al gesto**: se il modello cambia durante la corsa, quella corsa è già stantia
+   *  registrato, o `null` se nel frattempo `azzera()` ha cambiato generazione. `m` è lo
+   *  snapshot letto **al gesto** dal chiamante: se il modello cambia durante la corsa, quella
+   *  corsa è già stantia. */
+  async function lavora(rotta, corpo, solido, m) {
     const mia = generazione;
-    const avvio = await chiediJson(rotta, corpo);
+    const avvio = await avvia(rotta, corpo);
+    if (avvio.riagganciata) { m = null; suErrore("una corsa era già in corso: la seguo da qui"); }
     const l = { run_id: avvio.run_id, fasi: [], avvioMs: orologio(), modello: m, solido,
                 cartella: avvio.cartella ?? null };
     disegnaAttesa(l);
@@ -254,64 +269,74 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
 
   const fermo = () => { const perché = prima(); if (perché) suErrore(perché); return Boolean(perché); };
 
-  async function corri() {
+  /** L'involucro dei tre gesti: uno scatto alla volta, il bottone che dice cosa sta facendo, i
+   *  bottoni spenti finché dura, l'avviso «già in corso» tolto alla fine. `fn` ritorna il lavoro
+   *  (o `null` per la verifica) quando c'è un esito da dare al chiamante, `undefined` se no;
+   *  `suEsito` sta **fuori** dal `try`: un errore del ridisegno di `app.js` non è un errore
+   *  della corsa, e non deve travestirsi da tale. */
+  async function conBottone(b, etichetta, fn) {
+    if (occupato) return avvisaOccupato();
+    const riposo = b.textContent;
+    occupato = true; bottoni(false); b.textContent = etichetta;
+    let esito;
+    try {
+      esito = await fn();
+    } catch (e) {
+      // I motivi arrivano da `chiediJson`, già in italiano; il 400 di `fase: deck` porta i
+      // verdetti del Check che l'hanno preceduto (R4): si mostrano, non si buttano.
+      attesaEl.hidden = true;
+      if (Array.isArray(e.dati?.verdetti_check)) { verdetti = e.dati.verdetti_check; disegnaVerdetti(); }
+      suErrore(e.message);
+    } finally {
+      occupato = false; bottoni(true); pulisciAvviso(); b.textContent = riposo;
+    }
+    if (esito !== undefined) suEsito(esito);
+  }
+
+  function corri() {
     if (occupato) return avvisaOccupato();
     if (fermo()) return;
-    occupato = true; bottoni(false); bCorri.textContent = "corro…";
-    try {
-      const l = await lavora("/api/corsa", { modello: modello(), casi: null }, false);
-      if (!l) return;
+    return conBottone(bCorri, "corro…", async () => {
+      const m = modello();   // una lettura sola: il corpo della POST e lo snapshot registrato sono lo stesso oggetto
+      const l = await lavora("/api/corsa", { modello: m, casi: null }, false, m);
+      if (!l) return undefined;
       verdetti = verdettiDi(l.fin);
       disegnaRegistro(l.fin);
       if (l.fin.esito === "assente") impostaSolutore({ esito: "assente", dove_prenderlo: l.fin.dove_prenderlo });
       if (l.fin.esito === "ok" && l.fin.risultati?.run?.versione_opensees) impostaSolutore(salute, versioneBreve(l.fin.risultati.run.versione_opensees));
-      disegnaVerdetti(); disegnaUltima(l.modello);
-      suEsito(l);
-    } catch (e) {
-      // Il 409 arriva da `chiediJson` col `motivo` del server, già in italiano.
-      attesaEl.hidden = true; suErrore(e.message);
-    } finally {
-      occupato = false; bottoni(true); pulisciAvviso(); bCorri.textContent = "corri";
-    }
+      disegnaVerdetti(); disegnaUltima(modello());   // il corrente: cambiato durante la corsa = già stantia
+      return l;
+    });
   }
 
-  async function verifica() {
+  function verifica() {
     if (occupato) return avvisaOccupato();
     if (fermo()) return;
-    occupato = true; bottoni(false); bVerifica.textContent = "verifico…";
-    const mia = generazione;   // come in `lavora`: «apri» durante la verifica butta la risposta in ritardo
-    try {
+    return conBottone(bVerifica, "verifico…", async () => {
+      const mia = generazione;   // come in `lavora`: «apri» durante la verifica butta la risposta in ritardo
       const r = await chiediJson("/api/check", { modello: modello() });
-      if (mia !== generazione) return;
+      if (mia !== generazione) return undefined;
       verdetti = r.verdetti ?? [];
       disegnaVerdetti();
-      suEsito(null);   // nessun lavoro: il chiamante ridisegna e pulisce il messaggio
-    } catch (e) {
-      suErrore(e.message);
-    } finally {
-      occupato = false; bottoni(true); pulisciAvviso(); bVerifica.textContent = "verifica";
-    }
+      return null;   // nessun lavoro: il chiamante ridisegna e basta
+    });
   }
 
-  async function corriSolido() {
+  function corriSolido() {
     if (occupato) return avvisaOccupato();
     // Niente `fermo()`: il solido gira su un `.inp` del disco, il ghost aperto non c'entra.
     const inp = (campoInp?.value ?? "").trim();
     // Non «un deck .inp»: l'estensione qui nessuno la controlla, e un messaggio non promette
     // una verifica che non fa.
     if (inp === "") return suErrore("scrivi il percorso del deck del solido");
-    occupato = true; bottoni(false); bSolido.textContent = "corro il solido…";
-    try {
-      const l = await lavora("/api/ccx", { inp }, true);
-      if (!l) return;
+    return conBottone(bSolido, "corro il solido…", async () => {
+      const l = await lavora("/api/ccx", { inp }, true, modello());
+      if (!l) return undefined;
       verdetti = [];               // il deck del solido non passa dal Check Model: non ci sono verdetti da mostrare
       disegnaRegistro(l.fin);
-      disegnaVerdetti(); disegnaUltima(l.modello); suEsito(l);
-    } catch (e) {
-      attesaEl.hidden = true; suErrore(e.message);
-    } finally {
-      occupato = false; bottoni(true); pulisciAvviso(); bSolido.textContent = "corri il solido";
-    }
+      disegnaVerdetti(); disegnaUltima(modello());   // il corrente: cambiato durante la corsa = già stantia
+      return l;
+    });
   }
 
   function azzera() {

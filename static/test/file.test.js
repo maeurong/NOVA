@@ -55,6 +55,18 @@ function fetchFinta({ dati = { modello: { nodi: [] }, impronta: "abc" }, ritardo
 /** I bottoni dei recenti, come `disegnaRecenti` li ha appesi: `<ul>` → `<li>` → `<button>`. */
 const bottoniRecenti = (elenco) => elenco._figli.map((li) => li._figli[0]);
 
+// --- chiediJson: l'errore porta il corpo ---
+
+test("chiediJson: su una risposta non ok l'errore porta il motivo, il corpo e lo stato", async (t) => {
+  const originale = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originale; });
+  fetchFinta({ ok: false, stato: 409, dati: { motivo: "un'altra corsa è in corso", run_id: "a1b2c3d4e5f6" } });
+  await assert.rejects(chiediJson("/api/corsa", { modello: {} }), (e) =>
+    e.message === "un'altra corsa è in corso" && e.stato === 409 && e.dati.run_id === "a1b2c3d4e5f6");
+  fetchFinta({ ok: false, stato: 500, dati: {} });
+  await assert.rejects(chiediJson("/api/x", { a: 1 }), (e) => e.message === "il server ha risposto 500" && e.stato === 500);
+});
+
 // --- corto ---
 
 test("corto: assente torna un trattino", () => {

@@ -938,6 +938,44 @@ def test_una_riga_di_un_altro_id_non_conta_come_risposta():
     assert esito["righe"] == [{"esito": "rifiutato", "verdetti": []}]
 
 
+# --- 12/debiti: il sidecar riparte al comando successivo (ricerca 03:121, R7) ------------------
+
+def _sp_riavviabile(soffitto_s=0.2):
+    from nova.server import SidecarProcesso
+    processi: list[_ProcessoFinto] = []
+
+    def avvia():
+        processi.append(_ProcessoFinto())
+        return processi[-1]
+    return SidecarProcesso(avvia=avvia, soffitto_s=soffitto_s), processi
+
+
+def _rispondi_in_un_attimo(p: _ProcessoFinto, riga: str) -> None:
+    threading.Timer(0.05, lambda: p.stdout.consegna(riga)).start()
+
+
+def test_dopo_un_soffitto_il_comando_successivo_riparte_da_un_sidecar_nuovo():
+    sp, processi = _sp_riavviabile(soffitto_s=0.2)
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1]["fase"] == "sidecar"   # muto: soffitto
+    assert len(processi) == 1
+    # il secondo comando parte su un processo nuovo, e quello risponde
+    _rispondi_in_un_attimo_dopo = threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n'))
+    _rispondi_in_un_attimo_dopo.start()
+    righe = sp.chiedi({"comando": "check", "modello": {}})
+    assert len(processi) == 2 and sp.riavvii == 1
+    assert righe[-1] == {"esito": "ok"}
+    assert not sp._lock.locked()
+
+
+def test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte():
+    sp, processi = _sp_riavviabile(soffitto_s=1.0)
+    processi[0].stdout.consegna("")
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n')).start()
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert len(processi) == 2
+
+
 def test_stdout_chiuso_resta_l_errore_di_oggi():
     sp, p = _sp(soffitto_s=1.0)
     esito: dict = {}
@@ -946,12 +984,10 @@ def test_stdout_chiuso_resta_l_errore_di_oggi():
     p.stdout.consegna("")
     t.join(timeout=2)
     assert esito["righe"][-1]["motivo"] == "il sidecar ha chiuso lo stdout"
-    # E la seconda, e la terza: un sidecar morto risponde «stdout chiuso» **subito** a ogni
-    # richiesta — il sentinella consumato una volta sola faceva aspettare il soffitto intero.
-    t0 = time.perf_counter()
-    for _ in range(2):
-        assert sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"] == "il sidecar ha chiuso lo stdout"
-    assert time.perf_counter() - t0 < 0.5, "senza aspettare il soffitto"
+    # Uno stdout chiuso segna il sidecar come rotto: il comando successivo riparte da un
+    # processo nuovo (`test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte`), non
+    # aspetta il soffitto sul morto.
+    assert sp._rotto is True
 
 
 def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):
@@ -1026,6 +1062,17 @@ def test_una_seconda_corsa_mentre_una_gira_e_409(tmp_path):
     fermo.via.set(); _attendi(c, rid)
     # finita la prima, la seconda parte
     assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+def test_i_lavori_finiti_si_potano_oltre_max_lavori(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", max_lavori=2),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    ids = [_corsa(c, {"modello": leggi_fixture("telaio_2x1.nova.json")})["run_id"] for _ in range(3)]
+    assert c.get(f"/api/corsa/{ids[0]}").status_code == 404, "il più vecchio se n'è andato"
+    assert c.get(f"/api/corsa/{ids[1]}").status_code in (200, 400)
+    assert c.get(f"/api/corsa/{ids[2]}").status_code in (200, 400)
+    assert "cartella" in c.get(f"/api/corsa/{ids[2]}").json(), "la cartella c'è anche per il telaio"
 
 
 def test_get_di_una_corsa_ignota_o_malformata_e_404(cliente):

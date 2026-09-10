@@ -385,3 +385,16 @@ def test_scrivi_atomico_lascia_il_file_intero_o_niente(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         scrivi_atomico(dest, '{"a": 2}')
     assert dest.read_text(encoding="utf-8") == '{"a": 1}'
+
+
+# --- 12/debiti: le ragioni delle reazioni si leggono, non si decifrano ----------------------------
+
+def test_le_somme_delle_reazioni_sono_in_notazione_italiana():
+    assert corsa._num_it(112500.0) == "112 500"
+    assert corsa._num_it(-20000.0) == "-20 000"
+    assert corsa._num_it(-2.2737367544323206e-13) == "0"
+    assert corsa._num_it(56315.9355444) == "56 315,94"
+    assert corsa._num_it(float("nan")) == "—"
+    assert corsa._terna((-0.0, 0.0, 112500.0)) == "(0, 0, 112 500)"
+    assert corsa._scarto(2.116053207415873e-18) == "2,12e-18"
+    assert corsa._scarto(None) == "—"
