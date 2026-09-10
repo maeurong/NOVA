@@ -909,6 +909,9 @@ class _ProcessoFinto:
     def wait(self, timeout=None):
         return self.uscito if self.uscito is not None else 0
 
+    def kill(self):
+        self.ucciso = True
+
 
 def _sp(soffitto_s=0.2):
     from nova.server import SidecarProcesso
@@ -1026,6 +1029,28 @@ def test_un_processo_uscito_si_riavvia_prima_di_scrivere():
     _rispondi_in_un_attimo(processi, '{"id": 1, "esito": "ok"}\n')
     assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
     assert len(processi) == 2
+
+
+def test_un_sidecar_che_ignora_il_terminate_viene_ucciso_al_riavvio():
+    """`Popen.wait(timeout=2)` **solleva** `TimeoutExpired`, non torna `None`: il `kill()` sta nel
+    ramo dell'eccezione, o non parte mai."""
+    import subprocess
+    from nova.server import SidecarProcesso
+
+    class _Testardo(_ProcessoFinto):
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired("sidecar", timeout)
+
+    processi: list = []
+
+    def avvia():
+        processi.append(_Testardo() if not processi else _ProcessoFinto())
+        return processi[-1]
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=0.2)
+    sp.chiedi({"comando": "check", "modello": {}})   # muto: soffitto
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert processi[0].terminato and getattr(processi[0], "ucciso", False), "terminate, poi kill"
 
 
 def test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte():

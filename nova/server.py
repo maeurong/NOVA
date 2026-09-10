@@ -113,8 +113,9 @@ class SidecarProcesso:
         del server. Il vecchio si termina (se sa farlo), il nuovo parte con la sua coda."""
         try:
             self.p.terminate()
-            if self.p.wait(timeout=2) is None:   # un sidecar che ignora SIGTERM a metà analisi
-                self.p.kill()
+            self.p.wait(timeout=2)
+        except subprocess.TimeoutExpired:   # un sidecar che ignora SIGTERM a metà analisi
+            self.p.kill()
         except Exception:
             pass   # già morto, o un processo che non si lascia toccare: il nuovo parte lo stesso
         self._parti()
