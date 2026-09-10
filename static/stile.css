@@ -62,6 +62,13 @@ body {
 #piano .risultati-badge { position: absolute; top: 6px; right: 8px; margin: 0; text-align: right;
                           font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
 #piano .risultati-badge.stantia { color: var(--rosso); }
+/* Le due strisce condividono la riga in cima: a 1280 px `#piano` sta sui 360 e senza il tetto si
+   toccano in mezzo. Metà per uno meno i margini, e chi sfora perde la coda invece del vicino.
+   Questi quattro numeri — 6 di `top`, 8 di `left`/`right`, 11 di riga, 14 di altezza di riga —
+   li ricopia `piano.js` (`const striscia`, `const alta`) per farne gli ostacoli delle etichette
+   dei picchi: cambiarli qui e non là fa passare un picco sotto il testo, in silenzio. */
+#piano .carichi-titolo, #piano .risultati-badge { max-width: 45%; overflow: hidden;
+                                                  text-overflow: ellipsis; white-space: nowrap; }
 
 h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
      color: var(--testo-tenue); margin: 0 0 var(--passo); font-weight: 600; }

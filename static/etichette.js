@@ -27,7 +27,12 @@ function boxDi(x, y, ancora, larghezza, altezza) {
   return { x0, y0: y - altezza / 2, x1: x0 + larghezza, y1: y + altezza / 2 };
 }
 
-export function disponi(richieste, ostacoli = [], { passo = 6 } = {}) {
+/** `limiti` (facoltativi, `{x0, y0, x1, y1}`) sono il riquadro che ritaglia il disegno: una
+ *  posizione il cui box ne esce si scarta come se collidesse. Senza, un'etichetta spinta oltre il
+ *  bordo esce `nascosta: false` e poi sparisce nel ritaglio — posata per chi la posa, invisibile
+ *  a chi guarda, e il posto che occupa resta prenotato contro le altre. */
+export function disponi(richieste, ostacoli = [], { passo = 6, limiti = null } = {}) {
+  const dentro = (b) => !limiti || (b.x0 >= limiti.x0 && b.y0 >= limiti.y0 && b.x1 <= limiti.x1 && b.y1 <= limiti.y1);
   const lista = Array.isArray(richieste) ? richieste : [];
   const listaOstacoli = Array.isArray(ostacoli) ? ostacoli : [];
   const priorita = (r) => (Number.isFinite(r.priorita) ? r.priorita : 0);
@@ -44,6 +49,7 @@ export function disponi(richieste, ostacoli = [], { passo = 6 } = {}) {
           // Il punto d'ancoraggio: a un passo dal bordo del testo, non dal suo centro.
           const x = r.x + v.dx * d, y = r.y + v.dy * (d + (v.dy ? altezza / 2 : 0));
           const box = boxDi(x, y, v.ancora, larghezza, altezza);
+          if (!dentro(box)) continue;
           if ([...listaOstacoli, ...posate.map((p) => p.box)].some((o) => siSovrappongono(box, o))) continue;
           const guida = multiplo === 1 ? null : { x1: r.x, y1: r.y, x2: v.dx ? x : r.x, y2: v.dy ? (v.dy < 0 ? box.y1 : box.y0) : r.y };
           scelta = { x, y, ancora: v.ancora, box, guida };

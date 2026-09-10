@@ -602,3 +602,81 @@ test("piano con vista M: l'etichetta che non trova posto si nasconde, nessuna si
   const posti = testi.map((t) => `${t.getAttribute("x")}|${t.getAttribute("y")}|${t.getAttribute("text-anchor")}`);
   assert.equal(new Set(posti).size, posti.length, "nessuna etichetta posata sopra un'altra");
 });
+
+// --- fix round 1 -----------------------------------------------------------------
+
+// Alto 1: il poligono ha `fill`, e sopra l'asta il clic finiva sullo strato invece che sull'asta
+// (`ev.target.closest("[data-tipo]")` non trova niente → `suSfondo()`). Lo strato non si tocca.
+test("piano con vista M: lo strato dei risultati non intercetta i clic", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  assert.equal(strato(contenitore._figli[0]).getAttribute("pointer-events"), "none");
+});
+
+// Medio 3: con `ux = uz = 0` in ogni fixture il ramo dell'etichetta del massimo spostamento non
+// era mai eseguito. Qui il nodo 2 scende di 10 mm.
+test("piano con vista deformata: il massimo spostamento è scritto in mm sul nodo che si è mosso", () => {
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -10, 0, 0, 0] }, reazioni: {}, sollecitazioni: {} };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso, scala: 100 }) });
+  const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
+  assert.deepEqual(testi, ["10 mm"], `una sola etichetta, il massimo: ${testi}`);
+});
+
+// Medio 4: il ramo `!scelta` dell'ombra. L'asta scelta resta piena e rossa — è l'unica cosa che
+// il rosso può dire qui — e solo le altre sbiadiscono.
+test("piano con vista deformata: l'asta selezionata resta piena e rossa, le altre sono ombra", () => {
+  let mo = modelloVuoto();
+  mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 6000, z: 0 }); mo = creaNodo(mo, { x: 12000, z: 0 });
+  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(due, { selezione: { tipo: "asta", id: 1 }, risultati: conRisultati("deformata") });
+  const aste = tutti(contenitore._figli[0], "line").filter((l) => l.getAttribute("data-tipo") === "asta");
+  const scelta = aste.find((l) => l.getAttribute("data-id") === "1");
+  const altra = aste.find((l) => l.getAttribute("data-id") === "2");
+  assert.equal(scelta.getAttribute("stroke"), "#b8321e");
+  assert.equal(scelta.getAttribute("stroke-opacity"), undefined, "la selezione non sbiadisce");
+  assert.equal(altra.getAttribute("stroke-opacity"), "0.3");
+});
+
+// R6: il badge è un ostacolo, e questo è l'oracolo che lo prova. Telaio 8000×6000 in un riquadro
+// 800×600: il `viewBox` esce 4:3 esatto, quindi il viewport **coincide** con lui e il badge sta
+// sullo spigolo del disegno, non fuori. Il picco della trave alta, che senza ostacolo finisce a
+// un passo a destra e ci va sotto, deve stare altrove o non essere scritto.
+const telaio43 = (() => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 8000, z: 0 }, { x: 8000, z: 6000 }, { x: 0, z: 6000 }]) mo = creaNodo(mo, p);
+  return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 },
+                         { id: 3, nodo_i: 3, nodo_j: 4 }, { id: 4, nodo_i: 4, nodo_j: 1 }] };
+})();
+const stazione = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
+const perCaso43 = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+  1: [stazione(0, 0), stazione(0.5, 80e6), stazione(1, 0)],           // trave bassa: il diagramma scende
+  3: [stazione(0, -100e6), stazione(0.5, -50e6), stazione(1, 0)] } }; // trave alta: sale verso il badge
+
+test("piano 4:3: il badge è un ostacolo, e nessun picco finisce sotto il suo testo", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(telaio43, {});
+  assert.equal(badgeDi(contenitore).hidden, true, "senza risultati il badge non c'è");
+  piano.disegna(telaio43, { risultati: conRisultati("M", { perCaso: perCaso43 }) });
+  const badge = badgeDi(contenitore);
+  assert.equal(badge.hidden, false);
+  // Il box del badge come lo calcola il codice: `viewBox` {−960, −720, 9920, 7440}, s = 12,4;
+  // il viewport è centro ± mezza misura in px per `s`, e con il 4:3 combacia col `viewBox`.
+  const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
+  const x1 = cx + 800 * s / 2, y0 = cy - 600 * s / 2;
+  const scatola = { x0: x1 - (badge.textContent.length * 6.6 + 8) * s, y0, x1, y1: y0 + 20 * s };
+  assert.deepEqual([scatola.x0, scatola.y0, scatola.x1, scatola.y1].map((v) => Math.round(v * 10) / 10),
+                   [6814.8, -720, 8960, -472], "il box misurato in review");
+  const testi = tutti(strato(contenitore._figli[0]), "text");
+  assert.ok(testi.length >= 1, "il picco della trave bassa si scrive: il test non è vuoto");
+  for (const t of testi) {
+    const x = Number(t.getAttribute("x")), y = Number(t.getAttribute("y"));
+    assert.ok(x < scatola.x0 || x > scatola.x1 || y < scatola.y0 || y > scatola.y1,
+      `«${t.textContent}» in (${x}, ${y}) finisce sotto il badge`);
+  }
+});

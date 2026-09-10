@@ -107,3 +107,29 @@ test("disponi: priorità assente o NaN → vale 0, ordine d'arrivo decide (ingre
   assert.deepEqual(poste.map((p) => p.id), ["a", "b", "c"], "ordine d'uscita = ordine d'ingresso");
   assert.equal(poste.find((p) => p.id === "a").ancora, "middle", "tutte a priorità 0 → vince chi arriva prima");
 });
+
+// --- i limiti del riquadro (fix round 1, medio 2) ---------------------------------
+// Senza, un'etichetta spinta oltre il bordo esce `nascosta: false` e poi sparisce nel ritaglio
+// dell'SVG: visibile per chi la posa, invisibile a chi guarda.
+
+test("disponi: i limiti scartano le posizioni il cui box esce dal riquadro", () => {
+  // Il tetto a 90 taglia il verso «sopra» (box 82–94) ma lascia «destra» (box 94–106).
+  const limiti = box(0, 90, 400, 400);
+  const [p] = disponi([richiesta("a", 100, 100)], [], { passo: 6, limiti });
+  assert.equal(p.nascosta, false);
+  assert.equal(p.ancora, "start", "sopra non ci sta: resta il verso destro");
+  assert.ok(p.box.y0 >= limiti.y0 && p.box.y1 <= limiti.y1, `dentro in y: ${JSON.stringify(p.box)}`);
+  assert.ok(p.box.x0 >= limiti.x0 && p.box.x1 <= limiti.x1, `dentro in x: ${JSON.stringify(p.box)}`);
+});
+
+test("disponi: limiti che non lasciano posto a nessuna posizione → nascosta", () => {
+  const [p] = disponi([richiesta("a", 100, 100)], [], { passo: 6, limiti: box(99, 99, 101, 101) });
+  assert.equal(p.nascosta, true);
+  assert.equal(p.box, null);
+});
+
+test("disponi: senza limiti, o con limiti nulli, niente cambia", () => {
+  const senza = disponi([richiesta("a", 100, 100), richiesta("b", 100, 100)], [], { passo: 6 });
+  assert.deepEqual(disponi([richiesta("a", 100, 100), richiesta("b", 100, 100)], [], { passo: 6, limiti: null }), senza);
+  assert.deepEqual(disponi([richiesta("a", 100, 100), richiesta("b", 100, 100)], [], { passo: 6, limiti: undefined }), senza);
+});

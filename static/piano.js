@@ -99,6 +99,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // dichiarate sempre, anche quando non c'è niente da disegnare (`docs/ricerca/07-ux-modellatore.md:99`).
   const badge = document.createElement("p");
   badge.className = "risultati-badge";
+  // `aria-live="polite"`: cambiare vista o caso non sposta il fuoco, e senza questo chi legge
+  // con lo schermo non sa che la scala del disegno è cambiata sotto le dita.
+  badge.setAttribute("aria-live", "polite");
   badge.hidden = true;
   contenitore.replaceChildren(svg, titolo, badge);
   let vista = estensione({ nodi: [] });
@@ -160,18 +163,23 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const richiesteEtichette = [];   // i picchi (o il massimo spostamento): li posa `disponi` dopo i nodi
     if (attivo) {
       const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
-      stratoRisultati = el("g", { class: "risultati", "data-vista": vistaRis });
-      const g = stratoRisultati;
+      // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
+      // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
+      stratoRisultati = el("g", { class: "risultati", "pointer-events": "none" });
       const coppia = (p) => `${p.x},${p.y}`;
       if (vistaRis === "deformata") {
         for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
-          g.append(el("polyline", { class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
-                                    fill: "none", stroke: colore, "stroke-width": 2 * s,
-                                    "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+          stratoRisultati.append(el("polyline", {
+            class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
+            fill: "none", stroke: colore, "stroke-width": 2 * s,
+            "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
         }
         const dmax = spostamentoMassimo(m, attivo.perCaso);
         if (dmax > 0) {
-          const n = m.nodi.find((k) => { const u = attivo.perCaso.spostamenti?.[String(k.id)]; return u && Math.hypot(u[0], u[2]) === dmax; });
+          // La stessa validazione di `spostamentoDi` (`risultati.js`): un `u` corto o con un `NaN`
+          // non deve arrivare a `schermo` come coordinata.
+          const buono = (u) => Array.isArray(u) && u.length >= 6 && u.every(Number.isFinite);
+          const n = m.nodi.find((k) => { const u = attivo.perCaso.spostamenti?.[String(k.id)]; return buono(u) && Math.hypot(u[0], u[2]) === dmax; });
           if (n) {
             const u = attivo.perCaso.spostamenti[String(n.id)];
             const p = schermo({ x: n.x + attivo.scala * u[0], z: n.z + attivo.scala * u[2] });
@@ -186,14 +194,17 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         for (const d of diagrammi) {
           const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
           const punti = d.punti.map((p) => schermo(p));
-          g.append(el("polygon", { class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
-                                   fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
-                                   "stroke-dasharray": `${5 * s} ${3 * s}` }));
-          // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38).
+          stratoRisultati.append(el("polygon", {
+            class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
+            fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
+            "stroke-dasharray": `${5 * s} ${3 * s}` }));
+          // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
+          // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
           for (const p of d.punti) {
-            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel, z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
+            const r = Number.isFinite(p.x_rel) ? p.x_rel : 0;
+            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * r, z: d.base[0].z + (d.base[1].z - d.base[0].z) * r });
             const q = schermo(p);
-            g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
+            stratoRisultati.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
           }
           // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
           for (const picco of picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave)) {
@@ -206,7 +217,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           }
         }
       }
-      gruppo.append(g);
+      gruppo.append(stratoRisultati);
     }
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
@@ -287,16 +298,38 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       gruppo.append(nodoEl);
     }
 
-    // Il badge sta fuori dal `viewBox` ma sopra il piano: senza questo ostacolo un picco in alto
-    // a destra gli finisce sotto. `preserveAspectRatio="xMidYMid meet"` centra il riquadro, quindi
-    // il bordo del viewport in coordinate del `viewBox` è il centro più mezza misura in px per `s`.
-    if (attivo) {
-      const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
-      const destra = cx + (contenitore.clientWidth || 1) * s / 2;
-      const alto = cy - (contenitore.clientHeight || 1) * s / 2;
-      ostacoli.push({ x0: destra - (testoBadge(attivo).length * 6.6 + 8) * s, y0: alto,
-                      x1: destra, y1: alto + 20 * s });   // 6px di `top` + 14 di riga
-    }
+    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
+    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
+    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
+    // Scritti qui, prima dei picchi, perché i due `<p>` sono ostacoli e le etichette li leggono.
+    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azioneInVista
+      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
+      : "";
+    titolo.hidden = !azioneInVista;
+    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
+    // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
+    badge.textContent = attivo ? testoBadge(attivo) : "";
+    badge.hidden = !attivo;
+    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
+
+    // Le due strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
+    // ostacoli un picco negli angoli in alto finisce sotto il loro testo (R6). Il riquadro
+    // `viewBox` non è il ritaglio: con `preserveAspectRatio="xMidYMid meet"` a ritagliare è il
+    // **viewport**, che contiene il riquadro e coincide con lui sul lato stretto. In coordinate
+    // del `viewBox` è il centro più mezza misura in pixel per `s`.
+    const larghezzaPx = contenitore.clientWidth || 1, altezzaPx = contenitore.clientHeight || 1;
+    const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
+    const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
+                       x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
+    // I numeri vengono da `stile.css`, `.carichi-titolo` e `.risultati-badge`: `top: 6px` più una
+    // riga di 14 fanno 20 di altezza; `left`/`right: 8px` più ~6,6 px per carattere del mono a
+    // 11px fanno la larghezza, fino al `max-width: 45%` che il CSS impone. Se là cambiano, qui
+    // le etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
+    const striscia = (testo) => Math.min((testo.length * 6.6 + 8) * s, 0.45 * larghezzaPx * s);
+    const alta = { y0: viewport.y0, y1: viewport.y0 + 20 * s };
+    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - striscia(badge.textContent), x1: viewport.x1, ...alta });
+    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + striscia(titolo.textContent), ...alta });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
@@ -330,7 +363,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     if (stratoRisultati && richiesteEtichette.length) {
       const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
       const richieste = richiesteEtichette.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s, altezza: 12 * s }));
-      for (const e of disponi(richieste, ostacoli, { passo: 6 * s })) {
+      // `limiti`: il viewport è ciò che ritaglia l'SVG. Un'etichetta spinta oltre non è `nascosta`
+      // — è posata e invisibile, e tiene occupato un posto contro le altre.
+      for (const e of disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport })) {
         if (e.nascosta) continue;
         if (e.guida) stratoRisultati.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
         const t = el("text", { class: "picco", x: e.x, y: e.y, "font-size": 11 * s, fill: colore, "font-family": MONO,
@@ -365,21 +400,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         }
       }
     }
-
-    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
-    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
-    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
-    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
-    titolo.textContent = azioneInVista
-      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
-      : "";
-    titolo.hidden = !azioneInVista;
-
-    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
-    // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
-    badge.textContent = attivo ? testoBadge(attivo) : "";
-    badge.hidden = !attivo;
-    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
 
     svg.replaceChildren(gruppo);
   }
