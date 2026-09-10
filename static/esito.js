@@ -54,7 +54,8 @@ export function creaEsito(radice, { suCambio, suAvviso = () => {} }) {
     // Σ reazioni contro Σ carichi è il numero che contraddice, e di una corsa superata dal modello
     // parla del modello di prima: dirlo in nero sarebbe farlo passare per attuale. Doppio canale
     // come `#corsa-ultima`: il filetto rosso **e** la parola (story 63, WCAG 1.4.1).
-    equilibrioEl.className = stantia ? "stantia" : "";
+    // La classe si aggiunge, non si riscrive: `numero` (il mono dell'HTML) deve restare.
+    equilibrioEl.className = stantia ? "numero stantia" : "numero";
     equilibrioEl.textContent = `${stantia ? "stantia · " : ""}${testoEquilibrio(dati, caso)}`;
     // Il select è stato corretto sul primo caso: lo stato deve seguirlo, o il blocco mostra
     // `Z1` mentre il piano disegna il caso che non c'è (cioè niente). In coda a questo giro e

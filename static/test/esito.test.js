@@ -238,14 +238,14 @@ test("creaEsito: con una corsa stantia l'equilibrio porta la classe e la parola"
   const { radice, el } = radiceFinta();
   const esito = creaEsito(radice, { suCambio: () => {} });
   esito.disegna({ risultati: risultatiDi(["Z1"]), stantia: true });
-  assert.equal(el("#risultati-equilibrio").className, "stantia");
+  assert.equal(el("#risultati-equilibrio").className, "numero stantia", "il mono resta con il filetto");
   assert.ok(el("#risultati-equilibrio").textContent.startsWith("stantia · Σ reazioni"),
     el("#risultati-equilibrio").textContent);
   esito.disegna({ risultati: risultatiDi(["Z1"]), stantia: false });
-  assert.equal(el("#risultati-equilibrio").className, "", "corsa fresca: nessun filetto");
+  assert.equal(el("#risultati-equilibrio").className, "numero", "corsa fresca: nessun filetto, il mono resta");
   assert.ok(el("#risultati-equilibrio").textContent.startsWith("Σ reazioni"));
   esito.disegna({ risultati: risultatiDi(["Z1"]) });
-  assert.equal(el("#risultati-equilibrio").className, "", "senza il parametro vale fresca");
+  assert.equal(el("#risultati-equilibrio").className, "numero", "senza il parametro vale fresca");
 });
 
 // Tornare ad auto in silenzio è il modo peggiore di dirlo: il campo si riscrive vuoto e chi ha
