@@ -469,7 +469,7 @@ function risultatiInVista(m) {
 - lo stdout del copione porta righe di rumore prima del JSON → si legge **l'ultima** riga (`splitlines()[-1]`), non la prima
 - Chrome non muore a `terminate()` entro 5 s → `kill()`, e la fixture finisce comunque
 
-- [ ] **Step 1: il pilota CDP in repo**
+- [x] **Step 1: il pilota CDP in repo**
 
 `tests/fumo/cdp.mjs`:
 
@@ -555,7 +555,7 @@ export const erroriRaccolti = () => [...eventi];
 export function chiudi() { ws?.close(); }
 ```
 
-- [ ] **Step 2: il copione `pagina`**
+- [x] **Step 2: il copione `pagina`**
 
 `tests/fumo/fumo.mjs`:
 
@@ -604,7 +604,7 @@ process.stdout.write(JSON.stringify(esito) + "\n");
 process.exit(0);
 ```
 
-- [ ] **Step 3: il test pytest, che salta senza Chrome**
+- [x] **Step 3: il test pytest, che salta senza Chrome**
 
 `tests/test_fumo_chrome.py`:
 
@@ -710,14 +710,14 @@ def test_la_pagina_si_apre_e_un_nodo_si_posa_da_tastiera(chrome_e_server):
     assert "0 mm" in r["trovato"]["albero"]          # e nell'albero, con l'unità
 ```
 
-- [ ] **Step 4: lanciare, e vedere che passa (o salta con il motivo)**
+- [x] **Step 4: lanciare, e vedere che passa (o salta con il motivo)**
 
 Run: `/Users/mario/GitHub/NOVA-wt/interfaccia-13/.venv/bin/python -P -m pytest /Users/mario/GitHub/NOVA-wt/interfaccia-13/tests/test_fumo_chrome.py -p no:cacheprovider --color=no --tb=short -rs --rootdir=/Users/mario/GitHub/NOVA-wt/interfaccia-13`
 Expected: `1 passed` sul Mac dell'autore (Chrome in `/Applications`); `1 skipped` con il motivo altrove. Se fallisce con «tempo scaduto» su `circle`: la pagina non ha ricevuto il tasto — controllare che `Page.reload` sia seguito dalla pausa e che il fuoco sia sul `body`.
 
-- [ ] **Step 5: una riga in `AGENTS.md`** nella sezione dei test: «`tests/test_fumo_chrome.py`: `app.js` in Chrome headless via CDP (`tests/fumo/`); salta senza Chrome o node; è l'unico test della cucitura».
+- [x] **Step 5: una riga in `AGENTS.md`** nella sezione dei test: «`tests/test_fumo_chrome.py`: `app.js` in Chrome headless via CDP (`tests/fumo/`); salta senza Chrome o node; è l'unico test della cucitura».
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add tests/fumo/cdp.mjs tests/fumo/fumo.mjs tests/test_fumo_chrome.py AGENTS.md
@@ -752,7 +752,7 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "test(interfaccia): 
 - massimo di una grandezza nullo su tutto il modello → `scalaDiagrammaAuto` rende **0** (diagramma piatto), non `Infinity`
 - `testoEquilibrio` su un caso che non c'è, o senza `carico_totale` → `«—»`, e la metà che c'è si stampa lo stesso (`Σ reazioni (…) · Σ carichi —`)
 
-- [ ] **Step 1: i test, con la trave appoggiata come oracolo**
+- [x] **Step 1: i test, con la trave appoggiata come oracolo**
 
 `static/test/risultati.test.js`:
 
@@ -1000,11 +1000,11 @@ test("VISTE: le quattro viste, nell'ordine dei tasti 1-4", () => {
 });
 ```
 
-- [ ] **Step 2: lanciare i test e vederli fallire** (`Cannot find module '../risultati.js'`)
+- [x] **Step 2: lanciare i test e vederli fallire** (`Cannot find module '../risultati.js'`)
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/risultati.test.js`
 
-- [ ] **Step 3: il modulo**
+- [x] **Step 3: il modulo**
 
 `static/risultati.js`:
 
@@ -1253,12 +1253,12 @@ export function srotolato(stazioni, grandezza) {
 }
 ```
 
-- [ ] **Step 4: lanciare i test e vederli passare**
+- [x] **Step 4: lanciare i test e vederli passare**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/risultati.test.js`
 Expected: tutti pass. Se `testoEquilibrio` stampa «-0»: `conciso(-0/1e3)` — `stampaNumero` già normalizza il `-0` (`numeri.js:158`); se un test lo mostra, sommare con `+ 0` prima di stampare.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add static/risultati.js static/test/risultati.test.js
@@ -1293,7 +1293,7 @@ Algoritmo, deterministico: si ordinano le richieste per `priorita` decrescente (
 - `passo` assente → un default, mai `NaN` nelle coordinate d'uscita
 - `massimo` nullo o non finito in `sottoSoglia` → tutto è sotto soglia: di un diagramma piatto non si scrive niente
 
-- [ ] **Step 1: i test**
+- [x] **Step 1: i test**
 
 `static/test/etichette.test.js`:
 
@@ -1384,11 +1384,11 @@ test("sottoSoglia: il 2 % del massimo; con massimo nullo tutto è sotto soglia",
 });
 ```
 
-- [ ] **Step 2: lanciare i test e vederli fallire**
+- [x] **Step 2: lanciare i test e vederli fallire**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/etichette.test.js`
 
-- [ ] **Step 3: il modulo**
+- [x] **Step 3: il modulo**
 
 `static/etichette.js`:
 
@@ -1454,12 +1454,12 @@ export function disponi(richieste, ostacoli = [], { passo = 6 } = {}) {
 }
 ```
 
-- [ ] **Step 4: lanciare i test e vederli passare**
+- [x] **Step 4: lanciare i test e vederli passare**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/etichette.test.js`
 Expected: tutti pass. Il test «un solo posto» chiede `p.box.y1 <= 100 − 6`: con «sopra» a un passo il centro del testo sta a `y − (passo + altezza/2)`, quindi `y1 = y − passo`. Il contratto è **`y` = centro verticale del box, `dominant-baseline: middle` nel `<text>`**.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add static/etichette.js static/test/etichette.test.js
@@ -1500,7 +1500,7 @@ Regole di disegno (tutte in px apparenti × `s`, come il resto del piano):
 - un'etichetta che non trova posto fra i cerchi, le etichette dei nodi e il badge → si nasconde, non si sovrappone
 - `spazio.disegna` con una `deformata` quando WebGL manca → il modulo assente rende `disegna() {}` (`spazio.js:184-191`): nessuna chiamata a `THREE`, nessun errore in console
 
-- [ ] **Step 1: i test nel DOM finto** (in coda a `static/test/piano.test.js`; il `pianoFinto()` esistente rende `contenitore._figli[0]` = svg e `[1]` = titolo; il badge sarà `[2]`)
+- [x] **Step 1: i test nel DOM finto** (in coda a `static/test/piano.test.js`; il `pianoFinto()` esistente rende `contenitore._figli[0]` = svg e `[1]` = titolo; il badge sarà `[2]`)
 
 ```js
 // --- lo strato dei risultati (giornata 13) ---------------------------------------
@@ -1636,9 +1636,9 @@ test("piano con risultati di un caso senza stazioni né spostamenti: strato vuot
 
 Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `className: ""` e `hidden: false` — il badge si crea con `document.createElement("p")`, e i test leggono `className`/`hidden`/`textContent`. Il `<polygon>` scrive `points` come `"x,y x,y …"` con `Number` puliti (`String(x)`), senza arrotondare: i test lo rileggono.
 
-- [ ] **Step 2: lanciare, vederli fallire** (`strato` undefined, `badgeDi` undefined).
+- [x] **Step 2: lanciare, vederli fallire** (`strato` undefined, `badgeDi` undefined).
 
-- [ ] **Step 3: `piano.js`** — le modifiche, nell'ordine:
+- [x] **Step 3: `piano.js`** — le modifiche, nell'ordine:
 
 1. Import: `import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, spostamentoMassimo } from "./risultati.js"; import { disponi, sottoSoglia } from "./etichette.js";`
 2. In `creaPiano`, accanto a `titolo`: 
@@ -1750,7 +1750,7 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
     badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
 ```
 
-- [ ] **Step 4: `stile.css`** dopo `.carichi-titolo` (`:57-58`):
+- [x] **Step 4: `stile.css`** dopo `.carichi-titolo` (`:57-58`):
 ```css
 /* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
    V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
@@ -1760,7 +1760,7 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
 #piano .risultati-badge.stantia { color: var(--rosso); }
 ```
 
-- [ ] **Step 5: `spazio.js`** — la deformata con l'ombra:
+- [x] **Step 5: `spazio.js`** — la deformata con l'ombra:
 ```js
   const inchiostroTenue = new THREE.LineBasicMaterial({ color: INCHIOSTRO, transparent: true, opacity: 0.3 });
   …
@@ -1779,12 +1779,12 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
 ```
 (la `docstring` in testa al modulo dice che i test coprono solo le funzioni pure: resta vero; `puntiDeformata` è provata in `risultati.test.js`).
 
-- [ ] **Step 6: lanciare tutti i test JS**
+- [x] **Step 6: lanciare tutti i test JS**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/*.test.js`
 Expected: tutti pass (649 + quelli dei Task 2-3 + 8 nuovi in `piano.test.js`).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add static/piano.js static/spazio.js static/stile.css static/test/piano.test.js
@@ -1824,7 +1824,7 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 - asta selezionata sparita, o senza stazioni per quel caso → la striscia dice cosa manca invece di sollevare; senza asta selezionata dice il gesto; senza risultati non c'è
 - `#srotolato` con `clientWidth` a 0 → la striscia si disegna a 200 px, non a 0
 
-- [ ] **Step 1: `index.html`**
+- [x] **Step 1: `index.html`**
 
 Unità (`:57-58`) diventa:
 ```html
@@ -1865,7 +1865,7 @@ Sotto `#piano` in `#viste` (`:40`):
   <section id="srotolato" aria-label="M srotolato dell'asta selezionata" hidden></section>
 ```
 
-- [ ] **Step 2: `stile.css`**
+- [x] **Step 2: `stile.css`**
 ```css
 #viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; }
 #spazio { grid-row: 1 / -1; }
@@ -1897,7 +1897,7 @@ vicine — è esattamente ciò che la 12 ha già pagato una volta.
 `#risultati-vista` usa `class="vincolo-gradi"` per bordo, legenda e `accent-color` e ne cambia solo
 le colonne: cinque radio in `repeat(3, 1fr)` uscirebbero 3 + 2. Da confermare a 1280 px nel Task 6.)
 
-- [ ] **Step 3: i test di `esito.js`** — `static/test/esito.test.js`, con il DOM finto copiato da `corsa.test.js` (radice con `querySelector`/`querySelectorAll`, elementi con `addEventListener`/`dispatch`, `replaceChildren`, `append`, `hidden`, `value`, `checked`, `textContent`, `className`, `_figli`, `_attrs`); `createElementNS` per l'SVG della striscia come in `piano.test.js`:
+- [x] **Step 3: i test di `esito.js`** — `static/test/esito.test.js`, con il DOM finto copiato da `corsa.test.js` (radice con `querySelector`/`querySelectorAll`, elementi con `addEventListener`/`dispatch`, `replaceChildren`, `append`, `hidden`, `value`, `checked`, `textContent`, `className`, `_figli`, `_attrs`); `createElementNS` per l'SVG della striscia come in `piano.test.js`:
 
 ```js
 import { test } from "node:test";
@@ -2000,7 +2000,7 @@ test("creaSrotolato: un'asta senza stazioni o sparita non solleva e dice che non
 });
 ```
 
-- [ ] **Step 4: `esito.js`**
+- [x] **Step 4: `esito.js`**
 
 ```js
 // Il blocco «Risultati» del pannello destro e la striscia dell'M srotolato sotto il piano
@@ -2111,7 +2111,7 @@ export function creaSrotolato(contenitore) {
 verso il basso — nella striscia srotolata «in basso» è una convenzione di lettura, non il lato teso
 geometrico, che sul pilastro sarebbe un lato dello schermo. Scritto qui perché non venga «corretto».)
 
-- [ ] **Step 5: `tastiera.js`** — in `TASTI` dopo `verifica`/`corri` (`:24-25`):
+- [x] **Step 5: `tastiera.js`** — in `TASTI` dopo `verifica`/`corri` (`:24-25`):
 ```js
   // I risultati (giornata 13): una vista alla volta. Compare solo con una corsa da mostrare.
   { codice: "vista",     tasto: "0-4",   etichetta: "vista",     aiuto: "0 niente · 1 deformata · 2 M · 3 V · 4 N", contesto: "risultati" },
@@ -2130,7 +2130,7 @@ test("vista: le cifre 0-4 senza modificatore sono la voce «vista»; con ⌘ no;
 });
 ```
 
-- [ ] **Step 6: `pannello.js`** — `righeDiNodo(m, n, { rilievo = null, risultati = null } = {})`: dopo la riga `vincolo`, se `risultati?.perCaso`: `righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]), ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]));` (import da `./risultati.js`). `disegna(m, selezione, { …, risultati = null })` passa `risultati` nelle `opzioni`. Test in `pannello.test.js`:
+- [x] **Step 6: `pannello.js`** — `righeDiNodo(m, n, { rilievo = null, risultati = null } = {})`: dopo la riga `vincolo`, se `risultati?.perCaso`: `righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]), ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]));` (import da `./risultati.js`). `disegna(m, selezione, { …, risultati = null })` passa `risultati` nelle `opzioni`. Test in `pannello.test.js`:
 ```js
 test("ispettore del nodo con risultati: sei spostamenti e, se vincolato, sei reazioni, col caso nel termine", () => {
   const perCaso = { spostamenti: { 1: [0.5, 0, -3.456, 0, 0.0008, 0] }, reazioni: { 1: [0, 0, 30000, 0, 0, 0] } };
@@ -2145,7 +2145,7 @@ test("ispettore del nodo con risultati: sei spostamenti e, se vincolato, sei rea
 ```
 (`m1` = un modello con il nodo 1: usare quello che `pannello.test.js` costruisce già in testa; se il nodo 1 non è vincolato lì, le righe delle reazioni ci sono lo stesso: `righeReazioni` guarda `perCaso.reazioni`, non il vincolo — il contratto del server scrive le reazioni solo per i vincolati.)
 
-- [ ] **Step 7: `app.js`** — la cucitura:
+- [x] **Step 7: `app.js`** — la cucitura:
 1. Import: `import { creaEsito, creaSrotolato } from "./esito.js"; import { casiDi, scalaAuto, puntiDeformata } from "./risultati.js"; import { stantia } from "./corsa.js";`
 2. Lo stato e `risultatiInVista(m)` come nel «Contratto dei moduli nuovi», dopo `let rilievo = null;`.
 3. `creaCorsa` (`:235-243`): 
@@ -2183,12 +2183,12 @@ const srotolato = creaSrotolato($("srotolato"));
 ```
 (la palette: «vista 2» arriva con `valore: "2"` per la stessa strada.)
 
-- [ ] **Step 8: tutti i test JS e pytest**
+- [x] **Step 8: tutti i test JS e pytest**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/*.test.js` → tutti pass.
 Run: il comando pytest dei Global Constraints → `test_js` verde, il fumo `pagina` ancora verde (la pagina si apre con il blocco nuovo).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add static/esito.js static/test/esito.test.js static/tastiera.js static/test/tastiera.test.js static/pannello.js static/test/pannello.test.js static/index.html static/stile.css static/app.js
@@ -2219,7 +2219,7 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 - l'etichetta esiste ma con un'altra grafia («45,0 kN·m») → il difetto è in `conciso`/`testoValore`, non nel copione: il messaggio d'errore stampa l'elenco intero di `etichette`
 - la vista chiesta non produce nessuna etichetta (tutto sotto soglia) → `etichette` è `[]` e l'assert sulle sovrapposizioni passa a vuoto: il test dei picchi è quello sulla trave appoggiata, e va tenuto separato apposta
 
-- [ ] **Step 1: il copione**
+- [x] **Step 1: il copione**
 
 In `COPIONI` di `tests/fumo/fumo.mjs`:
 ```js
@@ -2251,7 +2251,7 @@ In `COPIONI` di `tests/fumo/fumo.mjs`:
   },
 ```
 
-- [ ] **Step 2: i test**
+- [x] **Step 2: i test**
 
 In `tests/test_fumo_chrome.py`:
 ```python
@@ -2283,13 +2283,13 @@ def test_telaio_2x1_nessuna_etichetta_sovrapposta_in_ogni_vista(chrome_e_server,
 ```
 (`binario_opensees` è `scope="session"` e salta se manca; la fixture `chrome_e_server` è per test: cinque avvii di Chrome, ~5 s l'uno.)
 
-- [ ] **Step 3: lanciare** il file: `… -m pytest tests/test_fumo_chrome.py --tb=short -rs …` → `6 passed` (o `5 skipped` senza OpenSees). Se «45 kN·m» manca ma le etichette contengono «45,0 kN·m» o simile, il difetto è in `conciso`/`testoValore`, non nel copione; se una coppia si sovrappone, riportarla nell'Esito con le due stringhe e sistemare in `piano.js` (ostacoli mancanti) o in `etichette.js`.
+- [x] **Step 3: lanciare** il file: `… -m pytest tests/test_fumo_chrome.py --tb=short -rs …` → `6 passed` (o `5 skipped` senza OpenSees). Se «45 kN·m» manca ma le etichette contengono «45,0 kN·m» o simile, il difetto è in `conciso`/`testoValore`, non nel copione; se una coppia si sovrappone, riportarla nell'Esito con le due stringhe e sistemare in `piano.js` (ostacoli mancanti) o in `etichette.js`.
 
-- [ ] **Step 4: la prova a mano** (il controller, su Chrome vero, porta 8821): trave appoggiata → `⌘⏎`, `1 2 3 4 0`; MURO 1 (`docs/caso-studio/muro_1.nova.json`) → tutte le viste, cambio caso dal select, scala «50» e «boh», selezione di un'asta per la striscia, `⌘Z` fino a stantia (badge rosso), pannello del nodo con spostamenti e reazioni; zoom 200 %; VoiceOver a orecchio sui radio della vista. Quel che si rompe entra come fix con test.
+- [x] **Step 4: la prova a mano** (il controller, su Chrome vero, porta 8821): trave appoggiata → `⌘⏎`, `1 2 3 4 0`; MURO 1 (`docs/caso-studio/muro_1.nova.json`) → tutte le viste, cambio caso dal select, scala «50» e «boh», selezione di un'asta per la striscia, `⌘Z` fino a stantia (badge rosso), pannello del nodo con spostamenti e reazioni; zoom 200 %; VoiceOver a orecchio sui radio della vista. Quel che si rompe entra come fix con test.
 
-- [ ] **Step 5: la sezione «Esito»** in coda a questo piano: conteggi finali dei test, difetti trovati dal fumo e a mano, debiti dichiarati (fra i noti: `preserveAspectRatio: none` sulla striscia; la deformata 3D senza test; il badge che copre l'etichetta di un nodo in alto a destra su un modello che riempie il riquadro — se si vede, va fra gli ostacoli).
+- [x] **Step 5: la sezione «Esito»** in coda a questo piano: conteggi finali dei test, difetti trovati dal fumo e a mano, debiti dichiarati (fra i noti: `preserveAspectRatio: none` sulla striscia; la deformata 3D senza test; il badge che copre l'etichetta di un nodo in alto a destra su un modello che riempie il riquadro — se si vede, va fra gli ostacoli).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 add tests/fumo/fumo.mjs tests/test_fumo_chrome.py docs/superpowers/plans/2026-09-10-t5-giornata-13-risultati.md
@@ -2307,3 +2307,27 @@ Copia del file in tmp prima, ripristino dalla copia, mai `git checkout --`.
 - `piano.js`: strato appeso **dopo** i nodi → cade «lo strato sta fra le aste e i nodi» (il DOM finto tiene i figli in ordine: il mutante che il piano dava per non uccidibile ora si uccide); il badge tolto dagli ostacoli → nessun test JS cade, e resta un limite dichiarato che il fumo vede solo se un picco capita in alto a destra.
 - `app.js`: `suEsito` che non azzera su corsa senza risultati → il fumo non lo vede: limite dichiarato. La coda di `eseguiVoce` senza `voce.campo` → nessun test JS cade (è in `app.js`), e il fumo la prende solo con il copione che apre il campo, lo perde di fuoco e preme una cifra: **non c'è**, e va scritto nell'Esito.
 - **Controllo nullo**: un mutante che nessun test prende è un test che manca, non un test buono.
+
+## Esito (10/09/2026, fine giornata)
+
+Ramo `feat/interfaccia-13-risultati` da `main` `4e8cf0a`; HEAD **`8d737da` (più il commit di questo Esito)**. Test finali: **741 test JS**, **730 pytest + 3 skip**, **12 di fumo in Chrome headless** (7 della pagina, 5 dei risultati: qL²/8 = «45 kN·m» sull'etichetta della trave appoggiata, zero etichette sovrapposte a 1280, 1920 e zoom 200 % su trave e telaio 2×1).
+
+**Fatto come da piano**, con i sei task del ciclo SDD (giro A in parallelo: 1 ‖ 2 ‖ 3; poi 4, 5, 6), una review per task, tre fix round e una review di ramo a cinque (sicurezza: nessun rischio; spec: ✅; craft, test, codice con i finding chiusi nell'ultimo commit).
+
+**Trovato dal fumo e non dai test a unità**: il telaio 2×1 a 1280 px aveva «Fx 20 000 N» (carico) sopra un picco e sopra il nodo «4» — le etichette dei carichi non passavano da `disponi`; ora passano, con priorità sotto i picchi (i picchi `1 + |v|/max`, i carichi 0,5). A 1920 la coppia residua nasceva dallo spazio fine U+202F in «20 000»: il box ha 1 px di margine per lato.
+
+**Trovato a mano su Chrome vero, e da nessun test**: la scala automatica guardava i soli nodi — sulla trave appoggiata (nodi vincolati, sole rotazioni) usciva «×200 000 000 000 000 000 000 (auto)» e la deformata spariva anche nel 3D; sul MURO 1 «×50 000» con le travi che sbordavano di mezzo telaio. Ora `frecciaMassima` campiona la cubica di Hermite lungo le aste (trave: ×200, MURO 1: ×5 000) con un pavimento sul rumore. Con lei: le etichette dei picchi preferiscono il lato esterno del diagramma (`preferito` in `disponi`), i doppioni allo stesso punto si fondono, e il riquadro si allarga per i nomi dei nodi (prima «cerniera» e «sommità sx» erano tagliati al bordo: difetto dalla 11b).
+
+**Ruling registrati nel ledger** (`.superpowers/sdd/2026-09-10-t5-giornata-13-risultati/progress.md`): R1 dell'architect (nei pilastri flettono `Mz`/`Vy`, misurato su una corsa vera; la review del Task 2 l'ha confermato sul pilastro discendente: `Mz` alla base −180 kN·m, diagramma dal lato teso); i limiti di `disponi` sono il viewport (⊇ viewBox con `meet`); il badge su una riga sua a `top: 22px` senza ellipsis (la scala non può mancare); riquadro nominale 800×600 quando il contenitore non è ancora misurato; `#spazio { grid-column: 2 }`; la striscia in pixel; i picchi sopra i carichi.
+
+**Debiti dichiarati**:
+- La cubica di Hermite interpola i soli nodi del modello (il server non esporta i nodi interni delle `suddivisioni`): sotto carico distribuito la deformata è il 20 % più piatta del vero (qL⁴/96EI contro 5qL⁴/384EI, misurato e algebrico). Esportare i nodi interni è di T9.
+- Le etichette dei picchi possono attraversare le linee dei diagrammi agli angoli (leggibili; solo testo-testo è garantito); allo stesso nodo trave e pilastro scrivono lo stesso modulo con segno opposto (due etichette, convenzioni diverse per asta); a zoom 200 % con `#piano` da 120 px i nomi lunghi restano tagliati.
+- `verticale` guarda `e1` proiettato nel piano e `rotazione_deg` della sezione non entra: un'asta con `y ≠ 0` o sezione ruotata può prendere la chiave sbagliata (nessun modello del repo le ha).
+- `app.js` non ha test a unità: il fumo copre la pagina, i risultati e la trappola di R4 solo di sfuggita; la deformata nel 3D non ha test (WebGL).
+- `sottoSoglia` usa il massimo globale della vista: su un telaio con un pilastro grosso i picchi di una trave piccola (< 2 %) non si scrivono.
+- La legenda di V e N dice il segno, non il lato: su aste inclinate il lato del positivo cambia fra trave e pilastro (R1) e il badge non lo dice.
+- `_porta_libera()` chiude il socket prima dell'uso (race teorica: due porte uguali).
+- La striscia srotolata dice sempre M; il titolo dei carichi ha `max-width: 45 %` con ellipsis.
+
+**Lezioni**: un piano che assume una convenzione di segno o di terna va **misurato** prima del dispatch (R1: la mappa `GRANDEZZA` era vera per le travi e falsa per i pilastri; sarebbe passata verde nei test e vuota in pagina sul MURO 1); il fumo in Chrome trova ciò che il DOM finto non vede (hit-testing, sovrapposizioni con i carichi, spazi fini nei numeri); la prova a mano su un modello con nodi vincolati e rotazioni ha trovato il difetto più caro (scala esplosa) che sei review non avevano visto: **i modelli veri vanno provati presto**, anche prima della review di ramo.
