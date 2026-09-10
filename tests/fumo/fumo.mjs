@@ -27,6 +27,33 @@ const COPIONI = {
     const albero = await ev(`document.getElementById("albero-elenco").textContent`);
     return { cerchi, messaggio, albero };
   },
+
+  // Apre un modello, lo corre, sceglie una vista, legge le etichette del piano e cerca le
+  // sovrapposizioni fra i `<text>` a ogni larghezza chiesta.
+  async risultati() {
+    await apri(url, arg.cdp);
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri
+    const ultima = await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 90000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await tasto(arg.vista ?? "2");
+    await pausa(300);
+    const etichette = await ev(`[...document.querySelectorAll("#piano svg g.risultati text")].map((t) => t.textContent)`);
+    const badge = await ev(`document.querySelector("#piano .risultati-badge").textContent`);
+    const sovrapposte = {};
+    for (const w of arg.larghezze ?? [1280, 1920]) {
+      await viewport(w, Math.round(w * 0.625), 1);
+      await pausa(300);
+      sovrapposte[String(w)] = await ev(SOVRAPPOSTE);
+    }
+    // Lo zoom 200 %: 640×400 con dpr 2, come nelle giornate 11c-12.
+    await viewport(640, 400, 2); await pausa(300);
+    sovrapposte.zoom200 = await ev(SOVRAPPOSTE);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { ultima, etichette, badge, sovrapposte, messaggio };
+  },
 };
 
 let esito;

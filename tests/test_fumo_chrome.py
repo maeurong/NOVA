@@ -18,6 +18,7 @@ import pytest
 
 RADICE = Path(__file__).resolve().parent.parent
 FUMO = RADICE / "tests" / "fumo" / "fumo.mjs"
+FIXTURE = RADICE / "tests" / "fixture"
 CANDIDATI_CHROME = (
     shutil.which("google-chrome"), shutil.which("chromium"), shutil.which("chromium-browser"),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -101,6 +102,30 @@ def test_la_pagina_si_apre_e_un_nodo_si_posa_da_tastiera(chrome_e_server):
     assert r["trovato"]["cerchi"] >= 1               # il nodo è nel piano
     assert r["trovato"]["messaggio"] == ""           # e nessun messaggio d'errore
     assert "0 mm" in r["trovato"]["albero"]          # e nell'albero, con l'unità
+
+
+def test_trave_appoggiata_il_momento_in_mezzeria_e_sull_etichetta(chrome_e_server, binario_opensees):
+    """La verifica della giornata 13 (bozza T5, riga 19): M(mid) = qL²/8 = 45 kN·m letto sull'etichetta."""
+    porta, cdp = chrome_e_server
+    r = copione("risultati", porta, cdp, fixture=str(FIXTURE / "trave_appoggiata.nova.json"), vista="2")
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    assert r["trovato"]["ultima"].startswith("corsa")
+    assert "45 kN·m" in r["trovato"]["etichette"], r["trovato"]
+    assert r["trovato"]["badge"] == "M · Z1 · kN·m · lato teso"
+    for larghezza, coppie in r["trovato"]["sovrapposte"].items():
+        assert coppie == [], f"etichette sovrapposte a {larghezza}: {coppie}"
+
+
+@pytest.mark.parametrize("vista", ["1", "2", "3", "4"])
+def test_telaio_2x1_nessuna_etichetta_sovrapposta_in_ogni_vista(chrome_e_server, binario_opensees, vista):
+    porta, cdp = chrome_e_server
+    r = copione("risultati", porta, cdp, fixture=str(FIXTURE / "telaio_2x1.nova.json"), vista=vista)
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    assert r["trovato"]["messaggio"] == ""
+    for larghezza, coppie in r["trovato"]["sovrapposte"].items():
+        assert coppie == [], f"vista {vista}, etichette sovrapposte a {larghezza}: {coppie}"
 
 
 def test_chrome_assente_salta_col_motivo(monkeypatch, tmp_path):
