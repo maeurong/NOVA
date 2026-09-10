@@ -967,6 +967,51 @@ def test_dopo_un_soffitto_il_comando_successivo_riparte_da_un_sidecar_nuovo():
     assert not sp._lock.locked()
 
 
+def test_dopo_una_pipe_rotta_sulla_scrittura_il_comando_successivo_riparte():
+    """Misurato dal vivo con `pkill -f nova.sidecar` sotto il server: la scrittura su stdin
+    solleva `BrokenPipeError` e finisce nell'`except` generico — che prima non segnava il
+    sidecar come rotto, e il riavvio non partiva mai."""
+    from nova.server import SidecarProcesso
+
+    class _StdinRotto:
+        def write(self, _):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self):
+            pass
+
+    processi: list = []
+
+    def avvia():
+        p = _ProcessoFinto()
+        if not processi:
+            p.stdin = _StdinRotto()
+        processi.append(p)
+        return p
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
+    assert "BrokenPipeError" in sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"]
+    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n')).start()
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert len(processi) == 2 and sp.riavvii == 1
+
+
+def test_un_processo_uscito_si_riavvia_prima_di_scrivere():
+    """`poll()` non `None` = il figlio è uscito: si riparte prima di toccare la pipe."""
+    from nova.server import SidecarProcesso
+
+    processi: list = []
+
+    def avvia():
+        p = _ProcessoFinto()
+        p.poll = (lambda: 137) if not processi else (lambda: None)
+        processi.append(p)
+        return p
+    sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
+    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 1, "esito": "ok"}\n')).start()
+    assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert len(processi) == 2
+
+
 def test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte():
     sp, processi = _sp_riavviabile(soffitto_s=1.0)
     processi[0].stdout.consegna("")

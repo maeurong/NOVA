@@ -128,7 +128,10 @@ class SidecarProcesso:
             raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
                                              "motivo": "il sidecar è occupato da un'altra corsa"})
         try:
-            if self._rotto:
+            # Rotto per un soffitto o uno stdout chiuso, **o uscito** (ucciso, crash): `poll()`
+            # lo dice prima di scrivere su una pipe che non ha più nessuno dall'altra parte.
+            uscito = getattr(self.p, "poll", None)
+            if self._rotto or (callable(uscito) and uscito() is not None):
                 self._riavvia()
             self.n += 1
             rid = self.n
@@ -170,6 +173,10 @@ class SidecarProcesso:
                     if "evento" not in d:
                         return righe
             except Exception as e:  # pipe chiusa, riga non JSON: un errore di dominio, non un 500 muto
+                # `BrokenPipeError` sulla scrittura è il sidecar morto (misurato con `pkill` sotto il
+                # server): senza questo il riavvio non partiva mai, perché il morto non arrivava né
+                # al soffitto né allo stdout chiuso.
+                self._rotto = True
                 return [{"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}]
         finally:
             self._lock.release()
