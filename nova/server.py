@@ -14,6 +14,7 @@ import secrets
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Annotated, Callable
 
@@ -193,10 +194,50 @@ class ConfrontoReq(_CorpoBase):
     mappa_casi: dict = Field(default_factory=dict)
 
 
-def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None) -> FastAPI:
+def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: int | None = None,
+               sidecar_lungo=None) -> FastAPI:
     app = FastAPI(title="NOVA")
     cartella_corse = Path(cartella_corse)
     cartella_corse.mkdir(parents=True, exist_ok=True)
+    # Il sidecar lungo prende le corse; l'altro resta libero per salute, check, importa e
+    # confronto. Uno solo: è quello di prima.
+    lungo = sidecar_lungo or sidecar
+    lavori: dict[str, dict] = {}
+    lavori_lock = threading.Lock()
+
+    def _avvia_lavoro(req: dict, con_cartella: bool = False) -> dict:
+        """Un lavoro alla volta: la seconda corsa è un 409 subito, e chi gira non se ne accorge."""
+        with lavori_lock:
+            if any(l["stato"] == "in corso" for l in lavori.values()):
+                raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
+                                                 "motivo": "un'altra corsa è in corso"})
+            run_id = secrets.token_hex(6)
+            lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None}
+            if con_cartella:
+                lavoro["cartella"] = str(cartella_corse / run_id)
+            lavori[run_id] = lavoro
+        req = {**req, "cartella": str(cartella_corse / run_id)}
+
+        def corri() -> None:
+            def su_fase(ev: dict) -> None:
+                with lavori_lock:
+                    lavoro["fasi"].append(ev["nome"])
+            try:
+                fin = _finale(lungo.chiedi(req, su_fase))
+            except HTTPException as e:   # il 409 del lock del sidecar: è un esito, non un 500
+                fin = (e.detail if isinstance(e.detail, dict)
+                       else {"esito": "errore", "fase": "sidecar", "motivo": str(e.detail)})
+            except Exception as e:
+                # Un thread non ha nessuno a cui risalire. Senza questo ramo il lavoro resta
+                # «in corso» per sempre, ogni corsa dopo è 409, e la UI interroga in eterno.
+                fin = {"esito": "errore", "fase": "sidecar", "motivo": f"{type(e).__name__}: {e}"}
+            with lavori_lock:
+                lavoro["fin"] = fin
+                lavoro["stato"] = "finita"
+
+        threading.Thread(target=corri, daemon=True).start()
+        return {"run_id": run_id, "stato": "in corso",
+                **({"cartella": lavoro["cartella"]} if con_cartella else {})}
 
     # DNS rebinding: un sito che risolve un nome verso 127.0.0.1 potrebbe far leggere/scrivere
     # modelli al browser di chi ci naviga sopra. Solo l'`Host` locale (con la porta vera, se
@@ -237,24 +278,30 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         percorso = str(Path(corpo.percorso).resolve())
         return _o_400(_finale(sidecar.chiedi({"comando": "importa", "percorso": percorso})))
 
-    @app.post("/api/corsa")
+    @app.post("/api/corsa", status_code=202)
     def corsa(corpo: CorsaReq):
-        run_id = secrets.token_hex(6)
-        righe = sidecar.chiedi({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi,
-                                "cartella": str(cartella_corse / run_id)})
-        fin = _o_400(_finale(righe))
-        return {"run_id": run_id, "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+        return _avvia_lavoro({"comando": "corsa", "modello": corpo.modello, "casi": corpo.casi})
 
-    @app.post("/api/ccx")
+    @app.post("/api/ccx", status_code=202)
     def ccx(corpo: CcxReq):
         """Il deck del solido, dal disco dell'utente locale: `..` è lecito, il file si legge
         e basta, e la copia nella cartella della corsa si chiama sempre `solido.inp`."""
-        run_id = secrets.token_hex(6)
-        righe = sidecar.chiedi({"comando": "ccx", "inp": str(Path(corpo.inp).resolve()),
-                                "cartella": str(cartella_corse / run_id)})
-        fin = _o_400(_finale(righe))
-        return {"run_id": run_id, "cartella": str(cartella_corse / run_id),
-                "fasi": [r["nome"] for r in righe if r.get("evento") == "fase"], **fin}
+        return _avvia_lavoro({"comando": "ccx", "inp": str(Path(corpo.inp).resolve())}, con_cartella=True)
+
+    @app.get("/api/corsa/{run_id}")
+    def stato_corsa(run_id: str):
+        if not _RUN_ID_RE.fullmatch(run_id) or run_id not in lavori:
+            raise HTTPException(404, detail={"motivo": f"nessuna corsa {run_id}"})
+        with lavori_lock:
+            l = dict(lavori[run_id])
+            fasi = list(l["fasi"])
+        base = {"run_id": run_id, "stato": l["stato"], "fasi": fasi}
+        if l.get("cartella"):
+            base["cartella"] = l["cartella"]
+        if l["stato"] == "in corso":
+            return {**base, "secondi": time.perf_counter() - l["t0"]}
+        fin = _o_400({**l["fin"]})   # 400 per modello|importa|confronto|deck, come sulla POST di prima
+        return {**base, "secondi": fin.get("secondi", time.perf_counter() - l["t0"]), **fin}
 
     @app.post("/api/confronto")
     def confronto(corpo: ConfrontoReq):

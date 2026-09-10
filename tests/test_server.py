@@ -29,6 +29,26 @@ def _app_con_solutore(tmp_path, percorso_solutore):
                        raise_server_exceptions=False, base_url="http://127.0.0.1")
 
 
+def _attendi(cliente, run_id: str, secondi: float = 60.0) -> dict:
+    """Il lavoro dalla 12 è asincrono: la `POST` torna subito, l'esito si legge dalla `GET`."""
+    import time
+    t0 = time.perf_counter()
+    while True:
+        r = cliente.get(f"/api/corsa/{run_id}")
+        assert r.status_code in (200, 400), r.text
+        d = r.json()
+        if d.get("stato") == "finita" or r.status_code == 400:
+            return d
+        assert time.perf_counter() - t0 < secondi, f"il lavoro {run_id} non finisce"
+        time.sleep(0.01)
+
+
+def _corsa(cliente, corpo: dict) -> dict:
+    r = cliente.post("/api/corsa", json=corpo)
+    assert r.status_code == 202, r.text
+    return _attendi(cliente, r.json()["run_id"])
+
+
 # --- Step 1 del brief (baseline) --------------------------------------------
 
 def test_salute(cliente):
@@ -63,9 +83,9 @@ def test_apri_un_file_che_non_esiste_e_404(cliente, tmp_path):
 
 
 def test_corsa_e_risultati(cliente, binario_opensees):
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200 and r.json()["esito"] == "ok"
-    run_id = r.json()["run_id"]
+    r = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r["esito"] == "ok"
+    run_id = r["run_id"]
     r2 = cliente.get(f"/api/risultati/{run_id}")
     assert r2.status_code == 200 and r2.json()["run"]["hash_modello"]
 
@@ -165,8 +185,8 @@ def test_impronta_di_salva_uguale_a_hash_modello_di_una_corsa(cliente, tmp_path,
     p = tmp_path / "corsa.nova.json"
     m = leggi_fixture("telaio_2x1.nova.json")
     r_salva = cliente.post("/api/modello/salva", json={"percorso": str(p), "modello": m})
-    r_corsa = cliente.post("/api/corsa", json={"modello": m})
-    run_id = r_corsa.json()["run_id"]
+    r_corsa = _corsa(cliente, {"modello": m})
+    run_id = r_corsa["run_id"]
     r_ris = cliente.get(f"/api/risultati/{run_id}")
     assert r_salva.json()["impronta"] == r_ris.json()["run"]["hash_modello"]
 
@@ -188,9 +208,7 @@ def test_check_corpo_non_oggetto_e_4xx_con_motivo(cliente):
 # riga 11: corsa con solutore assente -> 200 esito: assente e dove_prenderlo
 def test_corsa_con_solutore_assente(tmp_path):
     cliente = _app_con_solutore(tmp_path, str(tmp_path / "non_esiste_nessun_binario"))
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200
-    corpo = r.json()
+    corpo = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert corpo["esito"] == "assente" and "dove_prenderlo" in corpo
 
 
@@ -199,9 +217,7 @@ def test_corsa_con_solutore_non_eseguibile_e_200_fase_solutore(tmp_path):
     finto = tmp_path / "finto_opensees"
     finto.write_text("non e' un eseguibile", encoding="utf-8")
     cliente = _app_con_solutore(tmp_path, str(finto))
-    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
-    assert r.status_code == 200
-    corpo = r.json()
+    corpo = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert corpo["esito"] == "errore" and corpo["fase"] == "solutore" and "coda_log" in corpo
 
 
@@ -314,7 +330,7 @@ def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_pa
     with pytest.raises(SystemExit) as exc:
         m.main(["--porta", "8765"])
     assert "8765" in str(exc.value)
-    assert terminato == [True]  # il sottoprocesso del sidecar non resta orfano
+    assert terminato == [True, True]  # i due sottoprocessi del sidecar non restano orfani
 
 
 # riga 18: corpo di /api/corsa con solutore o cartella -> ignorati (extra="forbid" -> 422), mai inoltrati
@@ -484,7 +500,8 @@ def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_pat
     monkeypatch.setattr(m, "create_app", _static_assente)
     with pytest.raises(SystemExit) as exc:
         m.main([])
-    assert "static" in str(exc.value) and terminato == [True]
+    # tutti e due i sidecar, il breve e il lungo: nessuno dei due resta orfano
+    assert "static" in str(exc.value) and terminato == [True, True]
 
 
 def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
@@ -553,8 +570,8 @@ def _trave() -> Path:
 
 def test_ccx_gira_nella_cartella_della_corsa(cliente, tmp_path, binario_ccx):
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["esito"] == "ok" and corpo["fasi"] == ["copio il deck", "lancio ccx", "leggo .dat e .frd"]
     cartella = tmp_path / "corse" / corpo["run_id"]
     assert (cartella / "solido.inp").is_file() and (cartella / "risultati_solido.json").is_file()
@@ -568,15 +585,22 @@ def test_ccx_accetta_un_percorso_con_puntini_e_lo_copia_come_solido(cliente, tmp
     dentro.mkdir()
     (dentro / "mio.inp").write_bytes(_trave().read_bytes())
     r = cliente.post("/api/ccx", json={"inp": f"{dentro}/../giu/mio.inp"})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["esito"] == "ok"
     assert Path(corpo["risultati"]["run"]["deck"]).name == "solido.inp"
 
 
 def test_ccx_con_un_inp_che_non_esiste(cliente, tmp_path):
     r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
-    assert r.status_code == 400 and r.json()["esito"] == "errore" and r.json()["fase"] == "deck"
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    d = _attendi(cliente, rid)
+    assert d["esito"] == "errore" and d["fase"] == "deck"
+    # il 400 arriva dalla `GET`, e resta lo stesso a ogni ripetizione: il codice va asserito,
+    # non solo il corpo — senza `_o_400` la `GET` renderebbe 200 con lo stesso corpo
+    g = cliente.get(f"/api/corsa/{rid}")
+    assert g.status_code == 400 and g.json()["fase"] == "deck"
 
 
 def test_ccx_rifiuta_la_cartella_dal_corpo(cliente):
@@ -590,13 +614,14 @@ def test_il_solutore_di_opensees_non_finisce_dentro_ccx(tmp_path, binario_ccx):
     eseguibile, e la corsa deve riuscire lo stesso perché ccx si cerca nel PATH."""
     cliente = _app_con_solutore(tmp_path, str(_trave()))
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200 and r.json()["esito"] == "ok", r.text
+    assert r.status_code == 202, r.text
+    assert _attendi(cliente, r.json()["run_id"])["esito"] == "ok"
 
 
 def test_i_risultati_del_solido_si_rileggono_dal_run_id(cliente, tmp_path, binario_ccx):
     r = cliente.post("/api/ccx", json={"inp": str(_trave())})
-    assert r.status_code == 200, r.text
-    corpo = r.json()
+    assert r.status_code == 202, r.text
+    corpo = _attendi(cliente, r.json()["run_id"])
     assert corpo["cartella"] == str(tmp_path / "corse" / corpo["run_id"])
     riletti = cliente.get(f"/api/risultati/{corpo['run_id']}")
     assert riletti.status_code == 200, riletti.text
@@ -625,7 +650,11 @@ def test_ccx_con_un_deck_rifiutato_e_400_non_200(cliente, tmp_path):
     """C6: `fase: deck` è un errore di chi ha scritto il deck, come `modello` e `importa`:
     200 lo faceva sembrare una corsa andata a buon fine."""
     r = cliente.post("/api/ccx", json={"inp": str(tmp_path / "no.inp")})
-    assert r.status_code == 400 and r.json()["fase"] == "deck"
+    assert r.status_code == 202, r.text
+    rid = r.json()["run_id"]
+    _attendi(cliente, rid)
+    g = cliente.get(f"/api/corsa/{rid}")
+    assert g.status_code == 400 and g.json()["fase"] == "deck"
 
 
 def test_sidecar_occupato_e_409_e_il_lock_resta_di_chi_lo_tiene(tmp_path):
@@ -660,9 +689,9 @@ def test_risultati_di_una_pushover_e_il_json_intero(cliente, binario_opensees):
         {"tipo": "pushover", "distribuzione": "uniforme", "nodo_controllo": 4, "dof": "ux",
          "incremento": 2.0, "spostamento_max": 20.0, "caso_gravita": "Z1"},
     ]
-    r = cliente.post("/api/corsa", json={"modello": modello})
-    assert r.status_code == 200 and r.json()["esito"] == "ok", r.json()
-    r2 = cliente.get(f"/api/risultati/{r.json()['run_id']}")
+    r = _corsa(cliente, {"modello": modello})
+    assert r["esito"] == "ok", r
+    r2 = cliente.get(f"/api/risultati/{r['run_id']}")
     assert r2.status_code == 200
     ris = r2.json()
     assert len(ris["passi"]) == 10 and ris["caduta"] is None
@@ -899,3 +928,116 @@ def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):
                                       su_fase=lambda ev: nomi.append(ev["nome"]))
     assert nomi[0] == "check model"
     assert righe[-1]["esito"] in ("assente", "errore", "ok")
+
+
+# --- 12/T2: la corsa come lavoro: 202, fasi mentre arrivano, salute libera, 409 --------------
+
+class _SidecarFermo:
+    """Un sidecar che emette «check model», poi aspetta il via: serve a guardare il lavoro a metà.
+
+    `partito` è l'appiglio del test: `time.sleep(0.05)` sarebbe una scommessa sullo scheduler,
+    e un rosso a intermittenza costa più di un rosso (R3 dell'annotazione)."""
+    def __init__(self):
+        self.via = threading.Event()
+        self.partito = threading.Event()
+    def chiedi(self, req, su_fase=None):
+        if req["comando"] == "verifica":
+            return [{"esito": "assente", "percorso": None, "motivo": "finto", "dove_prenderlo": "—"}]
+        if su_fase:
+            su_fase({"evento": "fase", "nome": "check model"})
+        self.partito.set()
+        self.via.wait(timeout=5)
+        return [{"evento": "fase", "nome": "check model"}, {"esito": "ok", "secondi": 0.5, "risultati": {}}]
+
+
+def _cliente_con_lavoro_fermo(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    fermo = _SidecarFermo()
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=fermo),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    return c, fermo
+
+
+def test_la_corsa_torna_subito_e_la_get_dice_la_fase_mentre_gira(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    r = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r.status_code == 202 and r.json()["stato"] == "in corso"
+    rid = r.json()["run_id"]
+    assert fermo.partito.wait(2), "il thread del lavoro non è partito"
+    g = c.get(f"/api/corsa/{rid}").json()
+    assert g["stato"] == "in corso" and g["fasi"] == ["check model"] and g["secondi"] >= 0
+    assert "esito" not in g
+    fermo.via.set()
+    d = _attendi(c, rid)
+    assert d["esito"] == "ok" and d["secondi"] == 0.5 and d["fasi"] == ["check model"]
+
+
+def test_salute_e_check_restano_liberi_mentre_una_corsa_gira(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    assert c.get("/api/salute").status_code == 200
+    assert c.post("/api/check", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 200
+    fermo.via.set(); _attendi(c, rid)
+
+
+def test_una_seconda_corsa_mentre_una_gira_e_409(tmp_path):
+    c, fermo = _cliente_con_lavoro_fermo(tmp_path)
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    r2 = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r2.status_code == 409 and "in corso" in r2.json()["motivo"]
+    fermo.via.set(); _attendi(c, rid)
+    # finita la prima, la seconda parte
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+def test_get_di_una_corsa_ignota_o_malformata_e_404(cliente):
+    assert cliente.get("/api/corsa/abc").status_code == 404
+    assert cliente.get("/api/corsa/0123456789ab").status_code == 404
+
+
+def test_con_il_sidecar_in_processo_la_get_dice_subito_finita_con_le_fasi(cliente):
+    d = _corsa(cliente, {"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert d["stato"] == "finita" and d["fasi"][0] == "check model"
+
+
+def test_un_rifiuto_del_check_e_una_corsa_finita_con_i_verdetti(cliente):
+    m = leggi_fixture("telaio_2x1.nova.json")
+    m["nodi"].append({"id": 99, "x": 5000.0, "z": 5000.0})   # nodo libero
+    d = _corsa(cliente, {"modello": m})
+    assert d["esito"] == "rifiutato"
+    assert any(v["controllo"] == "nodi_liberi" and v["esito"] == "non_passato" for v in d["verdetti_check"])
+
+
+class _SidecarCheScoppia:
+    """Il sidecar in processo non ha nessuna rete: un `ValueError` di `_carica`, un `KeyError`
+    su un evento storto, e l'eccezione scappa dal thread del lavoro."""
+    def chiedi(self, req, su_fase=None):
+        raise RuntimeError("il sidecar è esploso")
+
+
+def test_uneccezione_nel_thread_chiude_il_lavoro_invece_di_bloccare_il_server(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=_SidecarCheScoppia()),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    d = _attendi(c, rid, secondi=5)   # il finto solleva subito: senza il ramo il lavoro non finisce mai
+    assert d["stato"] == "finita" and d["esito"] == "errore" and d["fase"] == "sidecar"
+    assert "RuntimeError" in d["motivo"]
+    # senza il ramo l'unico lavoro resta «in corso» per sempre, e ogni corsa dopo è 409
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+class _SidecarInSoffitto:
+    """Il soffitto del Task 1: `chiedi` **rende** l'errore, non lo solleva."""
+    def chiedi(self, req, su_fase=None):
+        return [{"esito": "errore", "fase": "sidecar", "motivo": "nessuna risposta dal sidecar entro 660 s"}]
+
+
+def test_lerrore_del_soffitto_chiude_il_lavoro_e_il_prossimo_parte(tmp_path):
+    from nova.server import SidecarInProcesso, create_app
+    c = TestClient(create_app(SidecarInProcesso(), tmp_path / "corse", sidecar_lungo=_SidecarInSoffitto()),
+                   raise_server_exceptions=False, base_url="http://127.0.0.1")
+    rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
+    d = _attendi(c, rid)
+    assert d["stato"] == "finita" and d["esito"] == "errore" and d["fase"] == "sidecar"
+    assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
