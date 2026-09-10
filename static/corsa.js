@@ -25,7 +25,9 @@ function vaiDi(verdetto) {
   const primo = Array.isArray(verdetto.oggetto) ? verdetto.oggetto[0] : null;
   if (primo === null || primo === undefined) return null;
   if (primo && typeof primo === "object" && !Array.isArray(primo)) {
-    if (primo.nodo_controllo !== undefined && primo.nodo_controllo !== null) return { tipo: "nodo", id: primo.nodo_controllo };
+    // `nodo_controllo` da solo è il nodo che **manca** (`check.py:55-57`); con `dof` è il nodo che
+    // c'è ma è vincolato nella direzione di spinta (`:58-60`): solo il secondo si può selezionare.
+    if (primo.nodo_controllo !== undefined && primo.nodo_controllo !== null) return primo.dof !== undefined ? { tipo: "nodo", id: primo.nodo_controllo } : null;
     if (primo.analisi !== undefined) return null;
     for (const [chiave, tipo] of CONTENITORI) if (primo[chiave] !== undefined && primo[chiave] !== null) return { tipo, id: primo[chiave] };
     return null;
