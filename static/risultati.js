@@ -115,8 +115,9 @@ export function frecciaMassima(m, perCaso) {
                                             : { valore: 0, punto: null, indeformato: null };
 }
 
-/** Il solo numero, per chi non ha bisogno di sapere dove sta (`scalaAuto`). */
-export const spostamentoMassimo = (m, perCaso) => frecciaMassima(m, perCaso).valore;
+// Il solo numero, per chi non ha bisogno di sapere dove sta. Non esportata: `scalaAuto` è l'unica
+// che la usa, e chi vuole il valore da fuori chiede `frecciaMassima(...).valore`.
+const spostamentoMassimo = (m, perCaso) => frecciaMassima(m, perCaso).valore;
 
 /** La scala che porta il massimo spostamento nel piano a `frazione` del lato maggiore, in 1-2-5.
  *  Spostamenti nulli → 1: la deformata coincide con l'ombra, e il badge dice «×1». */

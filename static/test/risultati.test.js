@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, spostamentoMassimo, frecciaMassima, scalaAuto, puntiDeformata,
+import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMassima, scalaAuto, puntiDeformata,
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato } from "../risultati.js";
 
@@ -41,17 +41,17 @@ test("scala125: la serie 1-2-5, e gli ingressi degeneri danno 1", () => {
 test("scalaAuto: il massimo spostamento nel piano disegnato è il 5 % del lato maggiore, in 1-2-5", () => {
   const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -3, 0, 0, 0] } };
   assert.equal(latoMaggiore(trave), 6000);
-  assert.equal(spostamentoMassimo(trave, perCaso), 3);
+  assert.equal(frecciaMassima(trave, perCaso).valore, 3);
   assert.equal(scalaAuto(trave, perCaso), 100);   // 0,05·6000/3 = 100
   assert.equal(scalaAuto(trave, { spostamenti: {} }), 1, "senza spostamenti la scala è 1");
   // Era «spostamenti nulli nel piano → 1»: falso, ed è il difetto visto a mano su Chrome. Gli
   // appoggi di Z1 non si spostano (`ux = uz = 0`), ma le rotazioni ±0,0043 portano la mezzeria a
   // L·θ/4 = 6000·0,0043/4 = 6,45 mm. La freccia c'è, e la scala la deve vedere.
-  assert.equal(spostamentoMassimo(trave, Z1).toFixed(2), "6.45", "la freccia sta in mezzeria, non sui nodi");
+  assert.equal(frecciaMassima(trave, Z1).valore.toFixed(2), "6.45", "la freccia sta in mezzeria, non sui nodi");
   assert.equal(scalaAuto(trave, Z1), 50, "0,05·6000/6,45 = 46,5 → 50");
   assert.equal(scalaAuto({ nodi: [], aste: [] }, Z1), 1);
-  assert.equal(spostamentoMassimo(trave, { spostamenti: { 1: [3, 0, 4, 0, 0, 0] } }), 5, "nel piano: hypot(ux, uz)");
-  assert.equal(spostamentoMassimo(trave, { spostamenti: { 9: [100, 0, 0, 0, 0, 0] } }), 0, "un nodo che non è nel modello non conta");
+  assert.equal(frecciaMassima(trave, { spostamenti: { 1: [3, 0, 4, 0, 0, 0] } }).valore, 5, "nel piano: hypot(ux, uz)");
+  assert.equal(frecciaMassima(trave, { spostamenti: { 9: [100, 0, 0, 0, 0, 0] } }).valore, 0, "un nodo che non è nel modello non conta");
 });
 
 test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezzeria scende, y lineare", () => {
@@ -304,14 +304,14 @@ test("degeneri: modello vuoto, asta orfana, asta di lunghezza nulla — niente d
 
 test("degeneri: uno spostamento con un NaN o corto vale come assente, non si propaga nei punti", () => {
   const rotto = { spostamenti: { 1: [NaN, 0, 0, 0, 0, 0], 2: [0, 0, -3] } };
-  assert.equal(spostamentoMassimo(trave, rotto), 0, "né il NaN né la lista corta contano");
+  assert.equal(frecciaMassima(trave, rotto).valore, 0, "né il NaN né la lista corta contano");
   assert.equal(scalaAuto(trave, rotto), 1);
   const [d] = puntiDeformata(trave, rotto, 100, 4);
   assert.ok(d.punti.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)),
             "nodo fermo, non un NaN nel `points`");
   assert.deepEqual(d.punti[4], { x: 6000, y: 0, z: 0 });
   const conNull = { spostamenti: { 2: [0, 0, null, 0, 0, 0] } };
-  assert.equal(spostamentoMassimo(trave, conNull), 0);
+  assert.equal(frecciaMassima(trave, conNull).valore, 0);
 });
 
 test("degeneri: una stazione con valori non finiti vale 0 e sparisce da picchi e srotolato", () => {
@@ -349,7 +349,7 @@ test("degeneri: un modello con le aste ma senza `nodi` non fa sollevare `nodo()`
   assert.deepEqual(puntiDeformata(senzaNodi, Z1, 1), []);
   assert.deepEqual(diagramma(senzaNodi, Z1, "M", 1), []);
   assert.equal(scalaDiagrammaAuto(senzaNodi, Z1, "M"), 0);
-  assert.equal(spostamentoMassimo(senzaNodi, Z1), 0);
+  assert.equal(frecciaMassima(senzaNodi, Z1).valore, 0);
   assert.equal(scalaAuto(senzaNodi, Z1), 1);
   assert.equal(latoMaggiore(senzaNodi), 2000);
 });

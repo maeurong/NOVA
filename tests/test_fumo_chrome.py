@@ -126,6 +126,20 @@ def test_trave_appoggiata_il_momento_in_mezzeria_e_sull_etichetta(chrome_e_serve
         assert coppie == [], f"etichette sovrapposte a {larghezza}: {coppie}"
 
 
+def test_trave_appoggiata_la_freccia_in_mezzeria_e_quella_vera(chrome_e_server, binario_opensees):
+    """La freccia esatta è 5qL⁴/(384EI) = 1,5709 mm.
+
+    Con la cubica sui soli estremi ne usciva 1,2568 — i 4/5 dell'algebra — perché la mezzeria
+    veniva interpolata invece che letta. Coi nodi interni delle `suddivisioni`
+    (`spostamenti_interni`) la mezzeria **è** un nodo, e l'etichetta della deformata lo dice.
+    """
+    porta, cdp = chrome_e_server
+    r = copione("risultati", porta, cdp, fixture=str(FIXTURE / "trave_appoggiata.nova.json"), vista="1")
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    assert "1,57 mm" in r["trovato"]["etichette"], r["trovato"]["etichette"]
+
+
 @pytest.mark.parametrize("vista", ["1", "2", "3", "4"])
 def test_telaio_2x1_nessuna_etichetta_sovrapposta_in_ogni_vista(chrome_e_server, binario_opensees, vista):
     porta, cdp = chrome_e_server
