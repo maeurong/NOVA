@@ -291,3 +291,21 @@ test("degeneri: due stazioni sullo stesso x_rel — due punti nel poligono, una 
 test("degeneri: anche `scalaDiagrammaAuto` rifiuta una vista che non esiste", () => {
   assert.throws(() => scalaDiagrammaAuto(trave, Z1, "deformata"), /vista sconosciuta: deformata/);
 });
+
+test("degeneri: `segmenti` non finito torna al default — 8 tratti, non un ciclo infinito", () => {
+  // `segmenti = 8` è un default di parametro: copre `undefined`, non `Infinity` né `NaN`.
+  assert.equal(puntiDeformata(trave, Z1, 1, Infinity)[0].punti.length, 9);
+  assert.equal(puntiDeformata(trave, Z1, 1, NaN)[0].punti.length, 9);
+  assert.equal(puntiDeformata(trave, Z1, 1, undefined)[0].punti.length, 9);
+  assert.equal(puntiDeformata(trave, Z1, 1, -3)[0].punti.length, 2, "un numero finito assurdo resta un tratto solo");
+});
+
+test("degeneri: un modello con le aste ma senza `nodi` non fa sollevare `nodo()`", () => {
+  const senzaNodi = { aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
+  assert.deepEqual(puntiDeformata(senzaNodi, Z1, 1), []);
+  assert.deepEqual(diagramma(senzaNodi, Z1, "M", 1), []);
+  assert.equal(scalaDiagrammaAuto(senzaNodi, Z1, "M"), 0);
+  assert.equal(spostamentoMassimo(senzaNodi, Z1), 0);
+  assert.equal(scalaAuto(senzaNodi, Z1), 1);
+  assert.equal(latoMaggiore(senzaNodi), 2000);
+});

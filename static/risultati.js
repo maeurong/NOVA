@@ -4,7 +4,9 @@
 // Il contratto è quello di `nova/corsa.py:_stazioni` e `risultati_da_uscite`: `per_caso[caso]` con
 // `spostamenti["<id>"][6]` (ux uy uz rx ry rz in mm e rad), `reazioni["<id>"][6]` (N e N·mm, solo
 // i vincolati), `sollecitazioni["<id_asta>"]` liste di stazioni `{x_rel, N, Vy, Vz, T, My, Mz}`.
-// Nel piano x–z contano `My`, `Vz`, `N`, `ux`, `uz`, `ry`.
+// Nel piano x–z contano `ux`, `uz`, `ry`, e **due** coppie di sollecitazioni, non una: le travi
+// e le aste inclinate flettono con `My`/`Vz`, i pilastri con `Mz`/`Vy` (il perché sta in `assiDi`).
+// `N` vale per tutte e due.
 
 import { conciso } from "./numeri.js";
 import { nodo } from "./modello.js";
@@ -62,7 +64,7 @@ export function scalaAuto(m, perCaso, frazione = 0.05) {
  *  solutore in coordinate schermo, ed è lui — non `e2` — che decide da che parte va disegnato
  *  un diagramma.
  *
- *  Perché non coincidono: `nova/deck.py:_terna` (`:169-189`) prende `e2_deck` = verticale
+ *  Perché non coincidono: `nova/deck.py:_terna` (`:172-191`) prende `e2_deck` = verticale
  *  proiettata e `e1_deck = e2_deck × a`. Per un'asta **coricata** la `z` locale (`a × e1_deck`)
  *  vale `ẑ` qualunque sia l'ordine dei nodi, cioè `sign(e1.x)·e2`; per un'asta **in piedi** la
  *  `z` locale è la `y` globale, fuori dal piano, e quello che resta in piano è `e1_deck` (la `y`
@@ -70,7 +72,14 @@ export function scalaAuto(m, perCaso, frazione = 0.05) {
  *
  *  Misurato sul telaio 2×1 il 10/09/2026 (`tests/fixture/telaio_2x1.nova.json`, tutti i casi):
  *  pilastri `|My|max ≤ 2,2e-9` e `|Mz|max` fino a 2,1e7; travi `|Mz|max ≤ 9,3e-10` e `|My|max`
- *  fino a 5,4e7. Con una mappa costante `{M:"My"}` ogni pilastro sarebbe una riga piatta. */
+ *  fino a 5,4e7. Con una mappa costante `{M:"My"}` ogni pilastro sarebbe una riga piatta.
+ *
+ *  ponytail: `verticale` guarda `e1` **proiettato nel piano x–z**, il deck guarda l'asse `a` in
+ *  3D e poi ruota la terna di `rotazione_deg`. Un'asta con `y_i ≠ y_j`, o con la sezione ruotata,
+ *  può quindi prendere la chiave sbagliata e uscire come una riga piatta. Nessun modello del repo
+ *  ci casca (`muro_1`: `y = 0`, `rotazione_deg = 0`), e finché il piano di lavoro è uno solo la
+ *  proiezione basta. Il giorno del fuori-piano, la chiave la deve dire il server insieme alle
+ *  stazioni — non ri-derivarla qui. */
 export function assiDi(i, j) {
   const L = Math.hypot(j.x - i.x, j.z - i.z);
   if (!(L > 0)) return null;
@@ -85,11 +94,23 @@ export function assiDi(i, j) {
 /** La deformata per asta, con le funzioni di forma di Hermite nel piano (`docs/ricerca/03-stack-tecnico.md:94`):
  *  spostamento assiale lineare, trasversale cubico dalle frecce e dalle rotazioni degli estremi.
  *  La rotazione attorno a `y` con la regola della mano destra dà `dw/ds = −θy` (θ × r sull'asse
- *  dell'asta, proiettato sulla normale sinistra). `y` fuori dal piano: lineare. */
+ *  dell'asta, proiettato sulla normale sinistra). `y` fuori dal piano: lineare.
+ *
+ *  **Il limite, misurato.** La cubica interpola i soli **nodi del modello**: il server non
+ *  esporta gli spostamenti dei nodi interni delle `suddivisioni`, quindi fra un nodo e l'altro
+ *  manca il termine quartico che il carico distribuito ci mette. Sulla trave appoggiata di 6 m
+ *  con q = −10 N/mm la mezzeria esce a −1,2568 mm contro i −1,5709 mm veri: rapporto 0,80, che
+ *  è l'algebra e non il caso — Hermite dà `qL⁴/(96EI)`, l'esatta `5qL⁴/(384EI)`, e 384/(96·5)
+ *  = 4/5. Quel che si vede è la **forma** dei valori nodali scalati, non la deformata esatta
+ *  fra i nodi: buona per leggere il verso e il cinematismo, non per misurare una freccia.
+ *  ponytail: si chiude esportando i nodi interni dal server (T9, modello dati), non
+ *  ricostruendo qui il carico d'asta per aggiungere la quartica a mano. */
 export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
-  const n = Math.max(1, Math.floor(segmenti));
+  // `segmenti = 8` copre `undefined`, non `Infinity` (ciclo infinito) né `NaN` (`punti: []`).
+  const n = Number.isFinite(segmenti) ? Math.max(1, Math.floor(segmenti)) : 8;
   const zero = [0, 0, 0, 0, 0, 0];
   const fuori = [];
+  if (!Array.isArray(m?.nodi)) return fuori;   // `nodo()` (modello.js:45) solleva senza `m.nodi`
   for (const a of m?.aste ?? []) {
     const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
     if (!i || !j) continue;
@@ -129,6 +150,7 @@ const stazioniDi = (perCaso, id) => {
  *  `scalaDiagrammaAuto` e `diagramma` non possono divergere sul nome della grandezza. */
 function asteConAssi(m, perCaso, vista) {
   const fuori = [];
+  if (!Array.isArray(m?.nodi)) return fuori;   // `nodo()` (modello.js:45) solleva senza `m.nodi`
   for (const a of m?.aste ?? []) {
     const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
     if (!i || !j) continue;
