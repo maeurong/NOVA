@@ -556,12 +556,18 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
         v = [verdetto("autovalori", autovalori, ragione=(
             f"prima frequenza {'assente' if prima is None else format(prima, '.6g') + ' Hz'} "
             f"su {len(modi)} modi estratti"))]
-    if modi:
-        cumulata = modi[-1]["cumulata"]
+    # issue #65 (review): la cumulata è quella dell'ultimo modo con frequenza fisica, non
+    # dell'ultimo modo in assoluto -- un modo rifiutato (`f is None`) non deve far passare
+    # una direzione che il modo buono precedente non raggiunge.
+    buoni = [x for x in modi if x["f"] is not None]
+    if buoni:
+        cumulata = buoni[-1]["cumulata"]
         masse = {"catturata": [100.0 * cumulata[x] for x in "xyz"] + [0.0] * 3,
                  "disponibile": [100.0 if x in direzioni else 0.0 for x in "xyz"] + [0.0] * 3}
         ragione = ("cumulata " + ", ".join(f"{x} {cumulata[x]:.4g}" for x in direzioni)
                    + f" sulle direzioni con massa {', '.join(direzioni)}")
+    elif modi:
+        masse, ragione = None, "nessun modo con frequenza fisica: la massa partecipante non è verificata"
     else:
         masse, ragione = None, "nessun modo estratto: la massa partecipante non è verificata"
     v.append(verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),

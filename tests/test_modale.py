@@ -92,6 +92,16 @@ def test_abbastanza_guarda_solo_le_direzioni_con_massa():
     assert not modale.abbastanza([], ("x",))
 
 
+def test_abbastanza_ignora_la_cumulata_del_modo_senza_frequenza_fisica():
+    """Review su #65: `modi[-1]` non è più «l'ultimo modo», è «l'ultimo modo buono» -- un
+    modo con `f: None` in coda non deve far passare una direzione che il modo vero non
+    raggiunge."""
+    modi = [{"f": 5.0, "cumulata": {"x": 0.5, "y": 0.0, "z": 0.5}},
+            {"f": None, "cumulata": {"x": 1.0, "y": 1.0, "z": 1.0}}]
+    assert not modale.abbastanza(modi, ("x",))
+    assert not modale.abbastanza([{"f": None, "cumulata": {"x": 1.0}}], ("x",))
+
+
 def test_i_gradi_liberi_sono_il_tetto_dei_modi():
     """Telaio 2×1: tre nodi incastrati, tre liberi, nove traslazioni con massa."""
     m = modello.carica(leggi_fixture("telaio_2x1.nova.json"))

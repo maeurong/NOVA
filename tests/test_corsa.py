@@ -128,6 +128,28 @@ def test_la_massa_modale_conta_solo_le_direzioni_con_massa(tmp_path):
     assert stretto["massa_modale"]["esito"] == "non_passato"
 
 
+def test_la_massa_modale_ignora_la_cumulata_del_modo_senza_frequenza_fisica(tmp_path):
+    """Review su #65: un modo con `f: None` non è un modo verificato, e la sua cumulata (qui
+    1,0 su tutto) non deve nascondere che le direzioni con massa non arrivano all'85 % sul
+    modo buono. Il verdetto legge la cumulata dell'ultimo modo **buono**, il secondo."""
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": 5.0, "cumulata": {"x": 0.5, "y": 0.0, "z": 0.5}},
+            {"f": 8.0, "cumulata": {"x": 0.9, "y": 0.0, "z": 0.86}},
+            {"f": None, "cumulata": {"x": 1.0, "y": 1.0, "z": 1.0}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x", "z"))}
+    assert v["massa_modale"]["esito"] == "passato"
+    assert v["massa_modale"]["valori"]["per_direzione"]["x"] == pytest.approx(0.9)
+    assert v["massa_modale"]["valori"]["per_direzione"]["z"] == pytest.approx(0.86)
+
+
+def test_la_massa_modale_non_passa_senza_nessun_modo_con_frequenza_fisica(tmp_path):
+    m, d = _modello_e_deck("trave_appoggiata.nova.json", tmp_path)
+    modi = [{"f": None, "cumulata": {"x": 1.0, "y": 1.0, "z": 1.0}}]
+    v = {x["controllo"]: x for x in corsa.controlli(d, _caso({"1": [0.0] * 6}), "", modi, ("x",))}
+    assert v["massa_modale"]["esito"] == "non_passato"
+    assert "nessun modo con frequenza fisica" in v["massa_modale"]["ragione"]
+
+
 def test_una_frequenza_negativa_oltre_la_seconda_non_passa(tmp_path):
     """issue #65: una frequenza negativa (non fisica) deve fare la stessa strada del `nan` --
     `non_passato` -- qualunque sia la sua posizione. `solve.controlla_autovalori` (meshrec,

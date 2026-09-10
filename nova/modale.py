@@ -141,9 +141,13 @@ def direzioni_con_massa(m: Modello) -> tuple[str, ...]:
 
 
 def abbastanza(modi: list[dict], direzioni) -> bool:
-    if not modi:
+    # issue #65 (review): un modo con `f: None` non è verificato -- la sua cumulata non deve
+    # nascondere che il modo buono precedente non basta. `.get("f", 0)` non esclude i modi
+    # che (come nei test più vecchi) non portano affatto la chiave `f`.
+    buoni = [m for m in modi if m.get("f", 0) is not None]
+    if not buoni:
         return False
-    ultima = modi[-1]["cumulata"]
+    ultima = buoni[-1]["cumulata"]
     return all(ultima[d] >= SOGLIA_MASSA for d in direzioni)
 
 
