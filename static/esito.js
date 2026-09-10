@@ -66,7 +66,13 @@ export function creaEsito(radice, { suCambio, suAvviso = () => {} }) {
   return { disegna };
 }
 
-/** La striscia dell'M srotolato: l'asta selezionata, tutte le stazioni, i picchi scritti. */
+// La striscia segue la vista del piano: guardare V nel piano e M nella striscia è leggere due
+// grandezze diverse per lo stesso gesto. Con la deformata, o senza vista, resta M — che è il
+// diagramma della flessione, quello che si legge accanto a una deformata.
+const VISTA_STRISCIA = { V: "V", N: "N" };
+const UNITA_STRISCIA = { M: "kN·m", V: "kN", N: "kN" };
+
+/** La striscia della sollecitazione srotolata: l'asta selezionata, tutte le stazioni, i picchi. */
 export function creaSrotolato(contenitore) {
   const el = (nome, attributi = {}) => { const e = document.createElementNS(NS, nome); for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v); return e; };
   const titolo = () => { const p = document.createElement("p"); p.className = "titolo"; return p; };
@@ -78,16 +84,17 @@ export function creaSrotolato(contenitore) {
     if (risultati.stantia) p.className = "titolo stantia";
     const id = selezione?.tipo === "asta" ? selezione.id : null;
     const asta = id !== null ? (modello?.aste ?? []).find((a) => a.id === id) : null;
-    if (!asta) { p.textContent = "Seleziona un'asta per il suo M srotolato."; contenitore.replaceChildren(p); return; }
+    const vista = VISTA_STRISCIA[risultati.vista] ?? "M";
+    if (!asta) { p.textContent = `Seleziona un'asta per il suo ${vista} srotolato.`; contenitore.replaceChildren(p); return; }
     const stazioni = risultati.perCaso?.sollecitazioni?.[String(asta.id)];
     // La chiave la decide la giacitura dell'asta, non una costante: su un pilastro è `Mz` (R1).
     const assi = assiDi(nodo(modello, asta.nodo_i) ?? {}, nodo(modello, asta.nodo_j) ?? {});
-    p.textContent = `${risultati.stantia ? "stantia · " : ""}M dell'asta ${asta.id} · ${risultati.caso} · kN·m`;
+    p.textContent = `${risultati.stantia ? "stantia · " : ""}${vista} dell'asta ${asta.id} · ${risultati.caso} · ${UNITA_STRISCIA[vista]}`;
     // Un'asta i cui nodi non ci sono più, o lunga zero, non ha assi: senza assi non c'è chiave, e
     // niente striscia. Niente `?? "My"`: su un pilastro sarebbe la chiave sbagliata, non un ripiego
     // — si leggerebbe una riga piatta al posto della flessione vera.
     if (!assi) { p.textContent += " · nessuna stazione per quest'asta"; contenitore.replaceChildren(p); return; }
-    const chiave = assi.M;
+    const chiave = assi[vista];
     const { punti, massimo } = srotolato(stazioni, chiave);
     if (punti.length === 0) { p.textContent += " · nessuna stazione per quest'asta"; contenitore.replaceChildren(p); return; }
     const colore = risultati.stantia ? ROSSO : INCHIOSTRO;
@@ -103,7 +110,7 @@ export function creaSrotolato(contenitore) {
     // giro dopo si misura più larga — +16 px a ogni ridisegno, senza tetto. I 200 valgono per
     // il solo contenitore non ancora impaginato, dove `clientWidth` è 0.
     const W = contenitore.clientWidth || 200, H = 96, M = 14;
-    const svg = el("svg", { width: W, height: H, "aria-label": `M srotolato dell'asta ${asta.id}` });
+    const svg = el("svg", { width: W, height: H, "aria-label": `${vista} srotolato dell'asta ${asta.id}` });
     const y0 = H / 2;
     const y = (v) => (massimo > 0 ? y0 + (v / massimo) * (H / 2 - M) : y0);   // M positivo verso il basso: il lato teso
     const x = (r) => r * W;
@@ -118,7 +125,7 @@ export function creaSrotolato(contenitore) {
       const sopra = picco.valore > 0;   // il testo dalla parte opposta al diagramma, che qui è sotto per M > 0
       const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,
                              "text-anchor": picco.x_rel < 0.1 ? "start" : picco.x_rel > 0.9 ? "end" : "middle" });
-      t.textContent = testoValore("M", picco.valore);
+      t.textContent = testoValore(vista, picco.valore);
       svg.append(t);
     }
     contenitore.replaceChildren(p, svg);

@@ -273,3 +273,40 @@ test("creaEsito: senza `suAvviso` una scala illeggibile non solleva", () => {
   el("#risultati-scala").value = "pippo";
   assert.doesNotThrow(() => el("#risultati-scala").dispatch("change"));
 });
+
+// --- la striscia segue la vista (debito 7) ----------------------------------------
+// Guardare V nel piano e M nella striscia è leggere due grandezze diverse per lo stesso gesto.
+
+test("creaSrotolato: in vista V la striscia srotola V, con la chiave della giacitura e le sue unità", () => {
+  const modello = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 0, y: 0, z: 3000 }],
+                    aste: [{ id: 3, nodo_i: 1, nodo_j: 2 }] };   // un pilastro: la chiave è Vy
+  const perCaso = { sollecitazioni: { 3: [
+    { x_rel: 0, N: -1000, Vy: 12000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 6e6 },
+    { x_rel: 1, N: -1000, Vy: 12000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 0 }] } };
+  const contenitore = contenitoreFinto();
+  const srot = creaSrotolato(contenitore);
+  const disegna = (vista) => {
+    srot.disegna({ risultati: { vista, caso: "Z1", perCaso, stantia: false }, modello, selezione: { tipo: "asta", id: 3 } });
+    return contenitore._figli;
+  };
+  assert.equal(disegna("V")[0].textContent, "V dell'asta 3 · Z1 · kN");
+  assert.deepEqual(tutti(disegna("V")[1], "text").map((t) => t.textContent), ["12 kN"], "il picco in kN, non in kN·m");
+  assert.equal(disegna("N")[0].textContent, "N dell'asta 3 · Z1 · kN");
+  assert.deepEqual(tutti(disegna("N")[1], "text").map((t) => t.textContent), ["-1 kN"]);
+  // M in vista M, e anche in deformata o senza vista: accanto a una deformata si legge la flessione.
+  for (const vista of ["M", "deformata", null]) {
+    assert.equal(disegna(vista)[0].textContent, `M dell'asta 3 · Z1 · kN·m`, `vista ${vista}`);
+    assert.deepEqual(tutti(disegna(vista)[1], "text").map((t) => t.textContent), ["6 kN·m"]);
+  }
+});
+
+test("creaSrotolato: senza un'asta selezionata l'invito nomina la vista", () => {
+  const contenitore = contenitoreFinto();
+  const srot = creaSrotolato(contenitore);
+  const invito = (vista) => {
+    srot.disegna({ risultati: { vista, caso: "Z1", perCaso: {}, stantia: false }, modello: { nodi: [], aste: [] }, selezione: null });
+    return contenitore._figli[0].textContent;
+  };
+  assert.equal(invito("V"), "Seleziona un'asta per il suo V srotolato.");
+  assert.equal(invito("deformata"), "Seleziona un'asta per il suo M srotolato.");
+});
