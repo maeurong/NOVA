@@ -446,6 +446,11 @@ test("il campo apre con Invio, e ignora gli altri tasti", async (t) => {
   await radice.elementi["#file-percorso"].dispatch("keydown", { key: "Enter", preventDefault() {} });
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(spia.chiamate, 1);
+  // ⌘⏎ nel campo è «corri», non «apri» (giornata 12): il campo lo lascia passare.
+  await radice.elementi["#file-percorso"].dispatch("keydown", { key: "Enter", metaKey: true, preventDefault() {} });
+  await radice.elementi["#file-percorso"].dispatch("keydown", { key: "Enter", shiftKey: true, metaKey: true, preventDefault() {} });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(spia.chiamate, 1, "con un modificatore il campo non apre");
 });
 
 // La riga di stato nomina il file **aperto**, non quello scritto nel campo. Da quando `salva`

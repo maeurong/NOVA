@@ -2,7 +2,7 @@
 // corsa che invecchia. Nessun riduttore: la corsa non tocca il modello. Le funzioni pure stanno
 // in testa e si provano senza DOM; `creaCorsa` (Task 4) possiede il blocco del pannello.
 
-import { conciso } from "./numeri.js";
+import { conciso, stampaNumero, senzaZeriInCoda } from "./numeri.js";
 import { chiediJson } from "./file.js";
 
 /** Il tipo selezionabile dell'oggetto di un verdetto, per controllo (`nova/check.py:81-284`):
@@ -48,15 +48,24 @@ export function righeVerdetti(verdetti) {
   }));
 }
 
+/** «Version 3.8.0 64-Bit (6e55…)» del registro di OpenSees → «3.8.0»: la riga del solutore
+ *  porta il numero, non l'impronta del binario. Senza un numero dentro, `null`. */
+export const versioneBreve = (testo) => String(testo ?? "").match(/\d+(?:\.\d+)+/)?.[0] ?? null;
+
 export function testoSolutore(salute, versione = null) {
-  if (!salute) return "solutore: in verifica…";
+  // Senza la salute (un 409 all'avvio, una rete caduta) la versione da una corsa buona basta
+  // a dire che il solutore c'è: «in verifica…» resta solo finché non si sa niente.
+  if (!salute) return versione ? `OpenSees ${versione}` : "solutore: in verifica…";
   const nome = versione ? `OpenSees ${versione}` : "OpenSees";
   if (salute.esito === "ok") return `${nome} · ${salute.percorso}`;
   if (salute.esito === "assente") return `OpenSees assente — ${salute.dove_prenderlo || "dove prenderlo: non dichiarato"}`;
   return `OpenSees rotto: ${salute.motivo || "—"}`;
 }
 
-const secondiTesto = (s) => `${conciso(Math.max(0, s))} s`;
+// La durata misurata dal server, a due decimali al massimo e senza zeri in coda: «1,25 s»,
+// «0,13 s», «3,2 s». Con `conciso` sotto 1 s uscivano quattro decimali («0,1291 s», visto a
+// schermo sul telaio 2×1): un centesimo basta a chi legge quanto è durata una corsa.
+const secondiTesto = (s) => `${senzaZeriInCoda(stampaNumero(Math.max(0, s), { decimali: 2, migliaia: true }))} s`;
 // R14: sotto 1 s `cifre` dà quattro decimali (`numeri.js:183`), e un cronometro che scrive
 // «0,5231 s» ogni mezzo secondo è rumore, non attesa parlante. L'attesa arrotonda al decimo;
 // la durata **misurata** (`testoUltima`) no: «1,25 s» è un fatto del server.
@@ -99,7 +108,10 @@ const ARTICOLO = { nodo: "al nodo", asta: "all'asta", sezione: "alla sezione",
  *  Il polling non ha un timer suo: il cronometro si riscrive a ogni giro della `GET`, che è
  *  già la cadenza dell'attesa. Un `setInterval` in più sarebbe un secondo orologio da fermare
  *  in tutte le uscite — compresa quella che nessuno ricorda, la rete che cade. */
-export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio = () => Date.now(), attesaMs = 500 }) {
+export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = () => null,
+                                    orologio = () => Date.now(), attesaMs = 500 }) {
+  // `prima()`: il chiamante dice perché **adesso** non si corre (un ghost aperto in `app.js`),
+  // o `null`. Vale per i bottoni come per i tasti: la guardia sta qui, una volta sola.
   const q = (sel) => radice.querySelector(sel);
   const solutoreEl = q("#corsa-solutore"), bVerifica = q("#corsa-verifica"), bCorri = q("#corsa-corri");
   const campoInp = q("#corsa-inp"), bSolido = q("#corsa-corri-solido");
@@ -116,8 +128,8 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
   const bottoni = (liberi) => { for (const b of [bVerifica, bCorri, bSolido]) if (b) b.disabled = !liberi; };
 
   function impostaSolutore(s, v) {
-    if (s) salute = s;
-    if (v) versione = v;
+    if (s != null) salute = s;   // `!= null`, non `if (s)`: un valore definito ma falso non è «tieni il vecchio»
+    if (v != null) versione = v;
     solutoreEl.textContent = testoSolutore(salute, versione);
   }
 
@@ -233,8 +245,11 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
     codaEl.textContent = fin.coda_log ?? "";
   }
 
+  const fermo = () => { const perché = prima(); if (perché) suErrore(perché); return Boolean(perché); };
+
   async function corri() {
     if (occupato) return suErrore("una corsa è già in corso");
+    if (fermo()) return;
     occupato = true; bottoni(false); bCorri.textContent = "corro…";
     try {
       const l = await lavora("/api/corsa", { modello: modello(), casi: null }, false);
@@ -242,7 +257,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
       verdetti = verdettiDi(l.fin);
       disegnaRegistro(l.fin);
       if (l.fin.esito === "assente") impostaSolutore({ esito: "assente", dove_prenderlo: l.fin.dove_prenderlo });
-      if (l.fin.esito === "ok" && l.fin.risultati?.run?.versione_opensees) impostaSolutore(salute, l.fin.risultati.run.versione_opensees);
+      if (l.fin.esito === "ok" && l.fin.risultati?.run?.versione_opensees) impostaSolutore(salute, versioneBreve(l.fin.risultati.run.versione_opensees));
       disegnaVerdetti(); disegnaUltima(l.modello);
       suEsito(l);
     } catch (e) {
@@ -255,6 +270,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
 
   async function verifica() {
     if (occupato) return suErrore("una corsa è già in corso");
+    if (fermo()) return;
     occupato = true; bottoni(false); bVerifica.textContent = "verifico…";
     try {
       const r = await chiediJson("/api/check", { modello: modello() });
@@ -269,6 +285,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
 
   async function corriSolido() {
     if (occupato) return suErrore("una corsa è già in corso");
+    if (fermo()) return;
     const inp = (campoInp?.value ?? "").trim();
     // Non «un deck .inp»: l'estensione qui nessuno la controlla, e un messaggio non promette
     // una verifica che non fa.

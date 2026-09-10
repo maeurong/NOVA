@@ -183,7 +183,9 @@ export function creaFile(radice, { suApertura, suSalvataggio, suImportazione, su
   }
 
   campo.addEventListener("keydown", (ev) => {
-    if (ev.key !== "Enter") return;
+    // Solo l'Invio nudo apre: `⌘⏎` è «corri» (giornata 12) e risale al listener globale, e
+    // riaprire il file sotto una corsa azzerava i verdetti appena mostrati.
+    if (ev.key !== "Enter" || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
     ev.preventDefault();
     apri();
   });

@@ -110,7 +110,9 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
   campo.addEventListener("keydown", (ev) => {
     if (ev.key === "ArrowDown") evidenzia(Math.min(risultati.length - 1, attiva + 1));
     else if (ev.key === "ArrowUp") evidenzia(Math.max(0, attiva - 1));
-    else if (ev.key === "Enter") scegli(attiva);
+    // Solo l'Invio nudo sceglie: `⌘⏎`/`⇧⌘⏎` sono corri e verifica (giornata 12) e qui dentro
+    // non fanno niente — né la scelta né la corsa, perché il tasto non risale.
+    else if (ev.key === "Enter") { if (!(ev.metaKey || ev.ctrlKey || ev.shiftKey)) scegli(attiva); }
     else if (ev.key === "Escape" || ev.key === "Tab") chiudi();
     else return;  // le lettere restano al campo, e non arrivano al listener globale perché `daControllo` le lascia lì
     ev.preventDefault(); ev.stopPropagation();

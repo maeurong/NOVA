@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OGGETTO_PER_CONTROLLO, PAROLA, righeVerdetti, testoSolutore, testoAttesa, testoUltima, stantia, verdettiDi, creaCorsa }
+import { OGGETTO_PER_CONTROLLO, PAROLA, righeVerdetti, testoSolutore, testoAttesa, testoUltima, stantia, verdettiDi, creaCorsa, versioneBreve }
   from "../corsa.js";
 
 const v = (controllo, esito, extra = {}) => ({ controllo, oggetto: null, stazione: null, caso: null, esito,
@@ -81,6 +81,12 @@ test("testoSolutore: ok con percorso e versione, assente con dove prenderlo, rot
   assert.equal(testoSolutore({ esito: "assente", dove_prenderlo: null }), "OpenSees assente — dove prenderlo: non dichiarato");
   assert.equal(testoSolutore({ esito: "rotto", motivo: "esce 1" }), "OpenSees rotto: esce 1");
   assert.equal(testoSolutore(null), "solutore: in verifica…");
+  // Senza salute ma con una corsa buona alle spalle: il numero basta a dire che il solutore c'è.
+  assert.equal(testoSolutore(null, "3.8.0"), "OpenSees 3.8.0");
+  assert.equal(versioneBreve("Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4)"), "3.8.0");
+  assert.equal(versioneBreve("3.7"), "3.7");
+  assert.equal(versioneBreve(null), null);
+  assert.equal(versioneBreve("senza numero"), null);
 });
 
 test("testoAttesa: le fasi finora, la corrente, i secondi al decimo — mai negativi né NaN", () => {
@@ -98,6 +104,9 @@ test("testoAttesa: le fasi finora, la corrente, i secondi al decimo — mai nega
 
 test("testoUltima: ok, solido, rifiutata, errore, assente", () => {
   assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 3.2, fin: { esito: "ok" } }), "corsa a1b2c3d4e5f6 · 3,2 s");
+  // Due decimali al massimo: «0,13 s», non «0,1291 s» (visto a schermo); «1,25 s» resta.
+  assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 0.1291, fin: { esito: "ok" } }), "corsa a1b2c3d4e5f6 · 0,13 s");
+  assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 1.25, fin: { esito: "ok" } }), "corsa a1b2c3d4e5f6 · 1,25 s");
   assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 7.5, solido: true, fin: { esito: "ok" } }), "corsa del solido a1b2c3d4e5f6 · 7,5 s");
   assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 0.1, fin: { esito: "rifiutato" } }), "corsa a1b2c3d4e5f6 · rifiutata dal Check Model");
   assert.equal(testoUltima({ run_id: "a1b2c3d4e5f6", secondi: 2, fin: { esito: "errore", fase: "solutore", motivo: "esce 1" } }),
@@ -409,6 +418,22 @@ test("creaCorsa: verifica fa la POST a /api/check e mostra i verdetti anche se t
   assert.equal(el("#corsa-ultima").textContent, "", "la verifica non è una corsa: nessuna riga dell'ultima");
   assert.equal(el("#corsa-verifica").textContent, "verifica");
   assert.equal(el("#corsa-verifica").disabled, false);
+});
+
+// La guardia del modo vale anche per i bottoni, non solo per ⌘⏎: `prima()` dice perché non si
+// corre adesso, e nessuna richiesta parte.
+test("creaCorsa: prima() che dice di no ferma corri, verifica e il solido senza richieste", async () => {
+  // La seconda risposta cade apposta: se `prima()` venisse ignorata la corsa partirebbe e il test
+  // deve finire rosso, non restare appeso sul polling.
+  const spia = fetchSequenza([{ stato: 202, dati: { run_id: "h9", stato: "in corso" } }, { cade: true }]);
+  const { radice } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, prima: () => "chiudi il gesto (Esc) prima di correre", suErrore: (t) => errori.push(t) });
+  radice.querySelector("#corsa-inp").value = "/x/trave.inp";
+  await c.corri(); await c.verifica(); await c.corriSolido();
+  assert.deepEqual(errori, Array(3).fill("chiudi il gesto (Esc) prima di correre"));
+  assert.equal(spia.chiamate, 0);
+  assert.equal(c.inCorso(), false);
 });
 
 test("creaCorsa: corri mentre gira è un rifiuto che parla, senza richiesta", async () => {

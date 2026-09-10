@@ -237,10 +237,17 @@ const corsa = creaCorsa(document, {
   suVai: ({ tipo, id }) => scegli(tipo, id),
   suErrore: (msg) => dì(msg),
   suEsito: () => ridisegna(),
+  // Un ghost aperto (estrusione o asta) va chiuso a mano prima di correre: vale per i bottoni
+  // del blocco come per ⌘⏎, e `AVVISO_SECONDO_NODO` parlerebbe della cosa sbagliata.
+  prima: () => (modo ? "chiudi il gesto (Esc) prima di correre" : null),
 });
-// La riga del solutore prima di qualunque gesto. Un 409/errore di rete lascia «in verifica…»
-// (`corsa.impostaSolutore` non è chiamata): una corsa successiva la aggiorna comunque.
-chiediJson("/api/salute").then((s) => corsa.impostaSolutore(s.solutore)).catch((e) => dì(e.message));
+// La riga del solutore prima di qualunque gesto. Un secondo tentativo dopo un attimo: un
+// ricaricamento mentre la `verifica` di prima è ancora sul sidecar prende un 409, e senza il
+// secondo giro la riga restava «in verifica…» per sempre (visto sul Chrome headless).
+const chiediSalute = (ritenta) => chiediJson("/api/salute")
+  .then((s) => corsa.impostaSolutore(s.solutore))
+  .catch((e) => { if (ritenta) setTimeout(() => chiediSalute(false), 1500); else dì(e.message); });
+chiediSalute(true);
 
 // La palette non è un secondo programma: passa voce e valore ai rami del tasto, e l'esito è
 // quello del tasto **a gesto chiuso**. **R2** — se esegue, abbandona campo e modo insieme:
@@ -727,13 +734,10 @@ function dispatchVoce(voce) {
   if (comando) { campoComando.focus(); return; }
 
   // Corri e verifica sotto la guardia del campo (un ⌘⏎ mentre si scrive un comando è un Invio
-  // sbagliato, non una corsa) ma con la propria guardia del modo: un ghost aperto (estrusione o
-  // asta) va chiuso a mano, e `AVVISO_SECONDO_NODO` parlerebbe della cosa sbagliata.
-  if (voce.codice === "corri" || voce.codice === "verifica") {
-    if (modo) { dì("chiudi il gesto (Esc) prima di correre"); return; }
-    if (voce.codice === "corri") corsa.corri(); else corsa.verifica();
-    return;
-  }
+  // sbagliato, non una corsa); la guardia del modo sta in `creaCorsa` (`prima`), una volta sola
+  // per tasti e bottoni.
+  if (voce.codice === "corri") { corsa.corri(); return; }
+  if (voce.codice === "verifica") { corsa.verifica(); return; }
 
   // Qui sotto il modo può essere solo l'asta: l'estrusione vive con il campo aperto, e col
   // campo aperto si è già tornati indietro alla riga sopra. Passano conferma, annulla e la

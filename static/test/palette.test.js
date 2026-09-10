@@ -174,6 +174,19 @@ test("scegliere una voce avvisa della chiusura prima di eseguire", () => {
   assert.deepEqual(ordine, ["chiusura", "scelta"]);
 });
 
+test("⌘⏎ nella palette non sceglie e non risale: è la corsa, non l'Invio", () => {
+  let scelte = 0;
+  const { p, campo } = conPalette(() => { scelte++; });
+  p.apri({ voci: TASTI, disponibili: new Set() });
+  campo.value = "nodo";
+  campo.dispatch("input");
+  let fermato = 0;
+  campo.dispatch("keydown", { key: "Enter", metaKey: true, stopPropagation() { fermato++; }, preventDefault() {} });
+  assert.equal(scelte, 0);
+  assert.equal(p.aperta, true);
+  assert.equal(fermato, 1, "il tasto non risale al listener globale");
+});
+
 test("Invio senza voci: nessuna scelta, la palette resta aperta", () => {
   let scelte = 0;
   const { p, campo, elenco, stato } = conPalette(() => { scelte++; });
