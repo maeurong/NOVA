@@ -159,6 +159,14 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
           border-left: 3px solid var(--rosso); padding-left: 6px; }
 .nota { color: var(--testo-tenue); font-size: 11px; margin: 4px 0 0; }
 
+/* Il rendiconto del rilievo: il filetto è lo stesso di `.avviso` (la regione è bocciata), ma
+   qui il testo resta inchiostro anche senza la parola «attenzione» — la scartata non è un
+   errore dell'utente da correggere, è un fatto del prior da leggere. */
+.rendiconto .scartata { border-left: 3px solid var(--rosso); padding-left: 6px; margin: 6px 0; }
+.scartata .titolo { margin: 0; font-size: 11px; }
+.scartata .numero { margin: 0; }
+.rendiconto ul { margin: 2px 0 0; padding-left: 1.2em; font-size: 11px; }
+
 #albero ul { margin: 0; padding: 0; list-style: none; }
 #albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
 #albero li:hover { background: var(--pannello); }
