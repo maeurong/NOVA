@@ -36,11 +36,18 @@ test("righeVerdetti: riferimenti e pushover leggono il dict, e non promettono un
     v("riferimenti", "non_passato", { oggetto: [{ azione: 3, carico: 0, nodo: 12 }] }),
     v("riferimenti", "non_passato", { oggetto: [{ sezione: 4, calcestruzzo: 9 }] }),
     v("pushover", "non_passato", { oggetto: [{ analisi: "pushover", nodo_controllo: 4 }] }),
+    // Il contenitore, non il rotto: qui `azione` è l'azione che manca (`check.py:179`, `:192`).
+    v("riferimenti", "non_passato", { oggetto: [{ combinazione: 2, azione: 9 }] }),
+    v("riferimenti", "non_passato", { oggetto: [{ analisi: "modale", azione: 9 }] }),
+    v("pushover", "non_passato", { oggetto: [{ analisi: "pushover", dichiarate: 2 }] }),
   ]);
   assert.equal(righe[0].vai, null);
   assert.deepEqual(righe[1].vai, { tipo: "azione", id: 3 });
   assert.deepEqual(righe[2].vai, { tipo: "sezione", id: 4 });
   assert.deepEqual(righe[3].vai, { tipo: "nodo", id: 4 });
+  assert.deepEqual(righe[4].vai, { tipo: "combinazione", id: 2 }, "si va alla combinazione, non all'azione 9 che non esiste");
+  assert.equal(righe[5].vai, null, "l'azione 9 della modale non esiste: nessun «vai»");
+  assert.equal(righe[6].vai, null);
 });
 
 // Ingressi degeneri: liste vuote o assenti, oggetto vuoto.

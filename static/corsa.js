@@ -6,14 +6,18 @@ import { conciso } from "./numeri.js";
 
 /** Il tipo selezionabile dell'oggetto di un verdetto, per controllo (`nova/check.py:81-284`):
  *  delle coppie si prende il primo. `riferimenti` e `pushover` portano dict e si leggono da
- *  `TIPI_NEL_DICT`; i controlli senza oggetto non hanno «vai». */
+ *  `CONTENITORI`; i controlli senza oggetto non hanno «vai». */
 export const OGGETTO_PER_CONTROLLO = Object.freeze({
   nodi_coincidenti: "nodo", aste_sconnesse: "asta", aste_lunghezza_zero: "asta", aste_duplicate: "asta",
   nodi_liberi: "nodo", nodo_su_asta: "nodo", sezione_nulla: "asta", armatura_mancante: "sezione",
   carico_termico: "azione", vincoli_dedotti: "nodo",
 });
-// Nell'ordine in cui si preferiscono: la sezione senza materiale si corregge dalla sezione.
-const TIPI_NEL_DICT = [["sezione", "sezione"], ["azione", "azione"], ["nodo", "nodo"], ["nodo_controllo", "nodo"], ["asta", "asta"]];
+// Il «vai» punta al **contenitore** sano, mai al riferimento rotto: nel dict di `riferimenti`
+// la chiave che nomina il posto da cui si corregge è la prima (`sezione` col materiale sparito,
+// `azione` col nodo sparito, `combinazione` con l'azione sparita), e `nodo`/`asta`/`azione` in
+// seconda posizione sono proprio ciò che manca (`nova/check.py:167-179`). Con la sola `analisi`
+// non c'è niente da selezionare, tranne il `nodo_controllo` della pushover (`:205-223`).
+const CONTENITORI = [["combinazione", "combinazione"], ["sezione", "sezione"], ["azione", "azione"]];
 
 export const PAROLA = Object.freeze({ passato: "passato", non_passato: "non passato", non_applicabile: "non applicabile" });
 
@@ -21,7 +25,9 @@ function vaiDi(verdetto) {
   const primo = Array.isArray(verdetto.oggetto) ? verdetto.oggetto[0] : null;
   if (primo === null || primo === undefined) return null;
   if (primo && typeof primo === "object" && !Array.isArray(primo)) {
-    for (const [chiave, tipo] of TIPI_NEL_DICT) if (primo[chiave] !== undefined && primo[chiave] !== null) return { tipo, id: primo[chiave] };
+    if (primo.nodo_controllo !== undefined && primo.nodo_controllo !== null) return { tipo: "nodo", id: primo.nodo_controllo };
+    if (primo.analisi !== undefined) return null;
+    for (const [chiave, tipo] of CONTENITORI) if (primo[chiave] !== undefined && primo[chiave] !== null) return { tipo, id: primo[chiave] };
     return null;
   }
   const tipo = OGGETTO_PER_CONTROLLO[verdetto.controllo];
