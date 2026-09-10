@@ -946,6 +946,12 @@ def test_stdout_chiuso_resta_l_errore_di_oggi():
     p.stdout.consegna("")
     t.join(timeout=2)
     assert esito["righe"][-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+    # E la seconda, e la terza: un sidecar morto risponde «stdout chiuso» **subito** a ogni
+    # richiesta — il sentinella consumato una volta sola faceva aspettare il soffitto intero.
+    t0 = time.perf_counter()
+    for _ in range(2):
+        assert sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"] == "il sidecar ha chiuso lo stdout"
+    assert time.perf_counter() - t0 < 0.5, "senza aspettare il soffitto"
 
 
 def test_sidecar_in_processo_chiama_su_fase_per_ogni_evento(tmp_path):

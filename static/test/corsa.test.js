@@ -405,7 +405,8 @@ test("creaCorsa: verifica fa la POST a /api/check e mostra i verdetti anche se t
   const m = { nodi: [] };
   const spia = fetchSequenza([{ stato: 200, dati: { esito: "ok", verdetti: [v("unita", "passato"), v("vincoli", "passato")] } }]);
   const { radice, el } = radiceCorsa();
-  const c = creaCorsa(radice, { ...zero, modello: () => m });
+  const esiti = [];
+  const c = creaCorsa(radice, { ...zero, modello: () => m, suEsito: (l) => esiti.push(l) });
   const p = c.verifica();
   assert.equal(el("#corsa-verifica").textContent, "verifico…");
   assert.equal(el("#corsa-verifica").disabled, true);
@@ -416,6 +417,7 @@ test("creaCorsa: verifica fa la POST a /api/check e mostra i verdetti anche se t
   assert.equal(el("#corsa-verdetti").hidden, false);
   assert.equal(el("#corsa-vuoto").hidden, true);
   assert.equal(el("#corsa-ultima").textContent, "", "la verifica non è una corsa: nessuna riga dell'ultima");
+  assert.deepEqual(esiti, [null], "la verifica chiama suEsito senza lavoro: il chiamante ridisegna e pulisce");
   assert.equal(el("#corsa-verifica").textContent, "verifica");
   assert.equal(el("#corsa-verifica").disabled, false);
 });
@@ -429,10 +431,32 @@ test("creaCorsa: prima() che dice di no ferma corri, verifica e il solido senza 
   const { radice } = radiceCorsa();
   const errori = [];
   const c = creaCorsa(radice, { ...zero, prima: () => "chiudi il gesto (Esc) prima di correre", suErrore: (t) => errori.push(t) });
-  radice.querySelector("#corsa-inp").value = "/x/trave.inp";
-  await c.corri(); await c.verifica(); await c.corriSolido();
-  assert.deepEqual(errori, Array(3).fill("chiudi il gesto (Esc) prima di correre"));
+  await c.corri(); await c.verifica();
+  assert.deepEqual(errori, Array(2).fill("chiudi il gesto (Esc) prima di correre"));
   assert.equal(spia.chiamate, 0);
+  // Il solido non legge il modello: il ghost aperto non lo ferma (parte, e qui la rete cade).
+  radice.querySelector("#corsa-inp").value = "/x/trave.inp";
+  await c.corriSolido();
+  assert.equal(spia.chiamate, 2, "POST e la GET che cade");
+  assert.equal(errori.at(-1), "il server non risponde");
+  assert.equal(c.inCorso(), false);
+});
+
+// Come `lavora`: «apri» mentre la verifica è in volo butta la risposta in ritardo, altrimenti i
+// verdetti del file vecchio ricompaiono sotto il modello nuovo con «vai» a id che non esistono.
+test("creaCorsa: azzera() durante la verifica butta i verdetti in ritardo", async () => {
+  let sblocca;
+  const cancello = new Promise((r) => { sblocca = r; });
+  fetchSequenza([{ stato: 200, attendi: cancello, dati: { esito: "rifiutato", verdetti: [v("nodi_liberi", "non_passato", { oggetto: [99] })] } }]);
+  const { radice, el } = radiceCorsa();
+  const esiti = [];
+  const c = creaCorsa(radice, { ...zero, suEsito: (l) => esiti.push(l) });
+  const p = c.verifica();
+  c.azzera();
+  sblocca(); await p;
+  assert.equal(el("#corsa-verdetti")._figli.length, 0);
+  assert.equal(el("#corsa-verdetti").hidden, true);
+  assert.equal(esiti.length, 0, "nessun esito per una verifica azzerata");
   assert.equal(c.inCorso(), false);
 });
 

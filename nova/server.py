@@ -122,6 +122,10 @@ class SidecarProcesso:
                         return [{"esito": "errore", "fase": "sidecar",
                                  "motivo": f"nessuna risposta dal sidecar entro {self.soffitto_s:g} s"}]
                     if riga is None or riga == "":
+                        # Il sentinella si rimette in coda: un sidecar **morto** deve rispondere
+                        # «stdout chiuso» a ogni richiesta, subito — consumato una volta sola,
+                        # la seconda aspettava il soffitto intero (660 s) e mentiva sul motivo.
+                        self._righe.put(None)
                         righe.append({"esito": "errore", "fase": "sidecar",
                                       "motivo": "il sidecar ha chiuso lo stdout"})
                         return righe
@@ -210,21 +214,26 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         with lavori_lock:
             in_corso = next((r for r, l in lavori.items() if l["stato"] == "in corso"), None)
             if in_corso:
-                # il `run_id` nel 409: chi ricarica la pagina a metà corsa si riaggancia dalla `GET`
+                # Il motivo dice cosa fare: una sola corsa alla volta, e quella in corso finisce da
+                # sé. Il `run_id` accanto è per un client che voglia riagganciarsi con la `GET`
+                # (oggi nessuno lo fa: `chiediJson` tiene solo il motivo — debito dichiarato).
                 raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
-                                                 "motivo": "un'altra corsa è in corso",
+                                                 "motivo": "un'altra corsa è in corso: una sola alla volta, aspetta che finisca",
                                                  "run_id": in_corso})
             run_id = secrets.token_hex(6)
+            cartella = str(cartella_corse / run_id)
             lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None}
             if con_cartella:
-                lavoro["cartella"] = str(cartella_corse / run_id)
+                lavoro["cartella"] = cartella
             lavori[run_id] = lavoro
-        req = {**req, "cartella": str(cartella_corse / run_id)}
+        req = {**req, "cartella": cartella}
 
         def corri() -> None:
             def su_fase(ev: dict) -> None:
-                with lavori_lock:
-                    lavoro["fasi"].append(ev["nome"])
+                nome = ev.get("nome")   # un evento senza nome non è una fase: non fa morire la corsa
+                if nome:
+                    with lavori_lock:
+                        lavoro["fasi"].append(nome)
             try:
                 fin = _finale(lungo.chiedi(req, su_fase))
             except HTTPException as e:   # il 409 del lock del sidecar: è un esito, non un 500
@@ -309,7 +318,8 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
         if l["stato"] == "in corso":
             return {**base, "secondi": time.perf_counter() - l["t0"]}
         fin = _o_400({**l["fin"]})   # 400 per modello|importa|confronto|deck, come sulla POST di prima
-        return {**base, "secondi": fin.get("secondi", time.perf_counter() - l["t0"]), **fin}
+        # i secondi del sidecar quando ci sono (il caso normale), i trascorsi altrimenti
+        return {**base, "secondi": time.perf_counter() - l["t0"], **fin}
 
     @app.post("/api/confronto")
     def confronto(corpo: ConfrontoReq):

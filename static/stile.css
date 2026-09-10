@@ -345,7 +345,8 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .verdetto .parola { grid-column: 3; text-align: right; }
 /* Col «vai» la riga uno è del bottone: la parola scende sotto, dove ha ancora la sua colonna. */
 .verdetto.con-vai .parola { grid-row: 2; }
-.verdetto .ragione, .verdetto .rimedio { grid-column: 2 / span 2; color: var(--testo-tenue); }
+.verdetto .ragione, .verdetto .rimedio { grid-column: 2 / span 2; color: var(--testo-tenue);
+                                          overflow-wrap: anywhere; }   /* i float grezzi del server: «-2.27e-13» non ha spazi */
 .verdetto button { grid-column: 3; grid-row: 1; justify-self: end; font: inherit; font-size: 11px;
                    padding: 0 8px; border: 1px solid var(--tratto-forte); border-radius: 2px;
                    background: var(--pannello); color: var(--inchiostro); cursor: pointer; }

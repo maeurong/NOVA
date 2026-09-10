@@ -96,7 +96,9 @@ export const verdettiDi = (fin) => [...(fin?.verdetti_check ?? []), ...(fin?.ris
 
 // --- il blocco «Corsa» del pannello ------------------------------------------
 
-const PUNTO = { passato: "●", non_passato: "●", non_applicabile: "○" };
+// Il punto pieno per passato e non passato (la differenza la fa il rosso, e la parola accanto),
+// vuoto per il non applicabile.
+const punto_ = (esito) => (esito === "non_applicabile" ? "○" : "●");
 // Il nome accessibile del «vai» comincia dal testo visibile (WCAG 2.5.3) e nomina il
 // bersaglio: tre «vai» identici a voce sono tre bersagli indistinguibili.
 const ARTICOLO = { nodo: "al nodo", asta: "all'asta", sezione: "alla sezione",
@@ -142,7 +144,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
       const punto = document.createElement("span");
       punto.className = "punto";
       punto.setAttribute("aria-hidden", "true");   // doppione della parola: a voce si sentirebbe due volte
-      punto.textContent = PUNTO[r.esito] ?? "●";
+      punto.textContent = punto_(r.esito);
       const controllo = document.createElement("span");
       controllo.className = "controllo numero";
       controllo.textContent = r.caso ? `${r.caso} · ${r.controllo}` : r.controllo;
@@ -272,10 +274,13 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
     if (occupato) return suErrore("una corsa è già in corso");
     if (fermo()) return;
     occupato = true; bottoni(false); bVerifica.textContent = "verifico…";
+    const mia = generazione;   // come in `lavora`: «apri» durante la verifica butta la risposta in ritardo
     try {
       const r = await chiediJson("/api/check", { modello: modello() });
+      if (mia !== generazione) return;
       verdetti = r.verdetti ?? [];
       disegnaVerdetti();
+      suEsito(null);   // nessun lavoro: il chiamante ridisegna e pulisce il messaggio
     } catch (e) {
       suErrore(e.message);
     } finally {
@@ -285,7 +290,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
 
   async function corriSolido() {
     if (occupato) return suErrore("una corsa è già in corso");
-    if (fermo()) return;
+    // Niente `fermo()`: il solido gira su un `.inp` del disco, il ghost aperto non c'entra.
     const inp = (campoInp?.value ?? "").trim();
     // Non «un deck .inp»: l'estensione qui nessuno la controlla, e un messaggio non promette
     // una verifica che non fa.
