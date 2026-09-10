@@ -38,6 +38,23 @@ export function latoMaggiore(m) {
   return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs), LATO_MINIMO);
 }
 
+/** I nodi lungo un'asta: i due estremi più i nodi interni delle `suddivisioni`, quando il server
+ *  li manda (`spostamenti_interni["<id>"]`, ordinati per `x_rel`). La chiave può mancare del tutto
+ *  — sono risultati corsi prima che esistesse — e allora restano i due estremi, com'era.
+ *  Una stazione con `x_rel` fuori da (0, 1), o con un `u` corto o non finito, si salta: meglio un
+ *  tratto in meno che un ginocchio inventato nella deformata. */
+function nodiLungoAsta(perCaso, idAsta, ui, uj) {
+  const interni = perCaso?.spostamenti_interni?.[String(idAsta)];
+  const buoni = (Array.isArray(interni) ? interni : [])
+    .filter((p) => Number.isFinite(p?.x_rel) && p.x_rel > 0 && p.x_rel < 1
+                   && Array.isArray(p.u) && p.u.length >= 6 && p.u.every(Number.isFinite))
+    .map((p) => ({ x_rel: p.x_rel, u: p.u }))
+    // Il contratto li dà crescenti; costa una riga non crederci, e un ordine sbagliato qui
+    // darebbe un'asta ripiegata su sé stessa senza che nessuno sollevi niente.
+    .sort((p, q) => p.x_rel - q.x_rel);
+  return [{ x_rel: 0, u: ui }, ...buoni, { x_rel: 1, u: uj }];
+}
+
 const spostamentoDi = (perCaso, id) => {
   const u = perCaso?.spostamenti?.[String(id)];
   return Array.isArray(u) && u.length >= 6 && u.every(Number.isFinite) ? u : null;
@@ -76,9 +93,11 @@ export function frecciaMassima(m, perCaso) {
     const a = perId.get(d.id);
     const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
     conAsta.add(i.id).add(j.id);
-    const n = d.punti.length - 1;
-    for (let k = 0; k <= n; k++) {
-      const r = k / n, p = d.punti[k];
+    // `d.xRel[k]`, non `k/n`: con i nodi interni i tratti possono essere disuguali e i campioni
+    // non sono equispaziati — il punto indeformato va preso all'ascissa vera, o la freccia si
+    // misura contro il punto sbagliato.
+    for (let k = 0; k < d.punti.length; k++) {
+      const r = d.xRel[k], p = d.punti[k];
       const base = { x: i.x + (j.x - i.x) * r, z: i.z + (j.z - i.z) * r };
       const v = Math.hypot(p.x - base.x, p.z - base.z);
       if (v > valore) { valore = v; punto = { x: p.x, z: p.z }; indeformato = base; }
@@ -143,15 +162,22 @@ export function assiDi(i, j) {
  *  La rotazione attorno a `y` con la regola della mano destra dà `dw/ds = −θy` (θ × r sull'asse
  *  dell'asta, proiettato sulla normale sinistra). `y` fuori dal piano: lineare.
  *
- *  **Il limite, misurato.** La cubica interpola i soli **nodi del modello**: il server non
- *  esporta gli spostamenti dei nodi interni delle `suddivisioni`, quindi fra un nodo e l'altro
- *  manca il termine quartico che il carico distribuito ci mette. Sulla trave appoggiata di 6 m
- *  con q = −10 N/mm la mezzeria esce a −1,2568 mm contro i −1,5709 mm veri: rapporto 0,80, che
- *  è l'algebra e non il caso — Hermite dà `qL⁴/(96EI)`, l'esatta `5qL⁴/(384EI)`, e 384/(96·5)
- *  = 4/5. Quel che si vede è la **forma** dei valori nodali scalati, non la deformata esatta
- *  fra i nodi: buona per leggere il verso e il cinematismo, non per misurare una freccia.
- *  ponytail: si chiude esportando i nodi interni dal server (T9, modello dati), non
- *  ricostruendo qui il carico d'asta per aggiungere la quartica a mano. */
+ *  **Tratto per tratto.** I nodi dell'asta sono `[i, …interni…, j]`: gli interni sono quelli delle
+ *  `suddivisioni`, che il server manda in `per_caso[caso].spostamenti_interni["<id>"]`. La cubica
+ *  si fa fra nodi **consecutivi**, con la `L` del tratto, così sotto un carico distribuito la
+ *  deformata passa per la freccia vera invece di tagliarla.
+ *
+ *  **Il limite, e quando vale.** Senza quella chiave — risultati corsi prima che il server la
+ *  esportasse — la cubica interpola i soli estremi e fra un nodo e l'altro manca il termine
+ *  quartico che il carico distribuito ci mette. Sulla trave appoggiata di 6 m con q = −10 N/mm la
+ *  mezzeria usciva a −1,2568 mm contro i −1,5709 mm veri: rapporto 0,80, che è l'algebra e non il
+ *  caso — Hermite dà `qL⁴/(96EI)`, l'esatta `5qL⁴/(384EI)`, e 384/(96·5) = 4/5. Con la chiave, e
+ *  con almeno una suddivisione, quel −1,5709 è un nodo vero e la deformata ci passa sopra. Fra due
+ *  nodi interni consecutivi resta la stessa approssimazione, su un tratto però lungo la metà o
+ *  meno: l'errore va con la quarta potenza della campata, quindi cala di 16 volte a ogni bisezione.
+ *
+ *  `xRel` esce insieme ai punti: con i tratti disuguali i campioni **non** sono equispaziati, e chi
+ *  vuole il punto indeformato corrispondente (`frecciaMassima`) non può dedurlo da `k/n`. */
 export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
   // `segmenti = 8` copre `undefined`, non `Infinity` (ciclo infinito) né `NaN` (`punti: []`).
   const n = Number.isFinite(segmenti) ? Math.max(1, Math.floor(segmenti)) : 8;
@@ -165,20 +191,29 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
     if (!t) continue;
     const ui = spostamentoDi(perCaso, i.id) ?? zero, uj = spostamentoDi(perCaso, j.id) ?? zero;
     const { L, e1, e2 } = t;
-    const ai = ui[0] * e1.x + ui[2] * e1.z, aj = uj[0] * e1.x + uj[2] * e1.z;   // assiali
-    const wi = ui[0] * e2.x + ui[2] * e2.z, wj = uj[0] * e2.x + uj[2] * e2.z;   // trasversali
-    const pi = -ui[4], pj = -uj[4];                                               // dw/ds = −θy
-    const punti = [];
-    for (let k = 0; k <= n; k++) {
-      const s = k / n, s2 = s * s, s3 = s2 * s;
-      const w = (1 - 3 * s2 + 2 * s3) * wi + (s - 2 * s2 + s3) * L * pi + (3 * s2 - 2 * s3) * wj + (-s2 + s3) * L * pj;
-      const u = (1 - s) * ai + s * aj;
-      const x = i.x + e1.x * (s * L + scala * u) + e2.x * scala * w;
-      const z = i.z + e1.z * (s * L + scala * u) + e2.z * scala * w;
-      const y = i.y + s * (j.y - i.y) + scala * ((1 - s) * ui[1] + s * uj[1]);
-      punti.push({ x, y, z });
+    const nodiAsta = nodiLungoAsta(perCaso, a.id, ui, uj);
+    const punti = [], xRel = [];
+    for (let t2 = 0; t2 < nodiAsta.length - 1; t2++) {
+      const q0 = nodiAsta[t2], q1 = nodiAsta[t2 + 1];
+      const Lt = (q1.x_rel - q0.x_rel) * L;
+      const a0 = q0.u[0] * e1.x + q0.u[2] * e1.z, a1 = q1.u[0] * e1.x + q1.u[2] * e1.z;   // assiali
+      const w0 = q0.u[0] * e2.x + q0.u[2] * e2.z, w1 = q1.u[0] * e2.x + q1.u[2] * e2.z;   // trasversali
+      const p0 = -q0.u[4], p1 = -q1.u[4];                                                 // dw/ds = −θy
+      // Il primo tratto scrive anche il suo nodo iniziale; gli altri no, o il nodo in comune
+      // uscirebbe due volte e la polilinea avrebbe un punto doppio a ogni suddivisione.
+      for (let k = t2 === 0 ? 0 : 1; k <= n; k++) {
+        const s = k / n, s2 = s * s, s3 = s2 * s;
+        const w = (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
+        const u = (1 - s) * a0 + s * a1;
+        const r = q0.x_rel + s * (q1.x_rel - q0.x_rel);
+        const x = i.x + e1.x * (r * L + scala * u) + e2.x * scala * w;
+        const z = i.z + e1.z * (r * L + scala * u) + e2.z * scala * w;
+        const y = i.y + r * (j.y - i.y) + scala * ((1 - s) * q0.u[1] + s * q1.u[1]);
+        punti.push({ x, y, z });
+        xRel.push(r);
+      }
     }
-    fuori.push({ id: a.id, punti });
+    fuori.push({ id: a.id, punti, xRel });
   }
   return fuori;
 }

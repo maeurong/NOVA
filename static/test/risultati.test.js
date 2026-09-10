@@ -361,3 +361,65 @@ test("assiDi: oltre la soglia l'asta inclinata torna a leggersi come una trave",
   assert.equal(t.verticale, false);
   assert.deepEqual([t.M, t.V], ["My", "Vz"]);
 });
+
+// --- i nodi interni delle suddivisioni (debito 1) ---------------------------------
+// Il limite dichiarato — mezzeria a −1,2568 invece di −1,5709, cioè 4/5 — era il prezzo di una
+// cubica sui soli estremi. Col nodo interno vero la deformata ci passa sopra, esatta.
+
+const INTERNO = { 1: [{ x_rel: 0.5, u: [0, 0, -1.5709, 0, 0, 0] }] };
+
+test("puntiDeformata: col nodo interno la mezzeria è la freccia vera, non i 4/5 di Hermite", () => {
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0.0043, 0], 2: [0, 0, 0, 0, -0.0043, 0] },
+                    spostamenti_interni: INTERNO };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.equal(d.punti.length, 17, "due tratti da otto segmenti, il nodo in comune una volta sola");
+  assert.equal(d.xRel[8], 0.5);
+  assert.ok(Math.abs(d.punti[8].z - (-1.5709)) < 1e-12, `la mezzeria è il nodo interno: ${d.punti[8].z}`);
+  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0 }, "gli estremi restano sui nodi del modello");
+  assert.deepEqual(d.punti[16], { x: 6000, y: 0, z: 0 });
+  // La scala moltiplica lo spostamento, il nodo interno compreso.
+  const [d10] = puntiDeformata(trave, perCaso, 10, 8);
+  assert.ok(Math.abs(d10.punti[8].z - (-15.709)) < 1e-11);
+});
+
+test("puntiDeformata: senza la chiave, o con la lista vuota, resta la cubica di prima", () => {
+  const senza = puntiDeformata(trave, Z1, 1, 8)[0];
+  const vuota = puntiDeformata(trave, { ...Z1, spostamenti_interni: { 1: [] } }, 1, 8)[0];
+  const altra = puntiDeformata(trave, { ...Z1, spostamenti_interni: { 9: INTERNO[1] } }, 1, 8)[0];
+  assert.equal(senza.punti.length, 9);
+  assert.deepEqual(vuota.punti, senza.punti);
+  assert.deepEqual(altra.punti, senza.punti, "gli interni di un'altra asta non toccano questa");
+  assert.deepEqual(senza.xRel, [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]);
+});
+
+test("puntiDeformata: una stazione interna guasta si salta, le buone restano", () => {
+  const rotte = { 1: [
+    { x_rel: 0, u: [0, 0, -9, 0, 0, 0] },        // 0 non è interno: è l'estremo, e lo darebbe due volte
+    { x_rel: 1, u: [0, 0, -9, 0, 0, 0] },        // idem all'altro capo
+    { x_rel: 1.5, u: [0, 0, -9, 0, 0, 0] },      // fuori dall'asta
+    { x_rel: NaN, u: [0, 0, -9, 0, 0, 0] },
+    { x_rel: 0.5, u: [0, 0, -1.5709] },          // lista corta
+    { x_rel: 0.75, u: [0, 0, NaN, 0, 0, 0] },
+    { x_rel: 0.25, u: [0, 0, -1, 0, 0, 0] },     // l'unica buona
+  ] };
+  const [d] = puntiDeformata(trave, { spostamenti: {}, spostamenti_interni: rotte }, 1, 4);
+  assert.equal(d.punti.length, 9, "due tratti da quattro segmenti: una sola stazione è buona");
+  assert.equal(d.xRel[4], 0.25);
+  assert.ok(Math.abs(d.punti[4].z - (-1)) < 1e-12);
+});
+
+test("puntiDeformata: stazioni interne in disordine si riordinano, non ripiegano l'asta", () => {
+  const disordine = { 1: [{ x_rel: 0.75, u: [0, 0, -1, 0, 0, 0] }, { x_rel: 0.25, u: [0, 0, -3, 0, 0, 0] }] };
+  const [d] = puntiDeformata(trave, { spostamenti: {}, spostamenti_interni: disordine }, 1, 2);
+  // Tre tratti — [0; 0,25], [0,25; 0,75], [0,75; 1] — da due segmenti l'uno: sette punti, e i
+  // campioni **non** sono equispaziati. È il motivo per cui `xRel` esce insieme ai punti.
+  assert.deepEqual(d.xRel, [0, 0.125, 0.25, 0.5, 0.75, 0.875, 1]);
+  assert.ok(d.punti.every((p, k) => k === 0 || p.x >= d.punti[k - 1].x), "le ascisse non tornano indietro");
+});
+
+test("frecciaMassima: col nodo interno la freccia è quella vera, e sta dove sta lui", () => {
+  const perCaso = { spostamenti: {}, spostamenti_interni: { 1: [{ x_rel: 0.25, u: [0, 0, -4, 0, 0, 0] }] } };
+  const f = frecciaMassima(trave, perCaso);
+  assert.equal(f.valore, 4);
+  assert.deepEqual(f.indeformato, { x: 1500, z: 0 }, "il punto indeformato è a x_rel 0,25, non a metà campioni");
+});
