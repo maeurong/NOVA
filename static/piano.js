@@ -9,6 +9,9 @@ import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
+import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima,
+         asteRuotate } from "./risultati.js";
+import { disponi, sottoSoglia } from "./etichette.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -18,6 +21,12 @@ const RAGGIO = 5;          // px del nodo, in coordinate schermo
 // ma non sul verso assiale puro (su/giù/dx/sx), dove l'offset è tutto su un asse solo e
 // l'etichetta tocca il proprio cerchio — misurato, 6px di sovrapposizione reale.
 const OFFSET_ETICHETTA = 16;
+// Il riquadro da usare finché il layout non l'ha misurato. Con `|| 1` (com'era) `s` diventava
+// l'intero modello per pixel, e **ogni** misura in px — tratti, cerchi, etichette, ostacoli —
+// usciva grande quanto il telaio: nessun picco trovava posto e sparivano tutti. Un riquadro
+// nominale è un'ipotesi, ma è coerente per tutto il disegno, e il `resize` di `app.js` ridisegna
+// con la misura vera appena c'è.
+const LARGHEZZA_NOMINALE = 800, ALTEZZA_NOMINALE = 600;
 
 // Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
 // vince la prima, e il disegno resta identico a parità di stato.
@@ -33,6 +42,14 @@ const INCHIOSTRO = "#141414";
 const ROSSO = "#b8321e";
 const MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
 
+/** La larghezza di un testo mono a 11px, in millimetri del `viewBox`. I 6,6 px per carattere sono
+ *  l'avanzamento del mono a 11px (0,6 em): una **stima**, non una misura — `getComputedTextLength`
+ *  vorrebbe disegnare, misurare e ridisegnare a ogni giro. `extraPx` è il margine che il chiamante
+ *  vuole attorno: 2 per il box di un'etichetta, 8 per il rientro di una striscia dal bordo. Con
+ *  `s = 1` esce in pixel, che è come la legge il conto del riquadro.
+ *  Stava scritta a mano in cinque punti con quattro margini diversi; qui è una sola. */
+const larghezzaMono = (testo, s, extraPx = 0) => (testo.length * 6.6 + extraPx) * s;
+
 const el = (nome, attributi = {}) => {
   const e = document.createElementNS(NS, nome);
   for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v);
@@ -43,8 +60,13 @@ const el = (nome, attributi = {}) => {
  *  un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da 3000 fuori
  *  dal riquadro, senza sollevare niente: si vedrebbe solo sparire. Vale identico per il
  *  punto in anteprima del campo di comando, che di coordinate fuori vista ne accetta
- *  quante ne vuole e senza questo le disegnerebbe dove non si guarda. */
-export function estensione(m, ghost = null) {
+ *  quante ne vuole e senza questo le disegnerebbe dove non si guarda.
+ *
+ *  `extraMm`: millimetri in più su tutti e quattro i lati, oltre al margine del 12 %. Serve alle
+ *  etichette dei nodi, che stanno in pixel fuori dal nodo e che il 12 % non conosce: su MURO 1 il
+ *  margine vale 40 px e «cerniera» ne chiede 90, quindi il nome usciva dal riquadro e l'SVG lo
+ *  tagliava a metà. Chi disegna lo misura e lo passa (`piano.js`, `disegna`). */
+export function estensione(m, ghost = null, extraMm = 0) {
   const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
   const da = ghost && nodo(m, ghost.da);
   if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
@@ -55,7 +77,8 @@ export function estensione(m, ghost = null) {
   const z0 = Math.min(...zs), z1 = Math.max(...zs);
   const larghezza = Math.max(x1 - x0, LATO_MINIMO);
   const altezza = Math.max(z1 - z0, LATO_MINIMO);
-  const mx = larghezza * MARGINE, mz = altezza * MARGINE;
+  const extra = Number.isFinite(extraMm) && extraMm > 0 ? extraMm : 0;
+  const mx = larghezza * MARGINE + extra, mz = altezza * MARGINE + extra;
   return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
 }
 
@@ -93,7 +116,15 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   titolo.className = "carichi-titolo";
   titolo.textContent = "";
   titolo.hidden = true;
-  contenitore.replaceChildren(svg, titolo);
+  // Il badge dei risultati, dall'altra parte: la scala della deformata e le unità sono
+  // dichiarate sempre, anche quando non c'è niente da disegnare (`docs/ricerca/07-ux-modellatore.md:99`).
+  const badge = document.createElement("p");
+  badge.className = "risultati-badge";
+  // `aria-live="polite"`: cambiare vista o caso non sposta il fuoco, e senza questo chi legge
+  // con lo schermo non sa che la scala del disegno è cambiata sotto le dita.
+  badge.setAttribute("aria-live", "polite");
+  badge.hidden = true;
+  contenitore.replaceChildren(svg, titolo, badge);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -106,8 +137,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // cima è `z0 + altezza`, quindi `y = 2·z0 + altezza − z` porta l'uno sull'altro.
   const schermo = (n) => ({ x: n.x, y: 2 * vista.z0 + vista.altezza - n.z });
 
-  function inquadra(m, ghost) {
-    vista = estensione(m, ghost);
+  function inquadra(m, ghost, extraMm = 0) {
+    vista = estensione(m, ghost, extraMm);
     svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   }
@@ -115,18 +146,140 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   /** Millimetri per pixel. Con `preserveAspectRatio="… meet"` il riquadro ci sta **intero**,
    *  quindi comanda il lato più stretto: prendere la sola larghezza dà tratti ed etichette
    *  della misura sbagliata in un riquadro alto e magro, che è come nasce a 1280 px. */
+  const pixelDelRiquadro = () => ({ w: contenitore.clientWidth || LARGHEZZA_NOMINALE,
+                                    h: contenitore.clientHeight || ALTEZZA_NOMINALE });
   function millimetriPerPixel() {
-    const w = Math.max(contenitore.clientWidth || 1, 1);
-    const h = Math.max(contenitore.clientHeight || 1, 1);
+    const { w, h } = pixelDelRiquadro();
     return Math.max(vista.larghezza / w, vista.altezza / h);
+  }
+
+  /** Lo strato dei risultati: la deformata o i diagrammi M/V/N, in un `<g>` che il chiamante
+   *  appende **fra le aste e i nodi** — i nodi restano sopra e cliccabili (R5). Le etichette non
+   *  si scrivono qui: si accodano a `richieste`, che `disegna` posa con `disponi` dopo i nodi,
+   *  quando i loro cerchi e i loro nomi sono ostacoli noti. Un solo colore, inchiostro; rosso
+   *  quando la corsa è stantia — il rosso dice attenzione (story 63). */
+  function stratoDeiRisultati(m, attivo, vistaRis, s, { richieste, linee }) {
+    const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
+    // Il bbox di un segmento, con un pixel di margine per lato. Le linee del disegno — le ordinate
+    // di stazione, i tratti fra due stazioni, la polilinea della deformata — sono ostacoli quanto
+    // un cerchio: un'etichetta che ci passa sopra si legge barrata (visto su MURO 1). Il rettangolo
+    // di un segmento obliquo è più largo del segmento: è la lettura pessimista, e costa qualche
+    // etichetta spostata invece di qualcuna illeggibile.
+    // ponytail: bbox e non distanza punto-segmento. Su un diagramma quasi piatto — che è il caso
+    // che conta — le due coincidono; su una diagonale lunga il bbox prende anche l'aria attorno,
+    // e allora si passa alla distanza vera.
+    const segmento = (a, b) => linee.push({ x0: Math.min(a.x, b.x) - s, y0: Math.min(a.y, b.y) - s,
+                                            x1: Math.max(a.x, b.x) + s, y1: Math.max(a.y, b.y) + s });
+    const spezzata = (punti) => { for (let k = 1; k < punti.length; k++) segmento(punti[k - 1], punti[k]); };
+    // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
+    // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
+    const g = el("g", { class: "risultati", "pointer-events": "none" });
+    const coppia = (p) => `${p.x},${p.y}`;
+    if (vistaRis === "deformata") {
+      for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
+        const punti = d.punti.map((p) => schermo(p));
+        g.append(el("polyline", {
+          class: "deformata", points: punti.map(coppia).join(" "),
+          fill: "none", stroke: colore, "stroke-width": 2 * s,
+          "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+        spezzata(punti);
+      }
+      // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
+      // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
+      const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
+      if (valore > 0 && punto) {
+        // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
+        const p = schermo({ x: indeformato.x + attivo.scala * (punto.x - indeformato.x),
+                            z: indeformato.z + attivo.scala * (punto.z - indeformato.z) });
+        const base = schermo(indeformato);
+        richieste.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
+                                  priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
+      }
+    } else {
+      const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
+      let massimo = 0;
+      const diagrammi = diagramma(m, attivo.perCaso, vistaRis, scalaD);
+      for (const d of diagrammi) for (const p of d.punti) massimo = Math.max(massimo, Math.abs(p.valore));
+      for (const d of diagrammi) {
+        const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
+        const punti = d.punti.map((p) => schermo(p));
+        g.append(el("polygon", {
+          class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
+          fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
+          "stroke-dasharray": `${5 * s} ${3 * s}` }));
+        // Il contorno **chiuso**, gli stessi punti del poligono: i due lati che tornano alla base
+        // (`pi→punti[0]` e l'ultimo→`pj`) sono linee come le altre, e un'etichetta all'estremo di
+        // un'asta ci finiva sopra.
+        spezzata([pi, ...punti, pj]);
+        // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
+        // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
+        for (const p of d.punti) {
+          const r = Number.isFinite(p.x_rel) ? p.x_rel : 0;
+          const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * r, z: d.base[0].z + (d.base[1].z - d.base[0].z) * r });
+          const q = schermo(p);
+          g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
+          segmento(b, q);
+        }
+        // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
+        picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave).forEach((picco, ordine) => {
+          // Il picco **principale** di un'asta si scrive sempre: è il numero che quell'asta ha da
+          // dire, e tacerlo perché un'altra asta è più caricata lascia una trave muta accanto a un
+          // pilastro grosso. La soglia vale per il secondo picco, quello di segno opposto, che è
+          // un di più. `forEach` e non `for…of`: serve l'indice, e `continue` diventa `return`.
+          if (ordine > 0 && sottoSoglia(picco.valore, massimo)) return;
+          const p = d.punti.find((q) => q.x_rel === picco.x_rel);
+          if (!p) return;
+          const q = schermo(p);
+          // Il verso preferito: dalla base del diagramma verso il picco, cioè **fuori** dal
+          // poligono. Senza, l'etichetta parte da «sopra» e su un diagramma disegnato in su la
+          // linea tratteggiata e le ordinate le passano dentro (visto su MURO 1, «0,2056 kN·m»).
+          const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel,
+                              z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
+          // `1 +`: un picco piccolo resta comunque più importante di un'etichetta di carico
+          // (`0.5`). È il soggetto della vista; il carico è il contorno.
+          richieste.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
+                                    priorita: 1 + Math.abs(picco.valore) / massimo,
+                                    preferito: { dx: q.x - b.x, dy: q.y - b.y } });
+        });
+      }
+    }
+    return g;
   }
 
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
-  function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [] } = {}) {
+  function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
     inquadra(m, ghost);
-    const s = millimetriPerPixel();
+    let s = millimetriPerPixel();
+    // Le etichette dei nodi stanno in pixel fuori dal nodo, e il margine del 12 % non le conosce:
+    // su MURO 1 vale 40 px, mentre «cerniera» ne chiede 53 di solo testo, e usciva dal riquadro
+    // tagliata a metà. Il conto si fa **in pixel**, perché è lì che il problema vive: il margine
+    // del 12 % vale sempre 9,68 % della misura del riquadro in pixel (`mx/s = 0,0968·W`), qualunque
+    // sia il modello, quindi allargare in proporzione non sposta niente — il margine cresce insieme
+    // a `s`. Serve un margine **assoluto** in più, e la formula lo porta esattamente a `P` pixel.
+    //
+    // Il grilletto guarda il **solo nome**, non nome più stacco, e la ragione è misurata: allargare
+    // il riquadro rimpicciolisce il modello sullo schermo mentre le etichette restano di 11 px, e
+    // così si avvicinano fra loro. Col grilletto sul totale, il telaio 2×1 a zoom 200 % — nomi di
+    // **una** cifra, nessun nome da salvare, ma un riquadro di 120 px dove i 16 di stacco già non
+    // ci stanno — si allargava del 31 % e «2» e «3» finivano a toccarsi: il fumo da 12/12 a 8/12.
+    // I nomi lunghi sono il difetto visto a mano, e solo loro pagano il riquadro più largo.
+    const nomePiuLungo = m.nodi.map((n) => String(n.nome ?? n.id)).reduce((a, b) => (b.length > a.length ? b : a), "");
+    const { w: pxL, h: pxA } = pixelDelRiquadro();
+    const orizzontale = vista.larghezza / pxL >= vista.altezza / pxA;   // il lato che comanda `s`
+    const W = orizzontale ? pxL : pxA, L0 = orizzontale ? vista.larghezza : vista.altezza;
+    const P = larghezzaMono(nomePiuLungo, 1, OFFSET_ETICHETTA + 4);   // pixel che l'etichetta più lunga chiede
+    // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
+    // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
+    if (larghezzaMono(nomePiuLungo, 1) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
+      const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
+      inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P));
+      s = millimetriPerPixel();
+    }
     const gruppo = el("g");
+    // `vistaRis` e non `vista`: `vista` qui sopra è il **riquadro**, e serve al badge più giù.
+    const vistaRis = risultati?.vista ?? null;
+    const attivo = vistaRis ? risultati : null;
 
     for (const a of m.aste) {
       const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
@@ -138,8 +291,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         stroke: scelta ? ROSSO : INCHIOSTRO,
         "stroke-width": (scelta ? 3 : 2) * s,
         "stroke-linecap": "round", "data-tipo": "asta", "data-id": a.id,
+        // Con la deformata l'indeformata resta come ombra: si vede di quanto si è mosso, non
+        // solo dove sta adesso. L'asta selezionata no — quella è l'unica cosa piena e rossa.
+        ...(attivo && vistaRis === "deformata" && !scelta ? { "stroke-opacity": 0.3 } : {}),
       }));
     }
+
+    // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili.
+    // `richieste`: picchi e carichi, li posa `disponi` dopo i nodi, insieme. `linee`: i bbox delle
+    // linee dei diagrammi, ostacoli come i cerchi. Un oggetto solo, che due array posizionali dello
+    // stesso tipo si scambiano di posto senza che niente se ne accorga.
+    const raccolto = { richieste: [], linee: [] };
+    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, raccolto) : null;
+    const richiesteEtichette = raccolto.richieste;
+    if (stratoRisultati) gruppo.append(stratoRisultati);
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
     // una forma sua invece di un `{da, dx, dz}` con un'origine inventata. Cerchio vuoto e
@@ -182,6 +347,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const conSimbolo = new Set(dichiarati);
     for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const etichettate = new Set();
+    // Gli ostacoli per le etichette dei risultati: i cerchi e le etichette dei nodi non si
+    // spostano (le posa `versoLibero`), quindi sono loro il terreno e i picchi ci girano attorno.
+    const ostacoli = [...raccolto.linee];
     for (const n of m.nodi) {
       const p = schermo(n);
       const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;
@@ -192,6 +360,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         cx: p.x, cy: p.y, r: (scelto ? RAGGIO * 1.6 : RAGGIO) * s,  // doppio canale: rosso e più grosso
         fill: scelto ? ROSSO : INCHIOSTRO,
       }));
+      ostacoli.push({ x0: p.x - RAGGIO * s, y0: p.y - RAGGIO * s, x1: p.x + RAGGIO * s, y1: p.y + RAGGIO * s });
       // Un'etichetta per posizione: due nodi coincidenti (da un file, non dai comandi)
       // scriverebbero due volte nello stesso punto, e il risultato è illeggibile.
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
@@ -204,10 +373,52 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           "text-anchor": v.x < -0.3 ? "end" : v.x > 0.3 ? "start" : "middle",
         });
         testo.textContent = n.nome ?? String(n.id);
+        // Il box dell'etichetta del nodo: `y` è la linea di base (niente `dominant-baseline`
+        // qui), quindi il testo sta **sopra** di essa — ma non tutto: «piede sx» ha una `p` che
+        // scende sotto la base, e con `y1 = y` un picco ci finiva dentro. Tre pixel di discendente
+        // sotto e undici sopra, più i due di margine per lato che hanno anche i picchi.
+        const larghezza = larghezzaMono(testo.textContent, s, 2), altezza = 11 * s;
+        const x = p.x + OFFSET_ETICHETTA * s * v.x, y = p.y - OFFSET_ETICHETTA * s * v.z;
+        const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
+        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y + 3 * s });
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);
     }
+
+    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
+    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
+    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
+    // Scritti qui, prima dei picchi, perché i due `<p>` sono ostacoli e le etichette li leggono.
+    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azioneInVista
+      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
+      : "";
+    titolo.hidden = !azioneInVista;
+    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
+    // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
+    badge.textContent = attivo ? testoBadge({ ...attivo, ruotate: asteRuotate(m) }) : "";
+    badge.hidden = !attivo;
+    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
+
+    // Le due strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
+    // ostacoli un picco negli angoli in alto finisce sotto il loro testo (R6). Il riquadro
+    // `viewBox` non è il ritaglio: con `preserveAspectRatio="xMidYMid meet"` a ritagliare è il
+    // **viewport**, che contiene il riquadro e coincide con lui sul lato stretto. In coordinate
+    // del `viewBox` è il centro più mezza misura in pixel per `s`.
+    const { w: larghezzaPx, h: altezzaPx } = pixelDelRiquadro();
+    const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
+    const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
+                       x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
+    // I numeri vengono da `stile.css`, `.carichi-titolo` e `.risultati-badge`: `left`/`right: 8px`
+    // più ~6,6 px per carattere del mono a 11px fanno la larghezza, una riga è alta 14. Il titolo
+    // sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta a `top: 22`, su una riga sua, e
+    // non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a passare
+    // sotto il testo senza che nessun test se ne accorga.
+    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(badge.textContent, s, 8), x1: viewport.x1,
+                                       y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
+    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
@@ -215,6 +426,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const simbolo = (n, incastro, classe, tratteggio) => {
       const p = schermo(n);
       const b = RAGGIO * 2 * s, w = RAGGIO * 3 * s;
+      // Il simbolo occupa il basso del nodo quanto un'asta, e finora nessuno lo diceva a `disponi`:
+      // sul MURO 1 «−0,1021 kN·m» finiva sopra il triangolo del piede sinistro. `versoLibero` lo
+      // sapeva già (l'etichetta del nodo non va in basso dove c'è il simbolo); ora lo sanno anche
+      // i picchi. Il box arriva sotto i tratti di terra dell'incastro, che sono la parte più bassa.
+      ostacoli.push({ x0: p.x - w, y0: p.y, x1: p.x + w, y1: p.y + b + 4 * s });
       const attr = { stroke: INCHIOSTRO, "stroke-width": 1.5 * s, class: classe,
                      ...(tratteggio ? { "stroke-dasharray": `${3 * s} ${3 * s}` } : {}) };
       gruppo.append(el("line", { x1: p.x - w, y1: p.y + b, x2: p.x + w, y2: p.y + b, ...attr }));
@@ -253,22 +469,55 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         }
         if (f.testo) {
           // `ancora`, se c'è, sta sopra la coda più alta dell'asta (`carichi.js`): due carichi
-          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo.
+          // sulla stessa trave non si scrivono addosso e nessun fusto passa nel testo. Il punto
+          // però non basta: sul telaio 2×1 a 1280 px «Fx 20 000 N» finiva addosso all'etichetta
+          // del nodo 4 e al picco. Il testo passa da `disponi` insieme ai picchi, che di
+          // priorità ne hanno di più — sono il soggetto della vista, il carico è il contorno.
           const pt = f.ancora ? schermo(f.ancora) : pd;
-          const t = el("text", { x: pt.x + 4 * s, y: pt.y - 4 * s, "font-size": 11 * s, fill: INCHIOSTRO, "font-family": MONO });
-          t.textContent = f.testo; gruppo.append(t);
+          richiesteEtichette.push({ id: `c${richiesteEtichette.length}`, x: pt.x, y: pt.y, testo: f.testo,
+                                    priorita: 0.5, carico: true });
         }
       }
     }
 
-    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
-    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
-    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
-    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
-    titolo.textContent = azioneInVista
-      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
-      : "";
-    titolo.hidden = !azioneInVista;
+    // Le etichette, tutte in una chiamata sola: picchi e carichi si contendono lo stesso spazio,
+    // e due `disponi` separate non lo saprebbero. Ostacoli: i cerchi e le etichette dei nodi (che
+    // non si spostano), le due strisce di testo, e il ritaglio del viewport come `limiti` — oltre
+    // il bordo un'etichetta non è `nascosta`, è posata e invisibile, e tiene occupato un posto.
+    // Una nascosta è meglio di due testi addosso: il valore resta nell'ispettore e nella striscia.
+    if (richiesteEtichette.length) {
+      // L'equilibrio al nodo: la trave e il pilastro che si incontrano in un angolo hanno lo
+      // stesso momento all'estremo comune, e ognuno lo scriveva per conto suo — «0,2056 kN·m»
+      // due volte a «sommità dx», visto su MURO 1. Stesso testo entro un pixel = una richiesta
+      // sola, con la priorità più alta delle due.
+      // ponytail: confronto a coppie, non una griglia arrotondata: i due punti staccano di mezzo
+      // pixel e cadono spesso in celle vicine ma diverse, e la griglia se li perde. Le richieste
+      // sono una manciata (un picco o due per asta), quindi O(n²) qui non si sente.
+      const uniche = [];
+      for (const r of richiesteEtichette) {
+        const gemella = uniche.find((u) => u.testo === r.testo && Math.hypot(u.x - r.x, u.y - r.y) <= s);
+        if (gemella) gemella.priorita = Math.max(gemella.priorita, r.priorita);
+        else uniche.push(r);
+      }
+      // Un pixel di margine per lato, e la riga intera (14) invece del solo occhio (12): la
+      // larghezza per carattere è una stima del mono a 11px, e uno spazio fine unificatore
+      // (`millimetri`, «20 000») non misura come una cifra. Misurato sul telaio 2×1 a 1920 px:
+      // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel.
+      const richieste = uniche.map((r) => ({ ...r, larghezza: larghezzaMono(r.testo, s, 2), altezza: 14 * s }));
+      const poste = disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport });
+      for (let k = 0; k < poste.length; k++) {   // `disponi` rende un elemento per richiesta, in ordine
+        const e = poste[k];
+        if (e.nascosta) continue;
+        const carico = uniche[k].carico;
+        const dove = carico ? gruppo : stratoRisultati;
+        const colore = !carico && attivo.stantia ? ROSSO : INCHIOSTRO;
+        if (e.guida) dove.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
+        const t = el("text", { class: carico ? "carico-testo" : "picco", x: e.x, y: e.y, "font-size": 11 * s,
+                               fill: colore, "font-family": MONO, "text-anchor": e.ancora, "dominant-baseline": "middle" });
+        t.textContent = e.testo;
+        dove.append(t);
+      }
+    }
 
     svg.replaceChildren(gruppo);
   }

@@ -12,6 +12,7 @@ import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "./leg
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
 import { righeScartate, giunzioneDelNodo, propostaPerNodo, proposteAperte, testoMancano,
          testoGiunzione } from "./rilievo.js";
+import { righeSpostamenti, righeReazioni } from "./risultati.js";
 
 const mm = (v) => `${millimetri(v)} mm`;
 const CERCA = { nodo, asta, sezione, materiale, azione, combinazione,
@@ -36,9 +37,16 @@ const testoOrigine = (o) => {
   return `${o.sorgente}${rif}${o.modificata ? ", modificata" : ""}${o.nota ? ` · ${o.nota}` : ""}`;
 };
 
-function righeDiNodo(m, n, { rilievo = null } = {}) {
+function righeDiNodo(m, n, { rilievo = null, risultati = null } = {}) {
   const righe = [["identificatore", String(n.id)], ["nome", n.nome ?? "—"],
           ["x", mm(n.x)], ["z", mm(n.z)], ["vincolo", descrizione(n.vincolo)]];
+  // Le sei componenti del nodo a portata del gesto che l'ha già selezionato
+  // (`docs/ricerca/07-ux-modellatore.md:99`). Il caso sta nel termine: due casi aperti uno
+  // dopo l'altro danno numeri diversi, e senza il nome non si sa di quale si sta leggendo.
+  if (risultati?.perCaso) {
+    righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]),
+               ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]));
+  }
   if (rilievo) {
     const g = giunzioneDelNodo(rilievo, n.id);
     if (g) righe.push(["giunzione",
@@ -797,8 +805,8 @@ export function creaPannello({ dati, vuoto, editor }, azioni) {
   const fuocoAttuale = () =>
     (editorAttuale?.controlli.includes(document.activeElement) ? chiave(document.activeElement) : null);
 
-  function disegna(m, selezione, { catalogo = null, legame = null, tabella = null, rilievo = null } = {}) {
-    const opzioni = { catalogo, legame, tabella, rilievo };
+  function disegna(m, selezione, { catalogo = null, legame = null, tabella = null, rilievo = null, risultati = null } = {}) {
+    const opzioni = { catalogo, legame, tabella, rilievo, risultati };
     const e = selezione ? entitaSelezionata(m, selezione, opzioni) : null;
     const r = e ? righeDe(m, selezione.tipo, e, opzioni) : null;
     vuoto.hidden = r !== null;

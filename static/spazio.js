@@ -78,6 +78,8 @@ async function costruisci(contenitore) {
 
   const inchiostro = new THREE.LineBasicMaterial({ color: INCHIOSTRO });
   const rosso = new THREE.LineBasicMaterial({ color: ROSSO });
+  // L'ombra dell'indeformata sotto la deformata: stessa opacità dello 0,3 del piano SVG.
+  const inchiostroTenue = new THREE.LineBasicMaterial({ color: INCHIOSTRO, transparent: true, opacity: 0.3 });
   const puntoInchiostro = new THREE.PointsMaterial({ color: INCHIOSTRO, size: 6, sizeAttenuation: false });
   const puntoRosso = new THREE.PointsMaterial({ color: ROSSO, size: 10, sizeAttenuation: false });
   let disegnato = new THREE.Group();
@@ -135,7 +137,7 @@ async function costruisci(contenitore) {
   }, { passive: false });
   window.addEventListener("resize", () => { ridimensiona(); rendi(); });
 
-  function disegna(m, { selezione = null } = {}) {
+  function disegna(m, { selezione = null, deformata = null } = {}) {
     scena.remove(disegnato);
     disegnato.traverse((o) => { o.geometry?.dispose(); });
     disegnato = new THREE.Group();
@@ -161,7 +163,13 @@ async function costruisci(contenitore) {
       const g = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(i.x, i.y, i.z), new THREE.Vector3(j.x, j.y, j.z),
       ]);
-      disegnato.add(new THREE.Line(g, scelto("asta", a.id) ? rosso : inchiostro));
+      const ombra = deformata && !scelto("asta", a.id);
+      disegnato.add(new THREE.Line(g, scelto("asta", a.id) ? rosso : (ombra ? inchiostroTenue : inchiostro)));
+    }
+    // La deformata (giornata 13): la stessa `puntiDeformata` del piano, stessa scala; rossa se stantia.
+    for (const d of deformata?.aste ?? []) {
+      const g = new THREE.BufferGeometry().setFromPoints(d.punti.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
+      disegnato.add(new THREE.Line(g, deformata.stantia ? rosso : inchiostro));
     }
     const evidenziato = (n) => scelto("nodo", n.id) || (estremiAstaScelta?.has(n.id) ?? false);
     const normali = m.nodi.filter((n) => !evidenziato(n));

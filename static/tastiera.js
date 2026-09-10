@@ -23,6 +23,8 @@ export const TASTI = [
   { codice: "importa",   tasto: "⌘I",    etichetta: "importa",   aiuto: "il 12_wall.json scritto nel campo", contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "verifica",  tasto: "⇧⌘⏎",  etichetta: "verifica",  aiuto: "il Check Model",  contesto: "salvo-ghost", modificatore: "comando" },
   { codice: "corri",     tasto: "⌘⏎",   etichetta: "corri",     aiuto: "tutte le analisi del modello", contesto: "salvo-ghost", modificatore: "comando" },
+  // I risultati (giornata 13): una vista alla volta. Compare solo con una corsa da mostrare.
+  { codice: "vista",     tasto: "0-4",   etichetta: "vista",     aiuto: "0 niente · 1 deformata · 2 M · 3 V · 4 N", contesto: "risultati" },
   // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
   // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
   // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
@@ -71,6 +73,9 @@ const SENZA_MODIFICATORE = new Map([
   // `z` nudo e `⌘Z`, `k` nudo e `⌘K`: due mappe, il modificatore le separa prima del `get`
   // (`voceDaEvento`).
   ["z", "azione"], ["q", "carico"], ["k", "combinazione"],
+  // Le cifre della vista dei risultati: `0`-`4` nude. Da `5` a `9` non c'è niente, e la cifra
+  // resta al browser. Col comando pure: `⌘1` è la scheda 1, non nostra (`CON_COMANDO`).
+  ["0", "vista"], ["1", "vista"], ["2", "vista"], ["3", "vista"], ["4", "vista"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
@@ -149,7 +154,7 @@ export const nomeTasto = (tasto) => {
   return nome.trim();
 };
 
-export const vociDellaBarra = (contesto, tipoSelezionato = null) =>
+export const vociDellaBarra = (contesto, tipoSelezionato = null, { risultati = false } = {}) =>
   TASTI.filter((v) => {
     // Prima di tutto il resto: una voce che vale per un solo tipo di selezione non compare
     // sugli altri, in nessun contesto. La barra stampa ciò che funziona (story 14).
@@ -162,6 +167,9 @@ export const vociDellaBarra = (contesto, tipoSelezionato = null) =>
       return v.codice === "conferma" || v.codice === "annulla" ||
              (contesto === "comando-direzione" && v.codice === "direzione");
     }
+    // La vista si promette solo con una corsa da mostrare: senza, il tasto risponde «nessuna
+    // corsa» e la barra direbbe il falso (story 14). Col ghost aperto il gesto è un altro.
+    if (v.contesto === "risultati") return risultati && (contesto === "sempre" || contesto === "selezione");
     if (v.codice === "seleziona") return contesto !== "ghost";
     if (v.codice === "direzione") return contesto === "ghost";
     if (v.contesto === "salvo-ghost") return contesto !== "ghost" && contesto !== "asta";

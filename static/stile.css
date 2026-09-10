@@ -43,19 +43,58 @@ body {
 /* Senza `min-height: 0` il canvas three.js dentro #spazio impone la sua altezza in px come
    min-content di #viste, un pavimento che la riga `1fr` non può mai scendere sotto: la barra
    finiva tagliata di 21px, a ogni altezza di finestra (fix round 1, E). */
-#viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; min-width: 0; min-height: 0; }
+/* Due righe dalla giornata 13: il piano sopra, la striscia dell'M srotolato sotto, nella sola
+   colonna del piano. `#spazio` prende le due righe — `min-height: 0` qui sotto gli resta. */
+#viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr auto;
+          min-width: 0; min-height: 0; }
+/* La colonna scritta, non lasciata all'auto-placement: con la sola `grid-row` lo spazio si
+   piazzava in colonna 1 e i due riquadri si scambiavano (misurato a 1280: piano x=600). */
+#spazio { grid-column: 2; grid-row: 1 / -1; }
 #pannello { grid-area: pannello; border-left: 1px solid var(--tratto); overflow: auto; padding: var(--passo); }
 #barra  { grid-area: barra; border-top: 1px solid var(--tratto); padding: calc(var(--passo) / 2) var(--passo);
           display: flex; gap: calc(var(--passo) * 2); flex-wrap: wrap; align-items: baseline; }
 
 #piano, #spazio { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #piano { border-right: 1px solid var(--tratto); }
+/* La striscia dell'M srotolato: sotto il piano, nella sua colonna, alta quanto il suo SVG.
+   Si disegna in pixel (`esito.js`), quindi niente `width: 100%` sull'SVG — la larghezza gliela
+   dà `clientWidth` di questo riquadro.
+   **Niente padding orizzontale, e `min-width: 0`.** Con `box-sizing: border-box` (`:18`)
+   `clientWidth` conta anche il padding: l'SVG usciva di 16 px dal contenuto, la traccia `1fr`
+   con `min-width: auto` cresceva per contenerlo, e il giro dopo `clientWidth` era più grande —
+   +16 px a ogni ridisegno senza tetto (misurato 375 → 487 in otto giri). */
+#srotolato { border-right: 1px solid var(--tratto); border-top: 1px solid var(--tratto);
+             padding: 4px 0; min-height: 0; min-width: 0; }
+#srotolato svg { display: block; }
+/* Il rientro del titolo sta qui e non nel padding del riquadro: quello allargherebbe
+   `clientWidth`, che è la larghezza con cui la striscia si disegna. Gli stessi 8 px di
+   `.carichi-titolo` (`:75`), che nella colonna sopra fa lo stesso mestiere. */
+#srotolato .titolo { margin: 0 0 2px; padding-left: 8px; font: 11px var(--mono); color: var(--inchiostro); }
+#srotolato .titolo.stantia { color: var(--rosso); }
 #piano svg { width: 100%; height: 100%; display: block; }
 /* Il titolo dei carichi sta sopra l'SVG, non dentro: nel `viewBox` scalava coi millimetri e
    finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
    `pointer-events: none` lascia che il clic sullo sfondo arrivi comunque al piano. */
 #piano .carichi-titolo { position: absolute; top: 6px; left: 8px; margin: 0;
                          font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
+/* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
+   V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
+   rosso e la parola: il rosso da solo non basta (story 63). */
+/* Riga sua, sotto il titolo dei carichi, e **nessun** `max-width`: il troncamento a destra
+   mangiava la coda, che è proprio la scala — «×120 (auto)». La scala del disegno non può
+   mancare (`docs/ricerca/07-ux-modellatore.md:99`), quindi il badge si tiene tutta la larghezza
+   che gli serve e scende invece di accorciarsi. */
+#piano .risultati-badge { position: absolute; top: 22px; right: 8px; margin: 0; text-align: right;
+                          font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
+                          white-space: nowrap; }
+#piano .risultati-badge.stantia { color: var(--rosso); }
+/* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
+   riga e si tronca. Questi numeri — 6 e 22 di `top`, 8 di `left`/`right`, 11 di riga, 14 di
+   altezza di riga — li ricopia `piano.js` (`larghezzaTesto` e i due `ostacoli.push`) per farne
+   gli ostacoli delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in
+   silenzio. */
+#piano .carichi-titolo { max-width: 45%; overflow: hidden;
+                         text-overflow: ellipsis; white-space: nowrap; }
 
 h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
      color: var(--testo-tenue); margin: 0 0 var(--passo); font-weight: 600; }
@@ -185,8 +224,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* Lo stato vuoto insegna il gesto (story 13): dice cosa manca e, quando un tasto ce l'ha, lo
    nomina — `N` per l'albero, `G` per l'ispettore. I recenti non ne hanno uno e non lo fingono. */
 .vuoto { color: var(--testo-tenue); max-width: 24rem; padding: var(--passo); }
-.vuoto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
+/* R8: i `<kbd>` della vista entrano nel selettore che già c'è invece di ricopiarne le
+   dichiarazioni — è lo stesso tasto stampato, e due copie divergono al primo ritocco. */
+.vuoto kbd, #risultati-vista kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
              border-radius: 3px; padding: 0 4px; background: var(--pannello); }
+#risultati-vista kbd { font-size: 10px; padding: 0 3px; }
 
 .tasto { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
 .tasto kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte);
@@ -232,13 +274,21 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* R12: il campo del deck e la sua etichetta entrano nei selettori che già ci sono, invece di
    ricopiarne le dichiarazioni. Due campi che si somigliano per copia divergono al primo
    ripensamento: questi sono lo stesso controllo e devono restare tali. */
-#file label, #corsa label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
-#file-percorso, #comando-campo, #corsa-inp {
+/* `#risultati-controlli > label` e non `#risultati label`: le etichette dei radio della vista
+   sono figlie del `<fieldset>` e la loro regola è `.vincolo-gradi label` (`:112`), che un
+   selettore con un id batte per specificità — uscivano a blocco, tenui e a 11 px. */
+#file label, #corsa label, #risultati-controlli > label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
+#file-percorso, #comando-campo, #corsa-inp, #risultati-scala, #risultati-caso {
                  width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
-#file-percorso:focus-visible, #comando-campo:focus-visible, #corsa-inp:focus-visible {
+#file-percorso:focus-visible, #comando-campo:focus-visible, #corsa-inp:focus-visible,
+#risultati-scala:focus-visible, #risultati-caso:focus-visible {
                  outline: 2px solid var(--rosso); outline-offset: 1px; }
+/* Le etichette dei radio le porta già `.vincolo-gradi label` (`:112`): il fieldset della vista
+   riusa quella classe e ne cambia le sole colonne — cinque radio in `repeat(3, 1fr)` uscirebbero
+   3 + 2, con «niente» e «deformata» su una riga e M, V, N sull'altra. */
+#risultati-vista { grid-template-columns: 1fr 1fr; }
 .file-azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .file-azioni button { font: inherit; cursor: pointer; padding: 2px 10px;
                       background: var(--pannello); color: var(--inchiostro);
@@ -322,7 +372,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    togliere, perché una regione nascosta e poi mostrata non la annunciano tutte le AT. */
 #corsa-ultima { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
 #corsa-ultima:not(:empty) { margin: var(--passo) 0 0; }
-#corsa-ultima.stantia { border-left: 3px solid var(--rosso); padding-left: 6px; }
+/* Anche la riga Σ reazioni: di una corsa superata dal modello, il numero che contraddice parla
+   del modello di prima. Stesso filetto, e la parola davanti al testo (`esito.js`). */
+#corsa-ultima.stantia, #risultati-equilibrio.stantia { border-left: 3px solid var(--rosso); padding-left: 6px; }
 #corsa-registro { margin-top: 6px; font-size: 11px; }
 #corsa-registro summary { cursor: pointer; }
 #corsa-registro summary:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }

@@ -87,6 +87,11 @@ non passato.** Un controllo che non vale per un modello (`applicabile: False`)
 non è mai verde e non è mai rosso; è una terza cosa e va mostrata come tale
 (`05-*.md` §3).
 
+## Test
+
+- `tests/test_fumo_chrome.py`: `app.js` in Chrome headless via CDP (`tests/fumo/`); salta
+  senza Chrome o node; è l'unico test della cucitura.
+
 ## Convenzioni
 
 - **Lingua: italiano**, in documenti, commenti, messaggi di commit, interfaccia.
