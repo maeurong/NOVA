@@ -19,6 +19,21 @@ const VERSI = [
   { dx: -1, dy: 0, ancora: "end" },
 ];
 
+/** L'ordine in cui provare i quattro versi. Con un `preferito` — un versore in coordinate schermo,
+ *  che non serve normalizzare — si parte da quello dei quattro che gli somiglia di più, e gli altri
+ *  restano nel solito ordine: chi chiede sa da che parte è il vuoto (un picco lo punta fuori dal
+ *  proprio diagramma) ma non deve poter imporre una posizione occupata. A parità di somiglianza
+ *  vince il primo dei quattro, così il disegno resta identico a parità di stato. */
+const versiPer = (preferito) => {
+  if (!Number.isFinite(preferito?.dx) || !Number.isFinite(preferito?.dy)) return VERSI;
+  let migliore = VERSI[0], punteggio = -Infinity;
+  for (const v of VERSI) {
+    const p = v.dx * preferito.dx + v.dy * preferito.dy;
+    if (p > punteggio) { punteggio = p; migliore = v; }
+  }
+  return [migliore, ...VERSI.filter((v) => v !== migliore)];
+};
+
 /** Il box di un testo ancorato in (x, y): `y` è il **centro verticale** del box, e chi disegna
  *  scrive il `<text>` con `dominant-baseline: middle`. Un solo modo di stare, così il box che
  *  si controlla e il testo che si vede combaciano. */
@@ -43,8 +58,9 @@ export function disponi(richieste, ostacoli = [], { passo = 6, limiti = null } =
     const larghezza = Math.max(0, r.larghezza ?? 0), altezza = Math.max(0, r.altezza ?? 0);
     let scelta = null;
     if (Number.isFinite(r.x) && Number.isFinite(r.y)) {
+      const versi = versiPer(r.preferito);
       cerca: for (const multiplo of [1, 2, 3]) {
-        for (const v of VERSI) {
+        for (const v of versi) {
           const d = passo * multiplo;
           // Il punto d'ancoraggio: a un passo dal bordo del testo, non dal suo centro.
           const x = r.x + v.dx * d, y = r.y + v.dy * (d + (v.dy ? altezza / 2 : 0));

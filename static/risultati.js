@@ -43,14 +43,57 @@ const spostamentoDi = (perCaso, id) => {
   return Array.isArray(u) && u.length >= 6 && u.every(Number.isFinite) ? u : null;
 };
 
-export function spostamentoMassimo(m, perCaso) {
-  let massimo = 0;
-  for (const n of m?.nodi ?? []) {
-    const u = spostamentoDi(perCaso, n.id);
-    if (u) massimo = Math.max(massimo, Math.hypot(u[0], u[2]));
+// Sotto un milionesimo del lato maggiore non c'è uno spostamento: c'è l'aritmetica del solutore.
+// Su una trave appoggiata i due appoggi rendono `1e-20` di rumore, e amplificarlo fino al 5 % del
+// telaio vuol dire una scala di `2e20` e una deformata che spara fuori dal riquadro.
+const RUMORE = 1e-6;
+
+/** La freccia massima **lungo le aste**, non sui soli nodi, e **dove** sta.
+ *
+ *  Sui nodi non c'è quasi mai niente da vedere: su una trave appoggiata gli appoggi non si
+ *  spostano e la freccia sta in mezzeria, dove la portano le rotazioni degli estremi. Misurato a
+ *  mano su Chrome il 10/09/2026: col massimo preso sui nodi il badge diceva
+ *  «×200 000 000 000 000 000 000 (auto)» sulla trave appoggiata (rumore `1e-20` agli appoggi) e
+ *  «×50 000» sul MURO 1 (`0,0021` mm ai piedi), con le travi fuori dal telaio in tutti e due i casi.
+ *
+ *  Si campiona quindi la stessa `puntiDeformata` che il piano disegna, a scala 1, e per ogni punto
+ *  si misura la distanza dal punto **indeformato** corrispondente. `punto` e `indeformato` escono
+ *  con il valore perché l'etichetta della freccia va scritta lì, non su un nodo fermo.
+ *
+ *  ponytail: otto tratti per asta, gli stessi del disegno. Il vero massimo di una cubica sta fra
+ *  due campioni, e su una campata sola l'errore è dell'ordine del per mille — dentro il passo della
+ *  serie 1-2-5, che è quello che decide la scala. Se un giorno servisse esatto, si annulla la
+ *  derivata della cubica invece di infittire il campionamento. */
+export function frecciaMassima(m, perCaso) {
+  let valore = 0, punto = null, indeformato = null;
+  const perId = new Map((m?.aste ?? []).map((a) => [a.id, a]));
+  const conAsta = new Set();
+  for (const d of puntiDeformata(m, perCaso, 1)) {
+    const a = perId.get(d.id);
+    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
+    conAsta.add(i.id).add(j.id);
+    const n = d.punti.length - 1;
+    for (let k = 0; k <= n; k++) {
+      const r = k / n, p = d.punti[k];
+      const base = { x: i.x + (j.x - i.x) * r, z: i.z + (j.z - i.z) * r };
+      const v = Math.hypot(p.x - base.x, p.z - base.z);
+      if (v > valore) { valore = v; punto = { x: p.x, z: p.z }; indeformato = base; }
+    }
   }
-  return massimo;
+  // Un nodo che nessun'asta tocca non ha una deformata da campionare: vale per sé.
+  for (const k of m?.nodi ?? []) {
+    if (conAsta.has(k.id)) continue;
+    const u = spostamentoDi(perCaso, k.id);
+    if (!u) continue;
+    const v = Math.hypot(u[0], u[2]);
+    if (v > valore) { valore = v; punto = { x: k.x + u[0], z: k.z + u[2] }; indeformato = { x: k.x, z: k.z }; }
+  }
+  return valore >= RUMORE * latoMaggiore(m) ? { valore, punto, indeformato }
+                                            : { valore: 0, punto: null, indeformato: null };
 }
+
+/** Il solo numero, per chi non ha bisogno di sapere dove sta (`scalaAuto`). */
+export const spostamentoMassimo = (m, perCaso) => frecciaMassima(m, perCaso).valore;
 
 /** La scala che porta il massimo spostamento nel piano a `frazione` del lato maggiore, in 1-2-5.
  *  Spostamenti nulli → 1: la deformata coincide con l'ombra, e il badge dice «×1». */

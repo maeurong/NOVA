@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { VISTE, assiDi, casiDi, scala125, latoMaggiore, spostamentoMassimo, scalaAuto, puntiDeformata,
+import { VISTE, assiDi, casiDi, scala125, latoMaggiore, spostamentoMassimo, frecciaMassima, scalaAuto, puntiDeformata,
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato } from "../risultati.js";
 
@@ -44,7 +44,11 @@ test("scalaAuto: il massimo spostamento nel piano disegnato è il 5 % del lato m
   assert.equal(spostamentoMassimo(trave, perCaso), 3);
   assert.equal(scalaAuto(trave, perCaso), 100);   // 0,05·6000/3 = 100
   assert.equal(scalaAuto(trave, { spostamenti: {} }), 1, "senza spostamenti la scala è 1");
-  assert.equal(scalaAuto(trave, Z1), 1, "spostamenti nulli nel piano: 1, non Infinity");
+  // Era «spostamenti nulli nel piano → 1»: falso, ed è il difetto visto a mano su Chrome. Gli
+  // appoggi di Z1 non si spostano (`ux = uz = 0`), ma le rotazioni ±0,0043 portano la mezzeria a
+  // L·θ/4 = 6000·0,0043/4 = 6,45 mm. La freccia c'è, e la scala la deve vedere.
+  assert.equal(spostamentoMassimo(trave, Z1).toFixed(2), "6.45", "la freccia sta in mezzeria, non sui nodi");
+  assert.equal(scalaAuto(trave, Z1), 50, "0,05·6000/6,45 = 46,5 → 50");
   assert.equal(scalaAuto({ nodi: [], aste: [] }, Z1), 1);
   assert.equal(spostamentoMassimo(trave, { spostamenti: { 1: [3, 0, 4, 0, 0, 0] } }), 5, "nel piano: hypot(ux, uz)");
   assert.equal(spostamentoMassimo(trave, { spostamenti: { 9: [100, 0, 0, 0, 0, 0] } }), 0, "un nodo che non è nel modello non conta");
@@ -308,4 +312,34 @@ test("degeneri: un modello con le aste ma senza `nodi` non fa sollevare `nodo()`
   assert.equal(spostamentoMassimo(senzaNodi, Z1), 0);
   assert.equal(scalaAuto(senzaNodi, Z1), 1);
   assert.equal(latoMaggiore(senzaNodi), 2000);
+});
+
+// --- la freccia vera, non i nodi (fix di fine ramo) -------------------------------
+// Misurato a mano su Chrome: col massimo preso sui nodi il badge diceva ×2e20 sulla trave
+// appoggiata (rumore 1e-20 agli appoggi) e ×50 000 sul MURO 1 (0,0021 mm ai piedi).
+
+test("frecciaMassima: la freccia sta in mezzeria, e dice dove", () => {
+  const f = frecciaMassima(trave, Z1);
+  assert.equal(f.valore.toFixed(2), "6.45", "L·θ/4 = 6000·0,0043/4");
+  assert.equal(f.punto.x, 3000, "in mezzeria, non su un appoggio");
+  assert.equal(f.indeformato.x, 3000);
+  assert.equal(f.indeformato.z, 0);
+  assert.ok(f.punto.z < 0, "la trave scende");
+});
+
+test("frecciaMassima: sotto un milionesimo del lato maggiore è rumore, non spostamento", () => {
+  const rumore = { spostamenti: { 1: [1e-20, 0, 1e-20, 0, 0, 0], 2: [0, 0, -1e-20, 0, 1e-20, 0] } };
+  assert.deepEqual(frecciaMassima(trave, rumore), { valore: 0, punto: null, indeformato: null });
+  assert.equal(scalaAuto(trave, rumore), 1, "×1, non ×2e20: la deformata resta nel riquadro");
+  // Il pavimento è relativo al modello: 1e-6·6000 = 0,006 mm.
+  assert.equal(frecciaMassima(trave, { spostamenti: { 2: [0, 0, -0.005, 0, 0, 0] } }).valore, 0);
+  assert.equal(frecciaMassima(trave, { spostamenti: { 2: [0, 0, -0.05, 0, 0, 0] } }).valore, 0.05);
+});
+
+test("frecciaMassima: un nodo che nessun'asta tocca vale per sé", () => {
+  const conIsolato = { nodi: [...trave.nodi, { id: 3, x: 0, y: 0, z: 3000 }], aste: trave.aste };
+  const f = frecciaMassima(conIsolato, { spostamenti: { 3: [10, 0, 0, 0, 0, 0] } });
+  assert.equal(f.valore, 10);
+  assert.deepEqual(f.punto, { x: 10, z: 3000 });
+  assert.deepEqual(f.indeformato, { x: 0, z: 3000 });
 });

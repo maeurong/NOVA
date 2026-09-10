@@ -9,7 +9,7 @@ import { millimetri } from "./numeri.js";
 import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
-import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, spostamentoMassimo } from "./risultati.js";
+import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -51,8 +51,13 @@ const el = (nome, attributi = {}) => {
  *  un modello con un nodo solo (riquadro 2000 mm) disegnerebbe un'estrusione da 3000 fuori
  *  dal riquadro, senza sollevare niente: si vedrebbe solo sparire. Vale identico per il
  *  punto in anteprima del campo di comando, che di coordinate fuori vista ne accetta
- *  quante ne vuole e senza questo le disegnerebbe dove non si guarda. */
-export function estensione(m, ghost = null) {
+ *  quante ne vuole e senza questo le disegnerebbe dove non si guarda.
+ *
+ *  `extraMm`: millimetri in più su tutti e quattro i lati, oltre al margine del 12 %. Serve alle
+ *  etichette dei nodi, che stanno in pixel fuori dal nodo e che il 12 % non conosce: su MURO 1 il
+ *  margine vale 40 px e «cerniera» ne chiede 90, quindi il nome usciva dal riquadro e l'SVG lo
+ *  tagliava a metà. Chi disegna lo misura e lo passa (`piano.js`, `disegna`). */
+export function estensione(m, ghost = null, extraMm = 0) {
   const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
   const da = ghost && nodo(m, ghost.da);
   if (da) punti.push({ x: da.x + ghost.dx, z: da.z + ghost.dz });
@@ -63,7 +68,8 @@ export function estensione(m, ghost = null) {
   const z0 = Math.min(...zs), z1 = Math.max(...zs);
   const larghezza = Math.max(x1 - x0, LATO_MINIMO);
   const altezza = Math.max(z1 - z0, LATO_MINIMO);
-  const mx = larghezza * MARGINE, mz = altezza * MARGINE;
+  const extra = Number.isFinite(extraMm) && extraMm > 0 ? extraMm : 0;
+  const mx = larghezza * MARGINE + extra, mz = altezza * MARGINE + extra;
   return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
 }
 
@@ -122,8 +128,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // cima è `z0 + altezza`, quindi `y = 2·z0 + altezza − z` porta l'uno sull'altro.
   const schermo = (n) => ({ x: n.x, y: 2 * vista.z0 + vista.altezza - n.z });
 
-  function inquadra(m, ghost) {
-    vista = estensione(m, ghost);
+  function inquadra(m, ghost, extraMm = 0) {
+    vista = estensione(m, ghost, extraMm);
     svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   }
@@ -142,7 +148,32 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
   function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
     inquadra(m, ghost);
-    const s = millimetriPerPixel();
+    let s = millimetriPerPixel();
+    // Le etichette dei nodi stanno in pixel fuori dal nodo, e il margine del 12 % non le conosce:
+    // su MURO 1 vale 40 px, mentre «cerniera» ne chiede 53 di solo testo, e usciva dal riquadro
+    // tagliata a metà. Il conto si fa **in pixel**, perché è lì che il problema vive: il margine
+    // del 12 % vale sempre 9,68 % della misura del riquadro in pixel (`mx/s = 0,0968·W`), qualunque
+    // sia il modello, quindi allargare in proporzione non sposta niente — il margine cresce insieme
+    // a `s`. Serve un margine **assoluto** in più, e la formula lo porta esattamente a `P` pixel.
+    //
+    // Il grilletto guarda il **solo nome**, non nome più stacco, e la ragione è misurata: allargare
+    // il riquadro rimpicciolisce il modello sullo schermo mentre le etichette restano di 11 px, e
+    // così si avvicinano fra loro. Col grilletto sul totale, il telaio 2×1 a zoom 200 % — nomi di
+    // **una** cifra, nessun nome da salvare, ma un riquadro di 120 px dove i 16 di stacco già non
+    // ci stanno — si allargava del 31 % e «2» e «3» finivano a toccarsi: il fumo da 12/12 a 8/12.
+    // I nomi lunghi sono il difetto visto a mano, e solo loro pagano il riquadro più largo.
+    const caratteri = Math.max(0, ...m.nodi.map((n) => String(n.nome ?? n.id).length));
+    const { w: pxL, h: pxA } = pixelDelRiquadro();
+    const orizzontale = vista.larghezza / pxL >= vista.altezza / pxA;   // il lato che comanda `s`
+    const W = orizzontale ? pxL : pxA, L0 = orizzontale ? vista.larghezza : vista.altezza;
+    const P = caratteri * 6.6 + OFFSET_ETICHETTA + 4;   // pixel che l'etichetta più lunga chiede
+    // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
+    // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
+    if (caratteri * 6.6 > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
+      const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
+      inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P));
+      s = millimetriPerPixel();
+    }
     const gruppo = el("g");
     // `vistaRis` e non `vista`: `vista` qui sopra è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
@@ -181,17 +212,16 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
             fill: "none", stroke: colore, "stroke-width": 2 * s,
             "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
         }
-        const dmax = spostamentoMassimo(m, attivo.perCaso);
-        if (dmax > 0) {
-          // La stessa validazione di `spostamentoDi` (`risultati.js`): un `u` corto o con un `NaN`
-          // non deve arrivare a `schermo` come coordinata.
-          const buono = (u) => Array.isArray(u) && u.length >= 6 && u.every(Number.isFinite);
-          const n = m.nodi.find((k) => { const u = attivo.perCaso.spostamenti?.[String(k.id)]; return buono(u) && Math.hypot(u[0], u[2]) === dmax; });
-          if (n) {
-            const u = attivo.perCaso.spostamenti[String(n.id)];
-            const p = schermo({ x: n.x + attivo.scala * u[0], z: n.z + attivo.scala * u[2] });
-            richiesteEtichette.push({ id: `u${n.id}`, x: p.x, y: p.y, testo: testoValore("deformata", dmax), priorita: 1 });
-          }
+        // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
+        // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
+        const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
+        if (valore > 0 && punto) {
+          // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
+          const p = schermo({ x: indeformato.x + attivo.scala * (punto.x - indeformato.x),
+                              z: indeformato.z + attivo.scala * (punto.z - indeformato.z) });
+          const base = schermo(indeformato);
+          richiesteEtichette.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
+                                    priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
         }
       } else {
         const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
@@ -219,8 +249,16 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
             const p = d.punti.find((q) => q.x_rel === picco.x_rel);
             if (!p) continue;
             const q = schermo(p);
+            // Il verso preferito: dalla base del diagramma verso il picco, cioè **fuori** dal
+            // poligono. Senza, l'etichetta parte da «sopra» e su un diagramma disegnato in su la
+            // linea tratteggiata e le ordinate le passano dentro (visto su MURO 1, «0,2056 kN·m»).
+            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel,
+                                z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
+            // `1 +`: un picco piccolo resta comunque più importante di un'etichetta di carico
+            // (`0.5`). È il soggetto della vista; il carico è il contorno.
             richiesteEtichette.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
-                                      priorita: Math.abs(picco.valore) / massimo });
+                                      priorita: 1 + Math.abs(picco.valore) / massimo,
+                                      preferito: { dx: q.x - b.x, dy: q.y - b.y } });
           }
         }
       }
@@ -401,16 +439,29 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // il bordo un'etichetta non è `nascosta`, è posata e invisibile, e tiene occupato un posto.
     // Una nascosta è meglio di due testi addosso: il valore resta nell'ispettore e nella striscia.
     if (richiesteEtichette.length) {
+      // L'equilibrio al nodo: la trave e il pilastro che si incontrano in un angolo hanno lo
+      // stesso momento all'estremo comune, e ognuno lo scriveva per conto suo — «0,2056 kN·m»
+      // due volte a «sommità dx», visto su MURO 1. Stesso testo entro un pixel = una richiesta
+      // sola, con la priorità più alta delle due.
+      // ponytail: confronto a coppie, non una griglia arrotondata: i due punti staccano di mezzo
+      // pixel e cadono spesso in celle vicine ma diverse, e la griglia se li perde. Le richieste
+      // sono una manciata (un picco o due per asta), quindi O(n²) qui non si sente.
+      const uniche = [];
+      for (const r of richiesteEtichette) {
+        const gemella = uniche.find((u) => u.testo === r.testo && Math.hypot(u.x - r.x, u.y - r.y) <= s);
+        if (gemella) gemella.priorita = Math.max(gemella.priorita, r.priorita);
+        else uniche.push(r);
+      }
       // Un pixel di margine per lato, e la riga intera (14) invece del solo occhio (12): la
       // larghezza per carattere è una stima del mono a 11px, e uno spazio fine unificatore
       // (`millimetri`, «20 000») non misura come una cifra. Misurato sul telaio 2×1 a 1920 px:
       // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel.
-      const richieste = richiesteEtichette.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s + 2 * s, altezza: 14 * s }));
+      const richieste = uniche.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s + 2 * s, altezza: 14 * s }));
       const poste = disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport });
       for (let k = 0; k < poste.length; k++) {   // `disponi` rende un elemento per richiesta, in ordine
         const e = poste[k];
         if (e.nascosta) continue;
-        const carico = richiesteEtichette[k].carico;
+        const carico = uniche[k].carico;
         const dove = carico ? gruppo : stratoRisultati;
         const colore = !carico && attivo.stantia ? ROSSO : INCHIOSTRO;
         if (e.guida) dove.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));

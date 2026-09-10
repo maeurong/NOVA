@@ -133,3 +133,37 @@ test("disponi: senza limiti, o con limiti nulli, niente cambia", () => {
   assert.deepEqual(disponi([richiesta("a", 100, 100), richiesta("b", 100, 100)], [], { passo: 6, limiti: null }), senza);
   assert.deepEqual(disponi([richiesta("a", 100, 100), richiesta("b", 100, 100)], [], { passo: 6, limiti: undefined }), senza);
 });
+
+// --- il verso preferito (fix di fine ramo) ---------------------------------------
+// Un picco disegnato sotto la trave con l'etichetta sopra il punto se la trova attraversata dalla
+// linea del diagramma e dalle ordinate. Chi chiede sa da che parte è il vuoto: lo dice.
+
+test("disponi: con un preferito verso il basso la prima posizione provata è «sotto»", () => {
+  const [p] = disponi([richiesta("a", 100, 100, { preferito: { dx: 0, dy: 1 } })], [], { passo: 6 });
+  assert.equal(p.nascosta, false);
+  assert.equal(p.ancora, "middle");
+  assert.ok(p.box.y0 >= 100 + 6 - 1e-9, `il box sta sotto il punto, a un passo: ${JSON.stringify(p.box)}`);
+  assert.equal(p.guida, null, "primo passo, nessuna guida");
+});
+
+test("disponi: il preferito sceglie fra i quattro versi quello che gli somiglia di più", () => {
+  const verso = (preferito) => disponi([richiesta("a", 100, 100, { preferito })], [], { passo: 6 })[0].ancora;
+  assert.equal(verso({ dx: 1, dy: 0.2 }), "start", "quasi a destra → destra");
+  assert.equal(verso({ dx: -3, dy: 1 }), "end", "quasi a sinistra → sinistra (e non serve normalizzarlo)");
+  assert.equal(verso({ dx: 0.1, dy: -1 }), "middle");
+});
+
+test("disponi: preferito assente o non finito → il solito ordine, sopra per primo", () => {
+  const verso = (extra) => disponi([richiesta("a", 100, 100, extra)], [], { passo: 6 })[0];
+  assert.ok(verso({}).box.y1 <= 100 - 6 + 1e-9, "senza preferito si parte da sopra");
+  assert.ok(verso({ preferito: null }).box.y1 <= 100 - 6 + 1e-9);
+  assert.ok(verso({ preferito: { dx: NaN, dy: 1 } }).box.y1 <= 100 - 6 + 1e-9, "un preferito guasto non sposta niente");
+});
+
+test("disponi: il preferito occupato non blocca — si passa agli altri versi nel solito ordine", () => {
+  // Un ostacolo largo sotto il punto: il preferito «sotto» non ci sta, e si riparte da «sopra».
+  const [p] = disponi([richiesta("a", 100, 100, { preferito: { dx: 0, dy: 1 } })],
+                      [box(-1000, 100, 1000, 1000)], { passo: 6 });
+  assert.equal(p.nascosta, false);
+  assert.ok(p.box.y1 <= 100 - 6 + 1e-9, "scartato «sotto», resta il primo dei soliti: sopra");
+});

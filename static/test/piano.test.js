@@ -748,3 +748,91 @@ test("piano con il riquadro non ancora misurato: i picchi si scrivono lo stesso"
   const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
   assert.deepEqual(testi, ["45 kN·m"], `il picco c'è anche senza misura del riquadro: ${testi}`);
 });
+
+// --- fix di fine ramo (prova a mano su Chrome: trave appoggiata e MURO 1) ---------
+
+// Sul muro «0,2056 kN·m» era attraversata dalla linea tratteggiata del diagramma e dalle sue
+// ordinate: l'etichetta partiva da «sopra» anche quando il diagramma stava sopra.
+test("piano con vista M: l'etichetta del picco sta dalla parte del vuoto, fuori dal diagramma", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const g = strato(contenitore._figli[0]);
+  const punti = tutti(g, "polygon")[0].getAttribute("points").split(" ").map((p) => p.split(",").map(Number));
+  const yPicco = Math.max(...punti.map(([, y]) => y));   // M positivo: il diagramma scende
+  const t = tutti(g, "text").find((x) => x.textContent === "45 kN·m");
+  assert.ok(t, "il picco si scrive");
+  assert.ok(Number(t.getAttribute("y")) > yPicco,
+    `l'etichetta sta sotto il picco (${t.getAttribute("y")} > ${yPicco}), non dentro il diagramma`);
+});
+
+// Al nodo d'angolo la trave e il pilastro hanno lo stesso momento all'estremo comune (equilibrio),
+// e ognuno lo scriveva per conto suo: «0,2056 kN·m» due volte a «sommità dx» su MURO 1. Il
+// riquadro di prova è largo 360 px come `#piano` a 1280.
+const angolo = (() => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 6000, z: 0 }, { x: 6000, z: 3000 }, { x: 12000, z: 0 }]) mo = creaNodo(mo, p);
+  return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 },
+                         { id: 3, nodo_i: 2, nodo_j: 4 }] };
+})();
+const staM = (x_rel, M) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My: M, Mz: M });
+const perCasoAngolo = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+  1: [staM(0, 0), staM(0.5, 1.25e6), staM(1, 2.5e6)],     // trave: il suo picco è all'angolo
+  2: [staM(0, 2.5e6), staM(0.5, 1.25e6), staM(1, 0)],     // pilastro: lo stesso momento, stesso punto
+  3: [staM(0, 0), staM(0.5, 100e6), staM(1, 0)] } };      // l'altra campata porta il massimo globale
+
+test("piano con vista M: la trave e il pilastro all'angolo non scrivono due volte lo stesso valore", () => {
+  const contenitore = contenitoreFinto();
+  contenitore.clientWidth = 360;
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(angolo, { risultati: conRisultati("M", { perCaso: perCasoAngolo }) });
+  const testi = tutti(strato(contenitore._figli[0]), "text").map((t) => t.textContent);
+  assert.equal(testi.filter((t) => t === "2,5 kN·m").length, 1, `una volta sola: ${testi}`);
+});
+
+// Preesistente dalla 11b, chiuso qui perché la giornata promette zero testo tagliato: l'etichetta
+// del nodo di sinistra va a sinistra, e il margine del 12 % non basta a «cerniera».
+test("piano: un nome lungo allarga il riquadro invece di uscirne", () => {
+  let mo = modelloVuoto();
+  mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 6000, z: 0 });
+  const nominata = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }],
+                     nodi: mo.nodi.map((n) => ({ ...n, nome: n.id === 1 ? "cerniera" : "carrello" })) };
+  const contenitore = contenitoreFinto();
+  contenitore.clientWidth = 360;   // `#piano` a 1280 px, la misura in cui il difetto si vede
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(nominata, {});
+  const svg = contenitore._figli[0];
+  const [x0, , larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / 360, altezza / 600);
+  const nomi = tutti(svg, "text").filter((t) => t.textContent.startsWith("c"));
+  assert.equal(nomi.length, 2, "i due nomi si scrivono");
+  for (const t of nomi) {
+    const b = boxTesto(t, s);
+    assert.ok(b.x0 >= x0, `«${t.textContent}» esce a sinistra: ${b.x0} < ${x0}`);
+    assert.ok(b.x1 <= x0 + larghezza, `«${t.textContent}» esce a destra: ${b.x1} > ${x0 + larghezza}`);
+  }
+});
+
+// Il picco è il soggetto della vista, il carico il contorno: anche un picco piccolo (0,15 del
+// massimo) sta sopra un'etichetta di carico, che vale 0,5 fissa.
+test("piano: un picco piccolo non cede il posto all'etichetta di un carico", () => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 6000, z: 0 }, { x: 12000, z: 0 }]) mo = creaNodo(mo, p);
+  const due = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: {
+    1: [staM(0, 15e6), staM(0.5, 7.5e6), staM(1, 0)],     // picco all'estremo, 0,15 del massimo
+    2: [staM(0, 0), staM(0.5, 100e6), staM(1, 0)] } };
+  const azione = { id: 1, nome: "vento", natura: "Q", categoria: "vento", generata: false, carichi: [
+    { tipo: "nodale", nodo: 1, Fx: 0, Fy: 0, Fz: 10000, Mx: 0, My: 0, Mz: 0 },
+  ] };
+  const posto = (opzioni) => {
+    const contenitore = contenitoreFinto();
+    const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+    piano.disegna(due, { risultati: conRisultati("M", { perCaso }), ...opzioni });
+    const t = tutti(strato(contenitore._figli[0]), "text").find((x) => x.textContent === "15 kN·m");
+    return t && `${t.getAttribute("x")},${t.getAttribute("y")}`;
+  };
+  const solo = posto({});
+  assert.ok(solo, "senza carichi il picco piccolo si scrive");
+  assert.equal(posto({ azioneInVista: azione }), solo, "il carico non sposta il picco: passa lui per primo");
+});
