@@ -1,0 +1,245 @@
+// La geometria dei risultati statici nel piano x–z, pura: niente DOM, niente three.js. Il piano
+// e lo spazio disegnano quel che esce da qui; l'ispettore e il blocco «Risultati» stampano i testi.
+//
+// Il contratto è quello di `nova/corsa.py:_stazioni` e `risultati_da_uscite`: `per_caso[caso]` con
+// `spostamenti["<id>"][6]` (ux uy uz rx ry rz in mm e rad), `reazioni["<id>"][6]` (N e N·mm, solo
+// i vincolati), `sollecitazioni["<id_asta>"]` liste di stazioni `{x_rel, N, Vy, Vz, T, My, Mz}`.
+// Nel piano x–z contano `My`, `Vz`, `N`, `ux`, `uz`, `ry`.
+
+import { conciso } from "./numeri.js";
+import { nodo } from "./modello.js";
+
+export const VISTE = ["deformata", "M", "V", "N"];
+const LATO_MINIMO = 2000;   // mm, come `piano.js`: un modello con un nodo non ha estensione
+const COSENO_VERTICALE = 0.999;   // `_COSENO_VERTICALE`, `nova/deck.py:35`: la stessa soglia del deck
+
+export const casiDi = (risultati) => Object.keys(risultati?.per_caso ?? {});
+
+/** La serie 1-2-5: 37 → 50, 120 → 100, 1,4 → 1. Un valore non positivo o non finito dà 1. */
+export function scala125(v) {
+  if (!Number.isFinite(v) || v <= 0) return 1;
+  const esp = Math.floor(Math.log10(v));
+  const mantissa = v / 10 ** esp;
+  // Il candidato più vicino nel rapporto (in scala logaritmica), fra 1, 2, 5 e 10.
+  let scelto = 1, distanza = Infinity;
+  for (const c of [1, 2, 5, 10]) {
+    const d = Math.abs(Math.log10(mantissa / c));
+    if (d < distanza) { distanza = d; scelto = c; }
+  }
+  return scelto * 10 ** esp;
+}
+
+export function latoMaggiore(m) {
+  const nodi = m?.nodi ?? [];
+  if (nodi.length === 0) return LATO_MINIMO;
+  const xs = nodi.map((n) => n.x), zs = nodi.map((n) => n.z);
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs), LATO_MINIMO);
+}
+
+const spostamentoDi = (perCaso, id) => {
+  const u = perCaso?.spostamenti?.[String(id)];
+  return Array.isArray(u) && u.length >= 6 && u.every(Number.isFinite) ? u : null;
+};
+
+export function spostamentoMassimo(m, perCaso) {
+  let massimo = 0;
+  for (const n of m?.nodi ?? []) {
+    const u = spostamentoDi(perCaso, n.id);
+    if (u) massimo = Math.max(massimo, Math.hypot(u[0], u[2]));
+  }
+  return massimo;
+}
+
+/** La scala che porta il massimo spostamento nel piano a `frazione` del lato maggiore, in 1-2-5.
+ *  Spostamenti nulli → 1: la deformata coincide con l'ombra, e il badge dice «×1». */
+export function scalaAuto(m, perCaso, frazione = 0.05) {
+  const dmax = spostamentoMassimo(m, perCaso);
+  return dmax > 0 ? scala125(frazione * latoMaggiore(m) / dmax) : 1;
+}
+
+/** La terna di un'asta nel piano **e** l'asse su cui il solutore misura la flessione in questo
+ *  piano. `e1` lungo i→j, `e2` la normale sinistra dello schermo; `n` l'asse trasversale del
+ *  solutore in coordinate schermo, ed è lui — non `e2` — che decide da che parte va disegnato
+ *  un diagramma.
+ *
+ *  Perché non coincidono: `nova/deck.py:_terna` (`:169-189`) prende `e2_deck` = verticale
+ *  proiettata e `e1_deck = e2_deck × a`. Per un'asta **coricata** la `z` locale (`a × e1_deck`)
+ *  vale `ẑ` qualunque sia l'ordine dei nodi, cioè `sign(e1.x)·e2`; per un'asta **in piedi** la
+ *  `z` locale è la `y` globale, fuori dal piano, e quello che resta in piano è `e1_deck` (la `y`
+ *  locale) = `−e2`. Da qui le due coppie di chiavi: trave → `My`/`Vz`, pilastro → `Mz`/`Vy`.
+ *
+ *  Misurato sul telaio 2×1 il 10/09/2026 (`tests/fixture/telaio_2x1.nova.json`, tutti i casi):
+ *  pilastri `|My|max ≤ 2,2e-9` e `|Mz|max` fino a 2,1e7; travi `|Mz|max ≤ 9,3e-10` e `|My|max`
+ *  fino a 5,4e7. Con una mappa costante `{M:"My"}` ogni pilastro sarebbe una riga piatta. */
+export function assiDi(i, j) {
+  const L = Math.hypot(j.x - i.x, j.z - i.z);
+  if (!(L > 0)) return null;
+  const e1 = { x: (j.x - i.x) / L, z: (j.z - i.z) / L };
+  const e2 = { x: -e1.z, z: e1.x };
+  const verticale = Math.abs(e1.z) > COSENO_VERTICALE;
+  const s = verticale ? -1 : (Math.sign(e1.x) || 1);
+  return { L, e1, e2, verticale, n: { x: s * e2.x, z: s * e2.z },
+           M: verticale ? "Mz" : "My", V: verticale ? "Vy" : "Vz", N: "N" };
+}
+
+/** La deformata per asta, con le funzioni di forma di Hermite nel piano (`docs/ricerca/03-stack-tecnico.md:94`):
+ *  spostamento assiale lineare, trasversale cubico dalle frecce e dalle rotazioni degli estremi.
+ *  La rotazione attorno a `y` con la regola della mano destra dà `dw/ds = −θy` (θ × r sull'asse
+ *  dell'asta, proiettato sulla normale sinistra). `y` fuori dal piano: lineare. */
+export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
+  const n = Math.max(1, Math.floor(segmenti));
+  const zero = [0, 0, 0, 0, 0, 0];
+  const fuori = [];
+  for (const a of m?.aste ?? []) {
+    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
+    if (!i || !j) continue;
+    const t = assiDi(i, j);
+    if (!t) continue;
+    const ui = spostamentoDi(perCaso, i.id) ?? zero, uj = spostamentoDi(perCaso, j.id) ?? zero;
+    const { L, e1, e2 } = t;
+    const ai = ui[0] * e1.x + ui[2] * e1.z, aj = uj[0] * e1.x + uj[2] * e1.z;   // assiali
+    const wi = ui[0] * e2.x + ui[2] * e2.z, wj = uj[0] * e2.x + uj[2] * e2.z;   // trasversali
+    const pi = -ui[4], pj = -uj[4];                                               // dw/ds = −θy
+    const punti = [];
+    for (let k = 0; k <= n; k++) {
+      const s = k / n, s2 = s * s, s3 = s2 * s;
+      const w = (1 - 3 * s2 + 2 * s3) * wi + (s - 2 * s2 + s3) * L * pi + (3 * s2 - 2 * s3) * wj + (-s2 + s3) * L * pj;
+      const u = (1 - s) * ai + s * aj;
+      const x = i.x + e1.x * (s * L + scala * u) + e2.x * scala * w;
+      const z = i.z + e1.z * (s * L + scala * u) + e2.z * scala * w;
+      const y = i.y + s * (j.y - i.y) + scala * ((1 - s) * ui[1] + s * uj[1]);
+      punti.push({ x, y, z });
+    }
+    fuori.push({ id: a.id, punti });
+  }
+  return fuori;
+}
+
+const controllaVista = (vista) => {
+  if (!["M", "V", "N"].includes(vista)) throw new Error(`vista sconosciuta: ${vista}`);
+  return vista;
+};
+
+const stazioniDi = (perCaso, id) => {
+  const s = perCaso?.sollecitazioni?.[String(id)];
+  return Array.isArray(s) ? s : [];
+};
+
+/** Le aste disegnabili con la loro chiave: la coppia (asta, chiave) in un punto solo, così
+ *  `scalaDiagrammaAuto` e `diagramma` non possono divergere sul nome della grandezza. */
+function asteConAssi(m, perCaso, vista) {
+  const fuori = [];
+  for (const a of m?.aste ?? []) {
+    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
+    if (!i || !j) continue;
+    const t = assiDi(i, j);
+    if (!t) continue;
+    fuori.push({ a, i, j, t, chiave: t[vista], stazioni: stazioniDi(perCaso, a.id) });
+  }
+  return fuori;
+}
+
+/** Millimetri per unità (N o N·mm) che portano il massimo a `frazione` del lato maggiore.
+ *  Il massimo si prende **con la chiave di ciascuna asta**: su un telaio la scala deve tenere
+ *  insieme il `My` delle travi e il `Mz` dei pilastri, che sono lo stesso momento nel piano. */
+export function scalaDiagrammaAuto(m, perCaso, vista, frazione = 0.08) {
+  let massimo = 0;
+  for (const { chiave, stazioni } of asteConAssi(m, perCaso, controllaVista(vista))) {
+    for (const s of stazioni) if (Number.isFinite(s[chiave])) massimo = Math.max(massimo, Math.abs(s[chiave]));
+  }
+  return massimo > 0 ? frazione * latoMaggiore(m) / massimo : 0;
+}
+
+/** I diagrammi per stazione. M positivo (fibre tese) verso **−n**, V e N verso **+n**, dove `n`
+ *  è l'asse trasversale del solutore (`assiDi`): sotto una trave qualunque sia l'ordine dei suoi
+ *  nodi, a sinistra di un pilastro che sale. `chiave` esce insieme ai punti perché chi disegna
+ *  i picchi e la striscia deve leggere le stesse stazioni con lo stesso nome. */
+export function diagramma(m, perCaso, vista, scalaD) {
+  controllaVista(vista);
+  const verso = vista === "M" ? -1 : 1;
+  const fuori = [];
+  for (const { a, i, j, t, chiave, stazioni } of asteConAssi(m, perCaso, vista)) {
+    if (stazioni.length === 0) continue;
+    const { L, e1, n } = t;
+    const punti = stazioni.map((s) => {
+      const valore = Number.isFinite(s[chiave]) ? s[chiave] : 0;
+      // Una stazione con `x_rel` guasto sta sul nodo i: il poligono resta chiuso invece di
+      // portarsi dietro un NaN che cancella tutto il `points` dell'asta.
+      const r = Number.isFinite(s.x_rel) ? s.x_rel : 0;
+      const d = verso * valore * scalaD;
+      return { x: i.x + e1.x * r * L + n.x * d, z: i.z + e1.z * r * L + n.z * d, x_rel: s.x_rel, valore };
+    });
+    fuori.push({ id: a.id, chiave, base: [{ x: i.x, z: i.z }, { x: j.x, z: j.z }], punti });
+  }
+  return fuori;
+}
+
+/** I picchi da scrivere: il massimo in modulo e, se cambia segno in modo visibile (≥ 5 % del
+ *  massimo), anche l'estremo opposto. Tutto nullo → niente da scrivere. */
+export function picchi(stazioni, grandezza) {
+  const valide = (stazioni ?? []).filter((s) => Number.isFinite(s?.[grandezza]) && Number.isFinite(s?.x_rel));
+  if (valide.length === 0) return [];
+  const max = valide.reduce((a, s) => (s[grandezza] > a[grandezza] ? s : a));
+  const min = valide.reduce((a, s) => (s[grandezza] < a[grandezza] ? s : a));
+  const [primo, secondo] = Math.abs(max[grandezza]) >= Math.abs(min[grandezza]) ? [max, min] : [min, max];
+  if (primo[grandezza] === 0) return [];
+  const fuori = [{ x_rel: primo.x_rel, valore: primo[grandezza] }];
+  if (Math.sign(secondo[grandezza]) === -Math.sign(primo[grandezza]) &&
+      Math.abs(secondo[grandezza]) >= 0.05 * Math.abs(primo[grandezza])) {
+    fuori.push({ x_rel: secondo.x_rel, valore: secondo[grandezza] });
+  }
+  return fuori;
+}
+
+const UNITA = { M: [1e6, "kN·m"], V: [1e3, "kN"], N: [1e3, "kN"], deformata: [1, "mm"] };
+export function testoValore(vista, v) {
+  if (!Number.isFinite(v)) return "—";
+  const [fattore, unita] = UNITA[vista] ?? [1, ""];
+  return `${conciso(v / fattore)} ${unita}`.trim();
+}
+
+const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j", N: "kN · + trazione" };
+export function testoBadge({ vista, caso, scala, auto, stantia = false }) {
+  if (!vista) return "";
+  const coda = vista === "deformata" ? `×${conciso(scala)} (${auto ? "auto" : "a mano"})` : LEGENDA[vista];
+  return `${stantia ? "stantia · " : ""}${vista} · ${caso} · ${coda}`;
+}
+
+const kN = (v) => `${conciso(v / 1e3)} kN`;
+const kNm = (v) => `${conciso(v / 1e6)} kN·m`;
+const mm = (v) => `${conciso(v)} mm`;
+const mrad = (v) => `${conciso(v * 1e3)} mrad`;
+const terna_ = (nomi, valori, f) => nomi.map((n, k) => `${n} ${f(valori[k])}`).join(" · ");
+
+export function righeSpostamenti(perCaso, id) {
+  const u = spostamentoDi(perCaso, id);
+  if (!u) return [];
+  return [["spostamenti", terna_(["ux", "uy", "uz"], u.slice(0, 3), mm)],
+          ["rotazioni", terna_(["φx", "φy", "φz"], u.slice(3, 6), mrad)]];
+}
+
+export function righeReazioni(perCaso, id) {
+  const r = perCaso?.reazioni?.[String(id)];
+  if (!Array.isArray(r) || r.length < 6 || !r.every(Number.isFinite)) return [];
+  return [["reazioni", terna_(["Rx", "Ry", "Rz"], r.slice(0, 3), kN)],
+          ["momenti di reazione", terna_(["Mx", "My", "Mz"], r.slice(3, 6), kNm)]];
+}
+
+/** «Σ reazioni (0; 0; 60) kN · Σ carichi (0; 0; −60) kN»: il controllo che contraddice, accanto
+ *  al numero (`docs/ricerca/07-ux-modellatore.md:101`). Il caso che non c'è dà un trattino. */
+export function testoEquilibrio(risultati, caso) {
+  const perCaso = risultati?.per_caso?.[caso];
+  if (!perCaso) return "—";
+  const somma = [0, 0, 0];
+  for (const r of Object.values(perCaso.reazioni ?? {})) for (let k = 0; k < 3; k++) somma[k] += Number(r?.[k]) || 0;
+  const vettore = (v) => `(${v.map((x) => conciso(x / 1e3)).join("; ")}) kN`;
+  const carichi = risultati?.run?.carico_totale?.[caso];
+  const testoCarichi = Array.isArray(carichi) && carichi.length >= 3 ? vettore(carichi.slice(0, 3)) : "—";
+  return `Σ reazioni ${vettore(somma)} · Σ carichi ${testoCarichi}`;
+}
+
+export function srotolato(stazioni, grandezza) {
+  const punti = (stazioni ?? []).filter((s) => Number.isFinite(s?.[grandezza]) && Number.isFinite(s?.x_rel))
+    .map((s) => ({ x_rel: s.x_rel, valore: s[grandezza] }));
+  return { punti, massimo: punti.reduce((a, p) => Math.max(a, Math.abs(p.valore)), 0) };
+}
