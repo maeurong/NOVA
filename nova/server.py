@@ -208,9 +208,12 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
     def _avvia_lavoro(req: dict, con_cartella: bool = False) -> dict:
         """Un lavoro alla volta: la seconda corsa è un 409 subito, e chi gira non se ne accorge."""
         with lavori_lock:
-            if any(l["stato"] == "in corso" for l in lavori.values()):
+            in_corso = next((r for r, l in lavori.items() if l["stato"] == "in corso"), None)
+            if in_corso:
+                # il `run_id` nel 409: chi ricarica la pagina a metà corsa si riaggancia dalla `GET`
                 raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
-                                                 "motivo": "un'altra corsa è in corso"})
+                                                 "motivo": "un'altra corsa è in corso",
+                                                 "run_id": in_corso})
             run_id = secrets.token_hex(6)
             lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None}
             if con_cartella:
@@ -235,7 +238,12 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
                 lavoro["fin"] = fin
                 lavoro["stato"] = "finita"
 
-        threading.Thread(target=corri, daemon=True).start()
+        try:
+            threading.Thread(target=corri, daemon=True).start()
+        except Exception:   # `can't start new thread`: il lavoro non esiste, non è «in corso»
+            with lavori_lock:
+                lavori.pop(run_id, None)
+            raise
         return {"run_id": run_id, "stato": "in corso",
                 **({"cartella": lavoro["cartella"]} if con_cartella else {})}
 

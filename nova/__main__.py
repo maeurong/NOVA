@@ -29,11 +29,13 @@ def main(argv: list[str] | None = None) -> None:
     args = _argomenti(argv)
     porta = args.porta or int(os.environ.get("NOVA_PORTA", PORTA_DEFAULT))
     sidecar = SidecarProcesso(solutore=args.solutore)
-    lungo = SidecarProcesso(solutore=args.solutore)   # il secondo prende le corse
+    lungo = None
     try:
-        # `create_app` sta dentro il `try`: `static/` assente la fa sollevare, e fuori di qui
-        # il sottoprocesso del sidecar resterebbe orfano. La cartella delle corse è assoluta,
-        # così non si sposta se qualcuno cambia la cwd del processo.
+        # Il secondo sidecar e `create_app` stanno dentro il `try`: se sollevano — il `Popen`
+        # che non parte, `static/` assente — fuori di qui il primo sottoprocesso resterebbe
+        # orfano. La cartella delle corse è assoluta, così non si sposta se qualcuno cambia
+        # la cwd del processo.
+        lungo = SidecarProcesso(solutore=args.solutore)   # il secondo prende le corse
         app = create_app(sidecar, Path.cwd() / "corse", porta=porta, sidecar_lungo=lungo)
         threading.Timer(0.8, lambda: webbrowser.open(f"http://127.0.0.1:{porta}/")).start()
         uvicorn.run(app, host="127.0.0.1", port=porta, log_level="warning")
@@ -41,7 +43,8 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(f"impossibile avviare NOVA sulla porta {porta}: {e}")
     finally:
         sidecar.p.terminate()  # niente sottoprocesso orfano, né sull'errore né all'uscita normale
-        lungo.p.terminate()
+        if lungo:
+            lungo.p.terminate()
 
 
 if __name__ == "__main__":

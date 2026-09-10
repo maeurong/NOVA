@@ -312,6 +312,13 @@ def test_create_app_fallisce_allavvio_se_static_manca(tmp_path):
         create_app(SidecarInProcesso(), tmp_path / "corse", statici=tmp_path / "non_esiste")
 
 
+def _finto_sidecar(terminato: list):
+    """Un finto **nuovo** a ogni chiamata, e `terminate` accoda l'identità del sottoprocesso:
+    con un finto solo, due `terminate()` sullo stesso passerebbero per due sidecar terminati."""
+    p = type("P", (), {"terminate": lambda self: terminato.append(id(self))})()
+    return type("F", (), {"p": p})()
+
+
 # riga 17: python -m nova con porta occupata -> messaggio che nomina la porta, non traceback di uvicorn
 def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_path):
     import nova.__main__ as m
@@ -322,15 +329,37 @@ def test_main_porta_occupata_messaggio_non_traceback(monkeypatch, capsys, tmp_pa
         raise OSError(48, "Address already in use")
 
     terminato = []
-    finto_sidecar = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
 
     monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(_bind_occupato)}))
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto_sidecar)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar(terminato))
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
     with pytest.raises(SystemExit) as exc:
         m.main(["--porta", "8765"])
     assert "8765" in str(exc.value)
-    assert terminato == [True, True]  # i due sottoprocessi del sidecar non restano orfani
+    # due sottoprocessi **distinti**, non due volte lo stesso
+    assert len(terminato) == 2 and terminato[0] != terminato[1]
+
+
+def test_main_se_il_secondo_sidecar_non_parte_il_primo_non_resta_orfano(monkeypatch, tmp_path):
+    """Il secondo `SidecarProcesso` stava fuori dal `try`: se il suo `Popen` sollevava, il primo
+    restava orfano e il commento dentro il `try` diceva il contrario."""
+    import nova.__main__ as m
+
+    monkeypatch.chdir(tmp_path)
+    terminato = []
+    fatti = []
+
+    def _fabbrica(**k):
+        fatti.append(True)
+        if len(fatti) == 2:
+            raise OSError("nessun python per il secondo sidecar")
+        return _finto_sidecar(terminato)
+
+    monkeypatch.setattr(m, "SidecarProcesso", _fabbrica)
+    with pytest.raises(SystemExit) as exc:
+        m.main([])
+    assert "nessun python per il secondo sidecar" in str(exc.value)
+    assert len(terminato) == 1   # il primo è terminato lo stesso, e il secondo non esiste
 
 
 # riga 18: corpo di /api/corsa con solutore o cartella -> ignorati (extra="forbid" -> 422), mai inoltrati
@@ -491,8 +520,7 @@ def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_pat
 
     monkeypatch.chdir(tmp_path)
     terminato = []
-    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: terminato.append(True)})()})()
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar(terminato))
 
     def _static_assente(*a, **k):
         raise RuntimeError("Directory 'static' does not exist")
@@ -500,8 +528,9 @@ def test_main_senza_static_termina_il_sidecar_e_dice_perche(monkeypatch, tmp_pat
     monkeypatch.setattr(m, "create_app", _static_assente)
     with pytest.raises(SystemExit) as exc:
         m.main([])
-    # tutti e due i sidecar, il breve e il lungo: nessuno dei due resta orfano
-    assert "static" in str(exc.value) and terminato == [True, True]
+    # tutti e due i sidecar, il breve e il lungo, e sono due sottoprocessi distinti
+    assert "static" in str(exc.value)
+    assert len(terminato) == 2 and terminato[0] != terminato[1]
 
 
 def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
@@ -509,8 +538,7 @@ def test_main_passa_una_cartella_corse_assoluta(monkeypatch, tmp_path):
 
     monkeypatch.chdir(tmp_path)
     visti = []
-    finto = type("F", (), {"p": type("P", (), {"terminate": lambda self: None})()})()
-    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: finto)
+    monkeypatch.setattr(m, "SidecarProcesso", lambda **k: _finto_sidecar([]))
     monkeypatch.setattr(m, "create_app", lambda _s, cartella, **k: visti.append(cartella))
     monkeypatch.setattr(m, "uvicorn", type("U", (), {"run": staticmethod(lambda *a, **k: None)}))
     monkeypatch.setattr(m.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
@@ -985,6 +1013,10 @@ def test_una_seconda_corsa_mentre_una_gira_e_409(tmp_path):
     rid = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).json()["run_id"]
     r2 = c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
     assert r2.status_code == 409 and "in corso" in r2.json()["motivo"]
+    # chi ricarica la pagina a metà corsa si riaggancia dal `run_id` che il 409 porta
+    assert r2.json()["run_id"] == rid
+    # anche il solido passa dallo stesso lavoro: un sidecar solo, una corsa alla volta
+    assert c.post("/api/ccx", json={"inp": str(_trave())}).status_code == 409
     fermo.via.set(); _attendi(c, rid)
     # finita la prima, la seconda parte
     assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
@@ -1041,3 +1073,23 @@ def test_lerrore_del_soffitto_chiude_il_lavoro_e_il_prossimo_parte(tmp_path):
     d = _attendi(c, rid)
     assert d["stato"] == "finita" and d["esito"] == "errore" and d["fase"] == "sidecar"
     assert c.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
+
+
+def test_un_thread_che_non_parte_non_lascia_il_lavoro_in_corso(cliente, monkeypatch):
+    """`Thread.start()` può sollevare (`can't start new thread`): senza la potatura il lavoro
+    resta «in corso» per sempre e ogni corsa dopo è 409."""
+    import nova.server as ns
+
+    class _ThreadCheNonParte:
+        def __init__(self, *a, **k):
+            pass
+
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    # solo il nome `threading` dentro `nova.server`: il modulo vero resta com'è per TestClient
+    monkeypatch.setattr(ns, "threading", type("T", (), {"Thread": _ThreadCheNonParte}))
+    r = cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")})
+    assert r.status_code == 500
+    monkeypatch.undo()
+    assert cliente.post("/api/corsa", json={"modello": leggi_fixture("telaio_2x1.nova.json")}).status_code == 202
