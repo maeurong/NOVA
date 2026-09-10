@@ -138,6 +138,17 @@ export function voceDaEvento(evento) {
 // e per la stessa ragione — la barra stampa solo ciò che funziona (story 14): `seleziona`
 // compare anche in asta, dove `G` **è** il gesto; `direzione` compare solo col ghost, perché
 // in asta la direzione la dà il secondo nodo e le frecce lì non fanno niente.
+/** Il nome accessibile di un tasto: «⇧⌘⏎» a voce è «maiuscolo comando invio», non «upwards white
+ *  arrow place of interest sign return symbol». Le lettere restano lettere; i glifi diventano
+ *  parole, nell'ordine in cui si premono. */
+const PAROLE_DEI_GLIFI = [["⇧", "maiuscolo "], ["⌘", "comando "], ["⏎", "invio"], ["⌫", "cancella"],
+                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"]];
+export const nomeTasto = (tasto) => {
+  let nome = String(tasto ?? "");
+  for (const [glifo, parola] of PAROLE_DEI_GLIFI) nome = nome.split(glifo).join(parola);
+  return nome.trim();
+};
+
 export const vociDellaBarra = (contesto, tipoSelezionato = null) =>
   TASTI.filter((v) => {
     // Prima di tutto il resto: una voce che vale per un solo tipo di selezione non compare

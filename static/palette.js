@@ -1,3 +1,4 @@
+import { nomeTasto } from "./tastiera.js";
 // La palette ⌘K (story 8, P3): cerca ogni comando per nome, mostra la scorciatoia accanto, e
 // accetta il valore nella query — «sezione 300 × 500», «q -12,5». Non esegue niente da sé:
 // passa voce e valore a `app.js`, che li serve con lo stesso ramo del tasto.
@@ -53,6 +54,7 @@ export function creaPalette(radice, { suScelta, suChiusura = null }) {
     if (!ora) nome.append(document.createTextNode(" · non ora"));
     if (r.voce.aiuto) { const s = document.createElement("small"); s.textContent = r.voce.aiuto; nome.append(s); }
     const kbd = document.createElement("kbd"); kbd.textContent = r.voce.tasto;
+    kbd.setAttribute("aria-label", nomeTasto(r.voce.tasto));
     li.append(nome, kbd);
     return li;
   }

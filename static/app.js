@@ -13,7 +13,7 @@ import { ErroreComando, creaNodo, estrudi, collega, spostaNodo, eliminaNodo, rin
 import { leggiAzione, leggiNodale, leggiDistribuito, leggiCombinazione, caricoVuoto, NOME_TIPO } from "./carichi.js";
 import { leggiDimensioni } from "./sezione.js";
 import { nuovaCronologia, applica, corrente, indietro, avanti, vaiA, etichette } from "./cronologia.js";
-import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "./tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo, nomeTasto } from "./tastiera.js";
 import { creaPalette } from "./palette.js";
 import { creaPiano } from "./piano.js";
 import { creaSpazio } from "./spazio.js";
@@ -639,6 +639,7 @@ function disegnaBarra() {
     const span = document.createElement("span");
     span.className = "tasto";
     const kbd = document.createElement("kbd"); kbd.textContent = v.tasto;
+    kbd.setAttribute("aria-label", nomeTasto(v.tasto));   // «comando invio», non i nomi Unicode dei glifi
     span.append(kbd, document.createTextNode(v.etichetta));
     if (v.aiuto) {
       const aiuto = document.createElement("span");

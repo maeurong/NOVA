@@ -1,6 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo } from "../tastiera.js";
+import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo, nomeTasto } from "../tastiera.js";
+
+// I glifi dei tasti a voce sono parole: lo screen reader legge «comando invio», non i nomi
+// Unicode dei simboli. Le lettere restano lettere.
+test("nomeTasto: i glifi diventano parole, nell'ordine in cui si premono", () => {
+  assert.equal(nomeTasto("⌘⏎"), "comando invio");
+  assert.equal(nomeTasto("⇧⌘⏎"), "maiuscolo comando invio");
+  assert.equal(nomeTasto("⇧⌘Z"), "maiuscolo comando Z");
+  assert.equal(nomeTasto("⌘O"), "comando O");
+  assert.equal(nomeTasto("N"), "N");
+  assert.equal(nomeTasto("⌫"), "cancella");
+  assert.equal(nomeTasto("Invio"), "invio");
+  assert.equal(nomeTasto("← ↑ → ↓"), "frecce");
+  assert.equal(nomeTasto(undefined), "");
+  for (const v of TASTI) assert.ok(!/[⇧⌘⏎⌫←↑→↓]/.test(nomeTasto(v.tasto)), `${v.tasto}: nessun glifo nel nome`);
+});
 
 test("nessun codice compare due volte", () => {
   const codici = TASTI.map((v) => v.codice);
