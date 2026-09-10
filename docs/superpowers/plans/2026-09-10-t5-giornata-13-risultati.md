@@ -2331,3 +2331,18 @@ Ramo `feat/interfaccia-13-risultati` da `main` `4e8cf0a`; HEAD **`8d737da` (più
 - La striscia srotolata dice sempre M; il titolo dei carichi ha `max-width: 45 %` con ellipsis.
 
 **Lezioni**: un piano che assume una convenzione di segno o di terna va **misurato** prima del dispatch (R1: la mappa `GRANDEZZA` era vera per le travi e falsa per i pilastri; sarebbe passata verde nei test e vuota in pagina sul MURO 1); il fumo in Chrome trova ciò che il DOM finto non vede (hit-testing, sovrapposizioni con i carichi, spazi fini nei numeri); la prova a mano su un modello con nodi vincolati e rotazioni ha trovato il difetto più caro (scala esplosa) che sei review non avevano visto: **i modelli veri vanno provati presto**, anche prima della review di ramo.
+
+### Debiti sanati prima del merge (10/09 sera, su richiesta dell'autore: «sana i debiti»)
+
+Otto commit (`1acb019` … `2894159`); test finali **761 JS**, **736 pytest + 3 skip**, **16 di fumo**.
+- **Hermite per tratto**: il server esporta `per_caso[caso].spostamenti_interni["<id_asta>"] = [{x_rel, u[6]}, …]` (i nodi delle `suddivisioni`, che non hanno un id nel modello; spec aggiornata) e la deformata passa da lì: la trave appoggiata legge «1,57 mm» (era 1,26, i 4/5 dell'algebra). Il limite del 20 % resta solo per risultati senza la chiave.
+- **`app.js` nel fumo**: tre copioni (la cifra col campo di comando aperto e il fuoco perso non crea un nodo né entra nel campo; «apri» azzera i risultati; la `verifica` non tocca lo strato), più l'assert sulla freccia vera.
+- **Etichette fuori dalle linee**: ordinate, tratti dei diagrammi e della deformata, contorno chiuso e simboli dei vincoli sono ostacoli; `disponi` prova **otto** versi per distanza (i quattro assiali, poi le diagonali) così i picchi d'angolo trovano posto invece di sparire. Sul MURO 1 tutti i picchi sono scritti, nessuno su una linea o un vincolo.
+- **Lato di V e N uniforme**: positivo a sinistra di i→j per ogni asta (M resta sul lato teso), e la legenda lo dice; la striscia usa lo stesso segno.
+- **Il picco principale di ogni asta si scrive sempre**: la soglia del 2 % vale solo per il secondo picco.
+- **`verticale` sul vettore 3D** (la regola del deck), e un'asta con sezione ruotata (non multiplo di 180°) non entra nei diagrammi: il badge conta le aste saltate.
+- **La striscia segue la vista** (M, V o N con la chiave di `assiDi`); `spostamentoMassimo` non è più esportata.
+- Le porte del fumo si prendono aperte insieme; la riga dell'equilibrio tiene `numero` col filetto «stantia».
+
+**Restano, dichiarati**: la deformata nel 3D non ha test (WebGL); allo stesso nodo trave e pilastro scrivono lo stesso modulo con segno opposto (convenzioni per asta); a zoom 200 % con `#piano` da 120 px i nomi lunghi restano tagliati; il titolo dei carichi ha `max-width: 45 %` con ellipsis.
+
