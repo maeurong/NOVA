@@ -317,7 +317,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #corsa-fasi { margin: var(--passo) 0 0; padding-left: 1.2em; font-size: 11px; }
 #corsa-fasi .corrente { font-weight: 700; }
 #corsa-secondi { margin: 2px 0 0; font-size: 11px; }
-#corsa-ultima { margin: var(--passo) 0 0; font-size: 11px; overflow-wrap: anywhere; }
+/* Come `#palette-stato` (`:304-306`): la riga dell'ultima corsa è una live region e non si
+   nasconde con `hidden` — vuota resta resa ad altezza zero, e il margine è l'unica cosa da
+   togliere, perché una regione nascosta e poi mostrata non la annunciano tutte le AT. */
+#corsa-ultima { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
+#corsa-ultima:not(:empty) { margin: var(--passo) 0 0; }
 #corsa-ultima.stantia { border-left: 3px solid var(--rosso); padding-left: 6px; }
 #corsa-registro { margin-top: 6px; font-size: 11px; }
 #corsa-registro summary { cursor: pointer; }

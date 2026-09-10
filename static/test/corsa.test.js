@@ -128,17 +128,27 @@ test("verdettiDi: prima i verdetti del Check, poi i sette controlli sui risultat
 
 function elementoFinto(iniziale = {}) {
   const listeners = {};
-  return {
-    value: "", textContent: "", hidden: false, title: "", className: "", type: "",
-    disabled: false, _figli: [], _attrs: {},
+  const el = {
+    value: "", hidden: false, title: "", className: "", type: "",
+    disabled: false, _figli: [], _attrs: {}, _scritture: 0,
     addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
     dispatch(ev, argomento) { (listeners[ev] ?? []).forEach((fn) => fn(argomento)); },
     setAttribute(nome, valore) { this._attrs[nome] = String(valore); },
     getAttribute(nome) { return this._attrs[nome] ?? null; },
     append(...figli) { this._figli.push(...figli); },
     replaceChildren(...figli) { this._figli = figli; },
-    ...iniziale,
   };
+  // `textContent` conta le scritture: `#corsa-ultima` è una live region, e riscriverla con lo
+  // stesso testo la fa riannunciare — un accesso, non una proprietà, è l'unico modo di vederlo.
+  let testo = "";
+  Object.defineProperty(el, "textContent", {
+    enumerable: true,
+    get: () => testo,
+    set(v) { testo = v; el._scritture++; },
+  });
+  Object.assign(el, iniziale);
+  el._scritture = 0;          // l'allestimento non è una scrittura da contare
+  return el;
 }
 
 globalThis.document = { createElement: () => elementoFinto() };
@@ -154,7 +164,8 @@ function radiceCorsa() {
     "#corsa-attesa": elementoFinto({ hidden: true }),
     "#corsa-fasi": elementoFinto(),
     "#corsa-secondi": elementoFinto(),
-    "#corsa-ultima": elementoFinto({ hidden: true, className: "numero" }),
+    // Niente `hidden` nel markup: è una live region, e vuota resta resa ad altezza zero (`:empty`).
+    "#corsa-ultima": elementoFinto({ className: "numero" }),
     "#corsa-registro": elementoFinto({ hidden: true }),
     "#corsa-coda": elementoFinto(),
     "#corsa-vuoto": elementoFinto(),
@@ -282,7 +293,7 @@ test("creaCorsa: 409 dice che un'altra corsa è in corso e libera i bottoni", as
   assert.equal(el("#corsa-corri").disabled, false);
   assert.equal(el("#corsa-verifica").disabled, false);
   assert.equal(el("#corsa-corri-solido").disabled, false);
-  assert.equal(el("#corsa-ultima").hidden, true);
+  assert.equal(el("#corsa-ultima").textContent, "");
 });
 
 // Due modi di perdere il polling a metà, stesso oracolo: nessun lavoro registrato. La rete
@@ -299,7 +310,7 @@ test("creaCorsa: la rete che cade a metà polling non lascia un lavoro a metà, 
   await c.corri();
   assert.deepEqual(errori, ["il server non risponde"]);
   assert.equal(primo.el("#corsa-attesa").hidden, true);
-  assert.equal(primo.el("#corsa-ultima").hidden, true, "nessun lavoro registrato: la riga resta muta invece di mentire");
+  assert.equal(primo.el("#corsa-ultima").textContent, "", "nessun lavoro registrato: la riga resta muta invece di mentire");
   assert.equal(esiti.length, 0);
   assert.equal(primo.el("#corsa-corri").disabled, false);
   assert.equal(c.inCorso(), false);
@@ -315,7 +326,7 @@ test("creaCorsa: la rete che cade a metà polling non lascia un lavoro a metà, 
   await c2.corri();
   assert.deepEqual(errori2, ["nessuna corsa d5"]);
   assert.equal(secondo.el("#corsa-attesa").hidden, true);
-  assert.equal(secondo.el("#corsa-ultima").hidden, true);
+  assert.equal(secondo.el("#corsa-ultima").textContent, "");
   assert.equal(esiti2.length, 0);
   assert.equal(secondo.el("#corsa-corri").disabled, false);
 });
@@ -395,7 +406,7 @@ test("creaCorsa: verifica fa la POST a /api/check e mostra i verdetti anche se t
   assert.equal(el("#corsa-verdetti")._figli.length, 2, "il verde si vede: due passati sono due righe, non il silenzio");
   assert.equal(el("#corsa-verdetti").hidden, false);
   assert.equal(el("#corsa-vuoto").hidden, true);
-  assert.equal(el("#corsa-ultima").hidden, true, "la verifica non è una corsa: nessuna riga dell'ultima");
+  assert.equal(el("#corsa-ultima").textContent, "", "la verifica non è una corsa: nessuna riga dell'ultima");
   assert.equal(el("#corsa-verifica").textContent, "verifica");
   assert.equal(el("#corsa-verifica").disabled, false);
 });
@@ -426,7 +437,7 @@ test("creaCorsa: corri il solido — campo vuoto rifiuta; con il percorso fa la 
   const errori = [];
   const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
   await c.corriSolido();
-  assert.deepEqual(errori, ["scrivi il percorso di un deck .inp"]);
+  assert.deepEqual(errori, ["scrivi il percorso del deck del solido"]);
   assert.equal(spia.chiamate, 0);
 
   spia = fetchSequenza([
@@ -453,10 +464,10 @@ test("creaCorsa: azzera dimentica lavoro e verdetti e rimette lo stato vuoto; un
   const esiti = [];
   const c = creaCorsa(radice, { ...zero, suEsito: (l) => esiti.push(l) });
   await c.corri();
-  assert.equal(el("#corsa-ultima").hidden, false);
+  assert.ok(el("#corsa-ultima").textContent.startsWith("corsa l1"));
   assert.equal(el("#corsa-verdetti")._figli.length, 1);
   c.azzera();
-  assert.equal(el("#corsa-ultima").hidden, true);
+  assert.equal(el("#corsa-ultima").textContent, "");
   assert.equal(el("#corsa-verdetti").hidden, true);
   assert.equal(el("#corsa-verdetti")._figli.length, 0);
   assert.equal(el("#corsa-registro").hidden, true);
@@ -475,7 +486,7 @@ test("creaCorsa: azzera dimentica lavoro e verdetti e rimette lo stato vuoto; un
   c.azzera();
   sblocca();
   await p;
-  assert.equal(el("#corsa-ultima").hidden, true, "il lavoro finisce, ma non si registra");
+  assert.equal(el("#corsa-ultima").textContent, "", "il lavoro finisce, ma non si registra");
   assert.equal(el("#corsa-verdetti")._figli.length, 0);
   assert.equal(esiti.length, 1, "solo la prima corsa ha chiamato suEsito");
   assert.equal(el("#corsa-corri").disabled, false);
@@ -501,4 +512,103 @@ test("creaCorsa: ogni bottone ha un nome accessibile che comincia dal testo visi
   const etichette = vai.map((b) => b._attrs["aria-label"]);
   assert.deepEqual(etichette, ["vai al nodo 3", "vai al nodo 7", "vai alla sezione 4"]);
   assert.equal(new Set(etichette).size, 3, "tre «vai» identici a voce sono tre bersagli indistinguibili");
+});
+
+// --- fix round 1 ---------------------------------------------------------------
+
+// A1. Il `keydown` del campo e il listener globale di `app.js` guardano lo stesso tasto: senza
+// il filtro sui modificatori, `⌘⏎` scritto qui dentro partiva **due volte** — una da questo
+// listener come «corri il solido», una da `window` come «corri». Invio nudo resta di questo campo.
+test("creaCorsa: ⌘⏎ nel campo del deck non lancia il solido — quella scorciatoia è di app.js", async () => {
+  const spia = fetchSequenza([
+    { stato: 202, dati: { run_id: "n1", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "n1", stato: "finita", fasi: [], secondi: 1, esito: "ok" } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero });
+  el("#corsa-inp").value = "docs/caso-studio/muro_1.inp";
+  let impedito = 0;
+  const tasto = (extra) => el("#corsa-inp").dispatch("keydown",
+    { key: "Enter", preventDefault: () => impedito++, ...extra });
+  tasto({ metaKey: true });
+  tasto({ ctrlKey: true });
+  tasto({ shiftKey: true });
+  assert.equal(spia.chiamate, 0, "⌘⏎ risale a window come «corri»: partire anche di qui è una corsa di troppo");
+  assert.equal(impedito, 0, "e nemmeno si mangia il tasto che non è suo");
+  tasto({});
+  await finoA(() => !c.inCorso());
+  assert.equal(impedito, 1);
+  assert.equal(spia.rotte[0], "/api/ccx", "Invio nudo resta il gesto del campo");
+});
+
+// A2. Il solido gira su un `.inp` su disco, non sullo snapshot: cambiare il modello non lo
+// invecchia, e dirgli «stantia» prometterebbe un rilancio che non cambia niente.
+test("creaCorsa: la corsa del solido non invecchia — ha girato su un .inp, non sullo snapshot", async () => {
+  const m = { nodi: [] };
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "s1", stato: "in corso", cartella: "/c/y" } },
+    { stato: 200, dati: { run_id: "s1", stato: "finita", fasi: [], secondi: 2, esito: "ok", cartella: "/c/y" } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero, modello: () => m });
+  el("#corsa-inp").value = "docs/caso-studio/muro_1.inp";
+  await c.corriSolido();
+  const testo = el("#corsa-ultima").textContent;
+  assert.ok(testo.startsWith("corsa del solido s1"));
+  c.disegna({ modello: { ...m } });
+  assert.equal(el("#corsa-ultima").textContent, testo, "un altro snapshot non invecchia una corsa che il modello non l'ha mai toccato");
+  assert.ok(!el("#corsa-ultima").className.includes("stantia"));
+});
+
+// C. `#corsa-ultima` è una live region, e `app.js` ridisegna a ogni comando: riscriverla con lo
+// stesso testo la fa riannunciare a ogni clic.
+test("creaCorsa: la riga dell'ultima parla una volta sola — due disegni uguali non la riscrivono", async () => {
+  const m = { nodi: [] };
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "u1", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "u1", stato: "finita", fasi: [], secondi: 1, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero, modello: () => m });
+  await c.corri();
+  const dopoLaCorsa = el("#corsa-ultima")._scritture;
+  c.disegna({ modello: m });
+  c.disegna({ modello: m });
+  c.disegna({ modello: m });
+  assert.equal(el("#corsa-ultima")._scritture, dopoLaCorsa,
+    "tre ridisegni identici sono tre annunci identici: la riga si scrive solo quando cambia");
+  c.disegna({ modello: { ...m } });
+  assert.equal(el("#corsa-ultima")._scritture, dopoLaCorsa + 1, "quando cambia davvero, parla");
+  // E non si nasconde: vuota o piena, `hidden` non è più il canale (lo fa `:empty` nel CSS).
+  assert.equal(el("#corsa-ultima").hidden, false);
+  c.azzera();
+  assert.equal(el("#corsa-ultima").textContent, "");
+  assert.equal(el("#corsa-ultima").hidden, false);
+});
+
+// D. La guardia di generazione stava dopo il ciclo: `azzera()` a metà corsa lasciava il polling
+// a riscrivere l'attesa e i bottoni spenti finché il server non diceva «finita» — e su una corsa
+// abbandonata quel momento poteva non arrivare mai. La terza risposta è una rete che cade: serve
+// solo a **terminare** il ciclo se la guardia non c'è — con la guardia al posto giusto quella
+// risposta non viene mai chiesta, ed è proprio quella l'asserzione.
+test("creaCorsa: azzera a metà polling ferma l'attesa al giro dopo", { timeout: 5000 }, async () => {
+  const spia = fetchSequenza([
+    { stato: 202, dati: { run_id: "p1", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "p1", stato: "in corso", fasi: ["check model"], secondi: 0.4 } },
+    { cade: true },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  const p = c.corri();
+  await finoA(() => el("#corsa-fasi")._figli.length === 1);
+  const giri = spia.chiamate;
+  c.azzera();
+  await p;
+  assert.equal(spia.chiamate, giri, "dopo l'azzera non si interroga più una corsa che nessuno vuole");
+  assert.deepEqual(errori, [], "l'azzera è un gesto dell'utente, non un guasto: nessun errore da leggere");
+  assert.equal(el("#corsa-attesa").hidden, true, "l'attesa sparisce invece di restare a girare");
+  assert.equal(el("#corsa-fasi")._figli.length, 1, "e le fasi non si riscrivono più");
+  assert.equal(el("#corsa-corri").disabled, false);
+  assert.equal(c.inCorso(), false);
 });

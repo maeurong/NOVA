@@ -115,9 +115,9 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
 
   const bottoni = (liberi) => { for (const b of [bVerifica, bCorri, bSolido]) if (b) b.disabled = !liberi; };
 
-  function impostaSolutore(s, v = versione) {
-    salute = s ?? salute;
-    versione = v ?? versione;
+  function impostaSolutore(s, v) {
+    if (s) salute = s;
+    if (v) versione = v;
     solutoreEl.textContent = testoSolutore(salute, versione);
   }
 
@@ -152,7 +152,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
         const b = document.createElement("button");
         b.type = "button";
         b.textContent = "vai";
-        b.setAttribute("aria-label", `vai ${ARTICOLO[r.vai.tipo] ?? "a"} ${r.vai.id}`);
+        b.setAttribute("aria-label", `vai ${ARTICOLO[r.vai.tipo]} ${r.vai.id}`);
         // R11: il ridisegno è di `app.js`. Qui si dice solo dove andare.
         b.addEventListener("click", () => suVai(r.vai));
         li.append(b);
@@ -162,14 +162,25 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
     vuotoEl.hidden = righe.length > 0 || lavoro !== null;
   }
 
+  /** La riga dell'ultima corsa, che è una live region (`aria-live` in `index.html`). Due cose
+   *  che non sono dettagli:
+   *
+   *  - si scrive **solo se cambia**. `app.js` ridisegna a ogni comando, e riscrivere una live
+   *    region con lo stesso identico testo la fa riannunciare: la riga parlerebbe a ogni clic.
+   *  - non si nasconde con `hidden`. Vuota resta resa ad altezza zero (`:empty` nel CSS, come
+   *    `#palette-stato`): una regione nascosta e poi mostrata non viene annunciata da tutte le AT. */
   function disegnaUltima(m) {
-    if (!lavoro) { ultimaEl.hidden = true; ultimaEl.className = "numero"; return; }
-    const vecchia = stantia(lavoro, m);
-    let testo = testoUltima(lavoro);
-    if (lavoro.solido && lavoro.cartella) testo += ` · cartella ${lavoro.cartella}`;
-    ultimaEl.textContent = vecchia ? `${testo} · stantia` : testo;   // la parola è il canale, il filetto l'accompagna
+    // Il solido non invecchia mai: ha girato su un `.inp` su disco, non sullo snapshot, e
+    // chiamarlo stantio prometterebbe un rilancio che non cambierebbe niente.
+    const vecchia = Boolean(lavoro) && !lavoro.solido && stantia(lavoro, m);
+    let nuovo = "";
+    if (lavoro) {
+      nuovo = testoUltima(lavoro);
+      if (lavoro.solido && lavoro.cartella) nuovo += ` · cartella ${lavoro.cartella}`;
+      if (vecchia) nuovo += " · stantia";   // la parola è il canale, il filetto l'accompagna
+    }
+    if (ultimaEl.textContent !== nuovo) ultimaEl.textContent = nuovo;
     ultimaEl.className = vecchia ? "numero stantia" : "numero";
-    ultimaEl.hidden = false;
   }
 
   function disegnaAttesa(l) {
@@ -197,10 +208,16 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
     disegnaAttesa(l);
     for (;;) {
       await pausa(attesaMs);
+      // In testa al ciclo, non alla fine: `azzera()` a metà corsa deve fermare **il polling**,
+      // non solo scartarne il risultato. Dopo, il ciclo restava a riscrivere l'attesa e a tenere
+      // i bottoni spenti finché il server non diceva «finita» — momento che su una corsa
+      // abbandonata può non arrivare mai.
+      if (mia !== generazione) { attesaEl.hidden = true; return null; }
       const s = await chiediJson(`/api/corsa/${l.run_id}`);
       l.fasi = s.fasi ?? [];
       if (s.stato !== "finita") { disegnaAttesa(l); continue; }
       attesaEl.hidden = true;
+      // La seconda: `azzera()` può cadere **durante** la GET, e allora il ciclo non ci ripassa.
       if (mia !== generazione) return null;
       const { run_id, stato, fasi, secondi, ...fin } = s;
       lavoro = { run_id: l.run_id, secondi: secondi ?? 0, fin, fasi: l.fasi, modello: m, solido,
@@ -253,7 +270,9 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
   async function corriSolido() {
     if (occupato) return suErrore("una corsa è già in corso");
     const inp = (campoInp?.value ?? "").trim();
-    if (inp === "") return suErrore("scrivi il percorso di un deck .inp");
+    // Non «un deck .inp»: l'estensione qui nessuno la controlla, e un messaggio non promette
+    // una verifica che non fa.
+    if (inp === "") return suErrore("scrivi il percorso del deck del solido");
     occupato = true; bottoni(false); bSolido.textContent = "corro il solido…";
     try {
       const l = await lavora("/api/ccx", { inp }, true);
@@ -280,7 +299,13 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio 
   bVerifica.addEventListener("click", () => verifica());
   bCorri.addEventListener("click", () => corri());
   bSolido?.addEventListener("click", () => corriSolido());
-  campoInp?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); corriSolido(); } });
+  // Invio **nudo** soltanto: `⌘⏎` e `⇧⌘⏎` risalgono a `window`, dove `app.js` li legge come
+  // «corri» e «verifica». Senza il filtro, un `⌘⏎` scritto qui dentro partiva due volte.
+  campoInp?.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" || ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+    ev.preventDefault();
+    corriSolido();
+  });
   disegnaVerdetti(); disegnaUltima(null);
 
   return { verifica, corri, corriSolido, disegna, azzera, impostaSolutore, inCorso: () => occupato };

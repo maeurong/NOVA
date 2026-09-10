@@ -74,7 +74,9 @@
       <ol id="corsa-fasi" aria-label="fasi della corsa"></ol>
       <p id="corsa-secondi" class="numero"></p>
     </div>
-    <p id="corsa-ultima" class="numero" aria-live="polite" hidden></p>
+    <!-- Niente `hidden`: una live region nascosta e poi mostrata non viene annunciata da tutte
+         le AT. Vuota resta resa ad altezza zero, come `#palette-stato` (`stile.css:305`). -->
+    <p id="corsa-ultima" class="numero" aria-live="polite"></p>
     <details id="corsa-registro" hidden><summary>registro del solutore</summary><pre id="corsa-coda"></pre></details>
     <p class="vuoto" id="corsa-vuoto">Premi <kbd>⌘⏎</kbd> per lanciare tutte le analisi del modello, <kbd>⇧⌘⏎</kbd> per il solo Check Model.</p>
     <ul id="corsa-verdetti" aria-label="verdetti" hidden></ul>
