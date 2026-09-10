@@ -1,0 +1,103 @@
+// Il blocco «Risultati» del pannello destro e la striscia dell'M srotolato sotto il piano
+// (giornata 13). Lo stato non vive qui: `app.js` lo tiene e lo passa a `disegna`; i controlli
+// chiamano `suCambio` con i tre valori, e `app.js` ridisegna.
+
+import { casiDi, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
+import { leggiEspressione } from "./numeri.js";
+import { nodo } from "./modello.js";
+
+const NS = "http://www.w3.org/2000/svg";
+const INCHIOSTRO = "#141414", ROSSO = "#b8321e", MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
+
+export function creaEsito(radice, { suCambio }) {
+  const q = (sel) => radice.querySelector(sel);
+  const vuotoEl = q("#risultati-vuoto"), controlliEl = q("#risultati-controlli");
+  const casoEl = q("#risultati-caso"), scalaEl = q("#risultati-scala"), equilibrioEl = q("#risultati-equilibrio");
+  const radio = () => [...radice.querySelectorAll('input[name="vista"]')];
+  let stato = null;   // l'ultimo `risultati` disegnato: i controlli leggono da qui, non dal DOM
+  let casiScritti = null;
+
+  const cambio = () => {
+    if (!stato) return;
+    const vista = radio().find((r) => r.checked)?.value ?? "";
+    // Una scala che non si legge, zero o negativa è «auto»: il campo lo dice con il segnaposto.
+    const letta = scalaEl.value.trim() === "" ? null : leggiEspressione(scalaEl.value);
+    const scalaMano = Number.isFinite(letta) && letta > 0 ? letta : null;
+    suCambio({ caso: casoEl.value, vista: vista === "" ? null : vista, scalaMano });
+  };
+  casoEl.addEventListener("change", cambio);
+  scalaEl.addEventListener("change", cambio);
+  for (const r of radio()) r.addEventListener("change", cambio);
+
+  function disegna({ risultati, modello }) {
+    stato = risultati;
+    vuotoEl.hidden = Boolean(risultati);
+    controlliEl.hidden = !risultati;
+    if (!risultati) { casiScritti = null; return; }
+    const dati = risultati.lavoro.fin.risultati;
+    const casi = casiDi(dati);
+    // Le opzioni si riscrivono solo se i casi sono cambiati: ricostruirle a ogni ridisegno
+    // staccherebbe dal DOM il select che l'utente sta usando (stessa regola di `pannello.js`).
+    const chiave = casi.join("|");
+    if (chiave !== casiScritti) {
+      casoEl.replaceChildren(...casi.map((c) => { const o = document.createElement("option"); o.value = c; o.textContent = c; return o; }));
+      casiScritti = chiave;
+    }
+    const caso = casi.includes(risultati.caso) ? risultati.caso : casi[0];
+    casoEl.value = caso;
+    for (const r of radio()) r.checked = r.value === (risultati.vista ?? "");
+    if (document.activeElement !== scalaEl) scalaEl.value = risultati.scalaMano === null ? "" : String(risultati.scalaMano).replace(".", ",");
+    equilibrioEl.textContent = testoEquilibrio(dati, caso);
+    void modello;
+  }
+  return { disegna };
+}
+
+/** La striscia dell'M srotolato: l'asta selezionata, tutte le stazioni, i picchi scritti. */
+export function creaSrotolato(contenitore) {
+  const el = (nome, attributi = {}) => { const e = document.createElementNS(NS, nome); for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v); return e; };
+  const titolo = () => { const p = document.createElement("p"); p.className = "titolo"; return p; };
+
+  function disegna({ risultati, modello, selezione }) {
+    contenitore.hidden = !risultati;
+    if (!risultati) { contenitore.replaceChildren(); return; }
+    const p = titolo();
+    if (risultati.stantia) p.className = "titolo stantia";
+    const id = selezione?.tipo === "asta" ? selezione.id : null;
+    const asta = id !== null ? (modello?.aste ?? []).find((a) => a.id === id) : null;
+    if (!asta) { p.textContent = "Seleziona un'asta per il suo M srotolato."; contenitore.replaceChildren(p); return; }
+    const stazioni = risultati.perCaso?.sollecitazioni?.[String(asta.id)];
+    // La chiave la decide la giacitura dell'asta, non una costante: su un pilastro è `Mz` (R1).
+    // Un'asta i cui nodi non ci sono più non ha assi: allora niente chiave e niente striscia.
+    const assi = assiDi(nodo(modello, asta.nodo_i) ?? {}, nodo(modello, asta.nodo_j) ?? {});
+    const chiave = assi?.M ?? "My";
+    const { punti, massimo } = srotolato(assi ? stazioni : null, chiave);
+    p.textContent = `${risultati.stantia ? "stantia · " : ""}M dell'asta ${asta.id} · ${risultati.caso} · kN·m`;
+    if (punti.length === 0) { p.textContent += " · nessuna stazione per quest'asta"; contenitore.replaceChildren(p); return; }
+    const colore = risultati.stantia ? ROSSO : INCHIOSTRO;
+    // Niente `viewBox`: si disegna **in pixel**, misurando il contenitore come fa `piano.js`
+    // (`millimetriPerPixel`, `:118-122`). Un `viewBox` con `preserveAspectRatio="none"` stira
+    // il disegno a tutta larghezza e con lui i glifi e i cerchi delle stazioni — a 1280 px la
+    // colonna del piano è larga ~400 px contro i 1000 del `viewBox`, cioè testo schiacciato di
+    // 2,4 a 1 (R7). ponytail: la striscia si rimisura al prossimo `ridisegna`, quindi un
+    // ridimensionamento della finestra senza toccare niente la lascia della larghezza di prima.
+    const W = Math.max(contenitore.clientWidth || 0, 200), H = 96, M = 14;
+    const svg = el("svg", { width: W, height: H, "aria-label": `M srotolato dell'asta ${asta.id}` });
+    const y0 = H / 2;
+    const y = (v) => (massimo > 0 ? y0 + (v / massimo) * (H / 2 - M) : y0);   // M positivo verso il basso: il lato teso
+    const x = (r) => r * W;
+    svg.append(el("line", { x1: 0, y1: y0, x2: W, y2: y0, stroke: colore, "stroke-width": 1 }));
+    svg.append(el("polygon", { points: [`0,${y0}`, ...punti.map((q) => `${x(q.x_rel)},${y(q.valore)}`), `${W},${y0}`].join(" "),
+                               fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
+    for (const q of punti) svg.append(el("circle", { cx: x(q.x_rel), cy: y(q.valore), r: 2.5, fill: colore }));
+    for (const picco of picchi(stazioni, chiave)) {
+      const sopra = picco.valore > 0;   // il testo dalla parte opposta al diagramma, che qui è sotto per M > 0
+      const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,
+                             "text-anchor": picco.x_rel < 0.1 ? "start" : picco.x_rel > 0.9 ? "end" : "middle" });
+      t.textContent = testoValore("M", picco.valore);
+      svg.append(t);
+    }
+    contenitore.replaceChildren(p, svg);
+  }
+  return { disegna };
+}

@@ -71,6 +71,34 @@ test("righe: nodo dichiarato libero mostra «libero», non «non dichiarato»", 
   assert.deepEqual(r.find(([k]) => k === "vincolo"), ["vincolo", "libero"]);
 });
 
+// I risultati dell'ultima corsa nell'ispettore del nodo (story 40, `docs/ricerca/07-ux-modellatore.md:99`):
+// le sei componenti a portata del gesto che ha già selezionato il nodo, col caso nel termine.
+test("ispettore del nodo con risultati: sei spostamenti e, se vincolato, sei reazioni, col caso nel termine", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 3000 });
+  const perCaso = { spostamenti: { 1: [0.5, 0, -3.456, 0, 0.0008, 0] }, reazioni: { 1: [0, 0, 30000, 0, 0, 0] } };
+  const r = righe(m, { tipo: "nodo", id: 1 }, { risultati: { caso: "Z1", perCaso } });
+  const termini = r.map(([k]) => k);
+  assert.ok(termini.includes("spostamenti (Z1)") && termini.includes("rotazioni (Z1)"));
+  assert.ok(termini.includes("reazioni (Z1)") && termini.includes("momenti di reazione (Z1)"));
+  assert.equal(r.find(([k]) => k === "spostamenti (Z1)")[1], "ux 0,5 mm · uy 0 mm · uz -3,46 mm");
+  const senza = righe(m, { tipo: "nodo", id: 1 }, { risultati: null }).map(([k]) => k);
+  assert.ok(!senza.some((k) => k.startsWith("spostamenti")));
+});
+
+// Un nodo che nei risultati del caso non c'è (non vincolato, o sparito dalla corsa): niente
+// righe in più, e le sei di sempre restano.
+test("ispettore del nodo con risultati: nessuno spostamento nel caso, nessuna riga in più", () => {
+  const m = creaNodo(modelloVuoto(), { x: 0, z: 3000 });
+  const solo = righe(m, { tipo: "nodo", id: 1 }).map(([k]) => k);
+  const conVuoto = righe(m, { tipo: "nodo", id: 1 }, { risultati: { caso: "Z1", perCaso: { spostamenti: {}, reazioni: {} } } });
+  assert.deepEqual(conVuoto.map(([k]) => k), solo);
+  // Non vincolato: gli spostamenti ci sono, le reazioni no — il server le scrive solo per i vincolati.
+  const nonVincolato = righe(m, { tipo: "nodo", id: 1 },
+    { risultati: { caso: "Z1", perCaso: { spostamenti: { 1: [0, 0, 0, 0, 0, 0] }, reazioni: {} } } }).map(([k]) => k);
+  assert.ok(nonVincolato.includes("spostamenti (Z1)"));
+  assert.ok(!nonVincolato.some((k) => k.startsWith("reazioni")));
+});
+
 // --- mutante D5: `mm(n.x)` e `mm(n.z)` scambiati ---
 
 test("righe: x e z non si scambiano, e portano l'unità", () => {

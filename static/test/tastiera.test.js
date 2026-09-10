@@ -181,7 +181,9 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
   const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s",
                 "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "⌘I": "i", "← ↑ → ↓": "ArrowUp",
-                "⌘⏎": "Enter", "⇧⌘⏎": "Enter" };
+                // «0-4» è un intervallo di tasti, non un tasto: la sonda ne prova uno, e che
+                // ci siano tutti e cinque lo prova il test della voce «vista» qui sotto.
+                "⌘⏎": "Enter", "⇧⌘⏎": "Enter", "0-4": "0" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const shift = v.tasto.startsWith("⇧");
@@ -461,4 +463,22 @@ test("il filtro per tipo non tocca gli altri tasti della selezione", () => {
   for (const atteso of ["estrudi", "asta", "vincolo", "sposta", "rinomina", "elimina"]) {
     assert.ok(conSezione.includes(atteso), atteso);
   }
+});
+
+test("vista: le cifre 0-4 senza modificatore sono la voce «vista»; con ⌘ no; la barra la promette solo con risultati", () => {
+  for (const k of ["0", "1", "4"]) assert.equal(voceDaEvento({ key: k })?.codice, "vista");
+  assert.equal(voceDaEvento({ key: "5" }), null);
+  assert.equal(voceDaEvento({ key: "1", metaKey: true }), null);
+  assert.ok(!vociDellaBarra("sempre").some((v) => v.codice === "vista"));
+  assert.ok(vociDellaBarra("sempre", null, { risultati: true }).some((v) => v.codice === "vista"));
+  assert.ok(vociDellaBarra("selezione", "nodo", { risultati: true }).some((v) => v.codice === "vista"));
+  assert.ok(!vociDellaBarra("ghost", null, { risultati: true }).some((v) => v.codice === "vista"));
+  assert.equal(nomeTasto("0-4"), "0-4");
+});
+
+// La voce non apre nessun campo: è la condizione che la coda di `eseguiVoce` guarda (R4).
+// Senza questo, un `campo` aggiunto per sbaglio farebbe scrivere «2» nel campo di comando.
+test("vista: la voce non ha `campo`, e col campo di comando aperto la barra non la promette", () => {
+  assert.equal(TASTI.find((v) => v.codice === "vista").campo, undefined);
+  assert.ok(!vociDellaBarra("comando", null, { risultati: true }).some((v) => v.codice === "vista"));
 });

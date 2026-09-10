@@ -38,6 +38,9 @@
 
 <main id="viste">
   <section id="piano" aria-label="piano di lavoro"></section>
+  <!-- L'M srotolato dell'asta selezionata (story 39): sotto il piano, nella sua colonna. Senza
+       risultati non c'è; senza un'asta selezionata dice il gesto. -->
+  <section id="srotolato" aria-label="M srotolato dell'asta selezionata" hidden></section>
   <!-- L'attesa dichiarata, non una percentuale inventata (P5): three.js sono 2 MB dal disco,
        e finché non arrivano questo riquadro sarebbe un buco muto. `creaSpazio` sostituisce
        il paragrafo col canvas, o con la riga che dice perché la vista non c'è. -->
@@ -55,7 +58,8 @@
   <dl id="pannello-dati" hidden></dl>
   <div id="pannello-editor" hidden></div>
   <h2 class="staccato">Unità</h2>
-  <p class="numero">mm · N · MPa · t · s</p>
+  <p class="numero">modello: mm · N · MPa · t · s</p>
+  <p class="numero">risultati: kN · kN·m · mm · mrad</p>
   <!-- L'attesa è dichiarata, non stimata (P5, `docs/ricerca/07-ux-modellatore.md:93,152`): fasi
        nominate e durata misurata, nessuna percentuale inventata. `aria-live` sta **solo** sulla
        riga dell'ultima corsa: le fasi cambiano ogni mezzo secondo e annunciarle a voce sarebbe
@@ -80,6 +84,28 @@
     <details id="corsa-registro" hidden><summary>registro del solutore</summary><pre id="corsa-coda"></pre></details>
     <p class="vuoto" id="corsa-vuoto">Premi <kbd aria-label="comando invio">⌘⏎</kbd> per lanciare tutte le analisi del modello, <kbd aria-label="maiuscolo comando invio">⇧⌘⏎</kbd> per il solo Check Model.</p>
     <ul id="corsa-verdetti" aria-label="verdetti" hidden></ul>
+  </section>
+  <!-- I risultati dell'ultima corsa (story 36-40): il caso, la vista (una alla volta, tasti 0-4), la
+       scala della deformata a mano, e la riga Σ reazioni contro Σ carichi — il controllo che
+       contraddice, accanto al numero (`docs/ricerca/07-ux-modellatore.md:101`). -->
+  <h2 class="staccato">Risultati</h2>
+  <section id="risultati" aria-label="risultati">
+    <p class="vuoto" id="risultati-vuoto">Nessuna corsa da mostrare. Dopo <kbd aria-label="comando invio">⌘⏎</kbd> premi <kbd>1</kbd> per la deformata, <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> per M, V, N, <kbd>0</kbd> per nessuna.</p>
+    <div id="risultati-controlli" hidden>
+      <label for="risultati-caso">caso</label>
+      <select id="risultati-caso"></select>
+      <fieldset id="risultati-vista" class="vincolo-gradi">
+        <legend>vista</legend>
+        <label><input type="radio" name="vista" value=""> niente <kbd>0</kbd></label>
+        <label><input type="radio" name="vista" value="deformata"> deformata <kbd>1</kbd></label>
+        <label><input type="radio" name="vista" value="M"> M <kbd>2</kbd></label>
+        <label><input type="radio" name="vista" value="V"> V <kbd>3</kbd></label>
+        <label><input type="radio" name="vista" value="N"> N <kbd>4</kbd></label>
+      </fieldset>
+      <label for="risultati-scala">scala della deformata (vuoto = auto)</label>
+      <input id="risultati-scala" type="text" inputmode="decimal" spellcheck="false" placeholder="auto">
+      <p id="risultati-equilibrio" class="numero"></p>
+    </div>
   </section>
   <h2 class="staccato">Storia</h2>
   <ul id="storia-elenco" aria-label="cronologia dei comandi"></ul>

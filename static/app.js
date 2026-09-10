@@ -21,7 +21,9 @@ import { creaAlbero } from "./albero.js";
 import { creaPannello } from "./pannello.js";
 import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
-import { creaCorsa } from "./corsa.js";
+import { creaCorsa, stantia } from "./corsa.js";
+import { creaEsito, creaSrotolato } from "./esito.js";
+import { casiDi, scalaAuto, puntiDeformata } from "./risultati.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro, descrizione } from "./vincoli.js";
@@ -51,6 +53,26 @@ let percorso = null, impronta = null;
 // Il rendiconto dell'importazione: fuori dal modello e dalla cronologia (spec, «Importatore dal
 // prior» §3). Azzerato in `suApertura` — aprire un file lascia il rilievo di prima senza senso.
 let rilievo = null;
+// L'ultima corsa da mostrare, e come: `null` quando non c'è niente da vedere, altrimenti
+// `{ lavoro, vista, caso, scalaMano }`. `lavoro` è quel che `suEsito` ha ricevuto — snapshot
+// del modello compreso, che è come `stantia` sa se i numeri parlano ancora di questo disegno.
+// `vista` è `null` (niente) o una di `VISTE`; `scalaMano` è `null` per la scala automatica.
+let risultati = null;
+
+/** Lo stato dei risultati tradotto in **vista**, cioè in quel che piano, spazio e striscia
+ *  sanno disegnare: `{ vista, caso, perCaso, scala, auto, stantia }` (il contratto di
+ *  `piano.disegna`), o `null` quando non c'è niente da mostrare. La scala si calcola qui una
+ *  volta sola: piano e spazio devono disegnare la **stessa** deformata, e due `scalaAuto`
+ *  chiamate in due posti divergerebbero al primo cambio di frazione. */
+function risultatiInVista(m) {
+  if (!risultati?.vista) return null;
+  const perCaso = risultati.lavoro?.fin?.risultati?.per_caso?.[risultati.caso];
+  if (!perCaso) return null;
+  const auto = risultati.scalaMano === null;
+  return { vista: risultati.vista, caso: risultati.caso, perCaso,
+           scala: auto ? scalaAuto(m, perCaso) : risultati.scalaMano, auto,
+           stantia: stantia(risultati.lavoro, m) };
+}
 
 // Il catalogo delle classi e i legami dei materiali vengono dal server, dove i numeri di
 // norma vivono già (`nova/catalogo.py`, `nova/legami.py`): qui non ce n'è nessuno. Il
@@ -190,8 +212,10 @@ const storia = creaStoria($("storia-elenco"), {
 const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
-    // Un modello nuovo (aperto o importato) non porta con sé l'ultima corsa di un altro (R5).
+    // Un modello nuovo (aperto o importato) non porta con sé l'ultima corsa di un altro (R5),
+    // né la vista che ne mostrava i numeri.
     corsa.azzera();
+    risultati = null;
     // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
     // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
     // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
@@ -216,6 +240,7 @@ const file = creaFile(document, {
     cronologia = nuovaCronologia(m, etichettaStoria(daRisposta(risposta, p)));
     rilievo = daRisposta(risposta, p);
     corsa.azzera();  // idem: una cronologia nuova non porta l'ultima corsa (R5)
+    risultati = null;
     chiudiComando();
     selezione = { tipo: "rilievo", id: 0 };
     modo = null;
@@ -236,11 +261,27 @@ const corsa = creaCorsa(document, {
   modello: () => corrente(cronologia),
   suVai: ({ tipo, id }) => scegli(tipo, id),
   suErrore: (msg) => dì(msg),
-  suEsito: () => ridisegna(),   // il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo
+  // Una corsa con risultati diventa la vista: parte dalla deformata, primo caso. Una corsa
+  // senza (rifiutata, in errore, del solido) azzera la vista: i diagrammi di prima parlerebbero
+  // di una corsa che non è più l'ultima. La `verifica` (esito `null`) non tocca niente.
+  // Il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo.
+  suEsito: (esito) => {
+    if (esito === null) { ridisegna(); return; }
+    const casi = casiDi(esito?.fin?.risultati);
+    risultati = casi.length ? { lavoro: esito, vista: "deformata", caso: casi[0], scalaMano: null } : null;
+    ridisegna();
+  },
   // Un ghost aperto (estrusione o asta) va chiuso a mano prima di correre: vale per i bottoni
   // del blocco come per ⌘⏎, e `AVVISO_SECONDO_NODO` parlerebbe della cosa sbagliata.
   prima: () => (modo ? "chiudi il gesto (Esc) prima di correre" : null),
 });
+// Il blocco «Risultati» e la striscia dell'M srotolato: leggono lo stato, non lo tengono.
+// `esito` riceve lo **stato** (con `lavoro`), `srotolato` e `piano` la **vista** (R10).
+const esito = creaEsito(document, {
+  suCambio: ({ caso, vista, scalaMano }) => { if (risultati) { risultati = { ...risultati, caso, vista, scalaMano }; ridisegna(); } },
+});
+const srotolato = creaSrotolato($("srotolato"));
+
 // La riga del solutore prima di qualunque gesto. Un secondo tentativo dopo un attimo: un
 // ricaricamento mentre la `verifica` di prima è ancora sul sidecar prende un 409, e senza il
 // secondo giro la riga restava «in verifica…» per sempre (visto sul Chrome headless).
@@ -614,9 +655,12 @@ function ridisegna() {
   // riconosce da `punto`.
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   rigaComando.hidden = !comando;
+  const inVista = risultatiInVista(m);
   piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
-                     proposte: rilievo ? proposteAperte(rilievo, m) : [] });
-  spazio?.disegna(m, { selezione });  // finché three.js non è arrivato, il piano regge da solo
+                     proposte: rilievo ? proposteAperte(rilievo, m) : [], risultati: inVista });
+  // finché three.js non è arrivato, il piano regge da solo
+  spazio?.disegna(m, { selezione, deformata: inVista?.vista === "deformata"
+    ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala), stantia: inVista.stantia } : null });
   albero.disegna(m, { selezione, rilievo });
   const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;
   pannello.disegna(m, selezione, {
@@ -624,9 +668,12 @@ function ridisegna() {
     legame: scelto ? legamePer(m, selezione.id) : null,
     tabella: scelto ? (tabelle.get(chiaveTabella(scelto)) ?? null) : null,
     rilievo,
+    risultati: inVista,
   });
   file.disegna({ percorso, impronta, modello: m });
   corsa.disegna({ modello: m });
+  esito.disegna({ risultati, modello: m });
+  srotolato.disegna({ risultati: inVista, modello: m, selezione });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
 }
@@ -635,7 +682,7 @@ function disegnaBarra() {
   const contesto = contestoBarra(modo, selezione, comando);
   // Il tipo della selezione, non solo il contesto: `D` esiste sulla sola asta, e una barra
   // che lo promette con una sezione selezionata mente (story 14).
-  $("barra").replaceChildren(...vociDellaBarra(contesto, selezione?.tipo ?? null).map((v) => {
+  $("barra").replaceChildren(...vociDellaBarra(contesto, selezione?.tipo ?? null, { risultati: Boolean(risultati) }).map((v) => {
     const span = document.createElement("span");
     span.className = "tasto";
     const kbd = document.createElement("kbd"); kbd.textContent = v.tasto;
@@ -672,7 +719,9 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
   ev.preventDefault();
-  eseguiVoce(voce);
+  // La cifra premuta **è** il valore della voce `vista`: la stessa strada della palette, dove
+  // «vista 2» arriva con `valore: "2"`. Le altre voci il valore non ce l'hanno dal tasto.
+  eseguiVoce(voce, voce.codice === "vista" ? ev.key : null);
 });
 
 /** Una voce della tastiera, eseguita — dal tasto o dalla palette. Fuori dal listener perché
@@ -680,15 +729,21 @@ window.addEventListener("keydown", (ev) => {
  *  `valore` è quello scritto nella palette dopo il nome del comando; una voce che non apre il
  *  campo lo lascia cadere, che è quello che fa anche il tasto. */
 function eseguiVoce(voce, valore = null) {
-  dispatchVoce(voce);
+  dispatchVoce(voce, valore);
   // Il valore entra nel campo appena aperto e conferma subito: se il campo lo rifiuta resta
   // aperto col testo e col messaggio, esattamente come se fosse stato scritto a mano.
-  if (comando && valore !== null) { campoComando.value = valore; comando.testo = valore; conferma(); }
+  //
+  // **R4** — `voce.campo`, non `voce.codice !== "vista"`: la coda esiste per «il valore entra
+  // nel campo appena aperto», e il campo lo apre `apriComando`, che è chiamato **solo** da voci
+  // con `campo`. Una voce senza campo che porti un valore — `vista` è la prima, non sarà
+  // l'ultima — con un campo aperto ma senza fuoco ci scriverebbe dentro «2» e lo confermerebbe:
+  // un nodo creato per sbaglio. La guardia nomina la condizione, non la voce.
+  if (comando && valore !== null && voce.campo) { campoComando.value = valore; comando.testo = valore; conferma(); }
 }
 
 // I rami escono con `return`: la coda di `eseguiVoce` deve girare dopo il dispatch intero, non
 // dopo il primo ramo che ha risposto — da qui le due funzioni invece di una.
-function dispatchVoce(voce) {
+function dispatchVoce(voce, valore = null) {
   if (voce.codice === "annulla") { modo = null; chiudiComando(); dì(null); ridisegna(); return; }
 
   // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
@@ -723,7 +778,8 @@ function dispatchVoce(voce) {
     // **R2**: le disponibili si contano a gesto chiuso — né campo né modo — perché la palette
     // chiude entrambi quando esegue. Passando quelli veri, da dentro `B` sarebbe tutto «non
     // ora» mentre invece funziona tutto: la lista direbbe il falso su sé stessa.
-    const disponibili = new Set(vociDellaBarra(contestoBarra(null, selezione, null), selezione?.tipo ?? null).map((v) => v.codice));
+    const disponibili = new Set(vociDellaBarra(contestoBarra(null, selezione, null), selezione?.tipo ?? null,
+                                               { risultati: Boolean(risultati) }).map((v) => v.codice));
     palette.apri({ voci: VOCI_PALETTE, disponibili });
     return;
   }
@@ -739,6 +795,18 @@ function dispatchVoce(voce) {
   // per tasti e bottoni.
   if (voce.codice === "corri") { corsa.corri(); return; }
   if (voce.codice === "verifica") { corsa.verifica(); return; }
+
+  // La vista dei risultati sta con corri e verifica, sotto la guardia del campo: una cifra
+  // mentre si scrivono delle coordinate è parte del numero, non un cambio di vista. Sopra la
+  // guardia del modo, invece: guardare i diagrammi non è un secondo gesto sul disegno.
+  if (voce.codice === "vista") {
+    if (!risultati) { dì("nessuna corsa da mostrare: ⌘⏎ la lancia"); return; }
+    const scelta = { 0: null, 1: "deformata", 2: "M", 3: "V", 4: "N" }[String(valore ?? "").trim()];
+    if (scelta === undefined) { dì("la vista è 0, 1, 2, 3 o 4"); return; }
+    risultati = { ...risultati, vista: scelta };
+    dì(null); ridisegna();
+    return;
+  }
 
   // Qui sotto il modo può essere solo l'asta: l'estrusione vive con il campo aperto, e col
   // campo aperto si è già tornati indietro alla riga sopra. Passano conferma, annulla e la
