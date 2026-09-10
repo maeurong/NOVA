@@ -158,7 +158,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
    *  si scrivono qui: si accodano a `richieste`, che `disegna` posa con `disponi` dopo i nodi,
    *  quando i loro cerchi e i loro nomi sono ostacoli noti. Un solo colore, inchiostro; rosso
    *  quando la corsa è stantia — il rosso dice attenzione (story 63). */
-  function stratoDeiRisultati(m, attivo, vistaRis, s, richieste, linee) {
+  function stratoDeiRisultati(m, attivo, vistaRis, s, { richieste, linee }) {
     const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
     // Il bbox di un segmento, con un pixel di margine per lato. Le linee del disegno — le ordinate
     // di stazione, i tratti fra due stazioni, la polilinea della deformata — sono ostacoli quanto
@@ -207,7 +207,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
           class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
           fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
           "stroke-dasharray": `${5 * s} ${3 * s}` }));
-        spezzata(punti);   // il contorno del diagramma: un'etichetta non ci va sopra
+        // Il contorno **chiuso**, gli stessi punti del poligono: i due lati che tornano alla base
+        // (`pi→punti[0]` e l'ultimo→`pj`) sono linee come le altre, e un'etichetta all'estremo di
+        // un'asta ci finiva sopra.
+        spezzata([pi, ...punti, pj]);
         // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
         // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
         for (const p of d.punti) {
@@ -295,9 +298,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     }
 
     // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili.
-    const richiesteEtichette = [];   // picchi e carichi: li posa `disponi` dopo i nodi, insieme
-    const lineeDelDisegno = [];      // i bbox delle linee dei diagrammi: ostacoli come i cerchi
-    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, richiesteEtichette, lineeDelDisegno) : null;
+    // `richieste`: picchi e carichi, li posa `disponi` dopo i nodi, insieme. `linee`: i bbox delle
+    // linee dei diagrammi, ostacoli come i cerchi. Un oggetto solo, che due array posizionali dello
+    // stesso tipo si scambiano di posto senza che niente se ne accorga.
+    const raccolto = { richieste: [], linee: [] };
+    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, raccolto) : null;
+    const richiesteEtichette = raccolto.richieste;
     if (stratoRisultati) gruppo.append(stratoRisultati);
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
@@ -343,7 +349,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const etichettate = new Set();
     // Gli ostacoli per le etichette dei risultati: i cerchi e le etichette dei nodi non si
     // spostano (le posa `versoLibero`), quindi sono loro il terreno e i picchi ci girano attorno.
-    const ostacoli = [...lineeDelDisegno];
+    const ostacoli = [...raccolto.linee];
     for (const n of m.nodi) {
       const p = schermo(n);
       const scelto = selezione?.tipo === "nodo" && selezione.id === n.id;

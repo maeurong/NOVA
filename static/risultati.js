@@ -51,7 +51,10 @@ function nodiLungoAsta(perCaso, idAsta, ui, uj) {
     .map((p) => ({ x_rel: p.x_rel, u: p.u }))
     // Il contratto li dà crescenti; costa una riga non crederci, e un ordine sbagliato qui
     // darebbe un'asta ripiegata su sé stessa senza che nessuno sollevi niente.
-    .sort((p, q) => p.x_rel - q.x_rel);
+    .sort((p, q) => p.x_rel - q.x_rel)
+    // Due stazioni sulla stessa ascissa farebbero un tratto lungo zero: la cubica ne uscirebbe con
+    // otto punti sovrapposti e un `Lt` nullo nei termini di rotazione. Vince la prima.
+    .filter((p, k, ordinati) => k === 0 || p.x_rel !== ordinati[k - 1].x_rel);
   return [{ x_rel: 0, u: ui }, ...buoni, { x_rel: 1, u: uj }];
 }
 
@@ -93,11 +96,11 @@ export function frecciaMassima(m, perCaso) {
     const a = perId.get(d.id);
     const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
     conAsta.add(i.id).add(j.id);
-    // `d.xRel[k]`, non `k/n`: con i nodi interni i tratti possono essere disuguali e i campioni
-    // non sono equispaziati — il punto indeformato va preso all'ascissa vera, o la freccia si
-    // misura contro il punto sbagliato.
-    for (let k = 0; k < d.punti.length; k++) {
-      const r = d.xRel[k], p = d.punti[k];
+    // `p.r`, non `k/n`: con i nodi interni i tratti possono essere disuguali e i campioni non sono
+    // equispaziati — il punto indeformato va preso all'ascissa vera, o la freccia si misura contro
+    // il punto sbagliato.
+    for (const p of d.punti) {
+      const r = p.r;
       const base = { x: i.x + (j.x - i.x) * r, z: i.z + (j.z - i.z) * r };
       const v = Math.hypot(p.x - base.x, p.z - base.z);
       if (v > valore) { valore = v; punto = { x: p.x, z: p.z }; indeformato = base; }
@@ -190,8 +193,9 @@ export const sezioneRuotata = (a) => {
  *  nodi interni consecutivi resta la stessa approssimazione, su un tratto però lungo la metà o
  *  meno: l'errore va con la quarta potenza della campata, quindi cala di 16 volte a ogni bisezione.
  *
- *  `xRel` esce insieme ai punti: con i tratti disuguali i campioni **non** sono equispaziati, e chi
- *  vuole il punto indeformato corrispondente (`frecciaMassima`) non può dedurlo da `k/n`. */
+ *  Ogni punto porta la sua `r` (l'ascissa relativa sull'asta): con i tratti disuguali i campioni
+ *  **non** sono equispaziati, e chi vuole il punto indeformato corrispondente (`frecciaMassima`)
+ *  non può dedurlo da `k/n`. */
 export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
   // `segmenti = 8` copre `undefined`, non `Infinity` (ciclo infinito) né `NaN` (`punti: []`).
   const n = Number.isFinite(segmenti) ? Math.max(1, Math.floor(segmenti)) : 8;
@@ -206,7 +210,7 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
     const ui = spostamentoDi(perCaso, i.id) ?? zero, uj = spostamentoDi(perCaso, j.id) ?? zero;
     const { L, e1, e2 } = t;
     const nodiAsta = nodiLungoAsta(perCaso, a.id, ui, uj);
-    const punti = [], xRel = [];
+    const punti = [];
     for (let t2 = 0; t2 < nodiAsta.length - 1; t2++) {
       const q0 = nodiAsta[t2], q1 = nodiAsta[t2 + 1];
       const Lt = (q1.x_rel - q0.x_rel) * L;
@@ -223,11 +227,13 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
         const x = i.x + e1.x * (r * L + scala * u) + e2.x * scala * w;
         const z = i.z + e1.z * (r * L + scala * u) + e2.z * scala * w;
         const y = i.y + r * (j.y - i.y) + scala * ((1 - s) * q0.u[1] + s * q1.u[1]);
-        punti.push({ x, y, z });
-        xRel.push(r);
+        // `r` **dentro** il punto, non in un array parallelo: due liste da tenere allineate a mano
+        // sono un allineamento che prima o poi salta. `spazio.js` legge `x`, `y`, `z` e ignora il
+        // resto; il piano scrive `points` da `x`/`y`.
+        punti.push({ x, y, z, r });
       }
     }
-    fuori.push({ id: a.id, punti, xRel });
+    fuori.push({ id: a.id, punti });
   }
   return fuori;
 }

@@ -112,7 +112,11 @@ export function creaSrotolato(contenitore) {
     const W = contenitore.clientWidth || 200, H = 96, M = 14;
     const svg = el("svg", { width: W, height: H, "aria-label": `${vista} srotolato dell'asta ${asta.id}` });
     const y0 = H / 2;
-    const y = (v) => (massimo > 0 ? y0 + (v / massimo) * (H / 2 - M) : y0);   // M positivo verso il basso: il lato teso
+    // M positivo in giù (il lato teso), V e N positivi in su — a sinistra di i→j, come nel piano
+    // da quando il lato è uno solo (`diagramma`). Senza il segno la stessa asta usciva specchiata
+    // fra i due pannelli: nel piano il taglio positivo sopra la trave, qui sotto la linea.
+    const segno = vista === "M" ? 1 : -1;
+    const y = (v) => (massimo > 0 ? y0 + segno * (v / massimo) * (H / 2 - M) : y0);
     const x = (r) => r * W;
     svg.append(el("line", { x1: 0, y1: y0, x2: W, y2: y0, stroke: colore, "stroke-width": 1 }));
     svg.append(el("polygon", { points: [`0,${y0}`, ...punti.map((q) => `${x(q.x_rel)},${y(q.valore)}`), `${W},${y0}`].join(" "),
@@ -122,7 +126,7 @@ export function creaSrotolato(contenitore) {
     // segno opposto al primo (`risultati.js`), quindi uno sta sopra la linea e l'altro sotto e
     // non possono sovrapporsi. Un posatore qui sarebbe codice che non risolve niente.
     for (const picco of picchi(stazioni, chiave)) {
-      const sopra = picco.valore > 0;   // il testo dalla parte opposta al diagramma, che qui è sotto per M > 0
+      const sopra = segno * picco.valore > 0;   // il testo dalla parte opposta al diagramma
       const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,
                              "text-anchor": picco.x_rel < 0.1 ? "start" : picco.x_rel > 0.9 ? "end" : "middle" });
       t.textContent = testoValore(vista, picco.valore);

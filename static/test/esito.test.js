@@ -310,3 +310,23 @@ test("creaSrotolato: senza un'asta selezionata l'invito nomina la vista", () => 
   assert.equal(invito("V"), "Seleziona un'asta per il suo V srotolato.");
   assert.equal(invito("deformata"), "Seleziona un'asta per il suo M srotolato.");
 });
+
+// Il piano disegna V positivo **sopra** la trave (a sinistra di i→j); la striscia lo disegnava
+// sotto la linea, e la stessa asta usciva specchiata fra i due pannelli.
+test("creaSrotolato: V e N positivi vanno in su come nel piano, M positivo resta in giù", () => {
+  const modello = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6000, y: 0, z: 0 }],
+                    aste: [{ id: 3, nodo_i: 1, nodo_j: 2 }] };   // una trave: le chiavi sono My/Vz
+  const perCaso = { sollecitazioni: { 3: [
+    { x_rel: 0, N: 5000, Vy: 0, Vz: 30000, T: 0, My: 45e6, Mz: 0 },
+    { x_rel: 1, N: 5000, Vy: 0, Vz: 30000, T: 0, My: 45e6, Mz: 0 }] } };
+  const contenitore = contenitoreFinto();
+  const srot = creaSrotolato(contenitore);
+  const ordinate = (vista) => {
+    srot.disegna({ risultati: { vista, caso: "Z1", perCaso, stantia: false }, modello, selezione: { tipo: "asta", id: 3 } });
+    return tutti(contenitore._figli[1], "circle").map((c) => Number(c.getAttribute("cy")));
+  };
+  const y0 = 96 / 2;   // `H / 2`, la linea di base della striscia
+  assert.ok(ordinate("M").every((y) => y > y0), `M positivo in giù, il lato teso: ${ordinate("M")}`);
+  assert.ok(ordinate("V").every((y) => y < y0), `V positivo in su: ${ordinate("V")}`);
+  assert.ok(ordinate("N").every((y) => y < y0), `N positivo in su: ${ordinate("N")}`);
+});

@@ -60,8 +60,8 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   const [d] = puntiDeformata(trave, perCaso, 1, 8);
   assert.equal(d.id, 1);
   assert.equal(d.punti.length, 9);
-  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0 });
-  assert.deepEqual(d.punti[8], { x: 6000, y: 0, z: 0 });
+  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0 });
+  assert.deepEqual(d.punti[8], { x: 6000, y: 0, z: 0, r: 1 });
   assert.ok(d.punti[4].z < -1, `la mezzeria scende: z = ${d.punti[4].z}`);
   assert.ok(Math.abs(d.punti[4].x - 3000) < 1e-9);
   // La scala moltiplica gli spostamenti, non le coordinate.
@@ -69,8 +69,8 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   assert.ok(Math.abs(d10.punti[4].z - 10 * d.punti[4].z) < 1e-9);
   // Uno spostamento assiale di j allunga l'asta; uno lungo y (fuori dal piano) va lineare.
   const [e] = puntiDeformata(trave, { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [6, 8, 0, 0, 0, 0] } }, 1, 2);
-  assert.deepEqual(e.punti[2], { x: 6006, y: 8, z: 0 });
-  assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0 });
+  assert.deepEqual(e.punti[2], { x: 6006, y: 8, z: 0, r: 1 });
+  assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0, r: 0.5 });
 });
 
 test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spostamenti fermo, lista vuota", () => {
@@ -78,7 +78,7 @@ test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spos
   const orfana = { nodi: trave.nodi, aste: [{ id: 7, nodo_i: 1, nodo_j: 99 }] };
   assert.deepEqual(puntiDeformata(orfana, Z1, 1), []);
   const [d] = puntiDeformata(trave, { spostamenti: {} }, 100, 4);
-  assert.deepEqual(d.punti[2], { x: 3000, y: 0, z: 0 }, "senza spostamenti la deformata è l'ombra");
+  assert.deepEqual(d.punti[2], { x: 3000, y: 0, z: 0, r: 0.5 }, "senza spostamenti la deformata è l'ombra");
   const [z] = puntiDeformata(trave, Z1, 1, 0);
   assert.equal(z.punti.length, 2, "segmenti ≤ 1 diventa 1: i due estremi");
 });
@@ -240,6 +240,11 @@ test("aste con la sezione ruotata: fuori dai diagrammi, dentro la deformata", ()
   assert.deepEqual(diagramma(ruotata, Z1, "M", 1), [], "la chiave sarebbe sbagliata: non si disegna");
   assert.equal(scalaDiagrammaAuto(ruotata, Z1, "M"), 0, "e non entra nemmeno nella scala");
   assert.equal(puntiDeformata(ruotata, Z1, 1)[0].punti.length, 9, "la deformata sì: è in terna globale");
+  for (const g of [90, -90, 45]) {
+    const storta = { nodi: trave.nodi, aste: [{ id: 1, nodo_i: 1, nodo_j: 2, rotazione_deg: g }] };
+    assert.equal(asteRuotate(storta), 1, `rotazione_deg ${g} porta la terna fuori dal piano`);
+    assert.deepEqual(diagramma(storta, Z1, "M", 1), []);
+  }
   // 0 e 180 non ruotano la terna nel piano: quelle aste si disegnano.
   for (const g of [0, 180, -180, 360, null, undefined]) {
     const dritta = { nodi: trave.nodi, aste: [{ id: 1, nodo_i: 1, nodo_j: 2, rotazione_deg: g }] };
@@ -309,7 +314,7 @@ test("degeneri: uno spostamento con un NaN o corto vale come assente, non si pro
   const [d] = puntiDeformata(trave, rotto, 100, 4);
   assert.ok(d.punti.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)),
             "nodo fermo, non un NaN nel `points`");
-  assert.deepEqual(d.punti[4], { x: 6000, y: 0, z: 0 });
+  assert.deepEqual(d.punti[4], { x: 6000, y: 0, z: 0, r: 1 });
   const conNull = { spostamenti: { 2: [0, 0, null, 0, 0, 0] } };
   assert.equal(frecciaMassima(trave, conNull).valore, 0);
 });
@@ -413,10 +418,10 @@ test("puntiDeformata: col nodo interno la mezzeria è la freccia vera, non i 4/5
                     spostamenti_interni: INTERNO };
   const [d] = puntiDeformata(trave, perCaso, 1, 8);
   assert.equal(d.punti.length, 17, "due tratti da otto segmenti, il nodo in comune una volta sola");
-  assert.equal(d.xRel[8], 0.5);
+  assert.equal(d.punti[8].r, 0.5);
   assert.ok(Math.abs(d.punti[8].z - (-1.5709)) < 1e-12, `la mezzeria è il nodo interno: ${d.punti[8].z}`);
-  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0 }, "gli estremi restano sui nodi del modello");
-  assert.deepEqual(d.punti[16], { x: 6000, y: 0, z: 0 });
+  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0 }, "gli estremi restano sui nodi del modello");
+  assert.deepEqual(d.punti[16], { x: 6000, y: 0, z: 0, r: 1 });
   // La scala moltiplica lo spostamento, il nodo interno compreso.
   const [d10] = puntiDeformata(trave, perCaso, 10, 8);
   assert.ok(Math.abs(d10.punti[8].z - (-15.709)) < 1e-11);
@@ -429,7 +434,7 @@ test("puntiDeformata: senza la chiave, o con la lista vuota, resta la cubica di 
   assert.equal(senza.punti.length, 9);
   assert.deepEqual(vuota.punti, senza.punti);
   assert.deepEqual(altra.punti, senza.punti, "gli interni di un'altra asta non toccano questa");
-  assert.deepEqual(senza.xRel, [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]);
+  assert.deepEqual(senza.punti.map((p) => p.r), [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]);
 });
 
 test("puntiDeformata: una stazione interna guasta si salta, le buone restano", () => {
@@ -444,7 +449,7 @@ test("puntiDeformata: una stazione interna guasta si salta, le buone restano", (
   ] };
   const [d] = puntiDeformata(trave, { spostamenti: {}, spostamenti_interni: rotte }, 1, 4);
   assert.equal(d.punti.length, 9, "due tratti da quattro segmenti: una sola stazione è buona");
-  assert.equal(d.xRel[4], 0.25);
+  assert.equal(d.punti[4].r, 0.25);
   assert.ok(Math.abs(d.punti[4].z - (-1)) < 1e-12);
 });
 
@@ -452,8 +457,8 @@ test("puntiDeformata: stazioni interne in disordine si riordinano, non ripiegano
   const disordine = { 1: [{ x_rel: 0.75, u: [0, 0, -1, 0, 0, 0] }, { x_rel: 0.25, u: [0, 0, -3, 0, 0, 0] }] };
   const [d] = puntiDeformata(trave, { spostamenti: {}, spostamenti_interni: disordine }, 1, 2);
   // Tre tratti — [0; 0,25], [0,25; 0,75], [0,75; 1] — da due segmenti l'uno: sette punti, e i
-  // campioni **non** sono equispaziati. È il motivo per cui `xRel` esce insieme ai punti.
-  assert.deepEqual(d.xRel, [0, 0.125, 0.25, 0.5, 0.75, 0.875, 1]);
+  // campioni **non** sono equispaziati. È il motivo per cui ogni punto porta la sua `r`.
+  assert.deepEqual(d.punti.map((p) => p.r), [0, 0.125, 0.25, 0.5, 0.75, 0.875, 1]);
   assert.ok(d.punti.every((p, k) => k === 0 || p.x >= d.punti[k - 1].x), "le ascisse non tornano indietro");
 });
 
@@ -462,4 +467,15 @@ test("frecciaMassima: col nodo interno la freccia è quella vera, e sta dove sta
   const f = frecciaMassima(trave, perCaso);
   assert.equal(f.valore, 4);
   assert.deepEqual(f.indeformato, { x: 1500, z: 0 }, "il punto indeformato è a x_rel 0,25, non a metà campioni");
+});
+
+// --- la coda della review dei debiti ----------------------------------------------
+
+test("puntiDeformata: due stazioni interne sulla stessa ascissa non fanno un tratto lungo zero", () => {
+  const doppia = { 1: [{ x_rel: 0.5, u: [0, 0, -2, 0, 0, 0] }, { x_rel: 0.5, u: [0, 0, -9, 0, 0, 0] }] };
+  const [d] = puntiDeformata(trave, { spostamenti: {}, spostamenti_interni: doppia }, 1, 4);
+  assert.equal(d.punti.length, 9, "due tratti da quattro segmenti, non tre");
+  assert.ok(d.punti.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z)), "nessun NaN da `Lt = 0`");
+  assert.ok(Math.abs(d.punti[4].z - (-2)) < 1e-12, `vince la prima: ${d.punti[4].z}`);
+  assert.deepEqual(d.punti.map((p) => p.r), [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]);
 });

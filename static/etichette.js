@@ -81,7 +81,10 @@ export function disponi(richieste, ostacoli = [], { passo = 6, limiti = null } =
           const x = r.x + v.dx * d, y = r.y + v.dy * (d + (v.dy ? altezza / 2 : 0));
           const box = boxDi(x, y, v.ancora, larghezza, altezza);
           if (!dentro(box)) continue;
-          if ([...listaOstacoli, ...posate.map((p) => p.box)].some((o) => siSovrappongono(box, o))) continue;
+          // Due `some` invece di un array nuovo a ogni candidato: fino a 24 candidati per etichetta,
+          // e sul caso studio gli ostacoli sono centinaia — una per ogni ordinata di stazione.
+          if (listaOstacoli.some((o) => siSovrappongono(box, o))) continue;
+          if (posate.some((p) => siSovrappongono(box, p.box))) continue;
           // La guida arriva al bordo del box che guarda il punto: da sopra è `y1`, da sotto `y0`.
           const bordo = v.dy < 0 ? box.y1 : box.y0;
           // Guida da oltre il primo passo, e **sempre** in diagonale: lì l'etichetta non sta su
