@@ -343,3 +343,21 @@ test("frecciaMassima: un nodo che nessun'asta tocca vale per sé", () => {
   assert.deepEqual(f.punto, { x: 10, z: 3000 });
   assert.deepEqual(f.indeformato, { x: 0, z: 3000 });
 });
+
+// --- la soglia del verticale (review di ramo, mutante vivo) -----------------------
+// `verticale` decide se un'asta legge `Mz`/`Vy` (pilastro) o `My`/`Vz` (trave). Tutte le fixture
+// dei test avevano pilastri **esattamente** verticali, quindi `>= 1` al posto di `> 0,999` non
+// faceva cadere niente: un pilastro storto di un millimetro sarebbe uscito come una riga piatta.
+
+test("assiDi: un pilastro fuori piombo di 1 mm su 6 m è ancora un pilastro", () => {
+  const t = assiDi({ x: 0, z: 0 }, { x: 1, z: 6000 });
+  assert.equal(t.verticale, true, "cos ≈ 0,99999999 > 0,999");
+  assert.deepEqual([t.M, t.V], ["Mz", "Vy"]);
+});
+
+test("assiDi: oltre la soglia l'asta inclinata torna a leggersi come una trave", () => {
+  const t = assiDi({ x: 0, z: 0 }, { x: 300, z: 6000 });
+  assert.ok(Math.abs(t.e1.z - 0.998752) < 1e-5, `cos = ${t.e1.z}: sotto 0,999, appena`);
+  assert.equal(t.verticale, false);
+  assert.deepEqual([t.M, t.V], ["My", "Vz"]);
+});

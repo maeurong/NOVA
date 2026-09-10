@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { TASTI, voceDaEvento, vociDellaBarra, daControllo, etichettaCampo, nomeTasto } from "../tastiera.js";
 import { VISTE } from "../risultati.js";
+import { readFileSync } from "node:fs";
 
 // I glifi dei tasti a voce sono parole: lo screen reader legge «comando invio», non i nomi
 // Unicode dei simboli. Le lettere restano lettere.
@@ -497,4 +498,26 @@ test("vista: l'aiuto della barra nomina tutte le viste di `VISTE`, con la loro c
 test("vista: la voce non ha `campo`, e col campo di comando aperto la barra non la promette", () => {
   assert.equal(TASTI.find((v) => v.codice === "vista").campo, undefined);
   assert.ok(!vociDellaBarra("comando", null, { risultati: true }).some((v) => v.codice === "vista"));
+});
+
+// --- le tre copie di VISTE (review di ramo, medio 6) ------------------------------
+// L'elenco delle viste vive in tre posti — i `value` dei radio in `index.html`, le cifre di
+// `SENZA_MODIFICATORE` qui, e la frase dello stato vuoto — e nessuna copia era provata contro
+// l'originale. Aggiungere una vista a `VISTE` lasciava gli altri due indietro, in silenzio.
+
+test("index.html: i cinque radio della vista portano «» più le VISTE, nell'ordine", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const gruppo = html.match(/<fieldset id="risultati-vista"[\s\S]*?<\/fieldset>/)[0];
+  const valori = [...gruppo.matchAll(/<input type="radio" name="vista" value="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(valori, ["", ...VISTE], `i radio devono seguire VISTE: ${valori}`);
+});
+
+test("tastiera: una cifra per vista più lo zero di «niente», e da 5 in su niente", () => {
+  const nudo = (key) => voceDaEvento({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+  const cifre = ["0", "1", "2", "3", "4"];
+  assert.equal(cifre.length, VISTE.length + 1, "una cifra per vista, più lo zero");
+  for (const t of cifre) assert.equal(nudo(t)?.codice, "vista", `«${t}» deve scegliere la vista`);
+  assert.equal(nudo("5"), null, "da 5 in su la cifra resta al browser");
+  assert.equal(voceDaEvento({ key: "1", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }), null,
+    "⌘1 è la scheda 1 del browser, non nostra");
 });

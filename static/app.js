@@ -69,8 +69,11 @@ function risultatiInVista(m) {
   const perCaso = risultati.lavoro?.fin?.risultati?.per_caso?.[risultati.caso];
   if (!perCaso) return null;
   const auto = risultati.scalaMano === null;
-  return { vista: risultati.vista, caso: risultati.caso, perCaso,
-           scala: auto ? scalaAuto(m, perCaso) : risultati.scalaMano, auto,
+  // `scalaAuto` solo in vista deformata: passa da `frecciaMassima` → `puntiDeformata`, cioè un
+  // campionamento di Hermite su ogni asta, e in vista M/V/N nessuno lo guarderebbe. Là la scala
+  // del disegno la fa `scalaDiagrammaAuto` (`piano.js`), e questa vale 1 per non mentire nel badge.
+  const scala = auto ? (risultati.vista === "deformata" ? scalaAuto(m, perCaso) : 1) : risultati.scalaMano;
+  return { vista: risultati.vista, caso: risultati.caso, perCaso, scala, auto,
            stantia: stantia(risultati.lavoro, m) };
 }
 
@@ -279,6 +282,7 @@ const corsa = creaCorsa(document, {
 // `esito` riceve lo **stato** (con `lavoro`), `srotolato` e `piano` la **vista** (R10).
 const esito = creaEsito(document, {
   suCambio: ({ caso, vista, scalaMano }) => { if (risultati) { risultati = { ...risultati, caso, vista, scalaMano }; ridisegna(); } },
+  suAvviso: dì,   // una scala illeggibile torna ad auto, e la riga del messaggio lo dice
 });
 const srotolato = creaSrotolato($("srotolato"));
 
@@ -626,6 +630,27 @@ function esegui(fn, etichetta) {
   }
 }
 
+/** I numeri della corsa per l'ispettore: `{perCaso, caso}` presi dallo stato, senza passare dalla
+ *  vista. `null` quando non c'è una corsa, o quando il caso scelto non è fra quelli corsi. */
+function perCasoDelloStato() {
+  const perCaso = risultati?.lavoro?.fin?.risultati?.per_caso?.[risultati.caso];
+  return perCaso ? { perCaso, caso: risultati.caso } : null;
+}
+
+/** Il piano e la striscia: i due che si misurano in pixel del proprio riquadro, e i soli che il
+ *  `resize` deve rifare. Estratta perché `ridisegna` e il listener la chiamino con gli **stessi**
+ *  argomenti: due `piano.disegna` scritte in due punti divergono al primo argomento aggiunto, e il
+ *  disegno cambierebbe a seconda di chi l'ha chiesto. Rende la vista dei risultati, che serve anche
+ *  a chi viene dopo (spazio e pannello). */
+function disegnaPiano(m) {
+  const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
+  const inVista = risultatiInVista(m);
+  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
+                     proposte: rilievo ? proposteAperte(rilievo, m) : [], risultati: inVista });
+  srotolato.disegna({ risultati: inVista, modello: m, selezione });
+  return inVista;
+}
+
 function ridisegna() {
   const m = corrente(cronologia);
   // Sette tipi selezionabili da quando l'albero porta anche il rilievo: un tipo che non è
@@ -653,11 +678,8 @@ function ridisegna() {
   // la lunghezza — oppure il punto in anteprima. Il secondo non è un `{da, dx, dz}`, non
   // parte da nessun nodo, e darglielo vorrebbe dire inventargli un'origine: `piano.js` lo
   // riconosce da `punto`.
-  const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   rigaComando.hidden = !comando;
-  const inVista = risultatiInVista(m);
-  piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
-                     proposte: rilievo ? proposteAperte(rilievo, m) : [], risultati: inVista });
+  const inVista = disegnaPiano(m);
   // finché three.js non è arrivato, il piano regge da solo
   spazio?.disegna(m, { selezione, deformata: inVista?.vista === "deformata"
     ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala), stantia: inVista.stantia } : null });
@@ -668,25 +690,31 @@ function ridisegna() {
     legame: scelto ? legamePer(m, selezione.id) : null,
     tabella: scelto ? (tabelle.get(chiaveTabella(scelto)) ?? null) : null,
     rilievo,
-    risultati: inVista,
+    // L'ispettore prende i numeri dallo **stato**, non dalla vista: `0` spegne il disegno, non i
+    // valori del nodo selezionato. Con `inVista` premere `0` svuotava anche le righe di
+    // spostamenti e reazioni, che con il disegno non c'entrano niente.
+    risultati: perCasoDelloStato(),
   });
   file.disegna({ percorso, impronta, modello: m });
   corsa.disegna({ modello: m });
-  esito.disegna({ risultati });
-  srotolato.disegna({ risultati: inVista, modello: m, selezione });
+  // `stantia` dallo **stato**, non dalla vista: il blocco «Risultati» c'è anche con `0` premuto,
+  // e la riga dell'equilibrio deve dire lo stesso della riga della corsa.
+  esito.disegna({ risultati, stantia: risultati ? stantia(risultati.lavoro, m) : false });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
 }
 
 // Il piano si disegna in millimetri per pixel: cambiata la finestra, `s` cambia e con lui tratti,
 // etichette e ostacoli — ma nessuno lo ridisegnava, e il disegno restava della misura di prima.
-// Una volta per frame: `resize` arriva a raffica durante il trascinamento del bordo, e un
-// ridisegno per evento vuol dire ridisegnare l'albero e i pannelli decine di volte al secondo.
+// Solo piano e striscia, non `ridisegna()`: sono i due che misurano il proprio riquadro, mentre
+// albero, pannelli e vista 3D dalla larghezza della finestra non dipendono — e lo spazio, a ogni
+// giro, ributta via le geometrie e ricalcola `puntiDeformata` per ogni asta.
+// Una volta per frame: `resize` arriva a raffica durante il trascinamento del bordo.
 let ridisegnoInCoda = false;
 window.addEventListener("resize", () => {
   if (ridisegnoInCoda) return;
   ridisegnoInCoda = true;
-  requestAnimationFrame(() => { ridisegnoInCoda = false; ridisegna(); });
+  requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia)); });
 });
 
 function disegnaBarra() {

@@ -229,3 +229,47 @@ test("creaSrotolato: nessuna coordinata esce dalla larghezza misurata, e ridiseg
     }
   }
 });
+
+// --- la review di ramo ------------------------------------------------------------
+
+// Σ reazioni contro Σ carichi è il numero che contraddice, e di una corsa superata dal modello
+// parla del modello di prima: in nero passava per attuale. Doppio canale come `#corsa-ultima`.
+test("creaEsito: con una corsa stantia l'equilibrio porta la classe e la parola", () => {
+  const { radice, el } = radiceFinta();
+  const esito = creaEsito(radice, { suCambio: () => {} });
+  esito.disegna({ risultati: risultatiDi(["Z1"]), stantia: true });
+  assert.equal(el("#risultati-equilibrio").className, "stantia");
+  assert.ok(el("#risultati-equilibrio").textContent.startsWith("stantia · Σ reazioni"),
+    el("#risultati-equilibrio").textContent);
+  esito.disegna({ risultati: risultatiDi(["Z1"]), stantia: false });
+  assert.equal(el("#risultati-equilibrio").className, "", "corsa fresca: nessun filetto");
+  assert.ok(el("#risultati-equilibrio").textContent.startsWith("Σ reazioni"));
+  esito.disegna({ risultati: risultatiDi(["Z1"]) });
+  assert.equal(el("#risultati-equilibrio").className, "", "senza il parametro vale fresca");
+});
+
+// Tornare ad auto in silenzio è il modo peggiore di dirlo: il campo si riscrive vuoto e chi ha
+// scritto «−3» non sa se ha sbagliato lui o se ha deciso il programma.
+test("creaEsito: una scala illeggibile, zero o negativa avvisa, con un esempio", () => {
+  const { radice, el } = radiceFinta();
+  const avvisi = [];
+  const esito = creaEsito(radice, { suCambio: () => {}, suAvviso: (t) => avvisi.push(t) });
+  esito.disegna({ risultati: risultatiDi(["Z1"]) });
+  for (const scritto of ["pippo", "0", "-3"]) {
+    el("#risultati-scala").value = scritto;
+    el("#risultati-scala").dispatch("change");
+  }
+  assert.equal(avvisi.length, 3, `un avviso per ciascuna: ${JSON.stringify(avvisi)}`);
+  assert.match(avvisi[0], /^la scala è un numero positivo, per esempio 50 o 1\/4 — torno ad auto$/);
+  el("#risultati-scala").value = "50"; el("#risultati-scala").dispatch("change");
+  el("#risultati-scala").value = ""; el("#risultati-scala").dispatch("change");
+  assert.equal(avvisi.length, 3, "una scala buona e un campo vuoto non avvisano di niente");
+});
+
+test("creaEsito: senza `suAvviso` una scala illeggibile non solleva", () => {
+  const { radice, el } = radiceFinta();
+  const esito = creaEsito(radice, { suCambio: () => {} });
+  esito.disegna({ risultati: risultatiDi(["Z1"]) });
+  el("#risultati-scala").value = "pippo";
+  assert.doesNotThrow(() => el("#risultati-scala").dispatch("change"));
+});

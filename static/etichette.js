@@ -67,7 +67,10 @@ export function disponi(richieste, ostacoli = [], { passo = 6, limiti = null } =
           const box = boxDi(x, y, v.ancora, larghezza, altezza);
           if (!dentro(box)) continue;
           if ([...listaOstacoli, ...posate.map((p) => p.box)].some((o) => siSovrappongono(box, o))) continue;
-          const guida = multiplo === 1 ? null : { x1: r.x, y1: r.y, x2: v.dx ? x : r.x, y2: v.dy ? (v.dy < 0 ? box.y1 : box.y0) : r.y };
+          // La guida arriva al bordo del box che guarda il punto: da sopra è `y1`, da sotto `y0`.
+          const bordo = v.dy < 0 ? box.y1 : box.y0;
+          const guida = multiplo === 1 ? null
+            : { x1: r.x, y1: r.y, x2: v.dx ? x : r.x, y2: v.dy ? bordo : r.y };
           scelta = { x, y, ancora: v.ancora, box, guida };
           break cerca;
         }

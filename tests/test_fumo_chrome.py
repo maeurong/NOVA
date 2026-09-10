@@ -4,6 +4,7 @@
 si apra, che la tastiera risponda, che il piano disegni. Salta se manca Chrome o node: non è un
 fallimento, è un attrezzo assente. Debito dichiarato nella giornata 12 (`app.js` senza test).
 """
+import contextlib
 import json
 import os
 import shutil
@@ -32,10 +33,18 @@ def _chrome() -> str | None:
     return None
 
 
-def _porta_libera() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def _porte_libere(quante: int = 2) -> list[int]:
+    """Porte libere, prenotate **insieme**.
+
+    Chiudere il primo socket prima di aprire il secondo lascia il sistema libero di ridare la
+    stessa porta, e server e CDP finirebbero sulla stessa: un fallimento raro e illeggibile. Qui i
+    socket restano aperti finché non sono state scelte tutte.
+    """
+    with contextlib.ExitStack() as pila:
+        prese = [pila.enter_context(socket.socket()) for _ in range(quante)]
+        for presa in prese:
+            presa.bind(("127.0.0.1", 0))
+        return [presa.getsockname()[1] for presa in prese]
 
 
 def _termina(proc: subprocess.Popen, secondi: float = 5.0) -> None:
@@ -67,7 +76,7 @@ def chrome_e_server(tmp_path):
     import uvicorn
     from nova.server import SidecarInProcesso, create_app
 
-    porta, cdp = _porta_libera(), _porta_libera()
+    porta, cdp = _porte_libere(2)
     app = create_app(SidecarInProcesso(), tmp_path / "corse", porta=porta)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=porta, log_level="warning"))
     filo = threading.Thread(target=server.run, daemon=True)

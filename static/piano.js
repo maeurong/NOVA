@@ -41,6 +41,14 @@ const INCHIOSTRO = "#141414";
 const ROSSO = "#b8321e";
 const MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
 
+/** La larghezza di un testo mono a 11px, in millimetri del `viewBox`. I 6,6 px per carattere sono
+ *  l'avanzamento del mono a 11px (0,6 em): una **stima**, non una misura — `getComputedTextLength`
+ *  vorrebbe disegnare, misurare e ridisegnare a ogni giro. `extraPx` è il margine che il chiamante
+ *  vuole attorno: 2 per il box di un'etichetta, 8 per il rientro di una striscia dal bordo. Con
+ *  `s = 1` esce in pixel, che è come la legge il conto del riquadro.
+ *  Stava scritta a mano in cinque punti con quattro margini diversi; qui è una sola. */
+const larghezzaMono = (testo, s, extraPx = 0) => (testo.length * 6.6 + extraPx) * s;
+
 const el = (nome, attributi = {}) => {
   const e = document.createElementNS(NS, nome);
   for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v);
@@ -144,6 +152,77 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     return Math.max(vista.larghezza / w, vista.altezza / h);
   }
 
+  /** Lo strato dei risultati: la deformata o i diagrammi M/V/N, in un `<g>` che il chiamante
+   *  appende **fra le aste e i nodi** — i nodi restano sopra e cliccabili (R5). Le etichette non
+   *  si scrivono qui: si accodano a `richieste`, che `disegna` posa con `disponi` dopo i nodi,
+   *  quando i loro cerchi e i loro nomi sono ostacoli noti. Un solo colore, inchiostro; rosso
+   *  quando la corsa è stantia — il rosso dice attenzione (story 63). */
+  function stratoDeiRisultati(m, attivo, vistaRis, s, richieste) {
+    const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
+    // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
+    // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
+    const g = el("g", { class: "risultati", "pointer-events": "none" });
+    const coppia = (p) => `${p.x},${p.y}`;
+    if (vistaRis === "deformata") {
+      for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
+        g.append(el("polyline", {
+          class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
+          fill: "none", stroke: colore, "stroke-width": 2 * s,
+          "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+      }
+      // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
+      // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
+      const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
+      if (valore > 0 && punto) {
+        // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
+        const p = schermo({ x: indeformato.x + attivo.scala * (punto.x - indeformato.x),
+                            z: indeformato.z + attivo.scala * (punto.z - indeformato.z) });
+        const base = schermo(indeformato);
+        richieste.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
+                                  priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
+      }
+    } else {
+      const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
+      let massimo = 0;
+      const diagrammi = diagramma(m, attivo.perCaso, vistaRis, scalaD);
+      for (const d of diagrammi) for (const p of d.punti) massimo = Math.max(massimo, Math.abs(p.valore));
+      for (const d of diagrammi) {
+        const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
+        const punti = d.punti.map((p) => schermo(p));
+        g.append(el("polygon", {
+          class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
+          fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
+          "stroke-dasharray": `${5 * s} ${3 * s}` }));
+        // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
+        // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
+        for (const p of d.punti) {
+          const r = Number.isFinite(p.x_rel) ? p.x_rel : 0;
+          const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * r, z: d.base[0].z + (d.base[1].z - d.base[0].z) * r });
+          const q = schermo(p);
+          g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
+        }
+        // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
+        for (const picco of picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave)) {
+          if (sottoSoglia(picco.valore, massimo)) continue;
+          const p = d.punti.find((q) => q.x_rel === picco.x_rel);
+          if (!p) continue;
+          const q = schermo(p);
+          // Il verso preferito: dalla base del diagramma verso il picco, cioè **fuori** dal
+          // poligono. Senza, l'etichetta parte da «sopra» e su un diagramma disegnato in su la
+          // linea tratteggiata e le ordinate le passano dentro (visto su MURO 1, «0,2056 kN·m»).
+          const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel,
+                              z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
+          // `1 +`: un picco piccolo resta comunque più importante di un'etichetta di carico
+          // (`0.5`). È il soggetto della vista; il carico è il contorno.
+          richieste.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
+                                    priorita: 1 + Math.abs(picco.valore) / massimo,
+                                    preferito: { dx: q.x - b.x, dy: q.y - b.y } });
+        }
+      }
+    }
+    return g;
+  }
+
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
   function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
@@ -162,14 +241,14 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // **una** cifra, nessun nome da salvare, ma un riquadro di 120 px dove i 16 di stacco già non
     // ci stanno — si allargava del 31 % e «2» e «3» finivano a toccarsi: il fumo da 12/12 a 8/12.
     // I nomi lunghi sono il difetto visto a mano, e solo loro pagano il riquadro più largo.
-    const caratteri = Math.max(0, ...m.nodi.map((n) => String(n.nome ?? n.id).length));
+    const nomePiuLungo = m.nodi.map((n) => String(n.nome ?? n.id)).reduce((a, b) => (b.length > a.length ? b : a), "");
     const { w: pxL, h: pxA } = pixelDelRiquadro();
     const orizzontale = vista.larghezza / pxL >= vista.altezza / pxA;   // il lato che comanda `s`
     const W = orizzontale ? pxL : pxA, L0 = orizzontale ? vista.larghezza : vista.altezza;
-    const P = caratteri * 6.6 + OFFSET_ETICHETTA + 4;   // pixel che l'etichetta più lunga chiede
+    const P = larghezzaMono(nomePiuLungo, 1, OFFSET_ETICHETTA + 4);   // pixel che l'etichetta più lunga chiede
     // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
     // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
-    if (caratteri * 6.6 > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
+    if (larghezzaMono(nomePiuLungo, 1) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
       const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
       inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P));
       s = millimetriPerPixel();
@@ -178,7 +257,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // `vistaRis` e non `vista`: `vista` qui sopra è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
     const attivo = vistaRis ? risultati : null;
-    let stratoRisultati = null;
 
     for (const a of m.aste) {
       const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
@@ -196,74 +274,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }));
     }
 
-    // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili. Un solo
-    // colore, inchiostro; rosso quando la corsa è stantia — il rosso dice attenzione (story 63).
-    const richiesteEtichette = [];   // i picchi (o il massimo spostamento): li posa `disponi` dopo i nodi
-    if (attivo) {
-      const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
-      // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
-      // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
-      stratoRisultati = el("g", { class: "risultati", "pointer-events": "none" });
-      const coppia = (p) => `${p.x},${p.y}`;
-      if (vistaRis === "deformata") {
-        for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
-          stratoRisultati.append(el("polyline", {
-            class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
-            fill: "none", stroke: colore, "stroke-width": 2 * s,
-            "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
-        }
-        // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
-        // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
-        const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
-        if (valore > 0 && punto) {
-          // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
-          const p = schermo({ x: indeformato.x + attivo.scala * (punto.x - indeformato.x),
-                              z: indeformato.z + attivo.scala * (punto.z - indeformato.z) });
-          const base = schermo(indeformato);
-          richiesteEtichette.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
-                                    priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
-        }
-      } else {
-        const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
-        let massimo = 0;
-        const diagrammi = diagramma(m, attivo.perCaso, vistaRis, scalaD);
-        for (const d of diagrammi) for (const p of d.punti) massimo = Math.max(massimo, Math.abs(p.valore));
-        for (const d of diagrammi) {
-          const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
-          const punti = d.punti.map((p) => schermo(p));
-          stratoRisultati.append(el("polygon", {
-            class: "diagramma", points: [pi, ...punti, pj].map(coppia).join(" "),
-            fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5 * s,
-            "stroke-dasharray": `${5 * s} ${3 * s}` }));
-          // Le ordinate per stazione: si vede dove il solutore ha misurato (story 38). `x_rel`
-          // guasto sta sul nodo i, come in `diagramma`, invece di scrivere `x1="NaN"`.
-          for (const p of d.punti) {
-            const r = Number.isFinite(p.x_rel) ? p.x_rel : 0;
-            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * r, z: d.base[0].z + (d.base[1].z - d.base[0].z) * r });
-            const q = schermo(p);
-            stratoRisultati.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
-          }
-          // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
-          for (const picco of picchi(attivo.perCaso?.sollecitazioni?.[String(d.id)], d.chiave)) {
-            if (sottoSoglia(picco.valore, massimo)) continue;
-            const p = d.punti.find((q) => q.x_rel === picco.x_rel);
-            if (!p) continue;
-            const q = schermo(p);
-            // Il verso preferito: dalla base del diagramma verso il picco, cioè **fuori** dal
-            // poligono. Senza, l'etichetta parte da «sopra» e su un diagramma disegnato in su la
-            // linea tratteggiata e le ordinate le passano dentro (visto su MURO 1, «0,2056 kN·m»).
-            const b = schermo({ x: d.base[0].x + (d.base[1].x - d.base[0].x) * p.x_rel,
-                                z: d.base[0].z + (d.base[1].z - d.base[0].z) * p.x_rel });
-            // `1 +`: un picco piccolo resta comunque più importante di un'etichetta di carico
-            // (`0.5`). È il soggetto della vista; il carico è il contorno.
-            richiesteEtichette.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
-                                      priorita: 1 + Math.abs(picco.valore) / massimo,
-                                      preferito: { dx: q.x - b.x, dy: q.y - b.y } });
-          }
-        }
-      }
-      gruppo.append(stratoRisultati);
-    }
+    // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili.
+    const richiesteEtichette = [];   // picchi e carichi: li posa `disponi` dopo i nodi, insieme
+    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, richiesteEtichette) : null;
+    if (stratoRisultati) gruppo.append(stratoRisultati);
 
     // Il punto in anteprima del campo di comando: un ghost senza nodo di partenza, quindi
     // una forma sua invece di un `{da, dx, dz}` con un'origine inventata. Cerchio vuoto e
@@ -333,11 +347,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         });
         testo.textContent = n.nome ?? String(n.id);
         // Il box dell'etichetta del nodo: `y` è la linea di base (niente `dominant-baseline`
-        // qui), quindi il testo sta **sopra** di essa.
-        const larghezza = testo.textContent.length * 6.6 * s, altezza = 11 * s;
+        // qui), quindi il testo sta **sopra** di essa — ma non tutto: «piede sx» ha una `p` che
+        // scende sotto la base, e con `y1 = y` un picco ci finiva dentro. Tre pixel di discendente
+        // sotto e undici sopra, più i due di margine per lato che hanno anche i picchi.
+        const larghezza = larghezzaMono(testo.textContent, s, 2), altezza = 11 * s;
         const x = p.x + OFFSET_ETICHETTA * s * v.x, y = p.y - OFFSET_ETICHETTA * s * v.z;
         const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
-        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y });
+        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y + 3 * s });
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);
@@ -372,11 +388,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta a `top: 22`, su una riga sua, e
     // non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a passare
     // sotto il testo senza che nessun test se ne accorga.
-    const larghezzaTesto = (testo) => (testo.length * 6.6 + 8) * s;
-    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaTesto(badge.textContent), x1: viewport.x1,
+    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(badge.textContent, s, 8), x1: viewport.x1,
                                        y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
-                                        x1: viewport.x0 + Math.min(larghezzaTesto(titolo.textContent), 0.45 * larghezzaPx * s) });
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
@@ -456,7 +471,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // larghezza per carattere è una stima del mono a 11px, e uno spazio fine unificatore
       // (`millimetri`, «20 000») non misura come una cifra. Misurato sul telaio 2×1 a 1920 px:
       // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel.
-      const richieste = uniche.map((r) => ({ ...r, larghezza: r.testo.length * 6.6 * s + 2 * s, altezza: 14 * s }));
+      const richieste = uniche.map((r) => ({ ...r, larghezza: larghezzaMono(r.testo, s, 2), altezza: 14 * s }));
       const poste = disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport });
       for (let k = 0; k < poste.length; k++) {   // `disponi` rende un elemento per richiesta, in ordine
         const e = poste[k];

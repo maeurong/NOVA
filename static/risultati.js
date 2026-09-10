@@ -66,7 +66,11 @@ const RUMORE = 1e-6;
  *  derivata della cubica invece di infittire il campionamento. */
 export function frecciaMassima(m, perCaso) {
   let valore = 0, punto = null, indeformato = null;
-  const perId = new Map((m?.aste ?? []).map((a) => [a.id, a]));
+  // Il primo `id` vince, come fa `nodo()` coi nodi doppi: `new Map(entries)` terrebbe l'ultimo, e
+  // un file con due aste sullo stesso id campionerebbe la deformata di una contro la geometria
+  // dell'altra — scala sbagliata, in silenzio. Il doppione lo segnala il Check Model, non questa.
+  const perId = new Map();
+  for (const a of m?.aste ?? []) if (!perId.has(a.id)) perId.set(a.id, a);
   const conAsta = new Set();
   for (const d of puntiDeformata(m, perCaso, 1)) {
     const a = perId.get(d.id);

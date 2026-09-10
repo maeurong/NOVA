@@ -372,7 +372,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    togliere, perché una regione nascosta e poi mostrata non la annunciano tutte le AT. */
 #corsa-ultima { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
 #corsa-ultima:not(:empty) { margin: var(--passo) 0 0; }
-#corsa-ultima.stantia { border-left: 3px solid var(--rosso); padding-left: 6px; }
+/* Anche la riga Σ reazioni: di una corsa superata dal modello, il numero che contraddice parla
+   del modello di prima. Stesso filetto, e la parola davanti al testo (`esito.js`). */
+#corsa-ultima.stantia, #risultati-equilibrio.stantia { border-left: 3px solid var(--rosso); padding-left: 6px; }
 #corsa-registro { margin-top: 6px; font-size: 11px; }
 #corsa-registro summary { cursor: pointer; }
 #corsa-registro summary:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }

@@ -836,3 +836,37 @@ test("piano: un picco piccolo non cede il posto all'etichetta di un carico", () 
   assert.ok(solo, "senza carichi il picco piccolo si scrive");
   assert.equal(posto({ azioneInVista: azione }), solo, "il carico non sposta il picco: passa lui per primo");
 });
+
+// --- la review di ramo ------------------------------------------------------------
+
+// Il box dell'etichetta di un nodo finiva sulla linea di base: «piede sx» ha una `p` che scende
+// sotto, e un picco posato lì sotto le entrava dentro. Tre pixel di discendente, e i due di
+// margine per lato che hanno anche i picchi.
+//
+// **Questo test non uccide il mutante**, e va detto: sulla trave del brief il picco cade in
+// mezzeria e i nomi stanno agli appoggi, quindi la fascia del discendente non decide niente. Ho
+// provato a costruire la geometria in cui decide — picco a un estremo, 56-112 mm sopra il nodo,
+// così l'etichetta spinta in basso aprirebbe proprio dentro il discendente — e ogni volta
+// `disponi` la porta prima a «destra», che a queste misure resta libera. Vale come invariante: se
+// domani una geometria li avvicina, il test se ne accorge.
+test("piano con vista M: nessun picco entra nel box di un nome di nodo, discendente compreso", () => {
+  const nominata = { ...traveR, nodi: traveR.nodi.map((n) => ({ ...n, nome: n.id === 1 ? "piede sx" : "piede dx" })) };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(nominata, { risultati: conRisultati("M") });
+  const svg = contenitore._figli[0];
+  const s = millimetriPerPixelDi(svg);
+  // Il box del nome come lo mette `piano.js` fra gli ostacoli: 11 px sopra la base, 3 sotto.
+  const boxNome = (t) => {
+    const b = boxTesto(t, s);
+    return { ...b, x0: b.x0 - s, x1: b.x1 + s, y1: b.y1 + 3 * s };
+  };
+  const nomi = tutti(svg, "text").filter((t) => t.textContent.startsWith("piede"));
+  const picchi = tutti(strato(svg), "text");
+  assert.equal(nomi.length, 2, "i due nomi si scrivono");
+  assert.ok(picchi.length >= 1, "il picco si scrive");
+  for (const n of nomi) for (const p of picchi) {
+    assert.ok(!siSovrappongono(boxTesto(p, s), boxNome(n)),
+      `«${p.textContent}» entra nel nome «${n.textContent}»`);
+  }
+});
