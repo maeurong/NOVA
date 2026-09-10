@@ -116,6 +116,10 @@ class SidecarProcesso:
             self.p.wait(timeout=2)
         except subprocess.TimeoutExpired:   # un sidecar che ignora SIGTERM a metà analisi
             self.p.kill()
+            try:
+                self.p.wait(timeout=1)   # raccolto: un ucciso senza `wait` resta zombie
+            except Exception:
+                pass
         except Exception:
             pass   # già morto, o un processo che non si lascia toccare: il nuovo parte lo stesso
         self._parti()
