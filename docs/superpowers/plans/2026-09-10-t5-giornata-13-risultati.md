@@ -6,20 +6,21 @@
 
 **Architecture:** nessun cambio nel server né nel contratto dei risultati: `GET /api/corsa/{run_id}` a lavoro finito porta già l'intero dict (`run, per_caso, modi, verdetti, passi, caduta`) e `corsa.js` lo consegna ad `app.js` con `suEsito(lavoro)` in `lavoro.fin.risultati` (`static/corsa.js:262-265`, `:301`). Due moduli puri nuovi: `static/risultati.js` (geometria: deformata di Hermite per asta, scala automatica in serie 1-2-5, diagrammi per stazione, picchi, testi con unità, righe per nodo, equilibrio) e `static/etichette.js` (disposizione delle etichette senza sovrapposizioni). `piano.js` riceve un'opzione `risultati` e disegna uno strato `<g class="risultati">` fra le aste e i nodi, più il badge della scala come `<p>` fuori dal `viewBox` (come il titolo dei carichi, `static/piano.js:88-96`). `spazio.js` riceve la sola deformata. Un modulo `static/esito.js` possiede il blocco «Risultati» nel pannello destro (caso, vista, scala a mano, equilibrio) e la striscia `#srotolato` sotto il piano. `app.js` tiene lo stato `{lavoro, vista, caso, scalaMano}` fuori dalla cronologia (come l'ultima corsa: `⌘Z` non lo tocca, «apri» lo azzera) e lo passa a piano, spazio, pannello ed esito. I tasti `0 1 2 3 4` scelgono la vista. Il test di fumo è `tests/test_fumo_chrome.py` + `tests/fumo/*.mjs`: pytest avvia il server su una porta libera, Chrome headless con `--remote-debugging-port`, e un copione node via CDP che preme tasti veri e legge il DOM vero.
 
-**Tech Stack:** moduli ES nativi, `node --test` con il DOM finto di `piano.test.js` (`static/test/piano.test.js:117-146`), pytest + `uvicorn` in thread + Chrome headless via CDP (WebSocket nativo di node ≥ 22), three.js vendorizzato per la deformata 3D.
+**Tech Stack:** moduli ES nativi, `node --test` con il DOM finto di `piano.test.js` (`static/test/piano.test.js:117-156`), pytest + `uvicorn` in thread + Chrome headless via CDP (WebSocket nativo di node ≥ 22), three.js vendorizzato per la deformata 3D.
 
-**Spec:** `docs/superpowers/specs/2026-09-05-nova-v1-design.md` — story 36-40 (righe 74-78), 63 (riga 115: «diagrammi in inchiostro tratteggiato», «un solo rosso»), 64 (riga 116: unità su ogni numero); «Risultati per corsa» (righe 182-193: `per_caso[caso]{spostamenti[nodo][6], reazioni[nodo][6], sollecitazioni[asta][stazione]{x_rel, N, Vy, Vz, T, My, Mz}}`, «le stazioni sono i punti di integrazione (Lobatto)… ricomposti sull'asta come `x_rel` fra 0 e 1»). Calendario: `docs/superpowers/plans/2026-09-06-t5-interfaccia-bozza.md:19` (giornata 13; verifica: «trave appoggiata: M(mid) = qL²/8 letto sull'etichetta; nessuna etichetta sovrapposta a 1280 e a 1920 px»). L'Esito della 12 (`docs/superpowers/plans/2026-09-10-t5-giornata-12-check-corsa.md`, «Debiti sanati») fissa il test di fumo come primo punto di questa giornata.
+**Spec:** `docs/superpowers/specs/2026-09-05-nova-v1-design.md` — story 36-40 (righe 74-78), 63 (riga 116: «diagrammi in inchiostro tratteggiato», «un solo rosso»), 64 (riga 117: unità su ogni numero); «Risultati per corsa» (righe 182-193: `per_caso[caso]{spostamenti[nodo][6], reazioni[nodo][6], sollecitazioni[asta][stazione]{x_rel, N, Vy, Vz, T, My, Mz}}`; riga 197: «le stazioni sono i punti di integrazione (Lobatto) letti con un recorder per sezione, ricomposti sull'asta come `x_rel` fra 0 e 1»). Calendario: `docs/superpowers/plans/2026-09-06-t5-interfaccia-bozza.md:20` (giornata 13; verifica: «trave appoggiata: M(mid) = qL²/8 letto sull'etichetta; nessuna etichetta sovrapposta a 1280 e a 1920 px»). L'Esito della 12 (`docs/superpowers/plans/2026-09-10-t5-giornata-12-check-corsa.md`, «Debiti sanati») fissa il test di fumo come primo punto di questa giornata.
 
-**Ricerca che questo piano applica** (`docs/ricerca/index.md`, riga 19, ricerca 07; riga 13, ricerca 03): `07-ux-modellatore.md:99` (SAP2000 «Auto… scale factor», «Wire Shadow… undeformed shape as a reference»; Abaqus: «The scale factor is displayed in the state block» → fattore sempre stampato, ombra di default, clic sul nodo → valore), `:98` (M sul lato teso, convenzione italiana — deciso qui con l'autore), `:100` (doppio canale: colore **e** parola), `:105` (Tufte, data-ink: niente riempimenti pesanti, tratteggio), `:65` (Abaqus scala automaticamente la deformata «to ensure that they are clearly visible»); `03-stack-tecnico.md:94` (deformata = ricampionare l'asta con funzioni di forma di Hermite su N punti moltiplicati per la scala). Mappa wayfinder #31: la 13 continua T5; la passata sull'uso viene dopo la 15.
+**Ricerca che questo piano applica** (`docs/ricerca/index.md`, riga 19, ricerca 07; riga 15, ricerca 03): `07-ux-modellatore.md:99` (SAP2000 «Auto… scale factor», «Wire Shadow… undeformed shape as a reference»; Abaqus: «The scale factor is displayed in the state block» → fattore sempre stampato, ombra di default, clic sul nodo → valore), `:98` (M sul lato teso, convenzione italiana — deciso qui con l'autore), `:100` (doppio canale: colore **e** parola), `:105` (Tufte, data-ink: niente riempimenti pesanti, tratteggio), `:65` (Abaqus scala automaticamente la deformata «to ensure that they are clearly visible»); `03-stack-tecnico.md:94` (deformata = ricampionare l'asta con funzioni di forma di Hermite su N punti moltiplicati per la scala). Mappa wayfinder #31: la 13 continua T5; la passata sull'uso viene dopo la 15.
 
 **Ramo:** `feat/interfaccia-13-risultati` da `main` a `4e8cf0a`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-13` (venv pronto, `nova ok 3.12.13`). PR verso `main`.
 
 ## Global Constraints
 
 - **Lingua italiana** in interfaccia, commenti, messaggi di commit; identificatori tecnici invariati. Le chiavi dei risultati sono quelle di `nova/corsa.py:301-303` e `:317-326` alla lettera: `per_caso[caso].spostamenti["<id>"]` a sei componenti `[ux, uy, uz, rx, ry, rz]`, `reazioni["<id>"]` (solo i vincolati), `sollecitazioni["<id_asta>"]` lista di stazioni `{x_rel, N, Vy, Vz, T, My, Mz}`; unità del contratto **mm, N, N·mm, rad**.
-- **Il piano è x–z** (`static/piano.js:5-6`): le grandezze nel piano sono `My` (M), `Vz` (V), `N`; la deformata usa `ux` (indice 0), `uz` (indice 2) e la rotazione `ry` (indice 4). `Mz`, `Vy`, `T`, `uy`, `rx`, `rz` non si disegnano (si stampano nell'ispettore).
-- **Segni del contratto** (`nova/corsa.py:31-39`, `tests/test_corsa_binario.py:51-55`): `My` positivo tende le fibre inferiori (trave appoggiata: +qL²/8 in mezzeria); `Vz` +qL/2 all'estremo i, −qL/2 a j; `N` di compressione **negativo**.
-- **M sul lato teso**: il diagramma di M si disegna dalla parte delle fibre tese, cioè il valore positivo va verso **−e2** (sotto una trave da sinistra a destra); V e N positivi verso **+e2** con la legenda «+ verso i→j» (V) e «+ trazione» (N). `e1 = (j − i)/L`, `e2` = normale sinistra `(−e1.z, e1.x)` (`static/carichi.js:172-173`).
+- **Il piano è x–z** (`static/piano.js:5-6`): la deformata usa `ux` (indice 0), `uz` (indice 2) e la rotazione `ry` (indice 4) — tutti e tre **globali** (il recorder è `-dof 1 2 3 4 5 6 disp`, `nova/deck.py:1041`), quindi `ry` è davvero la rotazione attorno alla `y` globale. `uy`, `rx`, `rz` non si disegnano (si stampano nell'ispettore).
+- **La grandezza nel piano dipende dall'asta, non è una costante** (R1, misurato): per una **trave** flettono nel piano `My` e `Vz`; per un **pilastro** `Mz` e `Vy`. La terna di `nova/deck.py:_terna` (`:172-191`) mette la `z` locale nel piano per un'asta coricata e **fuori** dal piano per un'asta in piedi (`:194-197`). Misurato sul telaio 2×1 il 10/09/2026: sui tre pilastri `|My|max ≈ 1e-9` contro `|Mz|max ≈ 7e6`, sulle due travi l'opposto. Una mappa `GRANDEZZA` costante disegnerebbe una riga piatta su ogni pilastro.
+- **Segni del contratto** (`nova/corsa.py:31-39`, `tests/test_corsa_binario.py:51-55`; `N` negativo in compressione a `:42`): M positivo tende le fibre dalla parte di **−(asse trasversale locale)** — trave appoggiata: `My` = +qL²/8 in mezzeria, fibre inferiori tese; `Vz` +qL/2 all'estremo i, −qL/2 a j; `N` di compressione **negativo**.
+- **M sul lato teso**: il diagramma di M si disegna dalla parte delle fibre tese, cioè verso **−n**, dove `n` è l'asse trasversale **del solutore** in coordinate schermo (`assiDi`, R1): `+e2` per una trave da sinistra a destra (quindi M positivo sotto), `−e2` per una trave da destra a sinistra (quindi M positivo ancora sotto: il verso non dipende dall'ordine dei nodi), `−e2` per un pilastro. V e N positivi verso **+n**, con la legenda «+ verso i→j» (V) e «+ trazione» (N) — che parlano del **segno**, non del lato, e restano vere per ogni giacitura. `e1 = (j − i)/L`, `e2` = normale sinistra `(−e1.z, e1.x)` (`static/carichi.js:172-173`).
 - **Notazione numerica italiana** con `conciso`/`cifre` (`static/numeri.js:182-195`); unità su ogni numero (story 64): forze in **kN**, momenti in **kN·m**, spostamenti in **mm**, rotazioni in **mrad**. La riga «Unità» del pannello dichiara le due famiglie (modello e risultati).
 - **Scala della deformata sempre stampata**: «deformata · Z1 · ×120 (auto)» o «×50 (a mano)». Auto = il massimo spostamento nel piano disegnato è il 5 % del lato maggiore del modello, arrotondato alla serie 1-2-5; con spostamenti tutti nulli la scala è ×1 e la deformata coincide con l'ombra.
 - **Un solo rosso** `#b8321e` = attenzione: risultati **stantii** (lo snapshot a schermo non è quello della corsa, `static/corsa.js:93`) → l'intero strato dei risultati e il badge in rosso, con la parola «stantia» nel badge. Mai un secondo colore per i diagrammi: inchiostro `#141414` **tratteggiato** (story 63), riempimento al più `fill-opacity: 0.08`.
@@ -29,8 +30,8 @@
 - **Sotto `nova/` non cambia niente.** `meshrec/` non si tocca. Il contratto dei risultati è quello della spec.
 - **Nessun bundler, nessun `package.json`, nessuna rete a tempo d'uso.** Il test di fumo usa solo node (`WebSocket` globale, node ≥ 22) e il Chrome installato; **salta** con `pytest.skip` se manca Chrome o node, mai un fallimento.
 - **WCAG AA**: doppio canale; i radio della vista con nome accessibile che comincia dal testo visibile; `kbd` con `aria-label` in parole (`nomeTasto`, `static/tastiera.js:146-150`).
-- Comando dei test JS: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/*.test.js` — punto di partenza **649 pass** (Esito della 12).
-- Comando dei test Python: `/Users/mario/GitHub/NOVA-wt/interfaccia-13/.venv/bin/python -P -m pytest /Users/mario/GitHub/NOVA-wt/interfaccia-13/tests -p no:cacheprovider --color=no --tb=short -rs --rootdir=/Users/mario/GitHub/NOVA-wt/interfaccia-13` — punto di partenza **718 pass + 3 skip**; `pytest -q` in questo repo non stampa il riepilogo. I test che vogliono OpenSees usano `binario_opensees` (`tests/conftest.py:41-46`).
+- Comando dei test JS: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/*.test.js` — punto di partenza **649 pass, 0 fail**, rimisurato il 10/09/2026 su `56384df` (venti file in `static/test/`).
+- Comando dei test Python: `/Users/mario/GitHub/NOVA-wt/interfaccia-13/.venv/bin/python -P -m pytest /Users/mario/GitHub/NOVA-wt/interfaccia-13/tests -p no:cacheprovider --color=no --tb=short -rs --rootdir=/Users/mario/GitHub/NOVA-wt/interfaccia-13` — punto di partenza **718 passed, 3 skipped in 48,68 s**, rimisurato il 10/09/2026 su `56384df` (i tre skip sono `lab_telaio_v2/wall_model.inp` non versionato); `pytest -q` in questo repo non stampa il riepilogo. I test che vogliono OpenSees usano `binario_opensees` (`tests/conftest.py:41-46`).
 - Server per la prova in browser: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 /Users/mario/GitHub/NOVA-wt/interfaccia-13/.venv/bin/python -P -m nova --porta 8821`. **Mai la 8765, né 8766-8767, né 8817-8820.** `python -m nova` apre una scheda del browser a ogni avvio. Spegnerlo a fine prova.
 - **Mai `git checkout --` per revertire un mutante**: copia del file prima, ripristino dalla copia.
 - Un comando per chiamata Bash, percorsi assoluti, `git -C`; niente `cd … &&`. Due implementer nello stesso worktree condividono l'indice: **commit per percorso, mai `-a`**.
@@ -40,7 +41,7 @@
 - `nova/corsa.py:277-306` `_stazioni`: 5 stazioni di Lobatto per elemento (`nova/deck.py:33-34`, `XI_LOBATTO = (0, 0.1727, 0.5, 0.8273, 1)`), la stazione 0 di un elemento interno scartata; `x_rel` sull'asta intera; sulla trave appoggiata (`suddivisioni: 2`) 9 stazioni con `x_rel = 0,5` esatto. `nova/corsa.py:309-355` `risultati_da_uscite`: `run.carico_totale[caso]` vettore a 3 (`:342`), `run.mappa_tag` (`:350-351`), `run.hash_modello`.
 - `nova/server.py:352-365` `GET /api/corsa/{run_id}`: a lavoro finito spalma l'esito del solutore (`{"esito":"ok","risultati":{…},"secondi"}`, `nova/corsa.py:189`). `static/corsa.js:262-265`: `const { run_id, stato, fasi, secondi, ...fin } = s; lavoro = { run_id, secondi, fin, fasi, modello: m, solido, cartella }`; `:301` `suEsito(esito)` con `esito` = quel `lavoro`, oppure `null` dopo una `verifica` (`:329`); `:93` `stantia(lavoro, modello)`; `:350-355` `azzera()`.
 - `static/app.js:31-53` lo stato (`cronologia`, `selezione`, `modo`, `comando`, `azioneCorrente`, `percorso`, `rilievo`); `:110-125` `scegli`; `:127` `creaPiano`; `:129-174` `creaPannello` con le azioni; `:181-182` `creaSpazio` (promessa); `:190-228` `creaFile` con `suApertura` (`corsa.azzera()` a `:194`) e `suImportazione` (`:218`); `:235-243` `creaCorsa` con `suEsito: () => ridisegna()`; `:262` `VOCI_PALETTE`; `:588-632` `ridisegna` (`piano.disegna` a `:617`, `spazio?.disegna` a `:619`, `pannello.disegna` a `:622-627`, `corsa.disegna` a `:629`); `:634-651` `disegnaBarra`; `:656-676` il `keydown` (`eseguiVoce(voce)` a `:675`); `:682-687` `eseguiVoce(voce, valore)`; `:691-` `dispatchVoce` (`corri`/`verifica` a `:740-741`, sopra la guardia del modo a `:746`).
-- `static/piano.js:47-60` `estensione`; `:64-84` `versoLibero`; `:86-277` `creaPiano` — `schermo(n)` a `:107`, `millimetriPerPixel()` a `:118-122`, `disegna(m, {selezione, ghost, azioneInVista, proposte})` a `:126`, aste a `:131-142`, nodi con etichetta a `:184-210` (posizione `p.x + OFFSET_ETICHETTA·s·v.x`, `font-size: 11·s`, `text-anchor` da `v.x`), vincoli `:215-236`, frecce `:242-262`, titolo dei carichi `:267-271`, `svg.replaceChildren(gruppo)` a `:273`. Colori `INCHIOSTRO`/`ROSSO` scritti a mano (`:29-33`).
+- `static/piano.js:47-60` `estensione`; `:64-84` `versoLibero`; `:86-277` `creaPiano` — `schermo(n)` a `:107`, `millimetriPerPixel()` a `:118-122`, `disegna(m, {selezione, ghost, azioneInVista, proposte})` a `:126`, aste a `:131-142`, nodi con etichetta a `:185-210` (posizione `p.x + OFFSET_ETICHETTA·s·v.x`, `font-size: 11·s`, `text-anchor` da `v.x`), vincoli `:215-236`, frecce `:242-262`, titolo dei carichi `:267-271`, `svg.replaceChildren(gruppo)` a `:273`. Colori `INCHIOSTRO`/`ROSSO` scritti a mano (`:29-33`).
 - `static/spazio.js:138-177` `disegna(m, {selezione})`: `THREE.Line` per asta con i materiali `inchiostro`/`rosso` (`:79-80`), punti dei nodi (`:81-82`), `calcolaInquadratura` (`:33-43`); il modulo si dichiara assente senza WebGL (`:184-191`).
 - `static/pannello.js:39-53` `righeDiNodo(m, n, {rilievo})` → coppie `[termine, valore]`; `:63-74` `righeDiAsta`; `:800-826` `disegna(m, selezione, {catalogo, legame, tabella, rilievo})`.
 - `static/tastiera.js:14-52` `TASTI` (campi `codice, tasto, etichetta, aiuto, contesto, esempio, campo, modificatore, tipi`); `:66-78` `SENZA_MODIFICATORE`; `:122-135` `voceDaEvento`; `:152-170` `vociDellaBarra(contesto, tipoSelezionato)`; `:146-150` `nomeTasto`.
@@ -61,21 +62,338 @@
 
 Assunzioni fissate dal piano: il **caso** si sceglie da un `<select>` nel blocco «Risultati» (primo caso in ordine di `per_caso` di default); la **scala a mano** è un campo di testo nel blocco (vuoto = auto); il badge sta in alto a **destra** del piano (il titolo dei carichi è a sinistra); la striscia sta **sotto il piano**, nella colonna del piano di `#viste`.
 
+## Annotazione dell'architect (10/09/2026)
+
+Scritta nel worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-13`, ramo
+`feat/interfaccia-13-risultati`, HEAD **`56384df`** (padre `4e8cf0a`, il merge della 12 su `main`; il
+solo file cambiato fra i due è questo piano — `git diff --stat`, una riga). Ogni `file:riga` citata dal
+piano è stata aperta contro il codice a `4e8cf0a`: la sezione 1 elenca le sei che non combaciavano,
+già corrette nel testo. Punti di partenza **rimisurati qui**, non ricordati: `node --test` sui venti
+file di `static/test/` → **649 pass, 0 fail** (434 ms); pytest sull'intera `tests/` →
+**718 passed, 3 skipped in 48,68 s**, i tre skip tutti `lab_telaio_v2/wall_model.inp` non versionato.
+Tutte e due le righe dei Global Constraints erano giuste e ora portano la data e la provenienza.
+
+**La cosa che conta di più in questa annotazione sta in R1, ed è misurata, non dedotta**: la mappa
+`GRANDEZZA = { M: "My", V: "Vz", N: "N" }` è vera per le travi e **falsa per i pilastri**. Corretta nel
+contratto, nel modulo, in quattro test e in tre punti di `piano.js`/`esito.js`.
+
+### 0. La premessa che ho verificato per prima, perché tutto il resto ci poggia
+
+`ry` letto dal recorder **è** la rotazione attorno alla `y` globale: `nova/deck.py:1041` scrive
+`recorder Node -file {caso}_spostamenti.out -precision 12 -nodeRange 1 {n_nodi} -dof 1 2 3 4 5 6 disp`,
+e i gradi di libertà nodali di OpenSees sono globali. Quindi `spostamenti[id] = [ux, uy, uz, rx, ry, rz]`
+in terna globale, e l'assunzione del piano regge. Regge anche la sua conseguenza, `dw/ds = −θy`: con
+`θ = (0, θy, 0)` e `r = s·L·(e1.x, 0, e1.z)`, `θ × r = (θy·rz, 0, −θy·rx)` e la proiezione sulla normale
+del piano vale `−θy·sL` — per **qualunque** giacitura nel piano x–z, pilastri compresi. `pi = -ui[4]`
+in `puntiDeformata` è corretto e non va toccato. La deformata è l'unica parte dei risultati che vive
+tutta in terna globale, ed è per questo che è l'unica che non ha il problema di R1.
+
+### 1. I puntamenti che non combaciavano
+
+Sei, tutte corrette nel testo. Nessuna cambia *cosa* fare; tutte cambiano *dove guardare*.
+
+| citato | vero | dove |
+|---|---|---|
+| `docs/ricerca/index.md` riga 13 = ricerca 03 | **riga 15** (la 13 è la ricerca 01) | riga 9, «Ricerca che questo piano applica» |
+| spec riga 115 = story 63 | **riga 116** (la 115 è la story 62, il modo presentazione) | riga 8, «Spec» |
+| spec riga 116 = story 64 | **riga 117** | riga 8 |
+| «le stazioni sono i punti di integrazione (Lobatto)…» dentro le righe 182-193 | **riga 197**, fuori dal blocco | riga 8 |
+| `2026-09-06-t5-interfaccia-bozza.md:19` = giornata 13 | **riga 20** (la 19 è la giornata 12) | riga 8 |
+| `static/piano.js:184-210` = i nodi con etichetta | **185-210** (184 è `const etichettate = new Set()`) | riga 43, Task 4 step 3 punto 6 |
+
+E due allineamenti minori: `piano.test.js:117-146` in *Tech Stack* → `:117-156`, che è il numero già
+usato dieci righe più giù per la stessa cosa; e i «segni del contratto» citavano
+`test_corsa_binario.py:51-55` anche per «`N` di compressione negativo», che sta invece a `:42`.
+
+**Combaciano invece**, verificate una per una in questa sessione e da non rileggere:
+`static/corsa.js` `:93` `stantia`, `:262-265` la destrutturazione di `lavoro`, `:301` `suEsito(esito)`,
+`:329` il `return null` della `verifica`, `:350-355` `azzera`; `static/piano.js` `:5-6`, `:29-33`,
+`:47-60`, `:64-84`, `:86-277`, `:88-96`, `:107`, `:118-122`, `:126`, `:131-142`, `:136-141`, `:215-236`,
+`:242-262`, `:267-271`, `:273`; `static/app.js` `:31-53`, `:110-125`, `:127`, `:129-174`, `:181-182`,
+`:190-228` con `:194` e `:218`, `:235-243` (`suEsito: () => ridisegna()` è a `:239`), `:262`, `:588-632`
+con `:617`/`:619`/`:622-627`/`:629`, `:634-651`, `:656-676` con `:675`, `:682-687` e `:686`, `:691`,
+`:740-741`, `:746`; `static/tastiera.js` `:14-52`, `:24-25`, `:66-78`, `:122-135`, `:146-150`,
+`:152-170`; `static/pannello.js` `:39-53`, `:63-74`, `:146`, `:800-826`; `static/spazio.js` `:33-43`,
+`:79-80`, `:81-82`, `:138-177`, `:184-191`; `static/carichi.js` `:165-176`, `:172-173`, `:180-226`;
+`static/numeri.js` `:155-167`, `:158`, `:171`, `:182-195`, `:195`; `static/index.html` `:39-47`, `:40`,
+`:49-86`, `:57-58`, `:63-83`; `static/stile.css` `:46`, `:51-58`, `:57-58`, `:158`, `:187-188`, `:325`;
+`static/test/piano.test.js` `:117-133`, `:132`, `:117-156`; `nova/corsa.py` `:31-39`, `:189`, `:277-306`,
+`:301-303`, `:309-355`, `:342`, `:350-351`; `nova/deck.py:33-34`; `nova/server.py` `:49`, `:49-66`,
+`:238`, `:352-365`; `nova/__main__.py:39-41`; `tests/conftest.py` `:11-12` e `:41-46` (ed è davvero
+`scope="session"`); `tests/test_corsa_binario.py:51-55`; `docs/ricerca/index.md:19`;
+`07-ux-modellatore.md` `:65`, `:98`, `:99`, `:100`, `:101`, `:105` — **tutte e sei esatte**, e la `:98`
+porta davvero il marchio `[INF, da verificare con Mario]` che il piano risolve con la decisione di
+oggi; `03-stack-tecnico.md:94`; spec righe 74-78 e 182-193.
+
+### 2. I rischi, con il loro ruling
+
+**R1 — la grandezza nel piano non è una costante: su un pilastro sono `Mz` e `Vy`.** *Ruling: la
+mappa `GRANDEZZA` si cancella, e al suo posto entra `assiDi(i, j)` che rende l'asse e le chiavi per
+asta.* Il piano dava per scontato che «piano x–z» ⇒ `My`/`Vz` per tutti. La terna di
+`nova/deck.py:_terna` (`:172-191`) però mette la `z` locale **nel** piano solo per un'asta coricata:
+per un'asta in piedi la `z` locale è la `y` globale, cioè fuori dal piano, e in piano ci resta la `y`
+locale. Le chiavi si scambiano. *Misurato*, non dedotto: corsa vera su
+`tests/fixture/telaio_2x1.nova.json`, quattro casi, il 10/09/2026 —
+
+| asta | max di My | max di Mz | max di Vy | max di Vz |
+|---|---|---|---|---|
+| 1-3, pilastri | ≤ 2,2e-9 | fino a 2,1e7 | fino a 1,3e4 | ≤ 5,4e-13 |
+| 4-5, travi | fino a 5,4e7 | ≤ 9,3e-10 | ≤ 6,1e-14 | fino a 5,8e4 |
+
+*Costo se sbagliato*: la giornata dei risultati disegna una **riga piatta su ogni pilastro**, con
+l'etichetta del picco che non compare mai perché `sottoSoglia` la scarta a 1e-9 contro un massimo di
+1e7 — e il test del piano sul pilastro sarebbe passato lo stesso, perché era scritto con un `My: 2e6`
+inventato che nessun solutore produce. È il difetto più caro possibile: verde nei test, vuoto in
+pagina, e proprio sul MURO 1, che di pilastri ne ha più che di travi.
+
+Il ruling porta con sé due correzioni gratuite. La prima: `assiDi` normalizza anche il **verso** con
+`sign(e1.x)`, quindi una trave inserita da destra a sinistra disegna M sotto come tutte le altre —
+col `verso = -1` fisso del piano l'avrebbe disegnato sopra, sul lato compresso, e nessuno se ne
+sarebbe accorto finché non fosse capitato. La seconda: `scalaDiagrammaAuto` somma nello stesso
+massimo il `My` delle travi e il `Mz` dei pilastri, che nel piano **sono lo stesso momento**; con due
+chiavi diverse la scala automatica avrebbe guardato solo metà del telaio. La coppia (asta, chiave)
+vive in un punto solo, `asteConAssi`, così `scalaDiagrammaAuto` e `diagramma` non possono divergere.
+
+Cosa **non** cambia: la deformata (§0), il badge («lato teso» resta vero per ogni giacitura; «+ verso
+i→j» e «+ trazione» parlano del segno, non del lato) e il contratto del server, che non si tocca.
+
+**R2 — `ry` è globale: la premessa regge.** Vedi §0. *Ruling: si fa com'è scritto,* `pi = -ui[4]`.
+*Costo se sbagliato*: la deformata s'impenna dalla parte sbagliata, e sulla trave appoggiata la
+mezzeria salirebbe invece di scendere — il test del piano lo prende (è il mutante 2).
+
+**R3 — il fumo: `TestClient` non c'entra, e `should_exit` basta.** *Ruling: la fixture si fa com'è
+scritta, con tre righe di conferma e una di correzione.* La corsa gira nel thread del lavoro
+(`nova/server.py:296`, `threading.Thread(target=corri, daemon=True).start()`) e non nel thread della
+richiesta, quindi il ruling R3 della 12 — che riguardava `TestClient`, il threadpool anyio e il
+portale — **non si applica**: qui il server è un uvicorn vero su un socket vero, e il client è Chrome.
+`server.should_exit = True` è letto dal `main_loop` di uvicorn a ogni decimo di secondo, e la fixture
+lo mette **dopo** aver terminato Chrome, quindi non resta nessuna connessione keep-alive a tenere
+aperto lo spegnimento graceful; e se anche restasse, il `filo.join(timeout=5)` limita l'attesa e il
+thread è `daemon`, quindi pytest esce comunque. `lungo = sidecar_lungo or sidecar`
+(`nova/server.py:245`) fa sì che `create_app(SidecarInProcesso(), …)` senza `sidecar_lungo` usi lo
+stesso sidecar per la corsa, e `SidecarInProcesso` con `solutore=None` lascia passare l'OpenSees del
+PATH (`:56`): la corsa del fumo è una corsa vera. **La riga che vale scritta**: `porta=porta` in
+`create_app` non è una comodità, è obbligatoria — senza, `host_ammessi` (`:306`) non contiene
+`127.0.0.1:<porta>` e il middleware `_blocca_host_estraneo` risponde 403 a ogni richiesta del browser,
+cioè pagina bianca e nessun messaggio che spieghi perché. La fixture la passa; l'ingresso degenere la
+nomina, così chi la toglierà per «semplificare» trova scritto cosa succede.
+
+**R4 — la cifra della vista con un campo aperto: la guardia giusta non nomina `vista`.** *Ruling:
+`if (comando && valore !== null && voce.campo)`.* Il piano aveva visto il difetto e proposto
+`voce.codice !== "vista"`, che cura il sintomo. La causa è che la coda di `eseguiVoce` (`app.js:686`)
+esiste per «il valore entra nel campo appena aperto», e il campo lo apre `apriComando` (`:296`),
+chiamato **solo** da voci con un `campo` (nove punti: `:754`, `:773`, `:813`, `:846`, `:855`, `:861`,
+`:865`, `:882`, `:895`). `voce.campo` è la condizione vera, copre `vista` e copre la prossima voce
+senza campo che porti un valore. *Costo se sbagliato*: col campo aperto e il fuoco perso con un clic
+nel piano, premere `2` scrive «2» nel campo e **conferma** — cioè crea un nodo, o sposta quello
+selezionato, mentre l'utente credeva di cambiare vista. Silenzioso e distruttivo, e nessun test JS lo
+prende: sta in `app.js`.
+
+**R5 — lo strato fra aste e nodi: il mutante che il piano dava per non uccidibile si uccide.**
+*Ruling: si aggiunge il test dell'ordine, tre righe.* Il DOM finto di `piano.test.js` tiene i figli in
+un array ordinato (`append` fa `push`, `:123`), quindi `svg._figli[0]._figli` **è** l'ordine di
+disegno, e l'indice dello strato si confronta con quello dell'ultima `data-tipo="asta"` e del primo
+`data-tipo="nodo"`. Cade il mutante «`gruppo.append(g)` dopo il ciclo dei nodi». *Costo se sbagliato*:
+il diagramma copre i cerchi dei nodi e un clic sul nodo prende il poligono — il `[data-tipo]` del
+`closest` (`piano.js:100`) non lo trova e la selezione scivola su `suSfondo()`. Nota d'ordine: lo
+strato si aggancia dopo le aste e **prima** del blocco del ghost (`:144-176`), quindi l'anteprima del
+comando resta sopra i risultati — che è giusto: è l'unica cosa che si sta facendo adesso.
+
+**R6 — il badge copre i picchi in alto a destra: si mette fra gli ostacoli.** *Ruling: sì, cinque
+righe, e il debito sparisce invece di essere dichiarato.* Il badge è un `<p>` in px fuori dal
+`viewBox`, quindi `disponi` non lo vede e un picco lì sotto si nasconde sotto di lui. Le etichette
+**dei nodi** non le può spostare nessuno (le posa `versoLibero`, non `disponi`), ma i picchi sì, e
+sono loro che devono cedere: il badge porta la scala dichiarata, che è la cosa che non può mai
+mancare (P3, `07-ux-modellatore.md:99`, «nessuna deformata senza scala dichiarata»). La conversione
+px → `viewBox` non è un semplice offset perché `preserveAspectRatio="xMidYMid meet"` (`piano.js:112`)
+centra il riquadro: il bordo del viewport è il centro più mezza misura in pixel per `s`. *Costo se
+sbagliato*: un numero che c'è, che serve, e che non si legge — e in una figura di tesi è il tipo di
+cosa che si nota solo alla stampa.
+
+**R7 — `preserveAspectRatio: "none"` sulla striscia: non si spedisce.** *Ruling: la striscia si
+disegna in pixel, senza `viewBox`.* Con `viewBox="0 0 1000 100"` e `none`, a 1280 px la colonna del
+piano è larga ~400 px: la `x` si comprime di 2,5 e la `y` si dilata, cioè glifi schiacciati di 2,4 a 1
+e cerchi delle stazioni diventati ellissi. `vector-effect: non-scaling-stroke` salva il tratto e non
+il resto. `piano.js` misura già il contenitore per la stessa ragione (`millimetriPerPixel`,
+`:118-122`): stessa strada, tre righe, e il debito non nasce. *Limite dichiarato in cambio*: senza
+`viewBox` la striscia non si riadatta da sola a un ridimensionamento della finestra, si rimisura al
+prossimo `ridisegna`. È il comportamento che `piano.js` ha già oggi. *Costo se sbagliato*: la figura
+della story 39 è illeggibile proprio nella misura in cui è utile, cioè larga.
+
+**R8 — il CSS del blocco riscrive quattro regole che `stile.css` ha già.** *Ruling: si estendono i
+selettori, non si copiano le dichiarazioni.* `#risultati-vista label` ripete `.vincolo-gradi label`
+(`:99`); `#risultati-vista kbd` ripete `.vuoto kbd` (`:188-189`); `#risultati-scala` ripete
+`#file-percorso, #comando-campo, #corsa-inp` (`:236-239`) e il loro `:focus-visible` (`:240-241`); e
+serve `#risultati label` in `:235`. **È la R12 della 12, alla seconda occorrenza**, e la 12 aveva
+lasciato scritto in `stile.css:232-234` perché non si fa. *Costo se sbagliato*: due definizioni della
+stessa casella di testo che divergono al primo ritocco della palette. Resta una scelta di layout:
+`class="vincolo-gradi"` sul `fieldset` è riuso buono (bordo, legenda, `accent-color`, anello di
+fuoco), ma la sua griglia è `repeat(3, 1fr)` e i radio della vista sono cinque — 3 + 2. Si sovrascrive
+la sola `grid-template-columns`, e il Task 6 lo guarda a 1280 px.
+
+**R9 — `#viste` a due righe con `#spazio` su `grid-row: 1 / -1`: regge, e non serve altro.**
+*Ruling: si fa com'è scritto.* Il `min-height: 0` che il fix round 1/E ha messo su `#viste` (`:43-46`)
+resta nella regola nuova, e — la parte che conta — `:51` dà già `min-height: 0` a `#piano` **e** a
+`#spazio`, quindi il canvas three.js non può rialzare il pavimento della riga `1fr` neppure
+attraversandone due. `#srotolato` è l'unico elemento di griglia nuovo e la sua `min-height: 0` è nel
+CSS del piano; quando è `hidden` fa `display: none` e la riga `auto` collassa a zero, cioè senza
+risultati la geometria di oggi torna identica. *Costo se sbagliato*: la barra dei tasti tagliata di
+21 px a ogni altezza di finestra, che è esattamente il difetto già pagato una volta.
+
+**R10 — `esito.disegna` e `srotolato.disegna` prendono due forme diverse sotto lo stesso nome.**
+*Ruling: si tiene, dichiarato, non si rinomina.* `esito` riceve lo **stato** (`{lavoro, vista, caso,
+scalaMano}`) e legge `risultati.lavoro.fin.risultati`; `srotolato` e `piano` ricevono la **vista**
+(`risultatiInVista(m)`). Passare l'uno per l'altro solleva. Ma i chiamanti sono due, tutti e due in
+`ridisegna`, a tre righe di distanza, e il piano lo scrive già accanto: rinominare costerebbe più
+righe di quante ne protegga. *Costo se sbagliato*: un `TypeError` alla prima corsa, cioè rumoroso —
+ed è la ragione per cui si può lasciare.
+
+### 3. Gli ingressi degeneri
+
+Il piano non aveva **nessuna** sezione: ogni task ne ha ora una, con il minimo di due righe
+`- condizione → oracolo`. Molti oracoli erano già dentro i test scritti nel piano — quelli li ho
+raccolti; qui sotto, nella sezione 5, l'elenco di quelli che **mancavano** e che ho aggiunto.
+
+**Per chi dispaccia**: il titolo nei task è `## Ingressi degeneri` alla lettera, non
+`**Ingressi degeneri:**` in grassetto come nella 12. Così il brief si fa copiando, senza il passaggio
+di ri-titolatura che l'hook `dispatch-gate.py` pretende e che è facile dimenticare.
+
+### 4. Chi esegue, con quale modello, in quale ordine
+
+| task | subagente | modello | skill-gate | giro | comincia dopo |
+|---|---|---|---|---|---|
+| 1 — il fumo in Chrome headless da pytest | `coder` | `sonnet` | **sì** | A | — |
+| 2 — `risultati.js`, le pure | `frontend-engineer` | **`opus`** | **sì** | A | — |
+| 3 — `etichette.js`, le pure | `frontend-engineer` | `sonnet` | **sì** | A | — |
+| 4 — lo strato nel piano e la deformata 3D | `frontend-engineer` | **`opus`** | **sì**, `impeccable` in modo **Operate** | B | 2, 3 |
+| 5 — il blocco, la striscia, i tasti, l'ispettore | `frontend-engineer` | **`opus`** | **sì**, `impeccable` in modo **Operate** | C | 1, 2, 4 |
+| 6 — il fumo dei risultati e la prova a mano | `coder` per i copioni, poi **il controller** col browser | `sonnet` | **sì** (`coder`) | D | 5 |
+
+**Giri: A = 1 ‖ 2 ‖ 3; B = 4; C = 5; D = 6.** Il Task 1 è `coder` e non `backend-engineer` perché non
+tocca né API né logica di dominio: è un attrezzo di prova (un pilota CDP, una fixture pytest, un
+processo Chrome), che è la definizione del ruolo. I Task 2 e 3 sono moduli puri senza superficie, ma
+restano `frontend-engineer`: sono la geometria di ciò che il piano disegna, e chi scriverà il Task 4
+deve poterli riconoscere come propri.
+
+**Il parallelo di A è vero e va sorvegliato su un punto solo.** I file sono disgiunti — Task 1 scrive
+`tests/fumo/*`, `tests/test_fumo_chrome.py`, `AGENTS.md`; Task 2 `static/risultati.js` e il suo test;
+Task 3 `static/etichette.js` e il suo test — ma **tre implementer nello stesso worktree condividono
+l'indice git**. Regola vincolante, già nei Global Constraints e ripetuta qui perché è il punto dove si
+sbaglia: **`git add <percorso>` esplicito, mai `git commit -a`, mai `git add .`**. Un `-a` di uno dei
+tre porta nel proprio commit i file mezzi scritti degli altri due.
+
+Il Task 4 dipende dal **codice** di 2 e 3 (li importa), non solo dalle loro forme: per questo B non è
+parallelo a niente. Il Task 5 dipende da 4 per `piano.disegna(…, {risultati})` e da 1 perché lo step 8
+rilancia il fumo `pagina` sulla pagina col blocco nuovo.
+
+| file | unico task che lo scrive |
+|---|---|
+| `tests/fumo/cdp.mjs`, `tests/test_fumo_chrome.py`, `AGENTS.md` | 1 |
+| `tests/fumo/fumo.mjs` | 1 (il copione `pagina`), poi 6 (il copione `risultati`) — **mai insieme** |
+| `static/risultati.js`, `static/test/risultati.test.js` | 2 |
+| `static/etichette.js`, `static/test/etichette.test.js` | 3 |
+| `static/piano.js`, `static/spazio.js`, `static/test/piano.test.js` | 4 |
+| `static/stile.css` | 4 (il badge), poi 5 (`#viste`, `#srotolato`, il blocco) — **mai insieme** |
+| `static/esito.js`, `static/test/esito.test.js`, `static/tastiera.js`, `static/test/tastiera.test.js`, `static/pannello.js`, `static/test/pannello.test.js`, `static/index.html`, `static/app.js` | 5 |
+
+**I modelli.** `sonnet` è il default; `opus` va dove il piano lascia davvero da decidere. Ne restano
+tre, e sono i tre che questa annotazione ha toccato di più:
+
+- **Task 2 in `opus`**: è il task che R1 ha riscritto. Chi lo esegue deve tenere insieme tre terne
+  (schermo, deck, sezione OpenSees) e due convenzioni di segno, e sbagliarne una dà un diagramma che
+  **passa i test e mente in pagina**. È anche il modulo da cui dipendono tutti gli altri.
+- **Task 4 in `opus`**: entra dentro `creaPiano`, che oggi ha un test solo e nessuna rete; l'ordine
+  di disegno, gli ostacoli, l'ombreggiatura delle aste e il badge sono quattro innesti in quattro
+  punti diversi di una funzione di 150 righe, con un `vista` da non ombreggiare (step 3).
+- **Task 5 in `opus`**: è il più grande e il meno scritto — un modulo nuovo, sei innesti in `app.js`,
+  la tastiera, il pannello, l'HTML, il CSS, e la trappola di R4 che nessun test prende.
+
+Il Task 1 sta in `sonnet` perché il codice è scritto per intero nel piano; il Task 3 perché è puro,
+piccolo e coi test già stesi; il Task 6 perché è un copione e due `assert`. **Se `opus` è chiuso**, i
+tre si dispacciano su `sonnet` lo stesso: sono anche i tre che questa annotazione ha specificato di
+più (R1, R4, R5, R6, R7, R8 stanno tutti lì). Ciò che **non** va fatto è dispacciarli con il piano
+com'era prima di R1.
+
+**Skill-gate `sì` su tutti e sei**, nessuna deroga: nessuno di questi è meccanico, nemmeno il Task 6
+(il copione CDP decide cosa il fumo può vedere). Quale skill la sceglie l'agente assegnato;
+`impeccable` in modo **Operate** è l'unica nominata, sui due task che toccano superficie che una
+persona guarda. Per `impeccable`: la palette è quella dei Global Constraints, il rosso è
+**attenzione** e niente altro, e l'inchiostro dei diagrammi è tratteggiato per la story 63 — non è una
+scelta estetica da rinegoziare.
+
+### 5. La ricerca che regge ogni task
+
+Aperto `docs/ricerca/index.md` prima di annotare: la **03** è alla riga **15**, la **07** alla riga
+**19** (il piano diceva 13 per la 03: corretto). Le sei righe di `07` e la riga di `03` che il piano
+cita in testa sono **esatte tutte e sette**, riaperte una per una.
+
+| task | riferimento | perché conta qui |
+|---|---|---|
+| 1 | `docs/ricerca/07-ux-modellatore.md:61` | «In casa: 27-34 s a freddo, "nulla lo dice"; "una corsa fallita non alza nessun allarme"» — il fumo è il primo attrezzo che guarda `app.js` mentre gira davvero, invece di fidarsi |
+| 2 | `docs/ricerca/03-stack-tecnico.md:94` | «deformata = ricampionare l'asta con funzioni di forma (Hermite) su N punti moltiplicati per scala»: è la riga che `puntiDeformata` esegue alla lettera |
+| 2 (la scala) | `docs/ricerca/07-ux-modellatore.md:65` | «the displacements are scaled automatically to ensure that they are clearly visible», fattore nello state block — `scalaAuto` al 5 % del lato, in serie 1-2-5 |
+| 2 (il lato teso) | `docs/ricerca/07-ux-modellatore.md:98` | «Diagrammi M sul lato teso (convenzione italiana) [INF, **da verificare con Mario**]»: la ricerca lo lasciava aperto, la decisione di oggi lo chiude — ed è R1 a dire *dove* sia il lato teso |
+| 3 | `docs/ricerca/07-ux-modellatore.md:100` | doppio canale, WCAG 1.4.11: un'etichetta che non trova posto si **nasconde**, non si sovrappone — un numero illeggibile non è un secondo canale |
+| 4 | `docs/ricerca/07-ux-modellatore.md:99` | «The Auto option will automatically set the scale factor», «Wire Shadow… undeformed shape as a reference», «The scale factor is displayed in the state block» → badge sempre stampato **e** ombra: sono la stessa riga, e il badge è per questo un ostacolo prioritario (R6) |
+| 4 (data-ink) | `docs/ricerca/07-ux-modellatore.md:105` | Tufte, data-ink e chartjunk: `fill-opacity: 0.08` e tratteggio invece di un riempimento pieno |
+| 5 | `docs/ricerca/07-ux-modellatore.md:101` | «il "controllo che contraddice" = ricalcolo indipendente (es. Σ reazioni = Σ carichi) mostrato accanto»: la riga dell'equilibrio nel blocco **è** questa frase, non un di più |
+| 5 (il valore sul nodo) | `docs/ricerca/07-ux-modellatore.md:99` | «View the displacement components for a single joint by right clicking on a joint» → qui il gesto è la selezione, che il programma ha già, e i sei componenti vanno nell'ispettore |
+| 6 | `docs/ricerca/07-ux-modellatore.md:62` | ETABS section cut: «a time consuming process», «tedious» — leggere un valore non deve costare un gesto di costruzione; il fumo verifica che il numero sia **scritto**, non ricavabile |
+
+**Sei task su sei con un riferimento, nessun «nessuno».** Il piano ne dichiarava due (07 e 03) e per
+il Task 1 nessuno: ne ha uno, e non di sponda.
+
+### 6. I debiti, per il ticket di chiusura
+
+Dichiarati dal piano: `preserveAspectRatio: none` (**chiuso qui**, R7), la deformata 3D senza test, il
+badge sopra un'etichetta di nodo (**chiuso qui**, R6). Aggiunti da questa annotazione:
+
+1. **La deformata nello spazio 3D non ha e non avrà un test.** `spazio.js` si dichiara non provabile
+   oltre le funzioni pure, e `puntiDeformata` è provata in `risultati.test.js`: ciò che resta senza
+   rete è il *cablaggio* (materiale giusto, ombra allo 0,3, geometria costruita dai punti giusti).
+   Lo guarda solo l'occhio del Task 6 step 4.
+2. **`app.js` resta senza test automatico, ma per la prima volta non del tutto.** È la quinta giornata
+   di fila che il task più cucito è il meno protetto (voce 8 dell'11b, 3 dell'11c, 1 dell'11d, 2 della
+   12, questa) — con la differenza che il Task 1 di oggi costruisce l'attrezzo che chiude il buco. Il
+   punto è che il Task 5 lo usa **una volta sola** (rilancia il copione `pagina`) invece di scriversi
+   il proprio copione: la trappola di R4 — campo aperto, fuoco perso, cifra premuta — è tre righe di
+   copione e non c'è. Questo è il debito da portare al ticket, non «app.js non ha test».
+3. **La legenda di V e N dice il segno e non il lato.** «+ verso i→j» e «+ trazione» restano vere per
+   ogni giacitura, ma dopo R1 il *lato* su cui il positivo viene disegnato cambia fra una trave e un
+   pilastro, e il badge non lo dice. Su un telaio l'occhio se lo ricava; su un modello con aste
+   inclinate, no. Non risolto oggi perché la frase giusta va provata a voce con l'autore.
+4. **`sottoSoglia` usa il massimo globale, non quello dell'asta.** Con un pilastro da 2e7 accanto a
+   una trave da 3e5, i picchi della trave finiscono sotto il 2 % e non si scrivono: il diagramma si
+   vede e il numero no. È la scelta giusta per una figura sola (una scala, un confronto a occhio), ma
+   va detta, perché a chi guarda sembra un'etichetta persa.
+5. **`_porta_libera()` chiude il socket prima di usarlo.** Due porte prese così possono essere rubate
+   fra la `close()` e il `bind` di uvicorn o di Chrome. Localmente non capita; quando capiterà, il
+   fallimento sarà «`/json/version` non risponde» e non «porta occupata», cioè il messaggio sbagliato.
+   Costo del rimedio (tenere il socket e passarlo) più alto del difetto: dichiarato, non risolto.
+
+**Per il roster** (meta-roster, non scope di questo piano): R1 è il **secondo** difetto di questa
+serie in cui un piano assume una convenzione di segno o di terna invece di misurarla — il primo è il
+`SEGNO_MY`/`SEGNO_MZ` di `nova/corsa.py:31-39`, che porta ancora la data e il modo in cui è stato
+misurato. Il roster non ha oggi un ruolo che, davanti a un piano che tocca grandezze fisiche con una
+convenzione, **lanci il solutore e guardi i numeri** prima del dispatch: l'ha fatto questa
+annotazione, ma perché il brief lo ha chiesto per nome. Vale guardarlo con `self-improving-agent`
+prima della 14, che è la giornata dei modi e della pushover — cioè ancora più convenzioni di segno.
+
 ## Contratto dei moduli nuovi (le firme che i task condividono)
 
 ```js
 // static/risultati.js — tutto puro, niente DOM
 export const VISTE = ["deformata", "M", "V", "N"];
-export const GRANDEZZA = { M: "My", V: "Vz", N: "N" };
+export function assiDi(i, j)                                  // {L, e1, e2, n, verticale, M, V, N}: l'asse trasversale del solutore in coordinate schermo e le chiavi che flettono su di lui (R1); aste di lunghezza nulla → null
 export const casiDi = (risultati) => Object.keys(risultati?.per_caso ?? {});
 export function scala125(v)                                   // 1-2-5: 37 → 20? no: → 50 (il più vicino nel rapporto); v ≤ 0 o non finito → 1
 export function latoMaggiore(m)                               // max(estensione x, estensione z, 2000)
 export function spostamentoMassimo(m, perCaso)                // max hypot(ux, uz) sui nodi del modello; 0 senza nodi/dati
 export function scalaAuto(m, perCaso, frazione = 0.05)        // scala125(frazione·lato/dmax); dmax = 0 → 1
 export function puntiDeformata(m, perCaso, scala, segmenti = 8) // [{id, punti: [{x, y, z}, …(segmenti+1)]}] per asta con entrambi i nodi; Hermite nel piano, y lineare
-export function scalaDiagrammaAuto(m, perCaso, vista, frazione = 0.08) // mm per unità (N o N·mm); max nullo → 0
-export function diagramma(m, perCaso, vista, scalaD)          // [{id, base: [pi, pj], punti: [{x, z, x_rel, valore}, …]}] per asta con stazioni; M positivo verso −e2, V/N verso +e2
-export function picchi(stazioni, grandezza)                   // [{x_rel, valore}] — il massimo in modulo; più l'estremo di segno opposto se ≥ 5 % del massimo
+export function scalaDiagrammaAuto(m, perCaso, vista, frazione = 0.08) // mm per unità (N o N·mm); la chiave è per asta (`assiDi`); max nullo → 0
+export function diagramma(m, perCaso, vista, scalaD)          // [{id, base: [pi, pj], punti: [{x, z, x_rel, valore}, …], chiave}] per asta con stazioni; M positivo verso −n, V/N verso +n
+export function picchi(stazioni, grandezza)                   // [{x_rel, valore}] — il massimo in modulo; più l'estremo di segno opposto se ≥ 5 % del massimo; `grandezza` la dà `assiDi`, non è mai «My» a costante
 export function testoValore(vista, v)                         // M → «45 kN·m»; V/N → «30 kN»; deformata → «3,4 mm»; non finito → «—»
 export function testoBadge({vista, caso, scala, auto, stantia}) // «deformata · Z1 · ×120 (auto)» · «M · Z1 · kN·m · lato teso» · «V · Z1 · kN · + verso i→j» · «N · Z1 · kN · + trazione»; stantia → «stantia · » davanti
 export function righeSpostamenti(perCaso, id)                 // [["spostamenti", "ux 0 mm · uy 0 mm · uz −3,4 mm"], ["rotazioni", "φx 0 mrad · φy 0,8 mrad · φz 0 mrad"]] o [] se il nodo non c'è
@@ -139,6 +457,17 @@ function risultatiInVista(m) {
 **Interfaces:**
 - Consumes: `create_app` (`nova/server.py:238`), `SidecarInProcesso` (`:49`), `STATICI`; `uvicorn`.
 - Produces: `python tests/fumo/fumo.mjs '{"porta": 8xxx, "cdp": 9xxx, "copione": "pagina", "larghezze": [1280, 1920]}'` → una riga JSON su stdout `{ "ok": true|false, "errori": [...], "console": [...], "trovato": {...} }`; la fixture pytest `chrome_e_server` che dà `(porta, cdp)`.
+
+**Riferimento:** `docs/ricerca/07-ux-modellatore.md:61`
+
+## Ingressi degeneri
+- Chrome assente, o `node` assente → `pytest.skip` col motivo scritto in italiano, mai un fallimento
+- Chrome installato che non risponde su `/json/version` entro 15 s → **fallisce** con `RuntimeError: http://127.0.0.1:<cdp>/json/version non risponde`, non salta: uno strumento che c'è e non parte è un ambiente rotto, e farne uno skip rende la suite verde per sempre
+- il server non risponde su `/api/salute` entro 15 s → stesso `RuntimeError` con il proprio URL, e la fixture non cede il controllo al test
+- `create_app` senza `porta=` → ogni richiesta del browser prende 403 dal middleware `_blocca_host_estraneo` (`nova/server.py:306`) e la pagina resta bianca: la fixture passa `porta=porta`, e il test se ne accorge perché nessun `#piano svg circle` compare
+- il copione node esce con codice ≠ 0 → l'`assert` mostra lo `stderr` intero, e nessuno prova a leggere uno stdout vuoto
+- lo stdout del copione porta righe di rumore prima del JSON → si legge **l'ultima** riga (`splitlines()[-1]`), non la prima
+- Chrome non muore a `terminate()` entro 5 s → `kill()`, e la fixture finisce comunque
 
 - [ ] **Step 1: il pilota CDP in repo**
 
@@ -407,6 +736,22 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "test(interfaccia): 
 - Consumes: `conciso` da `static/numeri.js:195`; `nodo`, `asta` da `static/modello.js`.
 - Produces: le firme del «Contratto dei moduli nuovi». Le usano piano (Task 4), spazio (Task 4), pannello ed esito (Task 5).
 
+**Riferimento:** `docs/ricerca/03-stack-tecnico.md:94` (Hermite), `docs/ricerca/07-ux-modellatore.md:65` (scala automatica), `:98` (M sul lato teso)
+
+## Ingressi degeneri
+- modello senza nodi o senza aste → `puntiDeformata` e `diagramma` rendono `[]`, `latoMaggiore` rende 2000, `scalaAuto` rende 1; nessuna funzione solleva
+- asta orfana (un nodo che non esiste nel modello) → saltata da `puntiDeformata` e da `diagramma`, non disegnata a metà
+- asta con i due nodi coincidenti (L = 0) → `assiDi` rende `null` e l'asta si salta: mai un `NaN` fra i punti
+- `per_caso` con uno spostamento su un nodo che non è nel modello → ignorato: `spostamentoMassimo` non lo conta e nessuna asta lo cerca, quindi non alza la scala automatica
+- spostamenti tutti nulli nel piano → `scalaAuto` rende **1**, non `Infinity`, e la deformata coincide con l'ombra
+- `spostamenti[id]` con meno di sei componenti, o con un `null`/`NaN` dentro → trattato come assente (nodo fermo), mai un `NaN` propagato nel `points`
+- due stazioni con lo stesso `x_rel` → `diagramma` rende due punti alla stessa ascissa e il poligono ci passa due volte; `picchi` ne sceglie **uno** solo, quindi l'etichetta si scrive una volta, non due sovrapposte
+- `x_rel` non finito, o `My`/`Mz`/`Vy`/`Vz` non finiti → la stazione vale 0 nel disegno e viene scartata da `picchi` e da `srotolato`; il diagramma resta chiuso
+- `scala` a mano enorme (la deformata esce dal `viewBox`) → il piano **non** ri-inquadra: `estensione` (`piano.js:47-60`) guarda i soli nodi e il ghost, e re-inquadrare farebbe rimpicciolire il modello a ogni giro della scala. Il badge dice `×n (a mano)`, ed è il numero che spiega perché non si vede più niente
+- vista fuori da `M`/`V`/`N` passata a `diagramma` o a `scalaDiagrammaAuto` → solleva `vista sconosciuta: <x>`, non disegna qualcosa di plausibile
+- massimo di una grandezza nullo su tutto il modello → `scalaDiagrammaAuto` rende **0** (diagramma piatto), non `Infinity`
+- `testoEquilibrio` su un caso che non c'è, o senza `carico_totale` → `«—»`, e la metà che c'è si stampa lo stesso (`Σ reazioni (…) · Σ carichi —`)
+
 - [ ] **Step 1: i test, con la trave appoggiata come oracolo**
 
 `static/test/risultati.test.js`:
@@ -414,7 +759,7 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "test(interfaccia): 
 ```js
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { VISTE, GRANDEZZA, casiDi, scala125, latoMaggiore, spostamentoMassimo, scalaAuto, puntiDeformata,
+import { VISTE, assiDi, casiDi, scala125, latoMaggiore, spostamentoMassimo, scalaAuto, puntiDeformata,
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato } from "../risultati.js";
 
@@ -518,14 +863,49 @@ test("diagramma: la parabola non è una retta — la stazione a un quarto sta a 
   assert.ok(Math.abs(quarto.valore - atteso) < 1);
 });
 
-test("diagramma su un pilastro verticale: e2 è la normale sinistra, M positivo verso −e2 = destra", () => {
+test("assiDi: una trave flette con My/Vz, un pilastro con Mz/Vy, e `n` non è la normale sinistra", () => {
+  const i = { x: 0, z: 0 };
+  const dx = assiDi(i, { x: 6000, z: 0 });
+  assert.deepEqual([dx.M, dx.V, dx.N], ["My", "Vz", "N"]);
+  assert.equal(dx.verticale, false);
+  assert.deepEqual(dx.n, { x: -0, z: 1 }, "trave da sinistra a destra: n = +e2 = in alto");
+  // La stessa trave con i nodi scambiati: `n` non gira, così M resta sotto in tutti e due i casi.
+  const sx = assiDi({ x: 6000, z: 0 }, i);
+  assert.deepEqual([sx.M, sx.V], ["My", "Vz"]);
+  assert.ok(Math.abs(sx.n.z - 1) < 1e-12 && Math.abs(sx.n.x) < 1e-12);
+  const su = assiDi(i, { x: 0, z: 3000 });
+  assert.deepEqual([su.M, su.V, su.N], ["Mz", "Vy", "N"], "pilastro: la z locale esce dal piano");
+  assert.equal(su.verticale, true);
+  assert.deepEqual(su.e2, { x: -1, z: 0 });
+  assert.deepEqual(su.n, { x: 1, z: -0 }, "pilastro che sale: n = −e2 = verso +x");
+  assert.equal(assiDi(i, { x: 0, z: 0 }), null, "asta di lunghezza nulla: nessun asse, non solleva");
+});
+
+test("diagramma su un pilastro verticale: si legge Mz (non My), e M positivo sta a −n = sinistra", () => {
   const pilastro = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 0, y: 0, z: 3000 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
-  const perCaso = { sollecitazioni: { 1: [{ x_rel: 0, N: -1000, Vy: 0, Vz: 0, T: 0, My: 2e6, Mz: 0 }, { x_rel: 1, N: -1000, Vy: 0, Vz: 0, T: 0, My: 2e6, Mz: 0 }] } };
+  // Il pilastro reale: `My` è zero a meno del rumore numerico, la flessione nel piano è tutta in `Mz`
+  // (misurato sul telaio 2×1 il 10/09/2026). Un diagramma che leggesse `My` sarebbe una riga piatta.
+  const perCaso = { sollecitazioni: { 1: [{ x_rel: 0, N: -1000, Vy: 500, Vz: 1e-10, T: 0, My: 1e-9, Mz: 2e6 },
+                                          { x_rel: 1, N: -1000, Vy: 500, Vz: 1e-10, T: 0, My: 1e-9, Mz: 2e6 }] } };
   const [dM] = diagramma(pilastro, perCaso, "M", 1e-4);
-  // e1 = (0, 1), e2 = (−1, 0): −e2 = (+1, 0), quindi il diagramma sta a destra del pilastro.
-  assert.ok(dM.punti[0].x > 0 && Math.abs(dM.punti[0].x - 200) < 1e-9);
+  assert.equal(dM.chiave, "Mz");
+  assert.equal(dM.punti[0].valore, 2e6);
+  // n = (+1, 0), M positivo verso −n: il lato teso di un pilastro spinto verso +x è quello a −x.
+  assert.ok(dM.punti[0].x < 0 && Math.abs(dM.punti[0].x + 200) < 1e-9, `x = ${dM.punti[0].x}`);
+  const [dV] = diagramma(pilastro, perCaso, "V", 1e-2);
+  assert.equal(dV.chiave, "Vy");
+  assert.ok(dV.punti[0].x > 0, "V positivo verso +n");
   const [dN] = diagramma(pilastro, perCaso, "N", 1e-2);
-  assert.ok(dN.punti[0].x > 0, "N negativo (compressione) verso −e2");
+  assert.ok(dN.punti[0].x < 0, "N negativo (compressione) verso −n");
+});
+
+test("diagramma: il verso di M non dipende dall'ordine dei nodi — sotto la trave in tutti e due i casi", () => {
+  const rovescia = { nodi: trave.nodi, aste: [{ id: 1, nodo_i: 2, nodo_j: 1 }] };
+  const [dritto] = diagramma(trave, Z1, "M", 1 / 1e5);
+  const [rovescio] = diagramma(rovescia, Z1, "M", 1 / 1e5);
+  const zDritto = Math.min(...dritto.punti.map((p) => p.z));
+  const zRovescio = Math.min(...rovescio.punti.map((p) => p.z));
+  assert.ok(zDritto < -400 && zRovescio < -400, `${zDritto} e ${zRovescio}: M sempre sotto`);
 });
 
 test("diagramma: ingressi degeneri — senza stazioni niente, scala 0 = diagramma piatto, vista ignota solleva", () => {
@@ -541,6 +921,14 @@ test("scalaDiagrammaAuto: il massimo in modulo disegnato è l'8 % del lato maggi
   assert.ok(Math.abs(scalaDiagrammaAuto(trave, Z1, "V") - 0.08 * 6000 / 30000) < 1e-15);
   assert.equal(scalaDiagrammaAuto(trave, Z1, "N"), 0, "N tutto nullo → 0, non Infinity");
   assert.equal(scalaDiagrammaAuto(trave, { sollecitazioni: {} }, "M"), 0);
+  // Una scala sola per il telaio: il `My` della trave e il `Mz` del pilastro entrano nello
+  // stesso massimo, altrimenti i due diagrammi non si possono confrontare a occhio.
+  const telaio = { nodi: [{ id: 1, x: 0, z: 0 }, { id: 2, x: 0, z: 3000 }, { id: 3, x: 6000, z: 3000 }],
+                   aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  const misto = { sollecitazioni: { 1: [{ x_rel: 0, My: 0, Mz: 9e7 }, { x_rel: 1, My: 0, Mz: 0 }],
+                                    2: [{ x_rel: 0, My: 45e6, Mz: 0 }, { x_rel: 1, My: 0, Mz: 0 }] } };
+  assert.ok(Math.abs(scalaDiagrammaAuto(telaio, misto, "M") - 0.08 * 6000 / 9e7) < 1e-18,
+            "il massimo è il Mz del pilastro, non il My della trave");
 });
 
 test("picchi: il massimo in modulo; l'estremo opposto solo se ≥ 5 % del massimo; niente su vuoto", () => {
@@ -607,9 +995,8 @@ test("srotolato: i punti per x_rel e il massimo in modulo; vuoto → nessun punt
   assert.deepEqual(srotolato(undefined, "My"), { punti: [], massimo: 0 });
 });
 
-test("VISTE e GRANDEZZA: le quattro viste e le tre grandezze del piano x–z", () => {
+test("VISTE: le quattro viste, nell'ordine dei tasti 1-4", () => {
   assert.deepEqual(VISTE, ["deformata", "M", "V", "N"]);
-  assert.deepEqual(GRANDEZZA, { M: "My", V: "Vz", N: "N" });
 });
 ```
 
@@ -634,8 +1021,8 @@ import { conciso } from "./numeri.js";
 import { nodo } from "./modello.js";
 
 export const VISTE = ["deformata", "M", "V", "N"];
-export const GRANDEZZA = { M: "My", V: "Vz", N: "N" };
 const LATO_MINIMO = 2000;   // mm, come `piano.js`: un modello con un nodo non ha estensione
+const COSENO_VERTICALE = 0.999;   // `_COSENO_VERTICALE`, `nova/deck.py:35`: la stessa soglia del deck
 
 export const casiDi = (risultati) => Object.keys(risultati?.per_caso ?? {});
 
@@ -681,12 +1068,29 @@ export function scalaAuto(m, perCaso, frazione = 0.05) {
   return dmax > 0 ? scala125(frazione * latoMaggiore(m) / dmax) : 1;
 }
 
-/** La terna locale di un'asta nel piano: `e1` lungo i→j, `e2` la normale sinistra. */
-function terna(i, j) {
+/** La terna di un'asta nel piano **e** l'asse su cui il solutore misura la flessione in questo
+ *  piano. `e1` lungo i→j, `e2` la normale sinistra dello schermo; `n` l'asse trasversale del
+ *  solutore in coordinate schermo, ed è lui — non `e2` — che decide da che parte va disegnato
+ *  un diagramma.
+ *
+ *  Perché non coincidono: `nova/deck.py:_terna` (`:172-191`) prende `e2_deck` = verticale
+ *  proiettata e `e1_deck = e2_deck × a`. Per un'asta **coricata** `e2_deck` (la `z` locale) sta
+ *  nel piano x–z e vale `sign(e1.x)·e2`; per un'asta **in piedi** `e2_deck` è la `y` globale,
+ *  fuori dal piano, e quello che resta in piano è `e1_deck` (la `y` locale) = `−e2`. Da qui le
+ *  due coppie di chiavi: trave → `My`/`Vz`, pilastro → `Mz`/`Vy`.
+ *
+ *  Misurato sul telaio 2×1 il 10/09/2026 (`tests/fixture/telaio_2x1.nova.json`, tutti i casi):
+ *  pilastri `|My|max ≤ 2,2e-9` e `|Mz|max` fino a 2,1e7; travi `|Mz|max ≤ 9,3e-10` e `|My|max`
+ *  fino a 5,4e7. Con una mappa costante `{M:"My"}` ogni pilastro sarebbe una riga piatta. */
+export function assiDi(i, j) {
   const L = Math.hypot(j.x - i.x, j.z - i.z);
-  if (L === 0) return null;
+  if (!(L > 0)) return null;
   const e1 = { x: (j.x - i.x) / L, z: (j.z - i.z) / L };
-  return { L, e1, e2: { x: -e1.z, z: e1.x } };
+  const e2 = { x: -e1.z, z: e1.x };
+  const verticale = Math.abs(e1.z) > COSENO_VERTICALE;
+  const s = verticale ? -1 : (Math.sign(e1.x) || 1);
+  return { L, e1, e2, verticale, n: { x: s * e2.x, z: s * e2.z },
+           M: verticale ? "Mz" : "My", V: verticale ? "Vy" : "Vz", N: "N" };
 }
 
 /** La deformata per asta, con le funzioni di forma di Hermite nel piano (`docs/ricerca/03-stack-tecnico.md:94`):
@@ -700,7 +1104,7 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
   for (const a of m?.aste ?? []) {
     const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
     if (!i || !j) continue;
-    const t = terna(i, j);
+    const t = assiDi(i, j);
     if (!t) continue;
     const ui = spostamentoDi(perCaso, i.id) ?? zero, uj = spostamentoDi(perCaso, j.id) ?? zero;
     const { L, e1, e2 } = t;
@@ -722,10 +1126,9 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
   return fuori;
 }
 
-const grandezzaDi = (vista) => {
-  const g = GRANDEZZA[vista];
-  if (!g) throw new Error(`vista sconosciuta: ${vista}`);
-  return g;
+const controllaVista = (vista) => {
+  if (!["M", "V", "N"].includes(vista)) throw new Error(`vista sconosciuta: ${vista}`);
+  return vista;
 };
 
 const stazioniDi = (perCaso, id) => {
@@ -733,41 +1136,48 @@ const stazioniDi = (perCaso, id) => {
   return Array.isArray(s) ? s : [];
 };
 
-/** Il massimo in modulo di una grandezza su tutte le aste del modello; 0 senza valori. */
-function massimoAssoluto(m, perCaso, grandezza) {
-  let massimo = 0;
-  for (const a of m?.aste ?? []) for (const s of stazioniDi(perCaso, a.id)) {
-    if (Number.isFinite(s[grandezza])) massimo = Math.max(massimo, Math.abs(s[grandezza]));
+/** Le aste disegnabili con la loro chiave: la coppia (asta, chiave) in un punto solo, così
+ *  `scalaDiagrammaAuto` e `diagramma` non possono divergere sul nome della grandezza. */
+function asteConAssi(m, perCaso, vista) {
+  const fuori = [];
+  for (const a of m?.aste ?? []) {
+    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
+    if (!i || !j) continue;
+    const t = assiDi(i, j);
+    if (!t) continue;
+    fuori.push({ a, i, j, t, chiave: t[vista], stazioni: stazioniDi(perCaso, a.id) });
   }
-  return massimo;
+  return fuori;
 }
 
-/** Millimetri per unità (N o N·mm) che portano il massimo a `frazione` del lato maggiore. */
+/** Millimetri per unità (N o N·mm) che portano il massimo a `frazione` del lato maggiore.
+ *  Il massimo si prende **con la chiave di ciascuna asta**: su un telaio la scala deve tenere
+ *  insieme il `My` delle travi e il `Mz` dei pilastri, che sono lo stesso momento nel piano. */
 export function scalaDiagrammaAuto(m, perCaso, vista, frazione = 0.08) {
-  const massimo = massimoAssoluto(m, perCaso, grandezzaDi(vista));
+  let massimo = 0;
+  for (const { chiave, stazioni } of asteConAssi(m, perCaso, controllaVista(vista))) {
+    for (const s of stazioni) if (Number.isFinite(s[chiave])) massimo = Math.max(massimo, Math.abs(s[chiave]));
+  }
   return massimo > 0 ? frazione * latoMaggiore(m) / massimo : 0;
 }
 
-/** I diagrammi per stazione. M positivo (fibre inferiori tese) verso −e2: il lato teso di una trave
- *  da sinistra a destra è sotto. V e N positivi verso +e2, con la legenda nel badge. */
+/** I diagrammi per stazione. M positivo (fibre tese) verso **−n**, V e N verso **+n**, dove `n`
+ *  è l'asse trasversale del solutore (`assiDi`): sotto una trave qualunque sia l'ordine dei suoi
+ *  nodi, a sinistra di un pilastro che sale. `chiave` esce insieme ai punti perché chi disegna
+ *  i picchi e la striscia deve leggere le stesse stazioni con lo stesso nome. */
 export function diagramma(m, perCaso, vista, scalaD) {
-  const g = grandezzaDi(vista);
+  controllaVista(vista);
   const verso = vista === "M" ? -1 : 1;
   const fuori = [];
-  for (const a of m?.aste ?? []) {
-    const stazioni = stazioniDi(perCaso, a.id);
+  for (const { a, i, j, t, chiave, stazioni } of asteConAssi(m, perCaso, vista)) {
     if (stazioni.length === 0) continue;
-    const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
-    if (!i || !j) continue;
-    const t = terna(i, j);
-    if (!t) continue;
-    const { L, e1, e2 } = t;
+    const { L, e1, n } = t;
     const punti = stazioni.map((s) => {
-      const valore = Number.isFinite(s[g]) ? s[g] : 0;
+      const valore = Number.isFinite(s[chiave]) ? s[chiave] : 0;
       const d = verso * valore * scalaD;
-      return { x: i.x + e1.x * s.x_rel * L + e2.x * d, z: i.z + e1.z * s.x_rel * L + e2.z * d, x_rel: s.x_rel, valore };
+      return { x: i.x + e1.x * s.x_rel * L + n.x * d, z: i.z + e1.z * s.x_rel * L + n.z * d, x_rel: s.x_rel, valore };
     });
-    fuori.push({ id: a.id, base: [{ x: i.x, z: i.z }, { x: j.x, z: j.z }], punti });
+    fuori.push({ id: a.id, chiave, base: [{ x: i.x, z: i.z }, { x: j.x, z: j.z }], punti });
   }
   return fuori;
 }
@@ -870,6 +1280,18 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 Le coordinate sono quelle dello **schermo SVG** (`y` verso il basso), in millimetri del `viewBox`; chi chiama converte i pixel con `s` (`millimetriPerPixel`). Una richiesta: `{ id, x, y, testo, priorita, larghezza, altezza }` con `x, y` il punto da etichettare (il picco), `larghezza`/`altezza` l'ingombro del testo già in mm. Un ostacolo: `{ x0, y0, x1, y1 }`.
 
 Algoritmo, deterministico: si ordinano le richieste per `priorita` decrescente (a parità, per ordine d'arrivo); per ciascuna si provano i candidati in quest'ordine — sopra, destra, sotto, sinistra a distanza `passo`, poi gli stessi quattro a `2·passo` e a `3·passo` (questi con la **linea guida** dal punto al bordo più vicino del box); il primo candidato il cui box non si sovrappone né a un ostacolo né a un'etichetta già posata vince; se nessuno va, l'etichetta è **nascosta** (`nascosta: true`, senza `x`/`y`). Rende un elemento per richiesta, nello stesso ordine di ingresso.
+
+**Riferimento:** `docs/ricerca/07-ux-modellatore.md:100`
+
+## Ingressi degeneri
+- lista di richieste vuota, o `null` → `[]`, non solleva
+- richiesta con `x` o `y` non finiti → `nascosta: true`, senza `x`/`y`: un punto senza coordinate non si etichetta
+- richiesta con ingombro nullo (`larghezza: 0, altezza: 0`) → si posa lo stesso, non si nasconde
+- `ostacoli` assente o `null` → default `[]`, nessuna sovrapposizione da controllare
+- `priorita` assente o non finita → vale 0 e l'ordine d'arrivo decide; l'uscita ha comunque **un elemento per richiesta**, nello stesso ordine d'ingresso
+- nessun candidato libero (un ostacolo che copre tutto) → `nascosta: true`, mai un'etichetta sovrapposta: meglio un picco non scritto che due testi addosso
+- `passo` assente → un default, mai `NaN` nelle coordinate d'uscita
+- `massimo` nullo o non finito in `sottoSoglia` → tutto è sotto soglia: di un diagramma piatto non si scrive niente
 
 - [ ] **Step 1: i test**
 
@@ -1055,16 +1477,28 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 - Test: `static/test/piano.test.js` (nuovi test in coda)
 
 **Interfaces:**
-- Consumes: `puntiDeformata`, `diagramma`, `scalaDiagrammaAuto`, `picchi`, `testoValore`, `testoBadge`, `GRANDEZZA` (Task 2); `disponi`, `sottoSoglia` (Task 3).
+- Consumes: `puntiDeformata`, `diagramma`, `scalaDiagrammaAuto`, `picchi`, `testoValore`, `testoBadge`, `spostamentoMassimo` (Task 2); `disponi`, `sottoSoglia` (Task 3). **Non** `GRANDEZZA` (non esiste più) e **non** `assiDi`: la chiave per asta esce già da `diagramma` come `d.chiave`.
 - Produces: `piano.disegna(m, { …, risultati })` con `risultati = null | { vista, caso, perCaso, scala, auto, stantia }`; `spazio.disegna(m, { selezione, deformata })` con `deformata = null | { aste: [{id, punti:[{x,y,z}]}], stantia }`.
 
 Regole di disegno (tutte in px apparenti × `s`, come il resto del piano):
 - Lo strato sta **dopo le aste e prima dei nodi** (`static/piano.js:142` → inserire lì), così i nodi restano sopra.
 - **Deformata**: una `<polyline class="deformata">` per asta, `stroke` inchiostro (rosso se stantia), `stroke-width: 2·s`, `stroke-dasharray: "6s 4s"`, `fill: none`, `stroke-linejoin: round`. Le aste del modello, con la vista deformata, diventano l'**ombra**: `stroke-opacity: 0.3` (l'asta selezionata resta piena e rossa).
 - **M, V, N**: per asta un `<polygon class="diagramma">` chiuso `[pi, …punti, pj]` con `fill` inchiostro (rosso se stantia) `fill-opacity: 0.08`, `stroke` uguale, `stroke-width: 1.5·s`, `stroke-dasharray: "5s 3s"`; e per **ogni stazione** una `<line class="stazione">` dalla base al punto (`stroke-width: 0.75·s`, piena): le stazioni si vedono (story 38). La scala del diagramma è `scalaDiagrammaAuto(m, perCaso, vista)`, comune a tutte le aste.
-- **Etichette dei picchi** (`picchi(stazioni, GRANDEZZA[vista])` per asta, saltando quelle `sottoSoglia(valore, massimoGlobale)`): richieste con `x, y` = il punto del diagramma (schermo), `testo = testoValore(vista, valore)`, `priorita = |valore| / massimoGlobale`, `larghezza = testo.length · 6.6 · s`, `altezza = 12 · s`; ostacoli = i box delle etichette dei nodi (`x` dell'etichetta, `text-anchor`, `larghezza = testo.length · 6.6 · s`, `altezza = 11 · s`) e i cerchi dei nodi (`RAGGIO · s` attorno a `p`). Le posate si scrivono come `<text class="picco">` con `dominant-baseline: middle`, `font-size: 11·s`, `text-anchor` = `ancora`, `font-family: MONO`; la guida come `<line class="guida">` `stroke-width: 0.75·s`. Le nascoste non si scrivono (il valore resta nell'ispettore e nella striscia).
+- **Etichette dei picchi** (`picchi(stazioni, d.chiave)` per asta — la chiave la dà `diagramma`, ed è `Mz`/`Vy` sui pilastri — saltando quelle `sottoSoglia(valore, massimoGlobale)`): richieste con `x, y` = il punto del diagramma (schermo), `testo = testoValore(vista, valore)`, `priorita = |valore| / massimoGlobale`, `larghezza = testo.length · 6.6 · s`, `altezza = 12 · s`; ostacoli = i box delle etichette dei nodi (`x` dell'etichetta, `text-anchor`, `larghezza = testo.length · 6.6 · s`, `altezza = 11 · s`) e i cerchi dei nodi (`RAGGIO · s` attorno a `p`). Le posate si scrivono come `<text class="picco">` con `dominant-baseline: middle`, `font-size: 11·s`, `text-anchor` = `ancora`, `font-family: MONO`; la guida come `<line class="guida">` `stroke-width: 0.75·s`. Le nascoste non si scrivono (il valore resta nell'ispettore e nella striscia).
 - **Con la deformata** l'etichetta del massimo spostamento: una sola, sul nodo con `hypot(ux, uz)` massimo, testo `testoValore("deformata", d)`, posata con lo stesso `disponi` (una richiesta) e gli stessi ostacoli.
 - **Badge**: `<p class="risultati-badge">` creato una volta in `creaPiano` accanto al titolo dei carichi (`contenitore.replaceChildren(svg, titolo, badge)`), testo `testoBadge({...risultati})`, `hidden` senza risultati, classe `stantia` quando stantia.
+
+**Riferimento:** `docs/ricerca/07-ux-modellatore.md:99` (scala dichiarata e ombra), `:105` (data-ink)
+
+## Ingressi degeneri
+- `risultati: null`, o `risultati.vista: null`, o l'opzione assente del tutto → nessuno strato `<g class="risultati">`, badge `hidden`, aste piene (nessuna `stroke-opacity`)
+- modello con risultati e **senza aste** → strato vuoto, e il badge si scrive lo stesso: la scala dichiarata non dipende da cosa c'è da disegnare
+- `perCaso` senza `sollecitazioni` (o con un'asta che non è nel modello) → nessun poligono, nessuna ordinata, nessun'etichetta orfana, non solleva
+- `perCaso` senza `spostamenti` in vista deformata → la polilinea si disegna lo stesso e coincide con l'ombra; nessun testo, perché non c'è niente da scrivere
+- `contenitore.clientWidth` o `clientHeight` a 0 (riquadro non ancora impaginato) → `|| 1` come `piano.js:119`, `s` finito, nessun `NaN` nel `points` né negli ostacoli del badge
+- un picco sotto il 2 % del massimo globale → non si scrive: il valore resta nell'ispettore e nella striscia
+- un'etichetta che non trova posto fra i cerchi, le etichette dei nodi e il badge → si nasconde, non si sovrappone
+- `spazio.disegna` con una `deformata` quando WebGL manca → il modulo assente rende `disegna() {}` (`spazio.js:184-191`): nessuna chiamata a `THREE`, nessun errore in console
 
 - [ ] **Step 1: i test nel DOM finto** (in coda a `static/test/piano.test.js`; il `pianoFinto()` esistente rende `contenitore._figli[0]` = svg e `[1]` = titolo; il badge sarà `[2]`)
 
@@ -1157,6 +1591,38 @@ test("piano senza risultati o con vista nulla: nessuno strato, badge nascosto, a
   assert.equal(aste[0].getAttribute("stroke-opacity"), undefined);
 });
 
+test("piano con vista M: lo strato sta fra le aste e i nodi, non sopra i nodi", () => {
+  // Il DOM finto tiene i figli in ordine, quindi l'ordine di disegno **è** verificabile: senza
+  // questo test spostare `gruppo.append(g)` dopo il ciclo dei nodi resta verde, e in pagina il
+  // diagramma copre i cerchi cliccabili. (Il mutante che il piano dava per non uccidibile, R5.)
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const figli = contenitore._figli[0]._figli[0]._figli;   // svg → gruppo → i figli, in ordine
+  const tipi = figli.map((f) => f.getAttribute?.("data-tipo"));
+  const iStrato = figli.findIndex((f) => f.getAttribute?.("class") === "risultati");
+  assert.ok(iStrato > tipi.lastIndexOf("asta"), `strato ${iStrato} dopo l'ultima asta ${tipi.lastIndexOf("asta")}`);
+  assert.ok(iStrato < tipi.indexOf("nodo"), `strato ${iStrato} prima del primo nodo ${tipi.indexOf("nodo")}`);
+});
+
+test("piano con vista M su un pilastro: si legge Mz, e il diagramma non è una riga piatta", () => {
+  // La prova che una mappa costante non basta (R1): con `My` a 1e-9 il pilastro uscirebbe
+  // schiacciato sul proprio asse e il picco non si scriverebbe mai.
+  const pil = (() => { let mo = modelloVuoto(); mo = creaNodo(mo, { x: 0, z: 0 }); mo = creaNodo(mo, { x: 0, z: 3000 });
+    return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] }; })();
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: [
+    { x_rel: 0, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 6e6 },
+    { x_rel: 0.5, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 3e6 },
+    { x_rel: 1, N: -1000, Vy: 2000, Vz: 1e-10, T: 0, My: 1e-9, Mz: 0 }] } };
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  piano.disegna(pil, { risultati: conRisultati("M", { perCaso }) });
+  const g = strato(contenitore._figli[0]);
+  const xs = tutti(g, "polygon")[0].getAttribute("points").split(" ").map((p) => Number(p.split(",")[0]));
+  assert.ok(Math.max(...xs) - Math.min(...xs) > 1, `il diagramma ha larghezza: ${xs}`);
+  assert.ok(tutti(g, "text").map((t) => t.textContent).includes("6 kN·m"));
+});
+
 test("piano con risultati di un caso senza stazioni né spostamenti: strato vuoto, non solleva", () => {
   const contenitore = contenitoreFinto();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
@@ -1174,7 +1640,7 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
 
 - [ ] **Step 3: `piano.js`** — le modifiche, nell'ordine:
 
-1. Import: `import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, GRANDEZZA, spostamentoMassimo } from "./risultati.js"; import { disponi, sottoSoglia } from "./etichette.js";`
+1. Import: `import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, spostamentoMassimo } from "./risultati.js"; import { disponi, sottoSoglia } from "./etichette.js";`
 2. In `creaPiano`, accanto a `titolo`: 
 ```js
   const badge = document.createElement("p");
@@ -1182,8 +1648,8 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
   badge.hidden = true;
   contenitore.replaceChildren(svg, titolo, badge);
 ```
-3. La firma: `function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {})`, e in testa `const vista = risultati?.vista ?? null; const attivo = vista ? risultati : null;`.
-4. Le aste (`:136-141`): aggiungere `...(attivo && vista === "deformata" && !scelta ? { "stroke-opacity": 0.3 } : {})`.
+3. La firma: `function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {})`, e in testa `const vistaRis = risultati?.vista ?? null; const attivo = vistaRis ? risultati : null; let stratoRisultati = null;`. **`vistaRis` e non `vista`**: `creaPiano` ha già un `let vista` che è il **riquadro** (`:97`, quello che `inquadra` scrive e `schermo` legge), e un secondo `vista` dentro `disegna` lo ombreggerebbe — il punto 6 ha bisogno del riquadro proprio lì.
+4. Le aste (`:136-141`): aggiungere `...(attivo && vistaRis === "deformata" && !scelta ? { "stroke-opacity": 0.3 } : {})`.
 5. Subito dopo il ciclo delle aste, lo strato:
 ```js
     // Lo strato dei risultati fra le aste e i nodi: i nodi restano sopra e cliccabili. Un solo
@@ -1191,9 +1657,12 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
     const richiesteEtichette = [];   // i picchi (o il massimo spostamento): li posa `disponi` dopo i nodi
     if (attivo) {
       const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
-      const g = el("g", { class: "risultati", "data-vista": vista });
+      // `stratoRisultati`, non un `g` locale: lo step 7 gli appende le etichette dopo i nodi,
+      // e un `const g` qui dentro morirebbe con l'`if` (e collide col `g` della gravità a `:267`).
+      stratoRisultati = el("g", { class: "risultati", "data-vista": vistaRis });
+      const g = stratoRisultati;
       const coppia = (p) => `${p.x},${p.y}`;
-      if (vista === "deformata") {
+      if (vistaRis === "deformata") {
         for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
           g.append(el("polyline", { class: "deformata", points: d.punti.map((p) => coppia(schermo(p))).join(" "),
                                     fill: "none", stroke: colore, "stroke-width": 2 * s,
@@ -1209,10 +1678,9 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
           }
         }
       } else {
-        const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vista);
-        const grandezza = GRANDEZZA[vista];
+        const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
         let massimo = 0;
-        const diagrammi = diagramma(m, attivo.perCaso, vista, scalaD);
+        const diagrammi = diagramma(m, attivo.perCaso, vistaRis, scalaD);
         for (const d of diagrammi) for (const p of d.punti) massimo = Math.max(massimo, Math.abs(p.valore));
         for (const d of diagrammi) {
           const pi = schermo(d.base[0]), pj = schermo(d.base[1]);
@@ -1226,12 +1694,13 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
             const q = schermo(p);
             g.append(el("line", { class: "stazione", x1: b.x, y1: b.y, x2: q.x, y2: q.y, stroke: colore, "stroke-width": 0.75 * s }));
           }
-          for (const picco of picchi(attivo.perCaso.sollecitazioni?.[String(d.id)], grandezza)) {
+          // `d.chiave`, non una costante: sui pilastri è `Mz`/`Vy` (R1).
+          for (const picco of picchi(attivo.perCaso.sollecitazioni?.[String(d.id)], d.chiave)) {
             if (sottoSoglia(picco.valore, massimo)) continue;
             const p = d.punti.find((q) => q.x_rel === picco.x_rel);
             if (!p) continue;
             const q = schermo(p);
-            richiesteEtichette.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vista, picco.valore),
+            richiesteEtichette.push({ id: `${d.id}@${picco.x_rel}`, x: q.x, y: q.y, testo: testoValore(vistaRis, picco.valore),
                                       priorita: Math.abs(picco.valore) / massimo });
           }
         }
@@ -1239,14 +1708,27 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
       gruppo.append(g);
     }
 ```
-6. Nel ciclo dei nodi (`:184-210`) raccogliere gli ostacoli: prima del ciclo `const ostacoli = [];`; dopo aver creato il cerchio `ostacoli.push({ x0: p.x - RAGGIO * s, y0: p.y - RAGGIO * s, x1: p.x + RAGGIO * s, y1: p.y + RAGGIO * s });`; dopo `testo.textContent = …` il box dell'etichetta: 
+6. Nel ciclo dei nodi (`:185-210`) raccogliere gli ostacoli: prima del ciclo `const ostacoli = [];`; dopo aver creato il cerchio `ostacoli.push({ x0: p.x - RAGGIO * s, y0: p.y - RAGGIO * s, x1: p.x + RAGGIO * s, y1: p.y + RAGGIO * s });`; dopo `testo.textContent = …` il box dell'etichetta: 
 ```js
         const larghezza = testo.textContent.length * 6.6 * s, altezza = 11 * s;
         const x = p.x + OFFSET_ETICHETTA * s * v.x, y = p.y - OFFSET_ETICHETTA * s * v.z;
         const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
         ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y });
 ```
-7. Dopo i vincoli e prima delle frecce, le etichette dei risultati (lo strato `g` va tenuto in una variabile fuori dall'`if`: dichiararla prima, `let stratoRisultati = null;`, e assegnarla dentro):
+   E, subito dopo il ciclo, il **badge**: sta fuori dal `viewBox` ma sopra il piano, quindi senza
+   questo un picco in alto a destra gli finisce sotto (R6). `preserveAspectRatio="xMidYMid meet"`
+   centra il riquadro, perciò il bordo del viewport in coordinate del `viewBox` è il centro più
+   mezza misura in pixel per `s`:
+```js
+    if (attivo) {
+      const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro, `:97`
+      const destra = cx + (contenitore.clientWidth || 1) * s / 2;
+      const alto = cy - (contenitore.clientHeight || 1) * s / 2;
+      ostacoli.push({ x0: destra - (testoBadge(attivo).length * 6.6 + 8) * s, y0: alto,
+                      x1: destra, y1: alto + 20 * s });   // 6px di `top` + 14 di riga
+    }
+```
+7. Dopo i vincoli e prima delle frecce, le etichette dei risultati (`stratoRisultati` è la variabile dichiarata al punto 3, `let stratoRisultati = null;`, assegnata al punto 5):
 ```js
     if (stratoRisultati && richiesteEtichette.length) {
       const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
@@ -1300,7 +1782,7 @@ Nota per l'implementer: il finto `createElement` (`piano.test.js:132`) dà `clas
 - [ ] **Step 6: lanciare tutti i test JS**
 
 Run: `env -C /Users/mario/GitHub/NOVA-wt/interfaccia-13/static node --test test/*.test.js`
-Expected: tutti pass (649 + quelli dei Task 2-3 + 6 nuovi).
+Expected: tutti pass (649 + quelli dei Task 2-3 + 8 nuovi in `piano.test.js`).
 
 - [ ] **Step 7: Commit**
 
@@ -1323,8 +1805,24 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 - Test: `static/test/esito.test.js`, `static/test/tastiera.test.js`, `static/test/pannello.test.js`
 
 **Interfaces:**
-- Consumes: Task 2 (`casiDi`, `VISTE`, `testoEquilibrio`, `righeSpostamenti`, `righeReazioni`, `srotolato`, `testoValore`, `GRANDEZZA`), Task 4 (`piano.disegna` con `risultati`, `spazio.disegna` con `deformata`), `stantia` (`static/corsa.js:93`).
+- Consumes: Task 2 — `esito.js` importa `casiDi`, `testoEquilibrio`, `srotolato`, `testoValore`, `picchi`, `assiDi`; `pannello.js` importa `righeSpostamenti`, `righeReazioni`; `app.js` importa `casiDi`, `scalaAuto`, `puntiDeformata`. (Elenco riscritto su ciò che il codice **importa**, non su ciò che sembra servire: `VISTE` non lo importa nessuno di questi tre.) Task 4 (`piano.disegna` con `risultati`, `spazio.disegna` con `deformata`), `stantia` (`static/corsa.js:93`).
 - Produces: la voce `vista` di `TASTI` (`codice: "vista"`, `tasto: "0-4"`, `etichetta: "vista"`, `aiuto: "0 niente · 1 deformata · 2 M · 3 V · 4 N"`, `contesto: "risultati"`); `voceDaEvento` rende quella voce per `key` ∈ `0…4` senza modificatori; `vociDellaBarra(contesto, tipo, { risultati })` la include solo con `risultati: true` e contesto `sempre`/`selezione`; `dispatchVoce(voce, valore)` legge `valore` («0»…«4»).
+
+**Riferimento:** `docs/ricerca/07-ux-modellatore.md:101` (il controllo che contraddice, Σ reazioni = Σ carichi), `:99` (i componenti di un nodo a portata di gesto)
+
+## Ingressi degeneri
+- corsa finita **senza** risultati (rifiutata, in errore, del solido) → `casiDi` rende `[]`, lo stato resta `null`, il blocco torna allo stato vuoto e la vista si spegne: i diagrammi di prima parlerebbero di una corsa che non è più l'ultima
+- `verifica` (esito `null`) → non tocca né lo stato né la vista, ridisegna e basta
+- «apri» o «importa» → `risultati = null` accanto a `corsa.azzera()`: un modello nuovo non porta la vista di un altro
+- il caso scelto non è più fra quelli della corsa nuova → torna al primo, mai `undefined` nel `<select>`
+- scala a mano illeggibile, «0» o negativa → auto, e il campo lo dice col segnaposto; il campo a fuoco non si riscrive sotto le dita di chi sta battendo
+- cifra da `5` a `9`, o una cifra col tasto comando → `voceDaEvento` non rende nessuna voce: niente accade e niente si dice
+- cifra `0`-`4` senza nessuna corsa da mostrare → `dì("nessuna corsa da mostrare: ⌘⏎ la lancia")`, e la vista non cambia
+- cifra `0`-`4` con il campo di comando aperto e il fuoco **fuori** dal campo → il fuoco torna nel campo e la coda di `eseguiVoce` **non** scrive la cifra nel campo (`voce.campo` è falso per `vista`): mai un nodo creato per sbaglio (R4)
+- nodo selezionato che non compare nei risultati del caso → `righeSpostamenti` e `righeReazioni` rendono `[]`, e l'ispettore mostra le sue righe di sempre
+- nodo non vincolato → nessuna riga di reazione, e le righe di spostamento restano
+- asta selezionata sparita, o senza stazioni per quel caso → la striscia dice cosa manca invece di sollevare; senza asta selezionata dice il gesto; senza risultati non c'è
+- `#srotolato` con `clientWidth` a 0 → la striscia si disegna a 200 px, non a 0
 
 - [ ] **Step 1: `index.html`**
 
@@ -1372,15 +1870,32 @@ Sotto `#piano` in `#viste` (`:40`):
 #viste  { grid-area: viste; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; }
 #spazio { grid-row: 1 / -1; }
 #srotolato { border-right: 1px solid var(--tratto); border-top: 1px solid var(--tratto); padding: 4px 8px; min-height: 0; }
-#srotolato svg { width: 100%; height: 96px; display: block; }
+#srotolato svg { display: block; }
 #srotolato .titolo { margin: 0 0 2px; font: 11px var(--mono); color: var(--inchiostro); }
 #srotolato .titolo.stantia { color: var(--rosso); }
-#risultati-vista label { display: flex; gap: 4px; align-items: center; }
-#risultati-vista kbd { font-family: var(--mono); border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 0 3px; font-size: 10px; }
-#risultati-scala { width: 100%; font-family: var(--mono); border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 2px 4px; background: var(--pannello); color: var(--inchiostro); }
-#risultati-scala:focus-visible, #risultati-caso:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#risultati-vista { grid-template-columns: 1fr 1fr; }
+#risultati-vista kbd { font-size: 10px; padding: 0 3px; }
 ```
-(`#viste` sostituisce la riga `:46`; `#spazio` occupa le due righe della griglia.)
+E **tre selettori esistenti si estendono invece di ricopiarsi** (R8 — è la R12 della 12, seconda
+occorrenza): `:99` `.vincolo-gradi label` copre già `display: flex; gap: 4px; align-items: center`,
+quindi `#risultati-vista label` non si riscrive; `:188` `.vuoto kbd` porta già famiglia, bordo,
+raggio e fondo del `kbd`; `:235` `#file label, #corsa label` → `+ #risultati label`; `:236` e `:240`
+`#file-percorso, #comando-campo, #corsa-inp` → `+ #risultati-scala, #risultati-caso` (larghezza,
+mono, fondo, bordo, padding e anello di fuoco, tutti già lì). Due caselle di testo definite due
+volte divergono al primo ritocco della palette, e nessuno se ne accorge finché non si guardano
+vicine — è esattamente ciò che la 12 ha già pagato una volta.
+
+```css
+.vuoto kbd, #risultati-vista kbd { /* la riga `:188-189`, con l'id aggiunto */ }
+#file label, #corsa label, #risultati label { /* la riga `:235`, con l'id aggiunto */ }
+#file-percorso, #comando-campo, #corsa-inp, #risultati-scala, #risultati-caso { /* `:236-239` */ }
+#file-percorso:focus-visible, #comando-campo:focus-visible, #corsa-inp:focus-visible,
+#risultati-scala:focus-visible, #risultati-caso:focus-visible { /* `:240-241` */ }
+```
+(`#viste` sostituisce la riga `:46`; `#spazio` occupa le due righe della griglia — `:51` gli dà già
+`min-height: 0`, quindi il pavimento del canvas three.js resta risolto come nel fix round 1/E.
+`#risultati-vista` usa `class="vincolo-gradi"` per bordo, legenda e `accent-color` e ne cambia solo
+le colonne: cinque radio in `repeat(3, 1fr)` uscirebbero 3 + 2. Da confermare a 1280 px nel Task 6.)
 
 - [ ] **Step 3: i test di `esito.js`** — `static/test/esito.test.js`, con il DOM finto copiato da `corsa.test.js` (radice con `querySelector`/`querySelectorAll`, elementi con `addEventListener`/`dispatch`, `replaceChildren`, `append`, `hidden`, `value`, `checked`, `textContent`, `className`, `_figli`, `_attrs`); `createElementNS` per l'SVG della striscia come in `piano.test.js`:
 
@@ -1492,8 +2007,9 @@ test("creaSrotolato: un'asta senza stazioni o sparita non solleva e dice che non
 // (giornata 13). Lo stato non vive qui: `app.js` lo tiene e lo passa a `disegna`; i controlli
 // chiamano `suCambio` con i tre valori, e `app.js` ridisegna.
 
-import { casiDi, testoEquilibrio, srotolato, testoValore, picchi } from "./risultati.js";
+import { casiDi, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
 import { leggiEspressione } from "./numeri.js";
+import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const INCHIOSTRO = "#141414", ROSSO = "#b8321e", MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
@@ -1556,21 +2072,30 @@ export function creaSrotolato(contenitore) {
     const asta = id !== null ? (modello?.aste ?? []).find((a) => a.id === id) : null;
     if (!asta) { p.textContent = "Seleziona un'asta per il suo M srotolato."; contenitore.replaceChildren(p); return; }
     const stazioni = risultati.perCaso?.sollecitazioni?.[String(asta.id)];
-    const { punti, massimo } = srotolato(stazioni, "My");
+    // La chiave la decide la giacitura dell'asta, non una costante: su un pilastro è `Mz` (R1).
+    // Un'asta i cui nodi non ci sono più non ha assi: allora niente chiave e niente striscia.
+    const assi = assiDi(nodo(modello, asta.nodo_i) ?? {}, nodo(modello, asta.nodo_j) ?? {});
+    const chiave = assi?.M ?? "My";
+    const { punti, massimo } = srotolato(assi ? stazioni : null, chiave);
     p.textContent = `${risultati.stantia ? "stantia · " : ""}M dell'asta ${asta.id} · ${risultati.caso} · kN·m`;
     if (punti.length === 0) { p.textContent += " · nessuna stazione per quest'asta"; contenitore.replaceChildren(p); return; }
     const colore = risultati.stantia ? ROSSO : INCHIOSTRO;
-    const W = 1000, H = 100, M = 14;   // viewBox: l'asta è larga W, il diagramma sta fra M e H−M
-    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-label": `M srotolato dell'asta ${asta.id}` });
+    // Niente `viewBox`: si disegna **in pixel**, misurando il contenitore come fa `piano.js`
+    // (`millimetriPerPixel`, `:118-122`). Un `viewBox` con `preserveAspectRatio="none"` stira
+    // il disegno a tutta larghezza e con lui i glifi e i cerchi delle stazioni — a 1280 px la
+    // colonna del piano è larga ~400 px contro i 1000 del `viewBox`, cioè testo schiacciato di
+    // 2,4 a 1 (R7). Limite dichiarato: la striscia si rimisura al prossimo `ridisegna`, quindi
+    // un ridimensionamento della finestra senza toccare niente la lascia della larghezza di prima.
+    const W = Math.max(contenitore.clientWidth || 0, 200), H = 96, M = 14;
+    const svg = el("svg", { width: W, height: H, "aria-label": `M srotolato dell'asta ${asta.id}` });
     const y0 = H / 2;
     const y = (v) => (massimo > 0 ? y0 + (v / massimo) * (H / 2 - M) : y0);   // M positivo verso il basso: il lato teso
     const x = (r) => r * W;
     svg.append(el("line", { x1: 0, y1: y0, x2: W, y2: y0, stroke: colore, "stroke-width": 1 }));
     svg.append(el("polygon", { points: [`0,${y0}`, ...punti.map((q) => `${x(q.x_rel)},${y(q.valore)}`), `${W},${y0}`].join(" "),
-                               fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5, "stroke-dasharray": "5 3",
-                               "vector-effect": "non-scaling-stroke" }));
+                               fill: colore, "fill-opacity": 0.08, stroke: colore, "stroke-width": 1.5, "stroke-dasharray": "5 3" }));
     for (const q of punti) svg.append(el("circle", { cx: x(q.x_rel), cy: y(q.valore), r: 2.5, fill: colore }));
-    for (const picco of picchi(stazioni, "My")) {
+    for (const picco of picchi(stazioni, chiave)) {
       const sopra = picco.valore > 0;   // il testo dalla parte opposta al diagramma, che qui è sotto per M > 0
       const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,
                              "text-anchor": picco.x_rel < 0.1 ? "start" : picco.x_rel > 0.9 ? "end" : "middle" });
@@ -1582,7 +2107,9 @@ export function creaSrotolato(contenitore) {
   return { disegna };
 }
 ```
-(`preserveAspectRatio: "none"` stira la striscia a tutta larghezza; il testo si stira con lei — accettabile a 1280 e 1920, da guardare nel Task 6; se si deforma troppo, passare a `xMidYMid meet` con `W` = larghezza del contenitore in px.)
+(La striscia è in pixel e non ha `viewBox`: nessuna deformazione dei glifi, e il `M` positivo va
+verso il basso — nella striscia srotolata «in basso» è una convenzione di lettura, non il lato teso
+geometrico, che sul pilastro sarebbe un lato dello schermo. Scritto qui perché non venga «corretto».)
 
 - [ ] **Step 5: `tastiera.js`** — in `TASTI` dopo `verifica`/`corri` (`:24-25`):
 ```js
@@ -1643,7 +2170,7 @@ const srotolato = creaSrotolato($("srotolato"));
 ```
 6. In `ridisegna`, prima di `piano.disegna`: `const inVista = risultatiInVista(m);`; poi `piano.disegna(m, { …, risultati: inVista })`; `spazio?.disegna(m, { selezione, deformata: inVista?.vista === "deformata" ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala), stantia: inVista.stantia } : null })`; `pannello.disegna(m, selezione, { …, risultati: inVista })`; dopo `corsa.disegna`: `esito.disegna({ risultati, modello: m }); srotolato.disegna({ risultati: inVista, modello: m, selezione });`. Attenzione: `esito.disegna` riceve lo **stato** (`risultati`, con `lavoro`), `srotolato` e `piano` la **vista** (`inVista`).
 7. `disegnaBarra`: `vociDellaBarra(contesto, selezione?.tipo ?? null, { risultati: Boolean(risultati) })`.
-8. Il `keydown` (`:675`): `eseguiVoce(voce, voce.codice === "vista" ? ev.key : null);` e `eseguiVoce(voce, valore)` → `dispatchVoce(voce, valore)`. **Attenzione alla coda di `eseguiVoce`** (`:686`): `if (comando && valore !== null) { campoComando.value = valore; … conferma(); }` — con un campo aperto ma senza fuoco, `2` diventerebbe il testo del campo e lo confermerebbe. La cifra della vista non è un valore per il campo: la coda va guardata con `voce.codice !== "vista"` (`if (comando && valore !== null && voce.codice !== "vista")`), e un test in `tastiera.test.js` non lo copre (è in `app.js`): lo copre il copione del fumo del Task 6 solo di sfuggita — dichiararlo nell'Esito. In `dispatchVoce(voce, valore = null)`, sopra la guardia del modo (accanto a `corri`/`verifica`, `:740-741`):
+8. Il `keydown` (`:675`): `eseguiVoce(voce, voce.codice === "vista" ? ev.key : null);` e `eseguiVoce(voce, valore)` → `dispatchVoce(voce, valore)`. **Attenzione alla coda di `eseguiVoce`** (`:686`): `if (comando && valore !== null) { campoComando.value = valore; … conferma(); }` — con un campo aperto ma **senza fuoco** (il fuoco esce con un clic nel piano, e `daControllo` a `:660` non ferma più il tasto) `2` diventerebbe il testo del campo e lo confermerebbe. La guardia giusta non nomina `vista`, nomina la condizione: **`voce.campo`** (`if (comando && valore !== null && voce.campo)`). La coda esiste per «il valore entra nel campo appena aperto», e il campo lo apre `apriComando` (`:296`), che è chiamato **solo** da voci con `campo` (`:754`, `:773`, `:813`, `:846`, `:855`, `:861`, `:865`, `:882`, `:895`). Così coperta, la trappola non si ripresenta per la prossima voce senza campo che porti un valore (R4). In `dispatchVoce(voce, valore = null)`, sopra la guardia del modo (accanto a `corri`/`verifica`, `:740-741`; sotto la guardia del campo a `:735`, che è il motivo per cui la coda di `eseguiVoce` va guardata a sua volta):
 ```js
   if (voce.codice === "vista") {
     if (!risultati) { dì("nessuna corsa da mostrare: ⌘⏎ la lancia"); return; }
@@ -1680,6 +2207,17 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "feat(interfaccia): 
 **Interfaces:**
 - Consumes: Task 1 (fixture `chrome_e_server`, `copione`), tutto il ramo.
 - Produces: `copione("risultati", porta, cdp, fixture="<percorso assoluto>", vista="2", larghezze=[1280, 1920])` → `{ ok, errori, trovato: { ultima, etichette: [...], sovrapposte: { "1280": [...], "1920": [...] }, badge } }`.
+
+**Riferimento:** `docs/ricerca/07-ux-modellatore.md:62`
+
+## Ingressi degeneri
+- OpenSees assente dal PATH → `binario_opensees` salta i due test dei risultati; il test della pagina del Task 1 resta verde, perché non corre niente
+- Chrome o node assenti → skip, come nel Task 1
+- la corsa non finisce entro 90 s → `finche` solleva «tempo scaduto su: … (ultimo valore …)» e il test **fallisce col motivo**, non resta appeso
+- il modello non si apre (percorso sbagliato, JSON storto) → `finche` sui `circle` scade a 10 s, e il `messaggio` letto alla fine entra nel report invece di restare a schermo di un browser che nessuno guarda
+- una coppia di `<text>` si sovrappone a una sola delle larghezze → l'`assert` nomina la larghezza **e** le due stringhe, così si sa quale etichetta ha ceduto e dove
+- l'etichetta esiste ma con un'altra grafia («45,0 kN·m») → il difetto è in `conciso`/`testoValore`, non nel copione: il messaggio d'errore stampa l'elenco intero di `etichette`
+- la vista chiesta non produce nessuna etichetta (tutto sotto soglia) → `etichette` è `[]` e l'assert sulle sovrapposizioni passa a vuoto: il test dei picchi è quello sulla trave appoggiata, e va tenuto separato apposta
 
 - [ ] **Step 1: il copione**
 
@@ -1764,7 +2302,8 @@ git -C /Users/mario/GitHub/NOVA-wt/interfaccia-13 commit -m "test(interfaccia): 
 
 Copia del file in tmp prima, ripristino dalla copia, mai `git checkout --`.
 - `risultati.js`: `verso = 1` anche per M (M sul lato compresso) → deve cadere il test «M positivo sotto la trave»; `pi = ui[4]` (segno della rotazione) → deve cadere «la mezzeria scende»; `scala125` che rende `v` → cade «120 → 100».
+- `risultati.js`, R1: `assiDi` che rende sempre `{M:"My", V:"Vz"}` (la vecchia mappa costante) → devono cadere «assiDi: una trave flette con My/Vz, un pilastro con Mz/Vy», «diagramma su un pilastro verticale» e il test del piano sul pilastro; `s = 1` sempre (via `sign(e1.x)`) → cade «il verso di M non dipende dall'ordine dei nodi»; `verticale` con `>= 1` invece di `> 0,999` → cade la riga del pilastro.
 - `etichette.js`: `siSovrappongono` con `<=` → cade «i bordi che si toccano»; `disponi` senza il controllo degli ostacoli → cade «un ostacolo su tutti i primi posti».
-- `piano.js`: strato appeso **dopo** i nodi → nessun test JS deve cadere (è un ordine di disegno): lo dice l'Esito come limite dichiarato, e il fumo lo guarda solo per le sovrapposizioni.
-- `app.js`: `suEsito` che non azzera su corsa senza risultati → il fumo non lo vede: limite dichiarato.
+- `piano.js`: strato appeso **dopo** i nodi → cade «lo strato sta fra le aste e i nodi» (il DOM finto tiene i figli in ordine: il mutante che il piano dava per non uccidibile ora si uccide); il badge tolto dagli ostacoli → nessun test JS cade, e resta un limite dichiarato che il fumo vede solo se un picco capita in alto a destra.
+- `app.js`: `suEsito` che non azzera su corsa senza risultati → il fumo non lo vede: limite dichiarato. La coda di `eseguiVoce` senza `voce.campo` → nessun test JS cade (è in `app.js`), e il fumo la prende solo con il copione che apre il campo, lo perde di fuoco e preme una cifra: **non c'è**, e va scritto nell'Esito.
 - **Controllo nullo**: un mutante che nessun test prende è un test che manca, non un test buono.
