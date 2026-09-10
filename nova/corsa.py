@@ -77,8 +77,8 @@ def _num_it(x) -> str:
         return "—"
     if abs(x) < 1e-6:
         return "0"
-    s = f"{x:,.2f}".replace(",", " ").replace(".", ",")
-    return s.rstrip("0").rstrip(",")
+    s = f"{x:,.2f}".replace(",", " ").replace(".", ",").rstrip("0").rstrip(",")
+    return "0" if s.lstrip("-").strip("0 ,") == "" else s   # «-0» di un millinewton è peggio di «0»
 
 
 def _terna(t) -> str:

@@ -219,12 +219,16 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
   /** La POST del lavoro. Un 409 con `run_id` è una corsa già in corso sul server (la pagina
    *  ricaricata a metà, o un'altra scheda): ci si riaggancia invece di rifiutare — lo snapshot
    *  su cui gira non lo sappiamo, quindi il lavoro nasce senza modello, cioè stantio. */
-  async function avvia(rotta, corpo) {
+  async function avvia(rotta, corpo, comando) {
     try {
       const r = await chiediJson(rotta, corpo);
       return { ...r, riagganciata: false };
     } catch (e) {
-      if (e.stato === 409 && e.dati?.run_id) return { run_id: e.dati.run_id, cartella: e.dati.cartella ?? null, riagganciata: true };
+      // Solo una corsa **dello stesso tipo**: riagganciarsi a una corsa del telaio da «corri il
+      // solido» la presenterebbe come solido, senza verdetti e senza «stantia».
+      if (e.stato === 409 && e.dati?.run_id && e.dati.comando === comando) {
+        return { run_id: e.dati.run_id, cartella: e.dati.cartella ?? null, riagganciata: true };
+      }
       throw e;
     }
   }
@@ -235,7 +239,7 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
    *  corsa è già stantia. */
   async function lavora(rotta, corpo, solido, m) {
     const mia = generazione;
-    const avvio = await avvia(rotta, corpo);
+    const avvio = await avvia(rotta, corpo, solido ? "ccx" : "corsa");
     if (avvio.riagganciata) { m = null; suErrore("una corsa era già in corso: la seguo da qui"); }
     const l = { run_id: avvio.run_id, fasi: [], avvioMs: orologio(), modello: m, solido,
                 cartella: avvio.cartella ?? null };
@@ -249,6 +253,8 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
       if (mia !== generazione) { attesaEl.hidden = true; return null; }
       const s = await chiediJson(`/api/corsa/${l.run_id}`);
       l.fasi = s.fasi ?? [];
+      // Il cronometro dal server, non da qui: una corsa riagganciata gira da prima di noi.
+      if (avvio.riagganciata && typeof s.secondi === "number") l.avvioMs = orologio() - s.secondi * 1000;
       if (s.stato !== "finita") { disegnaAttesa(l); continue; }
       attesaEl.hidden = true;
       // La seconda: `azzera()` può cadere **durante** la GET, e allora il ciclo non ci ripassa.
@@ -275,7 +281,8 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
    *  `suEsito` sta **fuori** dal `try`: un errore del ridisegno di `app.js` non è un errore
    *  della corsa, e non deve travestirsi da tale. */
   async function conBottone(b, etichetta, fn) {
-    if (occupato) return avvisaOccupato();
+    // `occupato` lo guarda il chiamante, prima di `fermo()` e della lettura del campo: qui non
+    // si ricontrolla, l'ordine è suo.
     const riposo = b.textContent;
     occupato = true; bottoni(false); b.textContent = etichetta;
     let esito;
@@ -290,7 +297,8 @@ export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, prima = (
     } finally {
       occupato = false; bottoni(true); pulisciAvviso(); b.textContent = riposo;
     }
-    if (esito !== undefined) suEsito(esito);
+    // Fuori dal `try` (non è un errore della corsa), ma non muto: un ridisegno che solleva si dice.
+    if (esito !== undefined) { try { suEsito(esito); } catch (e) { suErrore(e.message); } }
   }
 
   function corri() {

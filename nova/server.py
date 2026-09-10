@@ -111,12 +111,12 @@ class SidecarProcesso:
         """«Riavvio del sidecar al comando successivo» (ricerca 03:121): il processo di prima è
         muto o morto, e tenerlo vorrebbe dire pagare il soffitto a ogni richiesta per la vita
         del server. Il vecchio si termina (se sa farlo), il nuovo parte con la sua coda."""
-        termina = getattr(self.p, "terminate", None)
-        if callable(termina):
-            try:
-                termina()
-            except Exception:
-                pass
+        try:
+            self.p.terminate()
+            if self.p.wait(timeout=2) is None:   # un sidecar che ignora SIGTERM a metà analisi
+                self.p.kill()
+        except Exception:
+            pass   # già morto, o un processo che non si lascia toccare: il nuovo parte lo stesso
         self._parti()
         self._rotto = False
         self.riavvii += 1
@@ -130,8 +130,7 @@ class SidecarProcesso:
         try:
             # Rotto per un soffitto o uno stdout chiuso, **o uscito** (ucciso, crash): `poll()`
             # lo dice prima di scrivere su una pipe che non ha più nessuno dall'altra parte.
-            uscito = getattr(self.p, "poll", None)
-            if self._rotto or (callable(uscito) and uscito() is not None):
+            if self._rotto or self.p.poll() is not None:
                 self._riavvia()
             self.n += 1
             rid = self.n
@@ -259,11 +258,12 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
                 # sé. Il `run_id` accanto è per riagganciarsi con la `GET`: `corsa.js` lo fa.
                 raise HTTPException(409, detail={"esito": "errore", "fase": "sidecar",
                                                  "motivo": "un'altra corsa è in corso: una sola alla volta, aspetta che finisca",
-                                                 "run_id": in_corso})
+                                                 "run_id": in_corso, "comando": lavori[in_corso]["comando"]})
             run_id = secrets.token_hex(6)
             cartella = str(cartella_corse / run_id)
             lavoro = {"stato": "in corso", "fasi": [], "t0": time.perf_counter(), "fin": None,
-                      "cartella": cartella}   # per tutti: anche la corsa del telaio ha una cartella sul disco
+                      "cartella": cartella,   # per tutti: anche la corsa del telaio ha una cartella sul disco
+                      "comando": req["comando"]}   # `corsa` o `ccx`: chi si riaggancia deve sapere a cosa
             lavori[run_id] = lavoro
         req = {**req, "cartella": cartella}
 
@@ -346,12 +346,13 @@ def create_app(sidecar, cartella_corse: Path, statici: Path = STATICI, porta: in
 
     @app.get("/api/corsa/{run_id}")
     def stato_corsa(run_id: str):
-        if not _RUN_ID_RE.fullmatch(run_id) or run_id not in lavori:
-            raise HTTPException(404, detail={"motivo": f"nessuna corsa {run_id}"})
-        with lavori_lock:
-            l = dict(lavori[run_id])
+        with lavori_lock:   # `_pota` cancella da un altro thread: appartenenza e lettura nello stesso lock
+            l = lavori.get(run_id) if _RUN_ID_RE.fullmatch(run_id) else None
+            if l is None:
+                raise HTTPException(404, detail={"motivo": f"nessuna corsa {run_id}"})
+            l = dict(l)
             fasi = list(l["fasi"])
-        base = {"run_id": run_id, "stato": l["stato"], "fasi": fasi, "cartella": l["cartella"]}
+        base = {"run_id": run_id, "stato": l["stato"], "fasi": fasi, "cartella": l["cartella"], "comando": l["comando"]}
         if l["stato"] == "in corso":
             return {**base, "secondi": time.perf_counter() - l["t0"]}
         fin = _o_400({**l["fin"]})   # 400 per modello|importa|confronto|deck, come sulla POST di prima

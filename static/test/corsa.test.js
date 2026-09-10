@@ -312,7 +312,7 @@ test("creaCorsa: 409 senza run_id dice che un'altra corsa è in corso e libera i
 test("creaCorsa: 409 con run_id riaggancia la corsa in corso e la porta a fine, stantia", async () => {
   const m = { nodi: [] };
   const spia = fetchSequenza([
-    { stato: 409, dati: { motivo: "un'altra corsa è in corso: una sola alla volta, aspetta che finisca", run_id: "b2b2b2b2b2b2" } },
+    { stato: 409, dati: { motivo: "un'altra corsa è in corso: una sola alla volta, aspetta che finisca", run_id: "b2b2b2b2b2b2", comando: "corsa" } },
     { stato: 200, dati: { run_id: "b2b2b2b2b2b2", stato: "in corso", fasi: ["leggo i recorder"], secondi: 4 } },
     { stato: 200, dati: { run_id: "b2b2b2b2b2b2", stato: "finita", fasi: ["leggo i recorder"], secondi: 4.5, esito: "ok", verdetti_check: [v("unita", "passato")], risultati: { verdetti: [] } } },
   ]);
@@ -326,6 +326,36 @@ test("creaCorsa: 409 con run_id riaggancia la corsa in corso e la porta a fine, 
   assert.equal(esiti[0].run_id, "b2b2b2b2b2b2");
   assert.equal(el("#corsa-ultima").textContent, "corsa b2b2b2b2b2b2 · 4,5 s · stantia", "non sappiamo su che snapshot ha girato");
   assert.equal(el("#corsa-verdetti")._figli.length, 1);
+});
+
+// Il riaggancio solo fra corse dello stesso tipo: «corri il solido» durante una corsa del telaio
+// non se la prende (la presenterebbe come solido, senza verdetti e senza «stantia»).
+test("creaCorsa: un 409 di un lavoro di altro tipo non si riaggancia: è un rifiuto che parla", async () => {
+  const spia = fetchSequenza([{ stato: 409, dati: { motivo: "un'altra corsa è in corso: una sola alla volta, aspetta che finisca", run_id: "b2b2b2b2b2b2", comando: "corsa" } }]);
+  const { radice, el } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  radice.querySelector("#corsa-inp").value = "/x/trave.inp";
+  await c.corriSolido();
+  assert.deepEqual(errori, ["un'altra corsa è in corso: una sola alla volta, aspetta che finisca"]);
+  assert.equal(spia.chiamate, 1, "nessuna GET su una corsa che non è del solido");
+  assert.equal(el("#corsa-ultima").textContent, "");
+});
+
+// Il cronometro di una riagganciata parte dai secondi del server, non da zero.
+test("creaCorsa: la corsa riagganciata mostra i secondi del server, non i nostri", async () => {
+  let sblocca;
+  const cancello = new Promise((r) => { sblocca = r; });
+  fetchSequenza([
+    { stato: 409, dati: { motivo: "in corso", run_id: "b2b2b2b2b2b2", comando: "corsa" } },
+    { stato: 200, dati: { run_id: "b2b2b2b2b2b2", stato: "in corso", fasi: ["check model"], secondi: 180 } },
+    { stato: 200, attendi: cancello, dati: { run_id: "b2b2b2b2b2b2", stato: "finita", fasi: ["check model"], secondi: 181, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero, orologio: () => 1_000_000 });
+  const p = c.corri();
+  await finoA(() => el("#corsa-secondi").textContent === "180 s");
+  sblocca(); await p;
 });
 
 // R4: il 400 di `fase: deck` porta i verdetti del Check che l'hanno preceduto — si mostrano.

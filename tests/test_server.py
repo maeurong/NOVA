@@ -265,6 +265,7 @@ def test_sidecarprocesso_eof_da_errore_fase_sidecar():
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -299,6 +300,7 @@ def test_sidecarprocesso_ignora_righe_di_unaltra_richiesta():
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -438,6 +440,7 @@ def test_sidecarprocesso_pipe_chiusa_diventa_errore_fase_sidecar():
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = iter(())  # scrivere in stdin fallisce prima di leggere: il thread lettore esce subito
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -467,6 +470,7 @@ def test_sidecarprocesso_riga_corrotta_diventa_errore_fase_sidecar():
     class _FintoProcesso:
         stdin = _FintoStdin()
         stdout = _FintoStdout()
+        poll = staticmethod(lambda: None)   # vivo: `SidecarProcesso.chiedi` lo chiede prima di scrivere
 
     sp = SidecarProcesso(avvia=lambda: _FintoProcesso())
     righe = sp.chiedi({"comando": "verifica"})
@@ -889,9 +893,21 @@ class _StdoutLento:
 
 
 class _ProcessoFinto:
-    def __init__(self):
+    """Quel che `SidecarProcesso` chiede a un `Popen`: stdin, stdout, `poll`, `terminate`, `wait`."""
+    def __init__(self, uscito=None):
         self.stdin = io.StringIO()
         self.stdout = _StdoutLento()
+        self.uscito = uscito
+        self.terminato = False
+
+    def poll(self):
+        return self.uscito
+
+    def terminate(self):
+        self.terminato = True
+
+    def wait(self, timeout=None):
+        return self.uscito if self.uscito is not None else 0
 
 
 def _sp(soffitto_s=0.2):
@@ -950,8 +966,9 @@ def _sp_riavviabile(soffitto_s=0.2):
     return SidecarProcesso(avvia=avvia, soffitto_s=soffitto_s), processi
 
 
-def _rispondi_in_un_attimo(p: _ProcessoFinto, riga: str) -> None:
-    threading.Timer(0.05, lambda: p.stdout.consegna(riga)).start()
+def _rispondi_in_un_attimo(processi: list, riga: str) -> None:
+    """L'ultimo processo **allo sparo** del timer, non alla chiamata: il riavvio lo crea dentro `chiedi`."""
+    threading.Timer(0.05, lambda: processi[-1].stdout.consegna(riga)).start()
 
 
 def test_dopo_un_soffitto_il_comando_successivo_riparte_da_un_sidecar_nuovo():
@@ -959,10 +976,10 @@ def test_dopo_un_soffitto_il_comando_successivo_riparte_da_un_sidecar_nuovo():
     assert sp.chiedi({"comando": "check", "modello": {}})[-1]["fase"] == "sidecar"   # muto: soffitto
     assert len(processi) == 1
     # il secondo comando parte su un processo nuovo, e quello risponde
-    _rispondi_in_un_attimo_dopo = threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n'))
-    _rispondi_in_un_attimo_dopo.start()
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
     righe = sp.chiedi({"comando": "check", "modello": {}})
     assert len(processi) == 2 and sp.riavvii == 1
+    assert processi[0].terminato, "il vecchio si termina"
     assert righe[-1] == {"esito": "ok"}
     assert not sp._lock.locked()
 
@@ -990,7 +1007,7 @@ def test_dopo_una_pipe_rotta_sulla_scrittura_il_comando_successivo_riparte():
         return p
     sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
     assert "BrokenPipeError" in sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"]
-    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n')).start()
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
     assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
     assert len(processi) == 2 and sp.riavvii == 1
 
@@ -1002,12 +1019,11 @@ def test_un_processo_uscito_si_riavvia_prima_di_scrivere():
     processi: list = []
 
     def avvia():
-        p = _ProcessoFinto()
-        p.poll = (lambda: 137) if not processi else (lambda: None)
+        p = _ProcessoFinto(uscito=137 if not processi else None)
         processi.append(p)
         return p
     sp = SidecarProcesso(avvia=avvia, soffitto_s=1.0)
-    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 1, "esito": "ok"}\n')).start()
+    _rispondi_in_un_attimo(processi, '{"id": 1, "esito": "ok"}\n')
     assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
     assert len(processi) == 2
 
@@ -1016,8 +1032,11 @@ def test_dopo_uno_stdout_chiuso_il_comando_successivo_riparte():
     sp, processi = _sp_riavviabile(soffitto_s=1.0)
     processi[0].stdout.consegna("")
     assert sp.chiedi({"comando": "check", "modello": {}})[-1]["motivo"] == "il sidecar ha chiuso lo stdout"
-    threading.Timer(0.05, lambda: processi[-1].stdout.consegna('{"id": 2, "esito": "ok"}\n')).start()
+    # **subito**, non dopo il soffitto: il riavvio non aspetta il morto (`wait` con tetto, `kill`)
+    t0 = time.perf_counter()
+    _rispondi_in_un_attimo(processi, '{"id": 2, "esito": "ok"}\n')
     assert sp.chiedi({"comando": "check", "modello": {}})[-1] == {"esito": "ok"}
+    assert time.perf_counter() - t0 < 0.5, "senza aspettare il soffitto"
     assert len(processi) == 2
 
 
@@ -1102,6 +1121,8 @@ def test_una_seconda_corsa_mentre_una_gira_e_409(tmp_path):
     assert r2.status_code == 409 and "in corso" in r2.json()["motivo"]
     # chi ricarica la pagina a metà corsa si riaggancia dal `run_id` che il 409 porta
     assert r2.json()["run_id"] == rid
+    assert r2.json()["comando"] == "corsa", "chi si riaggancia deve sapere a che lavoro"
+    assert c.get(f"/api/corsa/{rid}").json()["comando"] == "corsa"
     # anche il solido passa dallo stesso lavoro: un sidecar solo, una corsa alla volta
     assert c.post("/api/ccx", json={"inp": str(_trave())}).status_code == 409
     fermo.via.set(); _attendi(c, rid)
