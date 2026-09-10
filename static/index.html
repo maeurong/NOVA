@@ -56,6 +56,29 @@
   <div id="pannello-editor" hidden></div>
   <h2 class="staccato">Unità</h2>
   <p class="numero">mm · N · MPa · t · s</p>
+  <!-- L'attesa è dichiarata, non stimata (P5, `docs/ricerca/07-ux-modellatore.md:93,152`): fasi
+       nominate e durata misurata, nessuna percentuale inventata. `aria-live` sta **solo** sulla
+       riga dell'ultima corsa: le fasi cambiano ogni mezzo secondo e annunciarle a voce sarebbe
+       una filastrocca che copre tutto il resto. -->
+  <h2 class="staccato">Corsa</h2>
+  <section id="corsa" aria-label="corsa">
+    <p id="corsa-solutore" class="numero">solutore: in verifica…</p>
+    <div class="file-azioni">
+      <button id="corsa-verifica" type="button" title="⇧⌘⏎ — il Check Model, senza corsa">verifica</button>
+      <button id="corsa-corri" type="button" title="⌘⏎ — tutte le analisi che il modello dichiara">corri</button>
+    </div>
+    <label for="corsa-inp">deck del solido (.inp)</label>
+    <input id="corsa-inp" type="text" spellcheck="false" placeholder="docs/caso-studio/muro_1.inp">
+    <div class="file-azioni"><button id="corsa-corri-solido" type="button">corri il solido</button></div>
+    <div id="corsa-attesa" hidden>
+      <ol id="corsa-fasi" aria-label="fasi della corsa"></ol>
+      <p id="corsa-secondi" class="numero"></p>
+    </div>
+    <p id="corsa-ultima" class="numero" aria-live="polite" hidden></p>
+    <details id="corsa-registro" hidden><summary>registro del solutore</summary><pre id="corsa-coda"></pre></details>
+    <p class="vuoto" id="corsa-vuoto">Premi <kbd>⌘⏎</kbd> per lanciare tutte le analisi del modello, <kbd>⇧⌘⏎</kbd> per il solo Check Model.</p>
+    <ul id="corsa-verdetti" aria-label="verdetti" hidden></ul>
+  </section>
   <h2 class="staccato">Storia</h2>
   <ul id="storia-elenco" aria-label="cronologia dei comandi"></ul>
 </aside>

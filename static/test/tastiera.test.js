@@ -85,6 +85,24 @@ test("⇧⌘S e ⇧⌘O restano al browser anche dopo aver aperto la porta a ⇧
   assert.equal(voceDaEvento({ key: "o", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }), null);
 });
 
+// --- corri e verifica (giornata 12) ------------------------------------------
+// `⌘⏎` e `⇧⌘⏎` sono le uniche due combinazioni col comando che non sono una lettera: Invio
+// nudo resta «conferma» del ghost, e le due mappe lo separano prima del `get`.
+test("⌘⏎ è corri e ⇧⌘⏎ è verifica; Invio nudo resta conferma", () => {
+  assert.equal(voceDaEvento({ key: "Enter", metaKey: true }).codice, "corri");
+  assert.equal(voceDaEvento({ key: "Enter", metaKey: true, shiftKey: true }).codice, "verifica");
+  assert.equal(voceDaEvento({ key: "Enter" }).codice, "conferma");
+});
+
+// L'ingresso degenere del Task 4: `⌘⏎` premuto **dentro** il campo di comando. `daControllo`
+// lo lascia passare — col modificatore un campo di testo non si tiene niente — ed è `app.js`
+// (Task 5) che lo ferma sotto la guardia del campo. Qui si prova solo che passa di qui.
+test("⌘⏎ nel campo di comando non resta al campo: la guardia è di app.js, non di daControllo", () => {
+  const evento = { key: "Enter", metaKey: true, ctrlKey: false, altKey: false,
+                   target: { closest: () => ({ tagName: "INPUT", type: "text" }) } };
+  assert.equal(daControllo(evento), false);
+});
+
 test("alt non è mai il modificatore di comando", () => {
   assert.equal(voceDaEvento({ key: "o", metaKey: false, ctrlKey: false, altKey: true }), null);
   assert.equal(voceDaEvento({ key: "n", metaKey: false, ctrlKey: false, altKey: true }), null);
@@ -147,7 +165,8 @@ test("nessuna coppia tasto+modificatore è assegnata due volte", () => {
 // `TASTI`: un elenco scritto a mano va alla deriva alla prima voce nuova.
 test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
   const KEY = { "⌫": "Backspace", "Invio": "Enter", "Esc": "Escape", "⌘O": "o", "⌘S": "s",
-                "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "⌘I": "i", "← ↑ → ↓": "ArrowUp" };
+                "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "⌘I": "i", "← ↑ → ↓": "ArrowUp",
+                "⌘⏎": "Enter", "⇧⌘⏎": "Enter" };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const shift = v.tasto.startsWith("⇧");

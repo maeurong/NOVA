@@ -3,6 +3,7 @@
 // in testa e si provano senza DOM; `creaCorsa` (Task 4) possiede il blocco del pannello.
 
 import { conciso } from "./numeri.js";
+import { chiediJson } from "./file.js";
 
 /** Il tipo selezionabile dell'oggetto di un verdetto, per controllo (`nova/check.py:81-284`):
  *  delle coppie si prende il primo. `riferimenti` e `pushover` portano dict e si leggono da
@@ -83,3 +84,204 @@ export function testoUltima(lavoro) {
 export const stantia = (lavoro, modello) => Boolean(lavoro && lavoro.modello !== modello);
 
 export const verdettiDi = (fin) => [...(fin?.verdetti_check ?? []), ...(fin?.risultati?.verdetti ?? [])];
+
+// --- il blocco «Corsa» del pannello ------------------------------------------
+
+const PUNTO = { passato: "●", non_passato: "●", non_applicabile: "○" };
+// Il nome accessibile del «vai» comincia dal testo visibile (WCAG 2.5.3) e nomina il
+// bersaglio: tre «vai» identici a voce sono tre bersagli indistinguibili.
+const ARTICOLO = { nodo: "al nodo", asta: "all'asta", sezione: "alla sezione",
+                   azione: "all'azione", combinazione: "alla combinazione" };
+
+/** Il blocco «Corsa»: lo stato del solutore, «verifica», «corri», «corri il solido»,
+ *  l'attesa a fasi col cronometro, l'ultima corsa che invecchia, i verdetti a doppio canale.
+ *
+ *  Il polling non ha un timer suo: il cronometro si riscrive a ogni giro della `GET`, che è
+ *  già la cadenza dell'attesa. Un `setInterval` in più sarebbe un secondo orologio da fermare
+ *  in tutte le uscite — compresa quella che nessuno ricorda, la rete che cade. */
+export function creaCorsa(radice, { modello, suVai, suErrore, suEsito, orologio = () => Date.now(), attesaMs = 500 }) {
+  const q = (sel) => radice.querySelector(sel);
+  const solutoreEl = q("#corsa-solutore"), bVerifica = q("#corsa-verifica"), bCorri = q("#corsa-corri");
+  const campoInp = q("#corsa-inp"), bSolido = q("#corsa-corri-solido");
+  const attesaEl = q("#corsa-attesa"), fasiEl = q("#corsa-fasi"), secondiEl = q("#corsa-secondi");
+  const ultimaEl = q("#corsa-ultima"), registroEl = q("#corsa-registro"), codaEl = q("#corsa-coda");
+  const vuotoEl = q("#corsa-vuoto"), verdettiEl = q("#corsa-verdetti");
+
+  let lavoro = null;        // l'ultima corsa: {run_id, secondi, fin, fasi, modello, solido, cartella?}
+  let verdetti = [];        // le righe a schermo (dal Check o dall'ultima corsa)
+  let occupato = false;     // una verifica o un lavoro in corso: uno scatto alla volta, come `file.js`
+  let generazione = 0;      // `azzera()` la incrementa: una risposta di prima non si registra
+  let salute = null, versione = null;
+
+  const bottoni = (liberi) => { for (const b of [bVerifica, bCorri, bSolido]) if (b) b.disabled = !liberi; };
+
+  function impostaSolutore(s, v = versione) {
+    salute = s ?? salute;
+    versione = v ?? versione;
+    solutoreEl.textContent = testoSolutore(salute, versione);
+  }
+
+  function disegnaVerdetti() {
+    const righe = righeVerdetti(verdetti);
+    verdettiEl.hidden = righe.length === 0;
+    verdettiEl.replaceChildren(...righe.map((r) => {
+      const li = document.createElement("li");
+      li.className = `verdetto ${r.esito}`;
+      const punto = document.createElement("span");
+      punto.className = "punto";
+      punto.setAttribute("aria-hidden", "true");   // doppione della parola: a voce si sentirebbe due volte
+      punto.textContent = PUNTO[r.esito] ?? "●";
+      const controllo = document.createElement("span");
+      controllo.className = "controllo numero";
+      controllo.textContent = r.caso ? `${r.caso} · ${r.controllo}` : r.controllo;
+      const parola = document.createElement("span");
+      parola.className = "parola";
+      parola.textContent = r.parola;
+      const ragione = document.createElement("span");
+      ragione.className = "ragione";
+      ragione.textContent = r.ragione;
+      li.append(punto, controllo, parola, ragione);
+      if (r.rimedio) {
+        const s = document.createElement("span");
+        s.className = "rimedio";
+        s.textContent = `→ ${r.rimedio}`;
+        li.append(s);
+      }
+      if (r.vai) {
+        li.className += " con-vai";
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = "vai";
+        b.setAttribute("aria-label", `vai ${ARTICOLO[r.vai.tipo] ?? "a"} ${r.vai.id}`);
+        // R11: il ridisegno è di `app.js`. Qui si dice solo dove andare.
+        b.addEventListener("click", () => suVai(r.vai));
+        li.append(b);
+      }
+      return li;
+    }));
+    vuotoEl.hidden = righe.length > 0 || lavoro !== null;
+  }
+
+  function disegnaUltima(m) {
+    if (!lavoro) { ultimaEl.hidden = true; ultimaEl.className = "numero"; return; }
+    const vecchia = stantia(lavoro, m);
+    let testo = testoUltima(lavoro);
+    if (lavoro.solido && lavoro.cartella) testo += ` · cartella ${lavoro.cartella}`;
+    ultimaEl.textContent = vecchia ? `${testo} · stantia` : testo;   // la parola è il canale, il filetto l'accompagna
+    ultimaEl.className = vecchia ? "numero stantia" : "numero";
+    ultimaEl.hidden = false;
+  }
+
+  function disegnaAttesa(l) {
+    const a = testoAttesa(l, orologio());
+    fasiEl.replaceChildren(...a.fasi.map((nome, i) => {
+      const li = document.createElement("li");
+      li.textContent = nome;
+      if (i === a.fasi.length - 1) { li.className = "corrente"; li.setAttribute("aria-current", "step"); }
+      return li;
+    }));
+    secondiEl.textContent = a.secondi;
+    attesaEl.hidden = false;
+  }
+
+  const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /** Il lavoro: la POST, poi la `GET` ogni `attesaMs` finché non è finita. Ritorna il lavoro
+   *  registrato, o `null` se nel frattempo `azzera()` ha cambiato generazione. */
+  async function lavora(rotta, corpo, solido) {
+    const m = modello();          // letto **al gesto**: se il modello cambia durante la corsa, quella corsa è già stantia
+    const mia = generazione;
+    const avvio = await chiediJson(rotta, corpo);
+    const l = { run_id: avvio.run_id, fasi: [], avvioMs: orologio(), modello: m, solido,
+                cartella: avvio.cartella ?? null };
+    disegnaAttesa(l);
+    for (;;) {
+      await pausa(attesaMs);
+      const s = await chiediJson(`/api/corsa/${l.run_id}`);
+      l.fasi = s.fasi ?? [];
+      if (s.stato !== "finita") { disegnaAttesa(l); continue; }
+      attesaEl.hidden = true;
+      if (mia !== generazione) return null;
+      const { run_id, stato, fasi, secondi, ...fin } = s;
+      lavoro = { run_id: l.run_id, secondi: secondi ?? 0, fin, fasi: l.fasi, modello: m, solido,
+                 cartella: s.cartella ?? l.cartella };
+      return lavoro;
+    }
+  }
+
+  /** Il registro del solutore: c'è solo quando c'è davvero qualcosa da leggere. Un `<details>`
+   *  che si apre sul nulla è una promessa non mantenuta. */
+  function disegnaRegistro(fin) {
+    registroEl.hidden = !(fin.esito === "errore" && fin.coda_log);
+    codaEl.textContent = fin.coda_log ?? "";
+  }
+
+  async function corri() {
+    if (occupato) return suErrore("una corsa è già in corso");
+    occupato = true; bottoni(false); bCorri.textContent = "corro…";
+    try {
+      const l = await lavora("/api/corsa", { modello: modello(), casi: null }, false);
+      if (!l) return;
+      verdetti = verdettiDi(l.fin);
+      disegnaRegistro(l.fin);
+      if (l.fin.esito === "assente") impostaSolutore({ esito: "assente", dove_prenderlo: l.fin.dove_prenderlo });
+      if (l.fin.esito === "ok" && l.fin.risultati?.run?.versione_opensees) impostaSolutore(salute, l.fin.risultati.run.versione_opensees);
+      disegnaVerdetti(); disegnaUltima(l.modello);
+      suEsito(l);
+    } catch (e) {
+      // Il 409 arriva da `chiediJson` col `motivo` del server, già in italiano.
+      attesaEl.hidden = true; suErrore(e.message);
+    } finally {
+      occupato = false; bottoni(true); bCorri.textContent = "corri";
+    }
+  }
+
+  async function verifica() {
+    if (occupato) return suErrore("una corsa è già in corso");
+    occupato = true; bottoni(false); bVerifica.textContent = "verifico…";
+    try {
+      const r = await chiediJson("/api/check", { modello: modello() });
+      verdetti = r.verdetti ?? [];
+      disegnaVerdetti();
+    } catch (e) {
+      suErrore(e.message);
+    } finally {
+      occupato = false; bottoni(true); bVerifica.textContent = "verifica";
+    }
+  }
+
+  async function corriSolido() {
+    if (occupato) return suErrore("una corsa è già in corso");
+    const inp = (campoInp?.value ?? "").trim();
+    if (inp === "") return suErrore("scrivi il percorso di un deck .inp");
+    occupato = true; bottoni(false); bSolido.textContent = "corro il solido…";
+    try {
+      const l = await lavora("/api/ccx", { inp }, true);
+      if (!l) return;
+      verdetti = [];               // il deck del solido non passa dal Check Model: non ci sono verdetti da mostrare
+      disegnaRegistro(l.fin);
+      disegnaVerdetti(); disegnaUltima(l.modello); suEsito(l);
+    } catch (e) {
+      attesaEl.hidden = true; suErrore(e.message);
+    } finally {
+      occupato = false; bottoni(true); bSolido.textContent = "corri il solido";
+    }
+  }
+
+  function azzera() {
+    generazione++;
+    lavoro = null; verdetti = [];
+    registroEl.hidden = true; codaEl.textContent = "";
+    disegnaVerdetti(); disegnaUltima(null);
+  }
+
+  const disegna = ({ modello: m }) => disegnaUltima(m);
+
+  bVerifica.addEventListener("click", () => verifica());
+  bCorri.addEventListener("click", () => corri());
+  bSolido?.addEventListener("click", () => corriSolido());
+  campoInp?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); corriSolido(); } });
+  disegnaVerdetti(); disegnaUltima(null);
+
+  return { verifica, corri, corriSolido, disegna, azzera, impostaSolutore, inCorso: () => occupato };
+}

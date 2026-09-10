@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OGGETTO_PER_CONTROLLO, PAROLA, righeVerdetti, testoSolutore, testoAttesa, testoUltima, stantia, verdettiDi }
+import { OGGETTO_PER_CONTROLLO, PAROLA, righeVerdetti, testoSolutore, testoAttesa, testoUltima, stantia, verdettiDi, creaCorsa }
   from "../corsa.js";
 
 const v = (controllo, esito, extra = {}) => ({ controllo, oggetto: null, stazione: null, caso: null, esito,
@@ -118,4 +118,387 @@ test("verdettiDi: prima i verdetti del Check, poi i sette controlli sui risultat
   assert.deepEqual(verdettiDi(fin).map((x) => x.controllo), ["unita", "reazioni"]);
   assert.deepEqual(verdettiDi({}), []);
   assert.deepEqual(verdettiDi({ verdetti_check: null }), []);
+});
+
+// --- creaCorsa: il blocco «Corsa» del pannello (Task 4) ----------------------
+// Il DOM finto è quello di `file.test.js:9-53`, copiato invece che importato — un test che
+// importa dall'altro li lega, e il giorno che uno dei due cambia elemento l'altro si rompe
+// per una ragione che non lo riguarda. Qui in più: `disabled` (i bottoni si spengono mentre
+// la corsa gira) e `setAttribute` (`aria-current` sulla fase, `aria-label` sul «vai»).
+
+function elementoFinto(iniziale = {}) {
+  const listeners = {};
+  return {
+    value: "", textContent: "", hidden: false, title: "", className: "", type: "",
+    disabled: false, _figli: [], _attrs: {},
+    addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
+    dispatch(ev, argomento) { (listeners[ev] ?? []).forEach((fn) => fn(argomento)); },
+    setAttribute(nome, valore) { this._attrs[nome] = String(valore); },
+    getAttribute(nome) { return this._attrs[nome] ?? null; },
+    append(...figli) { this._figli.push(...figli); },
+    replaceChildren(...figli) { this._figli = figli; },
+    ...iniziale,
+  };
+}
+
+globalThis.document = { createElement: () => elementoFinto() };
+
+/** I tredici elementi del blocco, con gli `hidden` che il markup dichiara. */
+function radiceCorsa() {
+  const elementi = {
+    "#corsa-solutore": elementoFinto({ textContent: "solutore: in verifica…" }),
+    "#corsa-verifica": elementoFinto({ textContent: "verifica" }),
+    "#corsa-corri": elementoFinto({ textContent: "corri" }),
+    "#corsa-inp": elementoFinto(),
+    "#corsa-corri-solido": elementoFinto({ textContent: "corri il solido" }),
+    "#corsa-attesa": elementoFinto({ hidden: true }),
+    "#corsa-fasi": elementoFinto(),
+    "#corsa-secondi": elementoFinto(),
+    "#corsa-ultima": elementoFinto({ hidden: true, className: "numero" }),
+    "#corsa-registro": elementoFinto({ hidden: true }),
+    "#corsa-coda": elementoFinto(),
+    "#corsa-vuoto": elementoFinto(),
+    "#corsa-verdetti": elementoFinto({ hidden: true }),
+  };
+  return { radice: { querySelector: (sel) => elementi[sel] ?? null }, el: (sel) => elementi[sel] };
+}
+
+/** Una `fetch` finta **a sequenza**: risponde nell'ordine e registra rotta e corpo. L'ultima
+ *  risposta resta quella buona per ogni chiamata in più (il polling ne fa quante ne servono).
+ *  `cade` è la rete che salta, `attendi` una promessa che il test scioglie quando vuole. */
+function fetchSequenza(risposte) {
+  const spia = { chiamate: 0, rotte: [], corpi: [] };
+  let i = 0;
+  globalThis.fetch = async (rotta, opzioni) => {
+    spia.chiamate++;
+    spia.rotte.push(rotta);
+    // La `GET` di `chiediJson` passa `{}`: senza corpo si registra `null`, non si solleva.
+    spia.corpi.push(opzioni.body ? JSON.parse(opzioni.body) : null);
+    const r = risposte[Math.min(i++, risposte.length - 1)];
+    if (r.attendi) await r.attendi;
+    if (r.cade) throw new TypeError("Failed to fetch");
+    return { ok: r.stato < 400, status: r.stato, json: async () => r.dati };
+  };
+  return spia;
+}
+
+const respira = () => new Promise((r) => setTimeout(r, 1));
+async function finoA(condizione, quanti = 500) {
+  for (let i = 0; i < quanti; i++) { if (condizione()) return; await respira(); }
+  throw new Error("la condizione non si è mai avverata");
+}
+
+const zero = { modello: () => ({}), suVai: () => {}, suErrore: () => {}, suEsito: () => {}, attesaMs: 1 };
+
+test("creaCorsa: corri fa la POST, interroga finché non è finita, e scrive fasi, secondi e verdetti", async () => {
+  const m = { nodi: [{ id: 1 }] };
+  const spia = fetchSequenza([
+    { stato: 202, dati: { run_id: "a1b2c3d4e5f6", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "a1b2c3d4e5f6", stato: "in corso", fasi: ["check model"], secondi: 0.4 } },
+    { stato: 200, dati: { run_id: "a1b2c3d4e5f6", stato: "finita", fasi: ["check model", "leggo i recorder"], secondi: 1.25,
+                          esito: "ok", verdetti_check: [v("unita", "passato")],
+                          risultati: { verdetti: [v("reazioni", "passato", { caso: "Z1" })], run: { versione_opensees: "3.8.0" } } } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const esiti = [];
+  const c = creaCorsa(radice, { ...zero, modello: () => m, suEsito: (l) => esiti.push(l) });
+  c.impostaSolutore({ esito: "ok", percorso: "/usr/bin/OpenSees" });   // quel che `app.js` fa con /api/salute
+  const p = c.corri();
+  assert.equal(el("#corsa-corri").disabled, true);
+  assert.equal(el("#corsa-corri").textContent, "corro…");
+  assert.equal(c.inCorso(), true);
+  await p;
+  assert.deepEqual(spia.rotte, ["/api/corsa", "/api/corsa/a1b2c3d4e5f6", "/api/corsa/a1b2c3d4e5f6"]);
+  assert.deepEqual(spia.corpi[0], { modello: m, casi: null });
+  assert.equal(el("#corsa-attesa").hidden, true);
+  assert.equal(el("#corsa-ultima").textContent, "corsa a1b2c3d4e5f6 · 1,25 s");
+  assert.equal(el("#corsa-verdetti")._figli.length, 2);
+  assert.equal(el("#corsa-verdetti").hidden, false);
+  assert.equal(el("#corsa-corri").disabled, false);
+  assert.equal(el("#corsa-corri").textContent, "corri");
+  assert.equal(c.inCorso(), false);
+  assert.equal(esiti.length, 1);
+  assert.equal(esiti[0].modello, m, "il lavoro porta lo snapshot su cui ha girato");
+  // La versione arriva dai risultati della corsa, non da /api/salute: la riga in testa la prende.
+  assert.equal(el("#corsa-solutore").textContent, "OpenSees 3.8.0 · /usr/bin/OpenSees");
+});
+
+test("creaCorsa: mentre gira l'attesa dice la fase corrente e i secondi; la corrente è in grassetto", async () => {
+  let sblocca;
+  const cancello = new Promise((r) => { sblocca = r; });
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "b2", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "b2", stato: "in corso", fasi: ["check model", "scrivo il deck"], secondi: 0.4 } },
+    { stato: 200, attendi: cancello, dati: { run_id: "b2", stato: "finita", fasi: ["check model", "scrivo il deck"],
+                                             secondi: 2, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  // La prima lettura è l'avvio, le altre il cronometro: 2,4 s di attesa dichiarata.
+  let letture = 0;
+  const c = creaCorsa(radice, { ...zero, orologio: () => (letture++ === 0 ? 1000 : 3400) });
+  const p = c.corri();
+  await finoA(() => el("#corsa-fasi")._figli.length === 2);
+  assert.equal(el("#corsa-attesa").hidden, false);
+  const fasi = el("#corsa-fasi")._figli;
+  assert.deepEqual(fasi.map((li) => li.textContent), ["check model", "scrivo il deck"]);
+  assert.equal(fasi[0].className, "");
+  assert.equal(fasi[0]._attrs["aria-current"], undefined);
+  assert.equal(fasi[1].className, "corrente");
+  assert.equal(fasi[1]._attrs["aria-current"], "step", "la fase corrente si annuncia, non solo si ingrassa");
+  assert.equal(el("#corsa-secondi").textContent, "2,4 s", "il decimo, non i quattro decimali di `cifre`");
+  sblocca();
+  await p;
+  assert.equal(el("#corsa-attesa").hidden, true);
+});
+
+test("creaCorsa: stantia — dopo un altro snapshot la riga porta la parola e la classe", async () => {
+  const m = { nodi: [] };
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "c3", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "c3", stato: "finita", fasi: [], secondi: 1, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero, modello: () => m });
+  await c.corri();
+  c.disegna({ modello: m });
+  assert.equal(el("#corsa-ultima").textContent, "corsa c3 · 1 s");
+  assert.ok(!el("#corsa-ultima").className.includes("stantia"));
+  c.disegna({ modello: { ...m } });
+  assert.ok(el("#corsa-ultima").textContent.endsWith(" · stantia"), el("#corsa-ultima").textContent);
+  assert.ok(el("#corsa-ultima").className.includes("stantia"), "il filetto accompagna la parola, non la sostituisce");
+  c.disegna({ modello: m });
+  assert.equal(el("#corsa-ultima").textContent, "corsa c3 · 1 s", "⌘Z fino a quello snapshot la fa tornare fresca");
+  assert.ok(!el("#corsa-ultima").className.includes("stantia"));
+});
+
+test("creaCorsa: 409 dice che un'altra corsa è in corso e libera i bottoni", async () => {
+  const spia = fetchSequenza([{ stato: 409, dati: { motivo: "un'altra corsa è in corso" } }]);
+  const { radice, el } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  await c.corri();
+  assert.deepEqual(errori, ["un'altra corsa è in corso"]);
+  assert.equal(spia.chiamate, 1, "il 409 ferma tutto sulla POST: nessun polling di una corsa che non è nostra");
+  assert.equal(el("#corsa-corri").disabled, false);
+  assert.equal(el("#corsa-verifica").disabled, false);
+  assert.equal(el("#corsa-corri-solido").disabled, false);
+  assert.equal(el("#corsa-ultima").hidden, true);
+});
+
+// Due modi di perdere il polling a metà, stesso oracolo: nessun lavoro registrato. La rete
+// che salta (server spento) e il 404 (server riavviato sotto, il run_id non esiste più).
+test("creaCorsa: la rete che cade a metà polling non lascia un lavoro a metà, e nemmeno il 404", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "d4", stato: "in corso" } },
+    { cade: true },
+  ]);
+  const primo = radiceCorsa();
+  const errori = [];
+  const esiti = [];
+  const c = creaCorsa(primo.radice, { ...zero, suErrore: (t) => errori.push(t), suEsito: (l) => esiti.push(l) });
+  await c.corri();
+  assert.deepEqual(errori, ["il server non risponde"]);
+  assert.equal(primo.el("#corsa-attesa").hidden, true);
+  assert.equal(primo.el("#corsa-ultima").hidden, true, "nessun lavoro registrato: la riga resta muta invece di mentire");
+  assert.equal(esiti.length, 0);
+  assert.equal(primo.el("#corsa-corri").disabled, false);
+  assert.equal(c.inCorso(), false);
+
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "d5", stato: "in corso" } },
+    { stato: 404, dati: { motivo: "nessuna corsa d5" } },
+  ]);
+  const secondo = radiceCorsa();
+  const errori2 = [];
+  const esiti2 = [];
+  const c2 = creaCorsa(secondo.radice, { ...zero, suErrore: (t) => errori2.push(t), suEsito: (l) => esiti2.push(l) });
+  await c2.corri();
+  assert.deepEqual(errori2, ["nessuna corsa d5"]);
+  assert.equal(secondo.el("#corsa-attesa").hidden, true);
+  assert.equal(secondo.el("#corsa-ultima").hidden, true);
+  assert.equal(esiti2.length, 0);
+  assert.equal(secondo.el("#corsa-corri").disabled, false);
+});
+
+test("creaCorsa: rifiutata dal Check Model — riga e verdetti, niente registro", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "e5", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "e5", stato: "finita", fasi: ["check model"], secondi: 0.3, esito: "rifiutato",
+                          verdetti_check: [v("nodi_liberi", "non_passato", { oggetto: [3], rimedio: "elimina il nodo" })] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const andati = [];
+  const c = creaCorsa(radice, { ...zero, suVai: (x) => andati.push(x) });
+  await c.corri();
+  assert.equal(el("#corsa-ultima").textContent, "corsa e5 · rifiutata dal Check Model");
+  assert.equal(el("#corsa-registro").hidden, true, "il Check Model non ha un registro del solutore: non è mai partito");
+  assert.equal(el("#corsa-verdetti")._figli.length, 1);
+  const li = el("#corsa-verdetti")._figli[0];
+  assert.ok(li.className.includes("verdetto"));
+  assert.ok(li.className.includes("non_passato"));
+  assert.ok(li.className.includes("con-vai"));
+  assert.deepEqual(li._figli.map((s) => s.textContent),
+    ["●", "nodi_liberi", "non passato", "r", "→ elimina il nodo", "vai"]);
+  assert.equal(li._figli[0]._attrs["aria-hidden"], "true", "il punto è un doppione della parola: a voce non si sente");
+  const bottone = li._figli.at(-1);
+  assert.equal(bottone._attrs["aria-label"], "vai al nodo 3");
+  bottone.dispatch("click");
+  assert.deepEqual(andati, [{ tipo: "nodo", id: 3 }]);
+});
+
+test("creaCorsa: errore del solutore — motivo nella riga e la coda del registro nel details", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "f6", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "f6", stato: "finita", fasi: ["corro"], secondi: 3, esito: "errore",
+                          fase: "solutore", motivo: "esce 1", coda_log: "...ultime righe" } },
+  ]);
+  const primo = radiceCorsa();
+  await creaCorsa(primo.radice, { ...zero }).corri();
+  assert.equal(primo.el("#corsa-ultima").textContent, "corsa f6 · errore in solutore: esce 1");
+  assert.equal(primo.el("#corsa-coda").textContent, "...ultime righe");
+  assert.equal(primo.el("#corsa-registro").hidden, false);
+
+  // Coda vuota: un `<details>` che si apre sul nulla è una promessa non mantenuta.
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "f7", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "f7", stato: "finita", fasi: [], secondi: 3, esito: "errore",
+                          fase: "solutore", motivo: "esce 1", coda_log: "" } },
+  ]);
+  const secondo = radiceCorsa();
+  await creaCorsa(secondo.radice, { ...zero }).corri();
+  assert.equal(secondo.el("#corsa-registro").hidden, true);
+});
+
+test("creaCorsa: solutore assente — la riga del solutore si aggiorna con dove prenderlo", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "g7", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "g7", stato: "finita", fasi: [], secondi: 0.1, esito: "assente",
+                          dove_prenderlo: "da X" } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  await creaCorsa(radice, { ...zero }).corri();
+  assert.equal(el("#corsa-solutore").textContent, "OpenSees assente — da X");
+  assert.equal(el("#corsa-ultima").textContent, "corsa g7 · OpenSees assente");
+});
+
+test("creaCorsa: verifica fa la POST a /api/check e mostra i verdetti anche se tutti passati", async () => {
+  const m = { nodi: [] };
+  const spia = fetchSequenza([{ stato: 200, dati: { esito: "ok", verdetti: [v("unita", "passato"), v("vincoli", "passato")] } }]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero, modello: () => m });
+  const p = c.verifica();
+  assert.equal(el("#corsa-verifica").textContent, "verifico…");
+  assert.equal(el("#corsa-verifica").disabled, true);
+  await p;
+  assert.deepEqual(spia.rotte, ["/api/check"]);
+  assert.deepEqual(spia.corpi[0], { modello: m });
+  assert.equal(el("#corsa-verdetti")._figli.length, 2, "il verde si vede: due passati sono due righe, non il silenzio");
+  assert.equal(el("#corsa-verdetti").hidden, false);
+  assert.equal(el("#corsa-vuoto").hidden, true);
+  assert.equal(el("#corsa-ultima").hidden, true, "la verifica non è una corsa: nessuna riga dell'ultima");
+  assert.equal(el("#corsa-verifica").textContent, "verifica");
+  assert.equal(el("#corsa-verifica").disabled, false);
+});
+
+test("creaCorsa: corri mentre gira è un rifiuto che parla, senza richiesta", async () => {
+  let sblocca;
+  const cancello = new Promise((r) => { sblocca = r; });
+  const spia = fetchSequenza([
+    { stato: 202, attendi: cancello, dati: { run_id: "h8", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "h8", stato: "finita", fasi: [], secondi: 1, esito: "ok", verdetti_check: [] } },
+  ]);
+  const { radice } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  const p = c.corri();
+  await finoA(() => spia.chiamate === 1);
+  await c.corri();
+  await c.verifica();
+  assert.deepEqual(errori, ["una corsa è già in corso", "una corsa è già in corso"]);
+  assert.equal(spia.chiamate, 1, "rifiutare in silenzio è peggio che rifiutare; una seconda richiesta è peggio di entrambi");
+  sblocca();
+  await p;
+});
+
+test("creaCorsa: corri il solido — campo vuoto rifiuta; con il percorso fa la POST a /api/ccx e scrive la cartella", async () => {
+  let spia = fetchSequenza([{ stato: 202, dati: {} }]);
+  const { radice, el } = radiceCorsa();
+  const errori = [];
+  const c = creaCorsa(radice, { ...zero, suErrore: (t) => errori.push(t) });
+  await c.corriSolido();
+  assert.deepEqual(errori, ["scrivi il percorso di un deck .inp"]);
+  assert.equal(spia.chiamate, 0);
+
+  spia = fetchSequenza([
+    { stato: 202, dati: { run_id: "i9", stato: "in corso", cartella: "/c/x" } },
+    { stato: 200, dati: { run_id: "i9", stato: "finita", fasi: ["scrivo il deck"], secondi: 7.5, esito: "ok", cartella: "/c/x" } },
+  ]);
+  el("#corsa-inp").value = "  docs/caso-studio/muro_1.inp  ";
+  await c.corriSolido();
+  assert.deepEqual(spia.rotte, ["/api/ccx", "/api/corsa/i9"]);
+  assert.deepEqual(spia.corpi[0], { inp: "docs/caso-studio/muro_1.inp" });
+  assert.equal(el("#corsa-ultima").textContent, "corsa del solido i9 · 7,5 s · cartella /c/x");
+  assert.equal(el("#corsa-verdetti").hidden, true, "il solido non passa dal Check Model: nessun verdetto da mostrare");
+  assert.equal(el("#corsa-corri-solido").textContent, "corri il solido");
+  assert.equal(el("#corsa-corri-solido").disabled, false);
+});
+
+test("creaCorsa: azzera dimentica lavoro e verdetti e rimette lo stato vuoto; una risposta in ritardo non lo riporta", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "l1", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "l1", stato: "finita", fasi: [], secondi: 1, esito: "ok",
+                          verdetti_check: [v("unita", "passato")] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const esiti = [];
+  const c = creaCorsa(radice, { ...zero, suEsito: (l) => esiti.push(l) });
+  await c.corri();
+  assert.equal(el("#corsa-ultima").hidden, false);
+  assert.equal(el("#corsa-verdetti")._figli.length, 1);
+  c.azzera();
+  assert.equal(el("#corsa-ultima").hidden, true);
+  assert.equal(el("#corsa-verdetti").hidden, true);
+  assert.equal(el("#corsa-verdetti")._figli.length, 0);
+  assert.equal(el("#corsa-registro").hidden, true);
+  assert.equal(el("#corsa-vuoto").hidden, false, "senza lavoro né verdetti lo stato vuoto torna a insegnare il gesto");
+
+  // La risposta che arriva dopo l'azzera è di un'altra generazione: si butta.
+  let sblocca;
+  const cancello = new Promise((r) => { sblocca = r; });
+  const spia = fetchSequenza([
+    { stato: 202, dati: { run_id: "l2", stato: "in corso" } },
+    { stato: 200, attendi: cancello, dati: { run_id: "l2", stato: "finita", fasi: [], secondi: 1, esito: "ok",
+                                             verdetti_check: [v("unita", "passato")] } },
+  ]);
+  const p = c.corri();
+  await finoA(() => spia.chiamate === 2);
+  c.azzera();
+  sblocca();
+  await p;
+  assert.equal(el("#corsa-ultima").hidden, true, "il lavoro finisce, ma non si registra");
+  assert.equal(el("#corsa-verdetti")._figli.length, 0);
+  assert.equal(esiti.length, 1, "solo la prima corsa ha chiamato suEsito");
+  assert.equal(el("#corsa-corri").disabled, false);
+});
+
+test("creaCorsa: ogni bottone ha un nome accessibile che comincia dal testo visibile, e i «vai» sono distinti", async () => {
+  fetchSequenza([
+    { stato: 202, dati: { run_id: "m2", stato: "in corso" } },
+    { stato: 200, dati: { run_id: "m2", stato: "finita", fasi: [], secondi: 1, esito: "rifiutato",
+                          verdetti_check: [v("nodi_liberi", "non_passato", { oggetto: [3] }),
+                                           v("nodo_su_asta", "non_passato", { oggetto: [[7, 2]] }),
+                                           v("armatura_mancante", "non_passato", { oggetto: [4] })] } },
+  ]);
+  const { radice, el } = radiceCorsa();
+  const c = creaCorsa(radice, { ...zero });
+  await c.corri();
+  const vai = el("#corsa-verdetti")._figli.map((li) => li._figli.at(-1));
+  const tutti = [el("#corsa-verifica"), el("#corsa-corri"), el("#corsa-corri-solido"), ...vai];
+  for (const b of tutti) {
+    const nome = b._attrs["aria-label"] ?? b.textContent;
+    assert.ok(nome.startsWith(b.textContent), `«${nome}» non comincia da «${b.textContent}» (WCAG 2.5.3)`);
+  }
+  const etichette = vai.map((b) => b._attrs["aria-label"]);
+  assert.deepEqual(etichette, ["vai al nodo 3", "vai al nodo 7", "vai alla sezione 4"]);
+  assert.equal(new Set(etichette).size, 3, "tre «vai» identici a voce sono tre bersagli indistinguibili");
 });
