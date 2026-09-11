@@ -415,7 +415,7 @@ export function creaConfronto(radice, { suErrore, appunti = null })
 
 **Interfaces:** vedi «Contratto dei moduli». Consuma `conciso`, `stampaNumero` (`numeri.js`), `versioneBreve` (`corsa.js:53`).
 
-- [ ] **Step 1: i test** (`static/test/confronto.test.js`, fixture a mano dalla tabella vera):
+- [x] **Step 1: i test** (`static/test/confronto.test.js`, fixture a mano dalla tabella vera):
 
 ```js
 import { test } from "node:test";
@@ -536,8 +536,8 @@ test("testoProvenienza: commit, run, versioni brevi, data italiana; i null dicon
 });
 ```
 
-- [ ] **Step 2: rosso** (`Cannot find module '../confronto.js'`).
-- [ ] **Step 3: il codice** — `static/confronto.js` (le pure):
+- [x] **Step 2: rosso** (`Cannot find module '../confronto.js'`).
+- [x] **Step 3: il codice** — `static/confronto.js` (le pure):
 
 ```js
 // La scheda «Confronto» (story 56-57, 61): telaio NOVA ↔ solido CalculiX ↔ CSV Abaqus, per caso e
@@ -656,8 +656,8 @@ export function testoProvenienza(p) {
 }
 ```
 
-- [ ] **Step 4: verde**: `env -C …/static node --test test/confronto.test.js`, poi tutti (819 + 11 nuovi).
-- [ ] **Step 5: Commit** `feat(interfaccia): confronto.js — percorsi delle corse, nodi in sommità, mappa dei casi, righe e note della tabella`.
+- [x] **Step 4: verde**: `env -C …/static node --test test/confronto.test.js`, poi tutti (819 + 11 nuovi).
+- [x] **Step 5: Commit** `feat(interfaccia): confronto.js — percorsi delle corse, nodi in sommità, mappa dei casi, righe e note della tabella`.
 
 ## Ingressi degeneri
 
@@ -683,7 +683,7 @@ export function testoProvenienza(p) {
 
 **Interfaces:** consuma Task 1. Produce `creaConfronto(radice, { suErrore, appunti })` → `{ disegna({ modello, telaio, solido }), azzera() }`.
 
-- [ ] **Step 1: il markup** in `index.html`, dopo `</section>` di `#risultati` (`:109`) e prima di `<h2 class="staccato">Storia</h2>` (`:110`):
+- [x] **Step 1: il markup** in `index.html`, dopo `</section>` di `#risultati` (`:109`) e prima di `<h2 class="staccato">Storia</h2>` (`:110`):
 
 ```html
   <!-- Il confronto telaio ↔ solido ↔ Abaqus (story 56-57, 61): tre percorsi, la mappa dei casi da
@@ -721,7 +721,7 @@ export function testoProvenienza(p) {
   </section>
 ```
 
-- [ ] **Step 2: i test** (in coda a `confronto.test.js`; DOM finto **copiato** da `corsa.test.js:137-183`, con in più `checked`, `open`, `focus`):
+- [x] **Step 2: i test** (in coda a `confronto.test.js`; DOM finto **copiato** da `corsa.test.js:137-183`, con in più `checked`, `open`, `focus`):
 
 ```js
 // --- creaConfronto: il blocco «Confronto» del pannello (Task 2) --------------------------------
@@ -938,8 +938,8 @@ test("senza appunti (http non sicuro) «copia» dice perché, senza sollevare", 
 });
 ```
 
-- [ ] **Step 3: rosso.**
-- [ ] **Step 4: il codice** — `creaConfronto` in coda a `confronto.js`:
+- [x] **Step 3: rosso.**
+- [x] **Step 4: il codice** — `creaConfronto` in coda a `confronto.js`:
 
 ```js
 /** Il blocco «Confronto»: tre percorsi, la mappa dei casi (form o JSON), «confronta», la tabella.
@@ -1096,7 +1096,7 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
 }
 ```
 
-- [ ] **Step 5: lo stile** in coda a `stile.css`:
+- [x] **Step 5: lo stile** in coda a `stile.css`:
 
 ```css
 /* La scheda «Confronto»: la tabella scorre nel suo riquadro, mai la pagina (il pannello è al più
@@ -1125,7 +1125,7 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
 #confronto-cartella button:focus-visible, #confronto-confronta:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
 ```
 
-- [ ] **Step 6: verde** (tutti i test JS); **Step 7: Commit** `feat(interfaccia): la sezione Confronto nel pannello — percorsi, mappa dei casi da form o JSON, tabella con note e conteggio, cartella con copia`.
+- [x] **Step 6: verde** (tutti i test JS); **Step 7: Commit** `feat(interfaccia): la sezione Confronto nel pannello — percorsi, mappa dei casi da form o JSON, tabella con note e conteggio, cartella con copia`.
 
 ## Ingressi degeneri
 
@@ -1150,14 +1150,14 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
 
 **Interfaces:** consuma Task 2.
 
-- [ ] **Step 1: `app.js`**:
+- [x] **Step 1: `app.js`**:
   - `import { creaConfronto } from "./confronto.js";` (accanto a `:25`).
   - Dopo `let motoRidotto = false;` (`:72`): `let ultimoTelaio = null, ultimoSolido = null;` con il commento: «le due ultime corse per la scheda Confronto: `corsa.js` ne tiene una sola (`:124`) e il solido sovrascrive il telaio».
   - In `suEsito` (`:320`), **prima** del `return` sul `null`: no — dopo `if (esito === null) …`: `if (esito.solido) ultimoSolido = esito; else ultimoTelaio = esito;` (una corsa rifiutata o in errore è comunque «l'ultima»: `percorsoRisultati` la scarta se non ha cartella, e `casiCorsi` dà `[]`).
   - `const confronto = creaConfronto(document, { suErrore: (msg) => dì(msg) });` dopo `creaEsito` (`:337`).
   - In `ridisegna`, dopo `esito.disegna(...)` (`:810`): `confronto.disegna({ modello: m, telaio: ultimoTelaio, solido: ultimoSolido });`.
   - In `suApertura` (`app.js:269-270`, subito dopo `corsa.azzera(); risultati = null;`) e in `suImportazione` (`:294-295`, stessa coppia): `ultimoTelaio = null; confronto.azzera();` — il solido resta (gira su un `.inp` del disco, `corsa.js:192-193`).
-- [ ] **Step 2: il fumo** — copione in `fumo.mjs` (dopo `pushover`):
+- [x] **Step 2: il fumo** — copione in `fumo.mjs` (dopo `pushover`):
 
 ```js
   // La scheda Confronto sul MURO 1: telaio corso qui, niente solido, il CSV Abaqus d'esempio.
@@ -1218,7 +1218,7 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
     assert t["messaggio"] == "", t["messaggio"]
 ```
 
-- [ ] **Step 3: tutti i test** (JS, pytest intero, fumo 20). **Step 4: Commit** `feat(interfaccia): la scheda Confronto cucita in app.js — ultime corse del telaio e del solido, fumo sul MURO 1 col CSV Abaqus`.
+- [x] **Step 3: tutti i test** (JS, pytest intero, fumo 20). **Step 4: Commit** `feat(interfaccia): la scheda Confronto cucita in app.js — ultime corse del telaio e del solido, fumo sul MURO 1 col CSV Abaqus`.
 
 ## Ingressi degeneri
 
@@ -1231,9 +1231,9 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
 
 ### Task 4: prova a mano su Chrome vero, review di ramo, Esito (controller)
 
-- [ ] Server `--porta 8823`; MURO 1 aperto e corso; «corri il solido» con `/Users/mario/GitHub/NOVA/lab_telaio_v2/wall_model.inp` (deck vero, ≈ 1 min); nella sezione: C1 → `GRAVITA`, C2 → `SPINTA_ORIZZONTALE`, C3 → `CARICO_TOP`, «x e y scambiati» spuntato, «confronta» → la tabella deve dire **massa 0,7694 t | 0,5551 t | 38,6 % | lontano** come `docs/caso-studio/confronto-2026-09-05.md:38`; `confronto.csv` nella cartella stampata uguale (a meno di `hash_modello`/data) a `docs/caso-studio/confronto.csv`.
-- [ ] A 1280 px e a 1920 px: la tabella scorre nel suo riquadro, la pagina no; le note leggibili; «copia» funziona su `127.0.0.1` (contesto sicuro).
-- [ ] Review di ramo a cinque (`security-reviewer`, `code-reviewer`, `test-writer`, `craft-reviewer`, `spec-reviewer`), un fix di ramo, re-review; mutanti; Esito in coda a questo piano; PR.
+- [x] Server `--porta 8823`; MURO 1 aperto e corso; «corri il solido» con `/Users/mario/GitHub/NOVA/lab_telaio_v2/wall_model.inp` (deck vero, ≈ 1 min); nella sezione: C1 → `GRAVITA`, C2 → `SPINTA_ORIZZONTALE`, C3 → `CARICO_TOP`, «x e y scambiati» spuntato, «confronta» → la tabella deve dire **massa 0,7694 t | 0,5551 t | 38,6 % | lontano** come `docs/caso-studio/confronto-2026-09-05.md:38`; `confronto.csv` nella cartella stampata uguale (a meno di `hash_modello`/data) a `docs/caso-studio/confronto.csv`.
+- [x] A 1280 px e a 1920 px: la tabella scorre nel suo riquadro, la pagina no; le note leggibili; «copia» funziona su `127.0.0.1` (contesto sicuro).
+- [x] Review di ramo a cinque (`security-reviewer`, `code-reviewer`, `test-writer`, `craft-reviewer`, `spec-reviewer`), un fix di ramo, re-review; mutanti; Esito in coda a questo piano; PR.
 
 ## Ingressi degeneri
 
@@ -1249,3 +1249,17 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
 6. `creaConfronto`: `jsonInUso` mai messo a `true` → muore («un JSON toccato comanda»).
 7. `creaConfronto`: `vuotoANull` che manda `""` invece di `null` → muore (`corpi[0].solido === null`).
 8. `app.js`: `ultimoSolido = esito` anche per il telaio → muore nel fumo? **No** (il fumo non corre il solido): controllo nullo dichiarato — si prova a mano nel Task 4 (campo del solido che resta vuoto dopo una corsa del telaio).
+
+## Esito (12/09/2026, notte autonoma)
+
+**Fatto come da piano, dalle decisioni C1-C4/D7a e dai ruling R1-R11**: la sezione «Confronto» sotto «Risultati»; telaio e solido precompilati con le ultime corse della sessione (campi modificabili, non riscritti se toccati, non svuotati da un valore vuoto), Abaqus a campo vuoto; la mappa dei casi da un form minimo (nodi in sommità dai nodi più alti del modello, una riga «caso → passo» per caso corso con i `Z<n>` a passo vuoto, «il solido ha x e y scambiati») più «avanzato: mappa_casi in JSON» che comanda se toccato e lo dice; la tabella con la massa prima, scarto, classe in parole, righe non confrontabili attenuate con la ragione in nota a piè numerata, il conteggio in testa con l'avvertenza del server, la didascalia che dice cosa è appaiato («telaio · senza solido», «telaio ↔ Abaqus», «telaio ↔ solido ↔ Abaqus», «… · il CSV Abaqus non ha righe appaiate ai casi»); la colonna «grandezza» fissa a sinistra mentre la tabella scorre nel suo riquadro; la provenienza; il percorso della cartella degli export con «copia». Niente sotto `nova/`.
+
+**Misurato**: 848 test JS (+29 in `confronto.test.js`), 745 pytest + 3 skip, 20 di fumo (+1: `confronto` sul MURO 1 col CSV d'esempio — 19 righe, 2 note, 9 colonne, «4 250» nella colonna Abaqus, pagina senza scorrimento, nessun rosso; e due letture nuove nel copione `azzera`). A mano, Chrome 1280 px col deck vero `lab_telaio_v2/wall_model.inp` corso dalla UI in 10,6 s: **20 righe · 6 non confrontabili**, `massa | — | 0,7694 t | 0,5551 | 38,6 % | lontano 1` come `docs/caso-studio/confronto-2026-09-05.md:38`, e il **`confronto.csv` esportato uguale a `docs/caso-studio/confronto.csv`** (21 righe): la verifica della bozza (`2026-09-06-t5-interfaccia-bozza.md:21`) è fatta. Tabella a 6 colonne 531 px (9 colonne 773 px) in un riquadro di 303 px; «copia» col clic vero → «copiato». Mutanti di fine ramo: **9 su 9 uccisi**, controllo nullo a zero (tre chiedevano un oracolo che la fixture non toccava: bordo della tolleranza, dedup delle note, conteggio con Abaqus concorde).
+
+**Trovato dalle review** (per task, di ramo a cinque, re-review): l'architect ha misurato che `run.casi` del MURO 1 porta `Z1` e la massa esce col suo valore (il piano diceva «non confrontabile perché C1 è una combinazione»: falso); dopo «apri» un altro modello il campo del solido si ricompilava col solido del modello **precedente** (telaio B contro solido A senza segnale: il Global Constraint «il solido resta» aveva torto, ora `ultimoSolido` cade con `ultimoTelaio`); `azzera()` non azzerava `occupato` (bottone spento a tempo indefinito con una richiesta appesa); la risposta di una richiesta azzerata riscriveva la tabella (ora `generazione`, come `corsa.js`); `cartella` assegnata prima del disegno (copia di una corsa non a schermo); `aria-label` su `<sup>` a ruolo generico non esposto (ora `role="note"`); apici Unicode ridondanti tolti; il richiamo della nota stava nell'ultima colonna, invisibile senza scorrere (ora sul nome della grandezza); «— t» su un valore assente; separatori « · » penzolanti; `Object.defineProperty` per `navigator` su Node 26; `node --test` senza `--test-reporter=tap` non stampa il riepilogo su più file.
+
+**Ruling registrati** (`NOVA-wt/interfaccia/.superpowers/sdd/2026-09-11-t5-giornata-14b-confronto/progress.md`): PNG/SVG e piccoli multipli (story 60) fuori: il backend non li produce; la tabella si mostra anche col solo telaio (quasi tutta grigia, il conteggio dice quante); `Z<n>` a passo vuoto; una cartella `corse/<run>` per clic resta (sotto `nova/`); `#messaggio` condiviso; `#confronto-scorri` focalizzabile (WCAG 2.1.1); `label.riga` tenui come le altre label del pannello; `ultimoSolido = null` all'apertura.
+
+**Debiti dichiarati**: la causa del «tutto grigio» non sta nel conteggio (solo nelle note); unità sul valore del telaio e non sull'intestazione di riga; note a 10 px; la `<caption>` scorre via con la tabella a 9 colonne (statica nel markup, riscritta dal JS); provenienza lunga (run id interi); `solidoChiesto` guarda il campo, non i dati (percorso scritto ma niente appaiato → «telaio ↔ solido» su una tabella grigia); `<sup>` e `<ol>` non collegati; `toccato.solido` senza test a sé; nessun harness a unità per `app.js` (`ultimoSolido = null` provato solo a mano: il copione `azzera` non corre il solido); una cartella per clic sotto `corse/`; `nova/confronto.py:108-137` mescola punto, virgola e meno ASCII nelle ragioni (issue #82).
+
+**Lezioni**: misurare la risposta vera **prima** del piano ha corretto tre oracoli del fumo e una premessa falsa (Z1); «il file resta valido» non è «il dato resta pertinente» — uno stato che sopravvive all'apertura di un altro modello va difeso con un test che lo attraversa, non con un commento; `navigator.clipboard.readText()` da CDP apre un prompt di permesso che congela il renderer (mai leggere gli appunti dal browser automatizzato: si prova il bottone, non gli appunti); un `aria-label` senza ruolo è un attributo che mente; un `sticky` senza fondo e senza il primo `th` dell'intestazione crea il difetto che voleva togliere.
