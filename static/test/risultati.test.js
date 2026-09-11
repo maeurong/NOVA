@@ -705,7 +705,9 @@ test("i motivi della caduta si leggono in italiano, e uno sconosciuto esce grezz
   // Una versione nuova del solutore ne porterà altri: meglio un identificatore brutto che una
   // riga vuota dove c'era un fatto, o una parola inventata al posto di quella vera.
   assert.equal(motivoInParole("boh"), "boh");
-  assert.equal(motivoInParole(undefined), "");
+  // Vuoto o assente: la caduta c'è lo stesso, e una riga muta la nasconderebbe.
+  assert.equal(motivoInParole(undefined), "motivo sconosciuto");
+  assert.equal(motivoInParole(""), "motivo sconosciuto");
 });
 
 test("story 50: la caduta dichiara passo, spostamento e ultimo algoritmo", () => {

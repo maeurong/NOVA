@@ -633,7 +633,8 @@ export function curvaPushover(passi, caduta) {
 // è in tabella esce **grezzo**: una versione nuova del solutore ne porterà altri, e una stringa
 // vuota o inventata al posto di un motivo vero è peggio di un identificatore brutto da leggere.
 const MOTIVI = { non_convergenza: "non convergenza", passi_max: "tetto dei passi" };
-export const motivoInParole = (motivo) => MOTIVI[motivo] ?? String(motivo ?? "");
+// Un motivo vuoto o assente non è «nessun motivo»: la caduta c'è, e la riga non può tacere.
+export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(motivo) : "motivo sconosciuto");
 
 export const testoLegendaStati = () =>
   "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
