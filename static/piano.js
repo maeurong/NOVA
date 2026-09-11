@@ -198,9 +198,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // ponytail: bbox e non distanza punto-segmento. Su un diagramma quasi piatto — che è il caso
     // che conta — le due coincidono; su una diagonale lunga il bbox prende anche l'aria attorno,
     // e allora si passa alla distanza vera.
-    const segmento = (a, b) => linee.push({ x0: Math.min(a.x, b.x) - s, y0: Math.min(a.y, b.y) - s,
-                                            x1: Math.max(a.x, b.x) + s, y1: Math.max(a.y, b.y) + s });
-    const spezzata = (punti) => { for (let k = 1; k < punti.length; k++) segmento(punti[k - 1], punti[k]); };
+    const segmento = (a, b, margine = s) => linee.push({ x0: Math.min(a.x, b.x) - margine, y0: Math.min(a.y, b.y) - margine,
+                                                         x1: Math.max(a.x, b.x) + margine, y1: Math.max(a.y, b.y) + margine });
+    const spezzata = (punti, margine = s) => { for (let k = 1; k < punti.length; k++) segmento(punti[k - 1], punti[k], margine); };
     // `pointer-events: none`: il poligono ha un `fill` e passa sopra l'asta, quindi senza questo
     // il clic sull'asta finisce sullo strato, che non porta `[data-tipo]`, e scivola a `suSfondo()`.
     const g = el("g", { class: "risultati", "pointer-events": "none" });
@@ -236,7 +236,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
               "stroke-width": misure.trattoDeformata * s, "stroke-linecap": "round" }));
           }
         }
-        spezzata(punti);
+        // Il bordo sporge dalla linea di mezzo tratto più il bordo: col pixel dei diagrammi un'etichetta ci
+        // entrava con la metà (la freccia a 2 px sul telaio spostato). La stantia è un tratto solo.
+        spezzata(punti, attivo.stantia ? s : (misure.trattoDeformata / 2 + misure.bordoDeformata) * s);
       }
       // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
       // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
@@ -366,18 +368,19 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const conSimbolo = new Set(dichiarati);
     for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const nomeDi = (n) => String(n.nome ?? n.id);
-    const piuLungo = m.nodi.reduce((a, b) => (!a || nomeDi(b).length > nomeDi(a).length ? b : a), null);
-    const nomePiuLungo = piuLungo ? nomeDi(piuLungo) : "";
+    const nomePiuLungo = m.nodi.map(nomeDi).reduce((a, b) => (b.length > a.length ? b : a), "");
+    // Il verso di ogni nome, una chiamata sola per nodo: serve qui al conto del riquadro e più giù a posarli.
+    const versi = new Map(m.nodi.map((n) => [n.id, versoLibero(m, n, conSimbolo.has(n.id) ? [{ x: 0, z: -1 }] : [])]));
     // Sempre la larghezza (R3): il nome sta di fianco al nodo e l'extra va solo in x (`estensione`). Col
     // lato che comanda, a 46 px l'extra finiva anche in z, comandava l'altro lato e il MURO 1 usciva
     // 356×253 px su 1151×944.
     const W = pixelDelRiquadro().w, L0 = vista.larghezza;
-    // Dello stacco conta la sola componente in x del verso: sul MURO 1 «sommità sx» sta a ↖ (0,71), e
-    // con lo stacco intero a 46 px il telaio usciva 526 px invece di 545. `max` coi 16 d'oggi: a 11 px
-    // il conto resta quello di prima. ponytail: il verso del solo nome più lungo — a pari lunghezza
-    // vince il primo, e un carattere in più pesa sempre più di quanto lo stacco cambi fra due versi.
-    const versoX = piuLungo ? Math.abs(versoLibero(m, piuLungo, conSimbolo.has(piuLungo.id) ? [{ x: 0, z: -1 }] : []).x) : 0;
-    const P = larghezzaMono(nomePiuLungo, 1, Math.max(OFFSET_ETICHETTA, offset * versoX) + 4, misure.carattere);   // pixel che l'etichetta più lunga chiede
+    // I pixel che il nome più sporgente chiede, su tutti i nodi: dello stacco conta la sola componente in x
+    // del verso (sul MURO 1 «sommità sx» sta a ↖, 0,71; con lo stacco intero il telaio usciva 526 px invece
+    // di 545), e a pari lunghezza un nome di fianco sporge più di uno sopra. `max` coi 16 d'oggi: a 11 px
+    // il conto resta quello di prima.
+    const P = Math.max(0, ...m.nodi.map((n) => larghezzaMono(nomeDi(n), 1,
+      Math.max(OFFSET_ETICHETTA, offset * Math.abs(versi.get(n.id).x)) + 4, misure.carattere)));
     // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
     // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
     if (larghezzaMono(nomePiuLungo, 1, 0, misure.carattere) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
@@ -470,7 +473,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
       if (!etichettate.has(posto)) {
         etichettate.add(posto);
-        const v = versoLibero(m, n, conSimbolo.has(n.id) ? [{ x: 0, z: -1 }] : []);
+        const v = versi.get(n.id);
         const testo = el("text", {
           x: p.x + offset * s * v.x, y: p.y - offset * s * v.z, "font-size": misure.carattere * s,
           fill: INCHIOSTRO, "font-family": MONO,
@@ -479,12 +482,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         testo.textContent = n.nome ?? String(n.id);
         // Il box dell'etichetta del nodo: `y` è la linea di base (niente `dominant-baseline`
         // qui), quindi il testo sta **sopra** di essa — ma non tutto: «piede sx» ha una `p` che
-        // scende sotto la base, e con `y1 = y` un picco ci finiva dentro. Tre pixel di discendente
-        // sotto e un corpo sopra, più i due di margine per lato che hanno anche i picchi.
+        // scende sotto la base, e con `y1 = y` un picco ci finiva dentro. Un quarto di corpo di
+        // discendente sotto (3 px a 11, 11,5 a 46) e un corpo sopra, più i due di margine per lato
+        // che hanno anche i picchi.
         const larghezza = larghezzaMono(testo.textContent, s, 2, misure.carattere), altezza = misure.carattere * s;
         const x = p.x + offset * s * v.x, y = p.y - offset * s * v.z;
         const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
-        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y + 3 * s });
+        ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y + Math.max(3, 0.25 * misure.carattere) * s });
         nodoEl.append(testo);
       }
       gruppo.append(nodoEl);

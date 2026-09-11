@@ -1172,7 +1172,8 @@ test("piano: la legenda è un ostacolo, e l'etichetta della freccia non le finis
 
 const variabili = (v) => ({ getPropertyValue: (k) => v[k] ?? "" });
 const PRESENTAZIONE = variabili({ "--nodo-raggio": "7px", "--asta-tratto": "6px", "--asta-tratto-scelta": "9px",
-                                  "--etichetta": "46px", "--ombra-opacita": "0.55" });
+                                  "--etichetta": "46px", "--ombra-opacita": "0.55",
+                                  "--deformata-tratto": "6px", "--deformata-bordo": "2px" });
 const pianoCon = (stile, w = 800, h = 600) => {
   const contenitore = contenitoreFinto(stile);
   contenitore.clientWidth = w;
@@ -1248,6 +1249,13 @@ test("piano con le variabili della presentazione: raggio, tratti, ombra e corpo 
   assert.equal(altra.getAttribute("stroke-opacity"), "0.55");
   for (const c of cerchiDeiNodi(svg())) assert.ok(quasi(c.getAttribute("r"), 7 * s));
   for (const t of nomiDeiNodi(svg())) assert.ok(quasi(t.getAttribute("font-size"), 46 * s));
+  const [bordo] = diClasse(strato(svg()), "polyline", "deformata-bordo");
+  assert.ok(quasi(bordo.getAttribute("stroke-width"), (6 + 2 * 2) * s), "tratto 6 più 2 di bordo per lato");
+  const tratti = diClasse(strato(svg()), "line", "deformata");
+  assert.ok(tratti.length > 0);
+  for (const l of tratti) assert.ok(quasi(l.getAttribute("stroke-width"), 6 * s));
+  piano.disegna(dueCampate, { risultati: conRisultati("deformata", { stantia: true }) });
+  assert.ok(quasi(diClasse(strato(svg()), "polyline", "deformata")[0].getAttribute("stroke-width"), 6 * s), "anche la stantia");
   piano.disegna(dueCampate, { selezione: { tipo: "nodo", id: 2 } });
   assert.ok(quasi(cerchiDeiNodi(svg())[1].getAttribute("r"), 7 * 1.6 * s));
   piano.disegna(traveR, { risultati: conRisultati("M") });
@@ -1256,19 +1264,23 @@ test("piano con le variabili della presentazione: raggio, tratti, ombra e corpo 
   for (const t of picchi) assert.ok(quasi(t.getAttribute("font-size"), 46 * millimetriPerPixelDi(svg())));
 });
 
-test("piano a 46 px: nessun picco entra nel box di un nome di nodo, largo quanto il nome e alto un corpo", () => {
+test("piano a 46 px: nessun picco entra nel box di un nome di nodo, largo quanto il nome, alto un corpo più la discendente", () => {
   const nominata = { ...traveR, nodi: traveR.nodi.map((n) => ({ ...n, nome: n.id === 1 ? "piede sx" : "piede dx" })) };
-  // Il picco all'estremo, accanto al nome: con il box alto 11 invece di 46 ci finisce sopra (provato a mutante).
+  // Il picco all'estremo, accanto al nome, in un riquadro alto e stretto: con la discendente fissa a 3 px
+  // invece di un quarto di corpo il picco cadeva sotto la «p» di «piede» (provato a mutante).
   const sta = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
   const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: [sta(0, -45e6), sta(0.5, -20e6), sta(1, 0)] } };
-  const { piano, svg } = pianoCon(PRESENTAZIONE);
+  const { piano, svg } = pianoCon(PRESENTAZIONE, 600, 800);
   piano.disegna(nominata, { risultati: conRisultati("M", { perCaso }) });
-  const s = millimetriPerPixelDi(svg());
+  const [, , larghezza, altezza] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / 600, altezza / 800);
   const nomi = nomiDeiNodi(svg()), picchi = tutti(strato(svg()), "text");
   assert.equal(nomi.length, 2);
   assert.ok(picchi.length >= 1, "il picco si scrive: il test non è vuoto");
   for (const n of nomi) for (const p of picchi) {
-    assert.ok(!siSovrappongono(boxCorpo(p, s, 46), boxCorpo(n, s, 46)), `«${p.textContent}» entra nel nome «${n.textContent}»`);
+    const nome = boxCorpo(n, s, 46);
+    assert.ok(!siSovrappongono(boxCorpo(p, s, 46), { ...nome, y1: nome.y1 + 0.25 * 46 * s }),
+              `«${p.textContent}» entra nel nome «${n.textContent}»`);
   }
 });
 
@@ -1445,5 +1457,48 @@ test("piano a 46 px: il MURO 1 su 1151×944 si allarga per i nomi solo in x, tel
     const b = boxCorpo(t, s, 46);
     assert.ok(b.x0 >= ritaglio.x0 && b.x1 <= ritaglio.x1 && b.y0 >= ritaglio.y0 && b.y1 <= ritaglio.y1,
               `«${t.textContent}» esce dal ritaglio: ${JSON.stringify(b)} fuori da ${JSON.stringify(ritaglio)}`);
+  }
+});
+
+// --- fix round 1 del Task 2 (15a) ---------------------------------------------------
+
+test("piano con la deformata: nessuna etichetta entra nel bordo, largo mezzo tratto più il bordo per lato", () => {
+  // Il telaio 4:3 spostato in orizzontale: la freccia «50 mm» cadeva a 2 px dalla linea. Il bbox della
+  // deformata aveva 1 px di margine, il bordo ne occupa 3 (1 + 2), e la freccia ci entrava.
+  const fermo = [0, 0, 0, 0, 0, 0];
+  const { piano, svg } = pianoCon(undefined);
+  piano.disegna(telaio43, { risultati: { vista: "deformata", caso: "C1", scala: 20, auto: true, stantia: false, tipo: "caso",
+                                         badge: {}, perCaso: { spostamenti: { 1: fermo, 2: fermo, 3: [50, 0, 0, 0, 0, 0], 4: fermo } } } });
+  const s = millimetriPerPixelDi(svg());
+  const mezzo = (2 / 2 + 2) * s;
+  const bordi = diClasse(strato(svg()), "polyline", "deformata-bordo").flatMap((b) => {
+    const p = b.getAttribute("points").split(" ").map((c) => c.split(",").map(Number));
+    return p.slice(1).map((q, k) => ({ x0: Math.min(p[k][0], q[0]) - mezzo, x1: Math.max(p[k][0], q[0]) + mezzo,
+                                        y0: Math.min(p[k][1], q[1]) - mezzo, y1: Math.max(p[k][1], q[1]) + mezzo }));
+  });
+  const testi = tutti(strato(svg()), "text");
+  assert.ok(testi.some((t) => t.textContent === "50 mm"), `la freccia si scrive: ${testi.map((t) => t.textContent)}`);
+  for (const t of testi) for (const b of bordi) assert.ok(!siSovrappongono(boxTesto(t, s), b), `«${t.textContent}» entra nel bordo`);
+});
+
+test("piano a 46 px: fra due nomi di pari lunghezza l'allargamento conta quello che sporge di più, non il primo", () => {
+  // Il primo nome sta sopra il suo nodo (stacco in x nullo), il secondo a sinistra del suo (stacco intero):
+  // guardando solo il primo, «BBBBBBBB» usciva dal ritaglio di 14,6 px.
+  let mo = modelloVuoto();
+  for (const p of [{ x: 3000, z: 3000 }, { x: 0, z: 0 }, { x: 3000, z: 0 }]) mo = creaNodo(mo, p);
+  const m = { ...mo, nodi: mo.nodi.map((n) => ({ ...n, nome: ["AAAAAAAA", "BBBBBBBB", "c"][n.id - 1] })),
+              aste: [{ id: 1, nodo_i: 1, nodo_j: 3 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  const { piano, svg } = pianoCon(PRESENTAZIONE);
+  piano.disegna(m, {});
+  const [x0, z0, larghezza, altezza] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / 800, altezza / 600);
+  const cx = x0 + larghezza / 2, cy = z0 + altezza / 2;
+  const ritaglio = { x0: cx - 800 * s / 2, x1: cx + 800 * s / 2, y0: cy - 600 * s / 2, y1: cy + 600 * s / 2 };
+  const nomi = nomiDeiNodi(svg());
+  assert.deepEqual(nomi.map((t) => t.getAttribute("text-anchor")), ["middle", "end", "start"], "sopra, a sinistra, a destra");
+  for (const t of nomi) {
+    const b = boxCorpo(t, s, 46);
+    assert.ok(b.x0 >= ritaglio.x0 && b.x1 <= ritaglio.x1 && b.y0 >= ritaglio.y0 && b.y1 <= ritaglio.y1,
+              `«${t.textContent}» esce dal ritaglio di ${((ritaglio.x0 - b.x0) / s).toFixed(1)} px a sinistra`);
   }
 });
