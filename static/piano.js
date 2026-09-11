@@ -10,16 +10,20 @@ import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
 import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima,
-         asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati } from "./risultati.js";
+         asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, VIRIDIS, massimoSpostamento,
+         coloreSpostamento, testoScalaColori } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
+import { leggiMisure, avanzamentoMono } from "./misure.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
 const LATO_MINIMO = 2000;  // mm: un modello con un solo nodo ha estensione zero
-const RAGGIO = 5;          // px del nodo, in coordinate schermo
+// px, il metro dei simboli dei vincoli e del ghost, che restano come sono; i nodi leggono `--nodo-raggio`.
+const RAGGIO = 5;
 // px, distanza dell'etichetta dal nodo: 9 bastava sulla diagonale (9√2≈12.7 di ipotenusa)
 // ma non sul verso assiale puro (su/giù/dx/sx), dove l'offset è tutto su un asse solo e
 // l'etichetta tocca il proprio cerchio — misurato, 6px di sovrapposizione reale.
+// È il minimo: a corpi grandi `disegna` lo porta a raggio + 0,6 em, o l'occhio del testo tocca il cerchio.
 const OFFSET_ETICHETTA = 16;
 // Il riquadro da usare finché il layout non l'ha misurato. Con `|| 1` (com'era) `s` diventava
 // l'intero modello per pixel, e **ogni** misura in px — tratti, cerchi, etichette, ostacoli —
@@ -42,13 +46,13 @@ const INCHIOSTRO = "#141414";
 const ROSSO = "#b8321e";
 const MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
 
-/** La larghezza di un testo mono a 11px, in millimetri del `viewBox`. I 6,6 px per carattere sono
- *  l'avanzamento del mono a 11px (0,6 em): una **stima**, non una misura — `getComputedTextLength`
- *  vorrebbe disegnare, misurare e ridisegnare a ogni giro. `extraPx` è il margine che il chiamante
- *  vuole attorno: 2 per il box di un'etichetta, 8 per il rientro di una striscia dal bordo. Con
- *  `s = 1` esce in pixel, che è come la legge il conto del riquadro.
+/** La larghezza di un testo mono al corpo `carattere` (px), in millimetri del `viewBox`: 0,6 em per
+ *  carattere (`avanzamentoMono`), una **stima**, non una misura — `getComputedTextLength` vorrebbe
+ *  disegnare, misurare e ridisegnare a ogni giro. `extraPx` è il margine che il chiamante vuole
+ *  attorno: 2 per il box di un'etichetta, 8 per il rientro di una striscia dal bordo. Con `s = 1`
+ *  esce in pixel, che è come la legge il conto del riquadro.
  *  Stava scritta a mano in cinque punti con quattro margini diversi; qui è una sola. */
-const larghezzaMono = (testo, s, extraPx = 0) => (testo.length * 6.6 + extraPx) * s;
+const larghezzaMono = (testo, s, extraPx, carattere) => (testo.length * avanzamentoMono(carattere) + extraPx) * s;
 
 const el = (nome, attributi = {}) => {
   const e = document.createElementNS(NS, nome);
@@ -62,10 +66,11 @@ const el = (nome, attributi = {}) => {
  *  punto in anteprima del campo di comando, che di coordinate fuori vista ne accetta
  *  quante ne vuole e senza questo le disegnerebbe dove non si guarda.
  *
- *  `extraMm`: millimetri in più su tutti e quattro i lati, oltre al margine del 12 %. Serve alle
+ *  `extraMm`: millimetri in più a destra e a sinistra, oltre al margine del 12 %. Serve alle
  *  etichette dei nodi, che stanno in pixel fuori dal nodo e che il 12 % non conosce: su MURO 1 il
  *  margine vale 40 px e «cerniera» ne chiede 90, quindi il nome usciva dal riquadro e l'SVG lo
- *  tagliava a metà. Chi disegna lo misura e lo passa (`piano.js`, `disegna`). */
+ *  tagliava a metà. Chi disegna lo misura e lo passa (`piano.js`, `disegna`). In z no (R3): il nome
+ *  sta di fianco al nodo, e l'extra in altezza serviva solo a far comandare l'altro lato. */
 export function estensione(m, ghost = null, extraMm = 0) {
   const punti = m.nodi.map((n) => ({ x: n.x, z: n.z }));
   const da = ghost && nodo(m, ghost.da);
@@ -78,7 +83,7 @@ export function estensione(m, ghost = null, extraMm = 0) {
   const larghezza = Math.max(x1 - x0, LATO_MINIMO);
   const altezza = Math.max(z1 - z0, LATO_MINIMO);
   const extra = Number.isFinite(extraMm) && extraMm > 0 ? extraMm : 0;
-  const mx = larghezza * MARGINE + extra, mz = altezza * MARGINE + extra;
+  const mx = larghezza * MARGINE + extra, mz = altezza * MARGINE;
   return { x0: x0 - mx, z0: z0 - mz, larghezza: larghezza + 2 * mx, altezza: altezza + 2 * mz };
 }
 
@@ -130,7 +135,24 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   const legenda = document.createElement("p");
   legenda.className = "risultati-legenda";
   legenda.hidden = true;
-  contenitore.replaceChildren(svg, titolo, badge, legenda);
+  // La legenda dei colori della deformata (15a): |u|, lo zero, la rampa viridis, il massimo. Senza, un
+  // colore non dice quanti millimetri sono (`docs/ricerca/07-ux-modellatore.md:154`). In coda ai figli:
+  // badge e legenda degli stati restano il terzo e il quarto.
+  const colori = document.createElement("div");
+  colori.className = "risultati-colori";
+  colori.hidden = true;
+  const parte = (classe) => { const e = document.createElement("span"); e.className = classe; return e; };
+  const titoloColori = parte("titolo"), minColori = parte("min"), maxColori = parte("max");
+  const gradiente = el("linearGradient", { id: "viridis-legenda" });
+  VIRIDIS.forEach((c, k) => gradiente.append(el("stop", { offset: k / (VIRIDIS.length - 1), "stop-color": c })));
+  const defs = el("defs");
+  defs.append(gradiente);
+  // La rampa bordata d'inchiostro come la deformata: il giallo in cima sul fondo chiaro non ha bordo suo.
+  const rampa = el("svg", { viewBox: "0 0 120 10", preserveAspectRatio: "none", "aria-hidden": "true" });
+  rampa.append(defs, el("rect", { x: 0.5, y: 0.5, width: 119, height: 9, fill: "url(#viridis-legenda)",
+                                  stroke: INCHIOSTRO, "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+  colori.append(titoloColori, minColori, rampa, maxColori);
+  contenitore.replaceChildren(svg, titolo, badge, legenda, colori);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -163,8 +185,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
    *  appende **fra le aste e i nodi** — i nodi restano sopra e cliccabili (R5). Le etichette non
    *  si scrivono qui: si accodano a `richieste`, che `disegna` posa con `disponi` dopo i nodi,
    *  quando i loro cerchi e i loro nomi sono ostacoli noti. Un solo colore, inchiostro; rosso
-   *  quando la corsa è stantia — il rosso dice attenzione (story 63). */
-  function stratoDeiRisultati(m, attivo, vistaRis, s, { richieste, linee }) {
+   *  quando la corsa è stantia — il rosso dice attenzione (story 63). La deformata fresca è l'unica
+   *  eccezione: viridis sopra un bordo d'inchiostro, e `raccolto.uMax` porta la scala alla legenda. */
+  function stratoDeiRisultati(m, attivo, vistaRis, s, misure, raccolto) {
+    const { richieste, linee } = raccolto;
     const colore = attivo.stantia ? ROSSO : INCHIOSTRO;
     // Il bbox di un segmento, con un pixel di margine per lato. Le linee del disegno — le ordinate
     // di stazione, i tratti fra due stazioni, la polilinea della deformata — sono ostacoli quanto
@@ -187,12 +211,31 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // Constraints). Assente = 1; a 0 la deformata cade esattamente sull'ombra indeformata.
       const scalaDisegno = attivo.scala * (attivo.fattore ?? 1);
       const deformate = puntiDeformata(m, attivo.perCaso, scalaDisegno);
+      // |u|max della legenda: quello che `app.js` passa (fisso per la corsa della pushover) o quello
+      // che si vede. Stantia non si colora: numeri vecchi in viridis si leggerebbero come nuovi.
+      const uMax = Number.isFinite(attivo.uMax) ? attivo.uMax : massimoSpostamento(deformate);
+      raccolto.uMax = uMax;
       for (const d of deformate) {
-        const punti = d.punti.map((p) => schermo(p));
-        g.append(el("polyline", {
-          class: "deformata", points: punti.map(coppia).join(" "),
-          fill: "none", stroke: colore, "stroke-width": 2 * s,
-          "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+        const punti = d.punti.map((p) => ({ ...schermo(p), u: p.u }));
+        const coppie = punti.map(coppia).join(" ");
+        if (attivo.stantia) {
+          g.append(el("polyline", { class: "deformata", points: coppie, fill: "none", stroke: ROSSO,
+            "stroke-width": misure.trattoDeformata * s,
+            "stroke-dasharray": `${6 * s} ${4 * s}`, "stroke-linejoin": "round" }));
+        } else {
+          // Viridis sotto 3:1 sul fondo da metà scala in su: il bordo in inchiostro tiene la forma, il
+          // colore porta il valore (story 62-63, `07-ux-modellatore.md:100`). SVG non ha gradienti lungo
+          // il percorso: un tratto per coppia di punti, del colore della loro media.
+          g.append(el("polyline", { class: "deformata-bordo", points: coppie, fill: "none", stroke: INCHIOSTRO,
+            "stroke-width": (misure.trattoDeformata + 2 * misure.bordoDeformata) * s,
+            "stroke-linejoin": "round", "stroke-linecap": "round" }));
+          for (let k = 1; k < punti.length; k++) {
+            const a = punti[k - 1], b = punti[k];
+            g.append(el("line", { class: "deformata", x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+              stroke: coloreSpostamento((a.u + b.u) / 2, uMax),
+              "stroke-width": misure.trattoDeformata * s, "stroke-linecap": "round" }));
+          }
+        }
         spezzata(punti);
       }
       // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
@@ -297,6 +340,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
   function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
+    // Le misure a ogni disegno, dalle variabili CSS del riquadro, che la presentazione ridefinisce per
+    // l'aula. Senza `getComputedStyle` (i test) o senza variabili: i numeri d'oggi (`misure.js`).
+    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + misure.carattere * 0.6);
     inquadra(m, ghost);
     let s = millimetriPerPixel();
     // Le etichette dei nodi stanno in pixel fuori dal nodo, e il margine del 12 % non le conosce:
@@ -312,14 +359,28 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // **una** cifra, nessun nome da salvare, ma un riquadro di 120 px dove i 16 di stacco già non
     // ci stanno — si allargava del 31 % e «2» e «3» finivano a toccarsi: il fumo da 12/12 a 8/12.
     // I nomi lunghi sono il difetto visto a mano, e solo loro pagano il riquadro più largo.
-    const nomePiuLungo = m.nodi.map((n) => String(n.nome ?? n.id)).reduce((a, b) => (b.length > a.length ? b : a), "");
-    const { w: pxL, h: pxA } = pixelDelRiquadro();
-    const orizzontale = vista.larghezza / pxL >= vista.altezza / pxA;   // il lato che comanda `s`
-    const W = orizzontale ? pxL : pxA, L0 = orizzontale ? vista.larghezza : vista.altezza;
-    const P = larghezzaMono(nomePiuLungo, 1, OFFSET_ETICHETTA + 4);   // pixel che l'etichetta più lunga chiede
+    // I nodi che porteranno un simbolo di vincolo (dichiarato, o proposto e non dichiarato):
+    // l'etichetta del nodo non va in basso, dove il simbolo sta. Visto sul caso studio: il
+    // «piede sx» finiva sulla base del triangolo.
+    const dichiarati = new Set(m.nodi.filter((n) => n.vincolo && GRADI.some((g) => n.vincolo[g])).map((n) => n.id));
+    const conSimbolo = new Set(dichiarati);
+    for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
+    const nomeDi = (n) => String(n.nome ?? n.id);
+    const piuLungo = m.nodi.reduce((a, b) => (!a || nomeDi(b).length > nomeDi(a).length ? b : a), null);
+    const nomePiuLungo = piuLungo ? nomeDi(piuLungo) : "";
+    // Sempre la larghezza (R3): il nome sta di fianco al nodo e l'extra va solo in x (`estensione`). Col
+    // lato che comanda, a 46 px l'extra finiva anche in z, comandava l'altro lato e il MURO 1 usciva
+    // 356×253 px su 1151×944.
+    const W = pixelDelRiquadro().w, L0 = vista.larghezza;
+    // Dello stacco conta la sola componente in x del verso: sul MURO 1 «sommità sx» sta a ↖ (0,71), e
+    // con lo stacco intero a 46 px il telaio usciva 526 px invece di 545. `max` coi 16 d'oggi: a 11 px
+    // il conto resta quello di prima. ponytail: il verso del solo nome più lungo — a pari lunghezza
+    // vince il primo, e un carattere in più pesa sempre più di quanto lo stacco cambi fra due versi.
+    const versoX = piuLungo ? Math.abs(versoLibero(m, piuLungo, conSimbolo.has(piuLungo.id) ? [{ x: 0, z: -1 }] : []).x) : 0;
+    const P = larghezzaMono(nomePiuLungo, 1, Math.max(OFFSET_ETICHETTA, offset * versoX) + 4, misure.carattere);   // pixel che l'etichetta più lunga chiede
     // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
     // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
-    if (larghezzaMono(nomePiuLungo, 1) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
+    if (larghezzaMono(nomePiuLungo, 1, 0, misure.carattere) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
       const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
       inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P));
       s = millimetriPerPixel();
@@ -337,11 +398,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       gruppo.append(el("line", {
         x1: pi.x, y1: pi.y, x2: pj.x, y2: pj.y,
         stroke: scelta ? ROSSO : INCHIOSTRO,
-        "stroke-width": (scelta ? 3 : 2) * s,
+        "stroke-width": (scelta ? misure.trattoScelta : misure.trattoAsta) * s,
         "stroke-linecap": "round", "data-tipo": "asta", "data-id": a.id,
         // Con la deformata l'indeformata resta come ombra: si vede di quanto si è mosso, non
         // solo dove sta adesso. L'asta selezionata no — quella è l'unica cosa piena e rossa.
-        ...(attivo && vistaRis === "deformata" && !scelta ? { "stroke-opacity": 0.3 } : {}),
+        ...(attivo && vistaRis === "deformata" && !scelta ? { "stroke-opacity": misure.ombra } : {}),
       }));
     }
 
@@ -349,8 +410,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // `richieste`: picchi e carichi, li posa `disponi` dopo i nodi, insieme. `linee`: i bbox delle
     // linee dei diagrammi, ostacoli come i cerchi. Un oggetto solo, che due array posizionali dello
     // stesso tipo si scambiano di posto senza che niente se ne accorga.
-    const raccolto = { richieste: [], linee: [] };
-    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, raccolto) : null;
+    const raccolto = { richieste: [], linee: [], uMax: 0 };
+    const stratoRisultati = attivo ? stratoDeiRisultati(m, attivo, vistaRis, s, misure, raccolto) : null;
     const richiesteEtichette = raccolto.richieste;
     if (stratoRisultati) gruppo.append(stratoRisultati);
 
@@ -388,12 +449,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }
     }
 
-    // I nodi che porteranno un simbolo di vincolo (dichiarato, o proposto e non dichiarato):
-    // l'etichetta del nodo non va in basso, dove il simbolo sta. Visto sul caso studio: il
-    // «piede sx» finiva sulla base del triangolo.
-    const dichiarati = new Set(m.nodi.filter((n) => n.vincolo && GRADI.some((g) => n.vincolo[g])).map((n) => n.id));
-    const conSimbolo = new Set(dichiarati);
-    for (const p of proposte ?? []) if (nodo(m, p.nodo)) conSimbolo.add(p.nodo);  // pieno o ghost, il basso è preso
     const etichettate = new Set();
     // Gli ostacoli per le etichette dei risultati: i cerchi e le etichette dei nodi non si
     // spostano (le posa `versoLibero`), quindi sono loro il terreno e i picchi ci girano attorno.
@@ -405,10 +460,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // `[data-tipo]` risalendo da un `<text>` nudo e scivola a `suSfondo()`.
       const nodoEl = el("g", { "data-tipo": "nodo", "data-id": n.id });
       nodoEl.append(el("circle", {
-        cx: p.x, cy: p.y, r: (scelto ? RAGGIO * 1.6 : RAGGIO) * s,  // doppio canale: rosso e più grosso
+        cx: p.x, cy: p.y, r: (scelto ? misure.raggioNodo * 1.6 : misure.raggioNodo) * s,  // doppio canale: rosso e più grosso
         fill: scelto ? ROSSO : INCHIOSTRO,
       }));
-      ostacoli.push({ x0: p.x - RAGGIO * s, y0: p.y - RAGGIO * s, x1: p.x + RAGGIO * s, y1: p.y + RAGGIO * s });
+      const r = misure.raggioNodo * s;
+      ostacoli.push({ x0: p.x - r, y0: p.y - r, x1: p.x + r, y1: p.y + r });
       // Un'etichetta per posizione: due nodi coincidenti (da un file, non dai comandi)
       // scriverebbero due volte nello stesso punto, e il risultato è illeggibile.
       const posto = `${Math.round(n.x)}|${Math.round(n.z)}`;
@@ -416,7 +472,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         etichettate.add(posto);
         const v = versoLibero(m, n, conSimbolo.has(n.id) ? [{ x: 0, z: -1 }] : []);
         const testo = el("text", {
-          x: p.x + OFFSET_ETICHETTA * s * v.x, y: p.y - OFFSET_ETICHETTA * s * v.z, "font-size": 11 * s,
+          x: p.x + offset * s * v.x, y: p.y - offset * s * v.z, "font-size": misure.carattere * s,
           fill: INCHIOSTRO, "font-family": MONO,
           "text-anchor": v.x < -0.3 ? "end" : v.x > 0.3 ? "start" : "middle",
         });
@@ -424,9 +480,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         // Il box dell'etichetta del nodo: `y` è la linea di base (niente `dominant-baseline`
         // qui), quindi il testo sta **sopra** di essa — ma non tutto: «piede sx» ha una `p` che
         // scende sotto la base, e con `y1 = y` un picco ci finiva dentro. Tre pixel di discendente
-        // sotto e undici sopra, più i due di margine per lato che hanno anche i picchi.
-        const larghezza = larghezzaMono(testo.textContent, s, 2), altezza = 11 * s;
-        const x = p.x + OFFSET_ETICHETTA * s * v.x, y = p.y - OFFSET_ETICHETTA * s * v.z;
+        // sotto e un corpo sopra, più i due di margine per lato che hanno anche i picchi.
+        const larghezza = larghezzaMono(testo.textContent, s, 2, misure.carattere), altezza = misure.carattere * s;
+        const x = p.x + offset * s * v.x, y = p.y - offset * s * v.z;
         const x0 = v.x < -0.3 ? x - larghezza : v.x > 0.3 ? x : x - larghezza / 2;
         ostacoli.push({ x0, y0: y - altezza, x1: x0 + larghezza, y1: y + 3 * s });
         nodoEl.append(testo);
@@ -453,8 +509,15 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // La legenda parla solo quando i simboli ci sono: in vista M non c'è niente da decifrare.
     legenda.textContent = testoLegendaStati();
     legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata");
+    // La legenda dei colori parla quando i colori ci sono: deformata non stantia. `raccolto.uMax` è la
+    // stessa scala con cui lo strato ha colorato i tratti.
+    const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo });
+    titoloColori.textContent = estremi.titolo;
+    minColori.textContent = estremi.min;
+    maxColori.textContent = estremi.max;
+    colori.hidden = !(attivo && vistaRis === "deformata" && !attivo.stantia);
 
-    // Le due strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
+    // Le strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
     // ostacoli un picco negli angoli in alto finisce sotto il loro testo (R6). Il riquadro
     // `viewBox` non è il ritaglio: con `preserveAspectRatio="xMidYMid meet"` a ritagliare è il
     // **viewport**, che contiene il riquadro e coincide con lui sul lato stretto. In coordinate
@@ -463,31 +526,34 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
     const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
                        x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
-    // I numeri vengono da `stile.css`, `.carichi-titolo` e `.risultati-badge`: `left`/`right: 8px`
-    // più ~6,6 px per carattere del mono a 11px fanno la larghezza, una riga è alta 14. Il titolo
-    // sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta a `top: 22`, su una riga sua, e
-    // non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a passare
-    // sotto il testo senza che nessun test se ne accorga.
-    // Da quando il badge va a capo (`stile.css`) non è più alto una riga sola, e quante ne prenda
-    // lo sa solo il browser: l'altezza si **misura**. 14 px (una riga) è il ripiego per il DOM
-    // finto dei test, che `offsetHeight` non ce l'ha. La larghezza non supera il `max-width` di
-    // là: 8 px per lato. `larga` sta anche nel conto della legenda, che gli va sotto.
-    const dentro = (testo) => Math.min(larghezzaMono(testo, s, 8), (larghezzaPx - 16) * s);
-    const altoBadge = badge.hidden ? 0 : (badge.offsetHeight || 14);
-    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - dentro(badge.textContent), x1: viewport.x1,
-                                       y0: viewport.y0 + 22 * s, y1: viewport.y0 + (22 + altoBadge) * s });
-    // La legenda sta **sotto il badge**, e il badge è alto quanto è alto: il `top: 38px` di
-    // `stile.css` vale per un badge a una riga sola, e con due le due strisce si sovrapponevano.
-    // Lo scrive qui chi l'altezza la misura, non un numero congelato di là.
-    const topLegenda = 22 + altoBadge + 2;
-    if (!legenda.hidden) {
-      legenda.style.top = `${topLegenda}px`;
-      const alta = (legenda.offsetHeight || 28) * s;
-      ostacoli.push({ x0: viewport.x1 - dentro(legenda.textContent), x1: viewport.x1,
-                      y0: viewport.y0 + topLegenda * s, y1: viewport.y0 + (topLegenda * s) + alta });
-    }
-    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
-                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });
+    // I numeri vengono da `stile.css`: `left`/`right: 8px` più 0,6 em per carattere del corpo
+    // `--etichetta` fanno la larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il
+    // badge sta su una riga sua e non si tronca — la scala non può mancare. Se là cambiano, qui le
+    // etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
+    // Le altezze le sa solo il browser — il badge va a capo, il corpo cambia in aula — quindi si
+    // **misurano**, e i `top` li scrive qui chi misura: il badge sotto il titolo, la legenda degli
+    // stati sotto il badge, quella dei colori sotto l'ultima visibile. I ripieghi sono per il DOM
+    // finto dei test, senza `offsetHeight`, e a 11 px danno i numeri d'oggi (R9): badge a 22 e alto
+    // 14, legenda alta 28, titolo fino a 20. La larghezza non supera il `max-width`: 8 px per lato.
+    const dentro = (testo) => Math.min(larghezzaMono(testo, s, 8, misure.carattere), (larghezzaPx - 16) * s);
+    // Scrive il `top`, fa l'ostacolo se la striscia si vede, e rende il `top` di quella che le va sotto.
+    const striscia = (e, top, alta, testo) => {
+      e.style.top = `${top}px`;
+      if (e.hidden) return top;
+      ostacoli.push({ x0: viewport.x1 - dentro(testo), x1: viewport.x1,
+                      y0: viewport.y0 + top * s, y1: viewport.y0 + (top + alta) * s });
+      return top + alta + 2;
+    };
+    const carattere = misure.carattere;
+    let sotto = striscia(badge, 6 + Math.max(16, titolo.offsetHeight || carattere + 5),
+                         badge.offsetHeight || carattere + 3, badge.textContent);
+    sotto = striscia(legenda, sotto, legenda.offsetHeight || 2 * (carattere + 3), legenda.textContent);
+    // La rampa è larga 6 em, cioè dieci caratteri del mono, e i tre `gap` valgono circa tre spazi.
+    striscia(colori, sotto, colori.offsetHeight || carattere + 3,
+             `${estremi.titolo} ${estremi.min} ${"x".repeat(10)} ${estremi.max}`);
+    // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
+    if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, carattere), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro
@@ -568,11 +634,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         if (gemella) gemella.priorita = Math.max(gemella.priorita, r.priorita);
         else uniche.push(r);
       }
-      // Un pixel di margine per lato, e la riga intera (14) invece del solo occhio (12): la
-      // larghezza per carattere è una stima del mono a 11px, e uno spazio fine unificatore
+      // Un pixel di margine per lato, e la riga intera (corpo + 3) invece del solo occhio: la
+      // larghezza per carattere è una stima del mono, e uno spazio fine unificatore
       // (`millimetri`, «20 000») non misura come una cifra. Misurato sul telaio 2×1 a 1920 px:
-      // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel.
-      const richieste = uniche.map((r) => ({ ...r, larghezza: larghezzaMono(r.testo, s, 2), altezza: 14 * s }));
+      // senza il margine «6,98 kN·m» e «Fx 20 000 N» si toccavano per pochi pixel. Picchi e freccia
+      // al corpo delle etichette dei nodi (R9): a 11 px accanto a nomi da 46 non si leggono da 8 m.
+      const richieste = uniche.map((r) => ({ ...r, larghezza: larghezzaMono(r.testo, s, 2, misure.carattere),
+                                             altezza: (misure.carattere + 3) * s }));
       const poste = disponi(richieste, ostacoli, { passo: 6 * s, limiti: viewport });
       for (let k = 0; k < poste.length; k++) {   // `disponi` rende un elemento per richiesta, in ordine
         const e = poste[k];
@@ -581,7 +649,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
         const dove = carico ? gruppo : stratoRisultati;
         const colore = !carico && attivo.stantia ? ROSSO : INCHIOSTRO;
         if (e.guida) dove.append(el("line", { class: "guida", x1: e.guida.x1, y1: e.guida.y1, x2: e.guida.x2, y2: e.guida.y2, stroke: colore, "stroke-width": 0.75 * s }));
-        const t = el("text", { class: carico ? "carico-testo" : "picco", x: e.x, y: e.y, "font-size": 11 * s,
+        const t = el("text", { class: carico ? "carico-testo" : "picco", x: e.x, y: e.y, "font-size": misure.carattere * s,
                                fill: colore, "font-family": MONO, "text-anchor": e.ancora, "dominant-baseline": "middle" });
         t.textContent = e.testo;
         dove.append(t);

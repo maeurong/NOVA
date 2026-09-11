@@ -80,7 +80,7 @@ body {
    finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
    `pointer-events: none` lascia che il clic sullo sfondo arrivi comunque al piano. */
 #piano .carichi-titolo { position: absolute; top: 6px; left: 8px; margin: 0;
-                         font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; }
+                         font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none; }
 /* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
    V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
    rosso e la parola: il rosso da solo non basta (story 63). */
@@ -91,7 +91,7 @@ body {
    ne vuole ~460, quindi spariva a sinistra la testa della riga — «o 6 · 181 Hz…», cioè il numero
    del modo. La riga in più la misura `piano.js` (`offsetHeight`), e da lì scende la legenda. */
 #piano .risultati-badge { position: absolute; top: 22px; right: 8px; margin: 0; text-align: right;
-                          font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
+                          font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none;
                           white-space: normal; max-width: calc(100% - 16px); }
 #piano .risultati-badge.stantia { color: var(--rosso); }
 /* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
@@ -101,13 +101,22 @@ body {
    badge, così le righe spezzate restano nella sua colonna. Inchiostro, mai rosso: il rosso è
    uno solo. L'altezza che ne esce la **misura** `piano.js` (`offsetHeight`) per l'ostacolo. */
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
-                            font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
+                            font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none;
                             white-space: normal; max-width: calc(100% - 16px); text-align: right; }
+/* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm», sotto l'ultima striscia
+   visibile — il `top` lo scrive `piano.js`. La rampa è in `em`: segue il corpo, e a 32 px un'altezza
+   fissa di 10 sarebbe un filo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
+#piano .risultati-colori { position: absolute; top: 38px; right: 8px; margin: 0;
+                           display: flex; gap: 6px; align-items: center; white-space: nowrap;
+                           font: var(--etichetta, 11px) var(--mono); font-variant-numeric: tabular-nums;
+                           color: var(--inchiostro); pointer-events: none; }
+#piano .risultati-colori[hidden] { display: none; }
+#piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
-   riga e si tronca. Questi numeri — 6 e 22 di `top`, 8 di `left`/`right`, 11 di riga, 14 di
-   altezza di riga — li ricopia `piano.js` (`larghezzaTesto` e i due `ostacoli.push`) per farne
-   gli ostacoli delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in
-   silenzio. */
+   riga e si tronca. Questi numeri — 6 di `top`, 8 di `left`/`right`, 0,6 em per carattere del corpo
+   `--etichetta` — li ricopia `piano.js` (`larghezzaMono` e gli `ostacoli.push`) per farne gli ostacoli
+   delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in silenzio. I `top`
+   del badge e delle due legende invece li scrive `piano.js`, dalle altezze misurate. */
 #piano .carichi-titolo { max-width: 45%; overflow: hidden;
                          text-overflow: ellipsis; white-space: nowrap; }
 

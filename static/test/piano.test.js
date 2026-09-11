@@ -4,6 +4,7 @@ import { versoLibero, estensione, creaPiano } from "../piano.js";
 import { modelloVuoto } from "../modello.js";
 import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
 import { siSovrappongono } from "../etichette.js";
+import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS } from "../risultati.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -136,10 +137,13 @@ globalThis.document = {
   createElement: (nome) => ({ ...elementoSvgFinto(nome), className: "", hidden: false, style: {} }),
 };
 
-const contenitoreFinto = () => ({
-  clientWidth: 800, clientHeight: 600, _figli: [],
+// `stile`: le variabili CSS che `getComputedStyle` renderebbe per il contenitore (15a). Assente =
+// nessuna variabile, e il piano cade sui ripieghi di `MISURE_BASE`, cioè sui numeri d'oggi.
+const contenitoreFinto = (stile) => ({
+  clientWidth: 800, clientHeight: 600, _figli: [], stile,
   replaceChildren(...figli) { this._figli = figli; },
 });
+globalThis.getComputedStyle = (e) => e.stile;
 
 // Tutti i discendenti con quel nome di tag, a qualunque profondità: il disegno annida
 // `svg → g → g(nodo) → circle`, e il livello esatto non è ciò che questi test difendono.
@@ -450,14 +454,15 @@ test("piano con vista M: il picco sta sotto la trave (lato teso), l'etichetta no
   }
 });
 
-test("piano con vista deformata: una polilinea tratteggiata per asta, le aste diventano ombra, il badge stampa la scala", () => {
+test("piano con vista deformata: un bordo per asta senza tratteggio, otto tratti colorati, le aste diventano ombra, il badge stampa la scala", () => {
   const contenitore = contenitoreFinto();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   piano.disegna(traveR, { risultati: conRisultati("deformata", { scala: 120, auto: true }) });
   const svg = contenitore._figli[0];
   const polilinee = tutti(strato(svg), "polyline");
   assert.equal(polilinee.length, 1);
-  assert.ok(polilinee[0].getAttribute("stroke-dasharray"));
+  assert.equal(polilinee[0].getAttribute("stroke-dasharray"), undefined, "il bordo tiene la forma: pieno (15a)");
+  assert.equal(tutti(strato(svg), "line").filter((l) => l.getAttribute("class") === "deformata").length, 8);
   const punti = polilinee[0].getAttribute("points").split(" ");
   assert.equal(punti.length, 9, "otto segmenti di Hermite");
   const aste = tutti(svg, "line").filter((l) => l.getAttribute("data-tipo") === "asta");
@@ -1136,10 +1141,12 @@ test("piano: la legenda è un ostacolo, e l'etichetta della freccia non le finis
   const contenitore = contenitoreFinto();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   const E = { calcestruzzo: "elastica", acciaio: "elastica" };
-  // Il nodo 3 è lo spigolo in alto a destra: abbassato di 50 mm, la freccia massima cade
-  // **dentro** la fascia della legenda, che è il caso che l'ostacolo esiste per risolvere.
+  // Il nodo 4 è lo spigolo in alto a sinistra: abbassato di 50 mm, la freccia massima cade
+  // **dentro** la fascia della legenda, che è il caso che l'ostacolo esiste per risolvere. A
+  // sinistra dalla 15a: nell'angolo in alto a destra, sotto la legenda degli stati, adesso c'è
+  // quella dei colori, e lì l'etichetta non trova più posto.
   const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, 0, 0],
-                                   3: [0, 0, -50, 0, 0, 0], 4: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+                                   3: [0, 0, 0, 0, 0, 0], 4: [0, 0, -50, 0, 0, 0] }, reazioni: {} };
   piano.disegna(telaio43, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1,
                                          auto: true, stantia: false, tipo: "caso",
                                          stati: { 1: [E, E, E, E, E] }, badge: {} } });
@@ -1158,5 +1165,285 @@ test("piano: la legenda è un ostacolo, e l'etichetta della freccia non le finis
   assert.ok(testi.length >= 1, "l'etichetta della freccia si scrive: il test non è vuoto");
   for (const t of testi) {
     assert.ok(!siSovrappongono(boxTesto(t, s), scatola), `«${t.textContent}» finisce sotto la legenda`);
+  }
+});
+
+// --- le misure dalle variabili CSS, la deformata in viridis, la legenda dei colori (15a, Task 2) --
+
+const variabili = (v) => ({ getPropertyValue: (k) => v[k] ?? "" });
+const PRESENTAZIONE = variabili({ "--nodo-raggio": "7px", "--asta-tratto": "6px", "--asta-tratto-scelta": "9px",
+                                  "--etichetta": "46px", "--ombra-opacita": "0.55" });
+const pianoCon = (stile, w = 800, h = 600) => {
+  const contenitore = contenitoreFinto(stile);
+  contenitore.clientWidth = w;
+  contenitore.clientHeight = h;
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  return { contenitore, piano, svg: () => contenitore._figli[0] };
+};
+const quasi = (valore, atteso) => Math.abs(Number(valore) - atteso) <= 1e-9 * Math.max(1, Math.abs(atteso));
+const asteDi = (svg) => tutti(svg, "line").filter((l) => l.getAttribute("data-tipo") === "asta");
+const gruppiNodo = (svg) => tutti(svg, "g").filter((g) => g.getAttribute("data-tipo") === "nodo");
+const cerchiDeiNodi = (svg) => gruppiNodo(svg).flatMap((g) => tutti(g, "circle"));
+const nomiDeiNodi = (svg) => gruppiNodo(svg).flatMap((g) => tutti(g, "text"));
+const diClasse = (radice, nome, classe) => tutti(radice, nome).filter((e) => e.getAttribute("class") === classe);
+// La legenda dei colori è il quinto figlio: in coda a `replaceChildren`, così badge e legenda degli
+// stati restano il terzo e il quarto (R9).
+const coloriDi = (contenitore) => contenitore._figli[4];
+const parteDi = (colori, classe) => colori._figli.find((f) => f.className === classe);
+const testiColori = (contenitore) => ["titolo", "min", "max"].map((c) => parteDi(coloriDi(contenitore), c).textContent);
+// Il box di un `<text>` a un corpo qualunque: `boxTesto` qui sopra, con 0,6 em di avanzamento.
+const boxCorpo = (t, s, corpo) => {
+  const x = Number(t.getAttribute("x")), y = Number(t.getAttribute("y"));
+  const larghezza = t.textContent.length * 0.6 * corpo * s, altezza = corpo * s;
+  const ancora = t.getAttribute("text-anchor") ?? "start";
+  const x0 = ancora === "end" ? x - larghezza : ancora === "middle" ? x - larghezza / 2 : x;
+  const mezzo = t.getAttribute("dominant-baseline") === "middle";
+  return { x0, x1: x0 + larghezza, y0: mezzo ? y - altezza / 2 : y - altezza, y1: mezzo ? y + altezza / 2 : y };
+};
+// Luminanza relativa (WCAG) di un `#rrggbb`.
+const luminanza = (hex) => {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const dueCampate = (() => {
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 6000, z: 0 }, { x: 12000, z: 0 }]) mo = creaNodo(mo, p);
+  return { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+})();
+// Il nodo 1 fermo, il nodo 2 giù di 10 mm: |u| sale da 0 a 10 lungo la trave.
+const SBALZO = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -10, 0, 0, 0] }, reazioni: {}, sollecitazioni: {} };
+
+test("piano senza `getComputedStyle`: nodi, aste, ombra, deformata e badge hanno le misure d'oggi", () => {
+  const prima = globalThis.getComputedStyle;
+  delete globalThis.getComputedStyle;
+  try {
+    const { contenitore, piano, svg } = pianoCon(undefined);
+    piano.disegna(dueCampate, { selezione: { tipo: "asta", id: 1 }, risultati: conRisultati("deformata", { perCaso: SBALZO }) });
+    const s = millimetriPerPixelDi(svg());
+    const [scelta, altra] = asteDi(svg());
+    assert.ok(quasi(scelta.getAttribute("stroke-width"), 3 * s));
+    assert.ok(quasi(altra.getAttribute("stroke-width"), 2 * s));
+    assert.equal(altra.getAttribute("stroke-opacity"), "0.3");
+    for (const c of cerchiDeiNodi(svg())) assert.ok(quasi(c.getAttribute("r"), 5 * s));
+    for (const t of nomiDeiNodi(svg())) assert.ok(quasi(t.getAttribute("font-size"), 11 * s));
+    const [bordo] = diClasse(strato(svg()), "polyline", "deformata-bordo");
+    assert.ok(quasi(bordo.getAttribute("stroke-width"), 6 * s), "2 di tratto più 2 di bordo per lato");
+    for (const l of diClasse(strato(svg()), "line", "deformata")) assert.ok(quasi(l.getAttribute("stroke-width"), 2 * s));
+    assert.equal(badgeDi(contenitore).style.top, "22px", "titolo nascosto: il badge sta dov'è oggi");
+    piano.disegna(dueCampate, { selezione: { tipo: "nodo", id: 2 } });
+    assert.ok(quasi(cerchiDeiNodi(svg())[1].getAttribute("r"), 5 * 1.6 * s), "il nodo scelto: 5 × 1,6");
+  } finally {
+    globalThis.getComputedStyle = prima;
+  }
+});
+
+test("piano con le variabili della presentazione: raggio, tratti, ombra e corpo delle etichette le seguono", () => {
+  const { piano, svg } = pianoCon(PRESENTAZIONE);
+  piano.disegna(dueCampate, { selezione: { tipo: "asta", id: 1 }, risultati: conRisultati("deformata") });
+  const s = millimetriPerPixelDi(svg());
+  const [scelta, altra] = asteDi(svg());
+  assert.ok(quasi(scelta.getAttribute("stroke-width"), 9 * s));
+  assert.ok(quasi(altra.getAttribute("stroke-width"), 6 * s));
+  assert.equal(altra.getAttribute("stroke-opacity"), "0.55");
+  for (const c of cerchiDeiNodi(svg())) assert.ok(quasi(c.getAttribute("r"), 7 * s));
+  for (const t of nomiDeiNodi(svg())) assert.ok(quasi(t.getAttribute("font-size"), 46 * s));
+  piano.disegna(dueCampate, { selezione: { tipo: "nodo", id: 2 } });
+  assert.ok(quasi(cerchiDeiNodi(svg())[1].getAttribute("r"), 7 * 1.6 * s));
+  piano.disegna(traveR, { risultati: conRisultati("M") });
+  const picchi = tutti(strato(svg()), "text");
+  assert.ok(picchi.length >= 1, "il picco si scrive: il test non è vuoto");
+  for (const t of picchi) assert.ok(quasi(t.getAttribute("font-size"), 46 * millimetriPerPixelDi(svg())));
+});
+
+test("piano a 46 px: nessun picco entra nel box di un nome di nodo, largo quanto il nome e alto un corpo", () => {
+  const nominata = { ...traveR, nodi: traveR.nodi.map((n) => ({ ...n, nome: n.id === 1 ? "piede sx" : "piede dx" })) };
+  // Il picco all'estremo, accanto al nome: con il box alto 11 invece di 46 ci finisce sopra (provato a mutante).
+  const sta = (x_rel, My) => ({ x_rel, N: 0, Vy: 0, Vz: 0, T: 0, My, Mz: 0 });
+  const perCaso = { spostamenti: {}, reazioni: {}, sollecitazioni: { 1: [sta(0, -45e6), sta(0.5, -20e6), sta(1, 0)] } };
+  const { piano, svg } = pianoCon(PRESENTAZIONE);
+  piano.disegna(nominata, { risultati: conRisultati("M", { perCaso }) });
+  const s = millimetriPerPixelDi(svg());
+  const nomi = nomiDeiNodi(svg()), picchi = tutti(strato(svg()), "text");
+  assert.equal(nomi.length, 2);
+  assert.ok(picchi.length >= 1, "il picco si scrive: il test non è vuoto");
+  for (const n of nomi) for (const p of picchi) {
+    assert.ok(!siSovrappongono(boxCorpo(p, s, 46), boxCorpo(n, s, 46)), `«${p.textContent}» entra nel nome «${n.textContent}»`);
+  }
+});
+
+test("piano con la deformata: il bordo in inchiostro tiene la forma, sopra un tratto per coppia di punti nel colore del loro |u|", () => {
+  const { piano, svg } = pianoCon(undefined);
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: SBALZO, scala: 100 }) });
+  const s = millimetriPerPixelDi(svg());
+  const g = strato(svg());
+  const bordi = diClasse(g, "polyline", "deformata-bordo");
+  assert.equal(bordi.length, 1, "un bordo per asta");
+  assert.equal(bordi[0].getAttribute("stroke"), "#141414");
+  assert.ok(quasi(bordi[0].getAttribute("stroke-width"), (2 + 2 * 2) * s));
+  assert.equal(diClasse(g, "polyline", "deformata").length, 0, "la polilinea rossa è solo della stantia");
+  const [d] = puntiDeformata(traveR, SBALZO, 100);
+  const uMax = massimoSpostamento([d]);
+  const tratti = diClasse(g, "line", "deformata");
+  assert.equal(tratti.length, d.punti.length - 1);
+  const vertici = bordi[0].getAttribute("points").split(" ");
+  tratti.forEach((l, k) => {
+    assert.equal(l.getAttribute("stroke"), coloreSpostamento((d.punti[k].u + d.punti[k + 1].u) / 2, uMax), `tratto ${k}`);
+    assert.equal(`${l.getAttribute("x1")},${l.getAttribute("y1")}`, vertici[k], "il tratto sta sul bordo");
+    assert.ok(quasi(l.getAttribute("stroke-width"), 2 * s));
+  });
+  assert.ok(luminanza(tratti[0].getAttribute("stroke")) < luminanza(tratti.at(-1).getAttribute("stroke")),
+            "l'estremo fermo è il più scuro: viridis sale in luminanza");
+  assert.ok(g._figli.indexOf(bordi[0]) < g._figli.indexOf(tratti[0]), "il bordo sta sotto i tratti");
+});
+
+test("piano con la deformata stantia: la polilinea rossa tratteggiata d'oggi, niente viridis, legenda dei colori nascosta", () => {
+  const { contenitore, piano, svg } = pianoCon(undefined);
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: SBALZO }) });
+  assert.equal(coloriDi(contenitore).hidden, false);
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: SBALZO, stantia: true }) });
+  const s = millimetriPerPixelDi(svg());
+  const g = strato(svg());
+  const rosse = diClasse(g, "polyline", "deformata");
+  assert.equal(rosse.length, 1);
+  assert.equal(rosse[0].getAttribute("stroke"), "#b8321e");
+  assert.ok(quasi(rosse[0].getAttribute("stroke-width"), 2 * s));
+  assert.equal(rosse[0].getAttribute("stroke-dasharray"), `${6 * s} ${4 * s}`);
+  assert.equal(diClasse(g, "line", "deformata").length, 0);
+  assert.equal(diClasse(g, "polyline", "deformata-bordo").length, 0);
+  assert.equal(coloriDi(contenitore).hidden, true, "numeri vecchi in viridis si leggerebbero come nuovi");
+  assert.ok(badgeDi(contenitore).textContent.startsWith("stantia"));
+});
+
+test("piano: la legenda dei colori dice |u|, gli estremi e la rampa viridis; il massimo passato vince su quello disegnato", () => {
+  const { contenitore, piano, svg } = pianoCon(undefined);
+  const SEI = { ...SBALZO, spostamenti: { ...SBALZO.spostamenti, 2: [0, 0, -6, 0, 0, 0] } };
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: SEI, uMax: 12.34 }) });
+  const colori = coloriDi(contenitore);
+  assert.equal(colori.className, "risultati-colori");
+  assert.equal(colori.hidden, false);
+  assert.deepEqual(testiColori(contenitore), ["|u|", "0 mm", "12,34 mm"]);
+  const [gradiente, ...altri] = tutti(colori, "linearGradient");
+  assert.equal(altri.length, 0);
+  const stop = tutti(gradiente, "stop");
+  assert.deepEqual(stop.map((x) => x.getAttribute("stop-color")), VIRIDIS);
+  assert.deepEqual(stop.map((x) => Number(x.getAttribute("offset"))), VIRIDIS.map((_, k) => k / 9));
+  const [rampa] = tutti(colori, "rect");
+  assert.equal(rampa.getAttribute("fill"), `url(#${gradiente.getAttribute("id")})`);
+  assert.equal(rampa.getAttribute("stroke"), "#141414");
+  const punti = puntiDeformata(traveR, SEI, 100)[0].punti;
+  assert.equal(diClasse(strato(svg()), "line", "deformata").at(-1).getAttribute("stroke"),
+               coloreSpostamento((punti.at(-2).u + punti.at(-1).u) / 2, 12.34), "i tratti si colorano sulla scala della legenda");
+  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "modo:2", perCaso: FORMA_2, scala: 100, auto: true,
+                                       stantia: false, tipo: "modo", badge: { modo: MODO_2 } } });
+  assert.deepEqual(testiColori(contenitore), ["|u| · forma normalizzata", "0", "1"]);
+  for (const vista of ["M", "V", "N"]) {
+    piano.disegna(traveR, { risultati: conRisultati(vista, { perCaso: SBALZO }) });
+    assert.equal(colori.hidden, true, `vista ${vista}: legenda dei colori nascosta`);
+    assert.equal(diClasse(strato(svg()), "polyline", "deformata-bordo").length, 0, `vista ${vista}: nessun bordo`);
+  }
+  piano.disegna(traveR, {});
+  assert.equal(colori.hidden, true, "senza risultati");
+});
+
+test("piano: il fattore dell'animazione sposta la deformata ma non la ricolora", () => {
+  const { piano, svg } = pianoCon(undefined);
+  const base = { vista: "deformata", caso: "modo:2", perCaso: FORMA_2, scala: 100, auto: true,
+                 stantia: false, tipo: "modo", badge: { modo: MODO_2 } };
+  const colori = (fattore) => {
+    piano.disegna(traveR, { risultati: { ...base, fattore } });
+    return diClasse(strato(svg()), "line", "deformata").map((l) => l.getAttribute("stroke"));
+  };
+  const pieno = colori(1);
+  assert.ok(new Set(pieno).size > 1, "i colori cambiano lungo l'asta: il test non è banale");
+  assert.deepEqual(colori(0.3), pieno);
+});
+
+test("piano: spostamenti nulli → tratti alla tappa bassa e «0 mm … 0 mm»; `uMax` non finito → quello disegnato", () => {
+  const { contenitore, piano, svg } = pianoCon(undefined);
+  piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: { spostamenti: {} }, scala: 1, uMax: 0 }) });
+  const tratti = diClasse(strato(svg()), "line", "deformata");
+  assert.equal(tratti.length, 8);
+  for (const l of tratti) assert.equal(l.getAttribute("stroke"), VIRIDIS[0]);
+  assert.deepEqual(testiColori(contenitore).slice(1), ["0 mm", "0 mm"]);
+  for (const uMax of [NaN, Infinity, undefined, null]) {
+    piano.disegna(traveR, { risultati: conRisultati("deformata", { perCaso: SBALZO, uMax }) });
+    assert.equal(testiColori(contenitore)[2], "10 mm", `uMax ${uMax}`);
+    assert.equal(diClasse(strato(svg()), "line", "deformata").at(-1).getAttribute("stroke"),
+                 coloreSpostamento((puntiDeformata(traveR, SBALZO, 1)[0].punti.at(-2).u + 10) / 2, 10), `uMax ${uMax}`);
+  }
+});
+
+test("piano: le strisce sopra il piano scendono col corpo del carattere e con le altezze misurate (R9)", () => {
+  const E = { calcestruzzo: "elastica", acciaio: "elastica" };
+  const pushover = (extra = {}) => ({ vista: "deformata", caso: "pushover", perCaso: SBALZO, scala: 1, auto: true,
+                                      stantia: false, tipo: "pushover", badge: { passo: { k: 0, n: 1, u: 0.5, V: 1.2 } }, ...extra });
+  const tops = (contenitore) => [badgeDi, legendaDi, coloriDi].map((f) => f(contenitore).style.top);
+  // A 11 px e titolo nascosto, i numeri d'oggi: badge 6 + max(16, 11 + 5), legenda 22 + 14 + 2, colori 38 + 28 + 2.
+  const oggi = pianoCon(undefined);
+  oggi.piano.disegna(traveR, { risultati: pushover({ stati: { 1: [E, E] } }) });
+  assert.deepEqual(tops(oggi.contenitore), ["22px", "38px", "68px"]);
+  // A 46 px: badge 6 + 51, legenda 57 + 49 + 2, colori 108 + 2·49 + 2.
+  const aula = pianoCon(variabili({ "--etichetta": "46px" }));
+  aula.piano.disegna(traveR, { risultati: pushover({ stati: { 1: [E, E] } }) });
+  assert.deepEqual(tops(aula.contenitore), ["57px", "108px", "208px"]);
+  aula.piano.disegna(traveR, { risultati: pushover() });
+  assert.equal(legendaDi(aula.contenitore).hidden, true);
+  assert.equal(coloriDi(aula.contenitore).style.top, "108px", "senza legenda degli stati, sotto il badge");
+  // Le altezze misurate vincono sui ripieghi.
+  aula.contenitore._figli[1].offsetHeight = 70;
+  badgeDi(aula.contenitore).offsetHeight = 100;
+  aula.piano.disegna(traveR, { risultati: pushover() });
+  assert.equal(badgeDi(aula.contenitore).style.top, "76px");
+  assert.equal(coloriDi(aula.contenitore).style.top, "178px");
+});
+
+test("piano: la legenda dei colori è un ostacolo alto quanto misura, e l'etichetta della freccia non le finisce sotto", () => {
+  const { contenitore, piano, svg } = pianoCon(undefined);
+  // Alta 40 px misurati, non i 14 del ripiego: con una riga sola la freccia dello spigolo cade appena
+  // sotto la fascia, e il test passerebbe anche senza l'ostacolo (provato a mutante).
+  coloriDi(contenitore).offsetHeight = 40;
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, 0, 0],
+                                   3: [0, 0, -50, 0, 0, 0], 4: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+  piano.disegna(telaio43, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1, auto: true,
+                                         stantia: false, tipo: "caso", badge: {} } });
+  const colori = coloriDi(contenitore);
+  assert.equal(colori.hidden, false);
+  assert.equal(colori.style.top, "38px");
+  // Il box come lo stima `piano.js`: alto quanto misura, largo quanto i suoi testi più la rampa di 6 em.
+  const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
+  const x1 = cx + 800 * s / 2, bordo = cy - 600 * s / 2;
+  const [titolo, min, max] = testiColori(contenitore);
+  const larga = (`${titolo} ${min} ${"x".repeat(10)} ${max}`.length * 6.6 + 8) * s;
+  const scatola = { x0: x1 - larga, y0: bordo + 38 * s, x1, y1: bordo + (38 + 40) * s };
+  const testi = tutti(strato(svg()), "text");
+  assert.ok(testi.length >= 1, "l'etichetta della freccia si scrive: il test non è vuoto");
+  for (const t of testi) {
+    assert.ok(!siSovrappongono(boxTesto(t, s), scatola), `«${t.textContent}» finisce sotto la legenda dei colori`);
+  }
+});
+
+test("piano a 46 px: il MURO 1 su 1151×944 si allarga per i nomi solo in x, telaio ≥ 540 px, nessun nome fuori dal ritaglio (R3)", () => {
+  // `tests/fixture/muro_1.nova.json`, la sola geometria.
+  const MURO_1 = { nodi: [
+    { id: 1, nome: "piede sx", x: 0, y: 0, z: 0, vincolo: INCASTRO_TOTALE },
+    { id: 2, nome: "piede dx", x: 2262, y: 0, z: 0, vincolo: INCASTRO_TOTALE },
+    { id: 3, nome: "sommità sx", x: 0, y: 0, z: 1607.5 },
+    { id: 4, nome: "sommità dx", x: 2262, y: 0, z: 1607.5 }],
+  aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 1, nodo_j: 3 },
+         { id: 3, nodo_i: 2, nodo_j: 4 }, { id: 4, nodo_i: 3, nodo_j: 4 }] };
+  const { piano, svg } = pianoCon(variabili({ "--etichetta": "46px" }), 1151, 944);
+  piano.disegna(MURO_1, {});
+  const [x0, z0, larghezza, altezza] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / 1151, altezza / 944);
+  assert.ok(2262 / s >= 540, `telaio largo ${(2262 / s).toFixed(1)} px`);
+  const cx = x0 + larghezza / 2, cy = z0 + altezza / 2;
+  const ritaglio = { x0: cx - 1151 * s / 2, x1: cx + 1151 * s / 2, y0: cy - 944 * s / 2, y1: cy + 944 * s / 2 };
+  const nomi = nomiDeiNodi(svg());
+  assert.equal(nomi.length, 4);
+  for (const t of nomi) {
+    const b = boxCorpo(t, s, 46);
+    assert.ok(b.x0 >= ritaglio.x0 && b.x1 <= ritaglio.x1 && b.y0 >= ritaglio.y0 && b.y1 <= ritaglio.y1,
+              `«${t.textContent}» esce dal ritaglio: ${JSON.stringify(b)} fuori da ${JSON.stringify(ritaglio)}`);
   }
 });
