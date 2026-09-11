@@ -493,7 +493,7 @@ disegna(m, { selezione, deformata })   // deformata = { aste, stantia, uMax }
 
 **Interfaces:** vedi «Contratto dei moduli». Nessuna dipendenza da altri task.
 
-- [ ] **Step 1: i test**
+- [x] **Step 1: i test**
 
 `static/test/misure.test.js`:
 
@@ -589,8 +589,8 @@ test("P alterna la presentazione, nudo; ⌘P resta al browser (stampa)", () => {
 });
 ```
 
-- [ ] **Step 2: rosso** (`Cannot find module '../misure.js'`, `viridis is not a function`, `p` → null).
-- [ ] **Step 3: il codice**
+- [x] **Step 2: rosso** (`Cannot find module '../misure.js'`, `viridis is not a function`, `p` → null).
+- [x] **Step 3: il codice**
 
 `static/misure.js`:
 
@@ -672,8 +672,8 @@ export function testoScalaColori({ uMax, tipo }) {
 
 e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
 
-- [ ] **Step 4: verde** (tutti i test JS).
-- [ ] **Step 5: Commit** `feat(interfaccia): misure.js, viridis e |u| per punto della deformata, il tasto P`.
+- [x] **Step 4: verde** (tutti i test JS).
+- [x] **Step 5: Commit** `feat(interfaccia): misure.js, viridis e |u| per punto della deformata, il tasto P`.
 
 ## Ingressi degeneri
 
@@ -696,7 +696,7 @@ e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
 
 **Interfaces:** consuma `leggiMisure`, `avanzamentoMono` (misure.js), `massimoSpostamento`, `coloreSpostamento`, `testoScalaColori`, `VIRIDIS` (risultati.js). `risultati.uMax` e `risultati.tipo` arrivano da `app.js` (Task 4); senza `uMax` il piano lo calcola dalle deformate che disegna.
 
-- [ ] **Step 1: i test** (DOM finto già in `piano.test.js:117-156`; aggiungere al `contenitoreFinto` un facoltativo `stile` che `getComputedStyle` del `globalThis` finto restituisce):
+- [x] **Step 1: i test** (DOM finto già in `piano.test.js:117-156`; aggiungere al `contenitoreFinto` un facoltativo `stile` che `getComputedStyle` del `globalThis` finto restituisce):
   1. **Senza variabili il disegno è quello d'oggi**: nodo `r = 5·s`, asta `stroke-width = 2·s`, scelta `3·s`, etichetta `font-size = 11·s` — le asserzioni esistenti restano verdi senza toccarle.
   2. **Con le variabili della presentazione** (`--nodo-raggio 7px`, `--asta-tratto 6px`, `--asta-tratto-scelta 9px`, `--etichetta 46px`, `--ombra-opacita 0.55`): `r = 7·s` (scelto `7·1,6·s`), `stroke-width = 6·s` (scelta `9·s`), `font-size = 46·s`, ombra `stroke-opacity = 0.55`; il box dell'etichetta di un nodo è largo `(n·27,6 + 2)·s` e alto `46·s`.
   3. **Deformata non stantia**: una `polyline.deformata-bordo` per asta in inchiostro con `stroke-width = (2 + 2·2)·s` e tanti `line.deformata` quanti tratti (`punti − 1`), ognuno con `stroke` = `coloreSpostamento` della media dei due estremi; su una trave con un estremo fermo il primo tratto è più scuro dell'ultimo (luminanza); `polyline.deformata` **non** c'è. `ultimoPunto` di `:1024` legge ora la `polyline.deformata-bordo` (stessi punti).
@@ -705,8 +705,8 @@ e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
   6. **Il fattore dell'animazione non ricolora**: due `disegna` con `fattore 1` e `0,3` danno gli stessi `stroke` sui `line.deformata`.
   7. **Ostacoli sopra il piano con caratteri grandi**: con `--etichetta 46px` il badge sta a `top` = 6 + altezza del titolo misurata (ripiego `carattere + 9` nel DOM finto), la legenda degli stati sotto il badge, la legenda dei colori sotto la legenda degli stati (o sotto il badge se questa è nascosta); ognuna è un ostacolo della sua altezza misurata.
 
-- [ ] **Step 2: rosso.**
-- [ ] **Step 3: il codice** in `piano.js`:
+- [x] **Step 2: rosso.**
+- [x] **Step 3: il codice** in `piano.js`:
   - in `disegna`, prima di tutto: `const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));` e al posto di `RAGGIO`, `2`/`3` delle aste, `2` e `6s 4s` della deformata, `11` delle etichette, `0.3` dell'ombra i campi di `misure`; `larghezzaMono(testo, s, extra)` diventa `(testo.length * avanzamentoMono(misure.carattere) + extra) * s` e le altezze dei box `11·s`/`14·s` diventano `misure.carattere·s` / `(misure.carattere + 3)·s`. `OFFSET_ETICHETTA` scala col carattere: `max(16, misure.raggioNodo + misure.carattere·0,6)`. I simboli di vincoli e carichi restano come sono (non sono nelle soglie della story).
   - ramo deformata (`:186-197`):
 
@@ -743,7 +743,7 @@ e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
   - la legenda dei colori: in `creaPiano`, accanto a `badge` e `legenda`, un `div.risultati-colori` con dentro `span.titolo`, `span.min`, un `svg` 120×10 con `defs > linearGradient#viridis-legenda` (dieci `stop` da `VIRIDIS`, `offset` k/9) e un `rect` riempito col gradiente e bordato in inchiostro, `span.max`; in `disegna` si scrivono i testi da `testoScalaColori({ uMax, tipo: attivo.tipo })` e `hidden = !(attivo && vistaRis === "deformata" && !attivo.stantia)`.
   - ostacoli sopra il piano: il titolo si **misura** (`titolo.offsetHeight || misure.carattere + 9`), il badge va a `top = 6 + altoTitolo` (scritto in `badge.style.top`), la legenda degli stati a `top = topBadge + altoBadge + 2`, la legenda dei colori sotto l'ultima visibile; ognuna diventa un ostacolo alto quanto misura (`offsetHeight` con ripiego).
   - `stile.css`: `.risultati-colori` come `.risultati-legenda` (`position: absolute; right: 8px; font: var(--etichetta) var(--mono)` via `font-size: var(--etichetta, 11px)`; `display: flex; gap: 6px; align-items: center`), e `font-size: var(--etichetta, 11px)` anche su `.carichi-titolo`, `.risultati-badge`, `.risultati-legenda` al posto degli 11 px scritti.
-- [ ] **Step 4: verde**; **Step 5: Commit** `feat(interfaccia): il piano legge le misure dalle variabili CSS e colora la deformata con lo spostamento in viridis`.
+- [x] **Step 4: verde**; **Step 5: Commit** `feat(interfaccia): il piano legge le misure dalle variabili CSS e colora la deformata con lo spostamento in viridis`.
 
 ## Ingressi degeneri
 
@@ -765,17 +765,17 @@ e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
 
 **Interfaces:** consuma `leggiMisure` (misure.js), `coloreSpostamento` (risultati.js). Produce `pixelInMondo`, `tratti`. `disegna(m, { selezione, deformata })` con `deformata = { aste, stantia, uMax }` (Task 4 aggiunge `uMax`).
 
-- [ ] **Step 1: i test** (pure, senza WebGL, come `calcolaAspect`):
+- [x] **Step 1: i test** (pure, senza WebGL, come `calcolaAspect`):
   1. `pixelInMondo(1000, 90, 500)` = `2·1000·tan(45°)/500` = 4; `pixelInMondo(1000, 45, 0)` = 0; `pixelInMondo(NaN, 45, 500)` = 0.
   2. `tratti([{x:0,y:0,z:0,u:0}, {x:1,y:0,z:0,u:2}, {x:2,y:0,z:0,u:4}], 4)` → due tratti con `a`/`b` giusti e `colore` = `coloreSpostamento(1, 4)` e `coloreSpostamento(3, 4)`; `tratti([], 4)` e `tratti([p], 4)` → `[]`; `u` assente → colore della tappa bassa.
-- [ ] **Step 2: rosso.**
-- [ ] **Step 3: il codice** in `spazio.js`:
+- [x] **Step 2: rosso.**
+- [x] **Step 3: il codice** in `spazio.js`:
   - una `CylinderGeometry(1, 1, 1, 8)` **condivisa** creata una volta (asse y, alta 1, raggio 1); la pulizia di `disegna` (`:142`) salta la geometria condivisa (`if (o.geometry !== cilindro) o.geometry?.dispose()`).
   - `const cilindroFra = (a, b, materiale)`: `Mesh` con posizione a metà, `quaternion.setFromUnitVectors(new Vector3(0,1,0), direzione)`, `scale.y = lunghezza`, `userData.tratto = px` (il tratto voluto in pixel); le aste (`misure.trattoAsta`, scelta `misure.trattoScelta`) e la deformata (`misure.trattoDeformata`) diventano cilindri; l'ombra dell'indeformata con la deformata: materiale inchiostro trasparente a `misure.ombra`.
   - deformata non stantia: per ogni asta `tratti(d.punti, deformata.uMax)` → un cilindro colorato per tratto (`MeshBasicMaterial` presi da una `Map` colore → materiale, svuotata a ogni `disegna`); **bordo in inchiostro** come secondo cilindro coassiale di tratto `trattoDeformata + 2·bordoDeformata` con `depthWrite` normale e il colorato a `renderOrder` maggiore; stantia: cilindri rossi, nessun colore.
   - `rendi()`: prima di `renderer.render`, `const k = pixelInMondo(orbita.distanza, camera.fov, contenitore.clientHeight)`; per ogni mesh con `userData.tratto`, `mesh.scale.x = mesh.scale.z = k * mesh.userData.tratto / 2`. ponytail: `k` alla distanza del centro dell'orbita — un'asta vicina alla camera esce un po' più grossa, una lontana un po' più sottile; sui telai di NOVA (profondità ≪ distanza) lo scarto è sotto il pixel, e la misura esatta per asta si fa se un modello profondo lo chiede.
   - nodi: `puntoInchiostro.size = 2 * misure.raggioNodo`, `puntoRosso.size = 2 * misure.raggioNodo * 1.6` a ogni `disegna` (le misure si leggono con `leggiMisure(getComputedStyle(contenitore))`).
-- [ ] **Step 4: verde** (i test JS; il 3D vero lo prova il fumo del Task 4 e la prova a mano); **Step 5: Commit** `feat(interfaccia): il 3D disegna aste e deformata come cilindri dello spessore voluto, colorata in viridis`.
+- [x] **Step 4: verde** (i test JS; il 3D vero lo prova il fumo del Task 4 e la prova a mano); **Step 5: Commit** `feat(interfaccia): il 3D disegna aste e deformata come cilindri dello spessore voluto, colorata in viridis`.
 
 ## Ingressi degeneri
 
@@ -797,7 +797,7 @@ e in `SENZA_MODIFICATORE` la coppia `["p", "presentazione"]`.
 
 **Interfaces:** consuma i Task 1-3.
 
-- [ ] **Step 1: `stile.css`**:
+- [x] **Step 1: `stile.css`**:
 
 ```css
 :root {
@@ -837,15 +837,15 @@ body[data-presentazione] #riapri-pannelli { display: block; position: fixed; top
 ```
 
   (i numeri esatti di `grid-template` e dei `rem` li verifica l'architect a 1920 px; il `[hidden]` va rispettato: `:not([hidden])` sulle regole che scrivono `display`.)
-- [ ] **Step 2: `index.html`**: prima di `<div id="colonna">`, `<button id="riapri-pannelli" type="button" aria-pressed="false">pannelli</button>` (nascosto dal CSS fuori dalla presentazione).
-- [ ] **Step 3: `app.js`**:
+- [x] **Step 2: `index.html`**: prima di `<div id="colonna">`, `<button id="riapri-pannelli" type="button" aria-pressed="false">pannelli</button>` (nascosto dal CSS fuori dalla presentazione).
+- [x] **Step 3: `app.js`**:
   - `const presentazione = () => document.body.hasAttribute("data-presentazione");` e `function alternaPresentazione(accesa = !presentazione())` che scrive/toglie `data-presentazione`, toglie `data-pannelli` quando esce, aggiorna `aria-pressed` del bottone, poi `ridisegna()`.
   - in `dispatchVoce`, **sotto** la guardia del campo (`if (comando) { campoComando.focus(); return; }`): `if (voce.codice === "presentazione") { alternaPresentazione(); return; }`.
   - il ramo `annulla` (`:921`): `const gesto = Boolean(modo || comando); modo = null; chiudiComando(); dì(null); if (!gesto && presentazione()) { alternaPresentazione(false); return; } ridisegna(); return;`.
   - il bottone: `$("riapri-pannelli").addEventListener("click", () => { document.body.toggleAttribute("data-pannelli"); …aria-pressed…; ridisegna(); })`.
   - `risultatiInVista(m, fattore)`: aggiunge `tipo: scelto.tipo` e `uMax`: per la pushover `massimoSpostamento(puntiDeformata(m, { spostamenti: passoDiRiferimento.spostamenti }, 1))` in cache accanto a `scalaCache` (stessa chiave `passi`/`m`); per caso e modo `massimoSpostamento(puntiDeformata(m, scelto.perCaso, 1))`.
   - `deformataInVista`: passa `uMax: inVista.uMax` nella deformata per il 3D.
-- [ ] **Step 4: il fumo** — copione `presentazione` in `fumo.mjs`:
+- [x] **Step 4: il fumo** — copione `presentazione` in `fumo.mjs`:
 
 ```js
   // Il modo presentazione sul MURO 1 a 1920×1080 (story 62): P entra, le misure rese stanno sopra le
@@ -924,7 +924,7 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
 ```
 
   (la copia dello screenshot nel workspace per l'Esito la fa il controller; il fumo prova solo che si scrive.)
-- [ ] **Step 5: tutti i test** (JS, fumo `-k presentazione`, pytest intero). **Step 6: Commit** `feat(interfaccia): il modo presentazione — P, striscia dei risultati, misure dell'aula, fumo a 1920 in scala di grigi`.
+- [x] **Step 5: tutti i test** (JS, fumo `-k presentazione`, pytest intero). **Step 6: Commit** `feat(interfaccia): il modo presentazione — P, striscia dei risultati, misure dell'aula, fumo a 1920 in scala di grigi`.
 
 ## Ingressi degeneri
 
@@ -941,8 +941,8 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
 
 ### Task 5: prova a mano a 1920 e al 25 %, review di ramo, Esito (controller)
 
-- [ ] Server `--porta 8824`; Chrome a 1920×1080: MURO 1 corso, `P`; zoom del browser al 25 % (P8a): scala, etichette dei nodi e numeri della striscia leggibili; uno screenshot a colori e uno in scala di grigi (dal fumo) nel workspace SDD; la pushover in presentazione (scrubber con `←`/`→`, colori fissi sui passi); un modo (colori fermi mentre respira); il 3D con aste spesse e deformata colorata.
-- [ ] Review di ramo a cinque (`security-reviewer`, `code-reviewer`, `test-writer`, `craft-reviewer`, `spec-reviewer`) in parallelo, un giro di fix, re-review scoped; mutanti; Esito in coda a questo piano; PR; issue per l'Hermite dei modi.
+- [x] Server `--porta 8824`; Chrome a 1920×1080: MURO 1 corso, `P`; zoom del browser al 25 % (P8a): scala, etichette dei nodi e numeri della striscia leggibili; uno screenshot a colori e uno in scala di grigi (dal fumo) nel workspace SDD; la pushover in presentazione (scrubber con `←`/`→`, colori fissi sui passi); un modo (colori fermi mentre respira); il 3D con aste spesse e deformata colorata.
+- [x] Review di ramo a cinque (`security-reviewer`, `code-reviewer`, `test-writer`, `craft-reviewer`, `spec-reviewer`) in parallelo, un giro di fix, re-review scoped; mutanti; Esito in coda a questo piano; PR; issue per l'Hermite dei modi.
 
 ## Ingressi degeneri
 
@@ -957,3 +957,19 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
 5. `piano.js`: `attivo.uMax` ignorato → muore («uMax 12,34 anche se le deformate arrivano a 6»).
 6. `app.js`: `annulla` che esce dalla presentazione anche con un gesto aperto → controllo nullo nel fumo? **No** (il copione non apre un campo in presentazione): da provare a mano o con un secondo `Esc` nel copione.
 7. `stile.css`: `--etichetta: 46px` → `40px` → muore nel fumo (`etichette >= 46`).
+
+## Esito (12/09/2026, notte autonoma)
+
+**Fatto come da piano e dalle decisioni P1a-P8a**: col tasto `P` l'interfaccia entra nel modo presentazione — albero, barra dei tasti e cronologia spariscono, piano e spazio prendono tutta la larghezza (3:2), sotto le viste resta la striscia coi controlli dei risultati a 32 px, un bottone «pannelli · Esc esce» li riapre senza uscire, `P` o `Esc` escono (`Esc` chiude prima il gesto aperto, e passa anche dal menu del caso). Le misure del disegno vengono da variabili CSS (`--nodo-raggio`, `--asta-tratto`, `--etichetta`, `--deformata-tratto`, `--ombra-opacita`), lette da `piano.js` e `spazio.js` a ogni disegno: fuori dall'aula il disegno resta quello di prima, al pixel. L'inquadratura del telaio **riserva la fascia occupata dalle strisce di testo** e ci sta sotto. La **deformata si colora con lo spostamento in viridis** (P4b) sopra un bordo in inchiostro, nel piano e nel 3D, con la legenda «spostamento |u| 0 mm … max 64,34 mm»; per un modo «forma del modo · 0 fermo, 1 massimo». Nel 3D aste e deformata sono cilindri dello spessore voluto in pixel, misurato sull'estremo più lontano dalla camera.
+
+**Misurato** (Chrome headless a 1920×1080, MURO 1 e MURO 1 pushover corsi davvero): etichette **46 px**, aste **6 px**, nodi **14 px**, striscia **32 px**, contrasto dell'ombra **3,70:1** sul fondo (a 0,3 faceva 1,90), la pagina non scorre. Statica: piano 1152×968, telaio 324-827 × 426-787, strisce fino a 138 px, **zero sovrapposizioni**. Pushover: piano 1152×921, telaio 362-789 × 501-808 sotto le strisce che finiscono a 308, **zero sovrapposizioni** (prima del primo fix erano quattro, coi nomi «sommità sx/dx» sotto la legenda degli stati). Bianco e nero provato nel fumo con `grayscale` più screenshot. Conteggi finali: **889 test JS** (base 848), **23 di fumo** (base 20), **748 pytest + 3 skip**. Mutanti: 7 provati, **5 uccisi**, 2 equivalenti (la guardia del massimo zero in `coloreSpostamento` è ridondante perché `viridis` scarta i non finiti; `>` e `>=` in `massimoSpostamento` danno lo stesso massimo).
+
+**Trovato dall'architect prima del dispatch** (misure in Chrome, non deduzioni): il blocco CSS della presentazione scritto nel piano lasciava i controlli della striscia a 10-12 px e la striscia alta 489 px, e `display: revert` rimostrava gli elementi nascosti e la Storia — sostituito da uno misurato (32 px ovunque, striscia 102-159 px); l'allargamento del riquadro per i nomi, a 46 px, rimpiccioliva il MURO 1 a 356×253 px su 1151×944 (ora l'extra va solo in x); il bordo coassiale del 3D con `renderOrder` usciva **tutto nero** (serve `side: BackSide`); i materiali di viridis vanno in una `Map` persistente (svuotarla costa 3× e fa ricompilare il programma); lo spessore dei cilindri va preso sull'estremo lontano (al centro dell'orbita lo scarto è −19 %/+31 %); un `uy` usato prima della dichiarazione avrebbe sollevato a ogni vista deformata.
+
+**Trovato dalle review e dalla prova a mano**: la legenda degli stati, in pushover, si posava sui nomi dei nodi e sui nodi in cima — il telaio si adattava al riquadro intero ignorando le strisce; il margine dell'ostacolo della deformata era rimasto a 1 px col bordo largo 3; la discendente delle etichette era fissa a 3 px anche a 46; `near` fisso a 1 mm col bordo `BackSide` dava z-fighting su telai grandi; un test di `perColore` non provava niente; il copione di fumo del modo 2 era rotto dal Task 2 (leggeva una classe del DOM che non esiste più) e nessuno aveva lanciato il fumo prima del commit; il fumo non asseriva le altezze che il CSS doveva garantire, e non lanciava mai una corsa **dentro** la presentazione; `uMax` aveva tre padroni; col titolo dei carichi nascosto la fascia riservava 51 px in aula per una striscia che non c'è; la soglia del telaio minimo guardava il riquadro invece del telaio residuo; la shorthand `font` azzerava `line-height` e allungava le strisce, cioè la misura su cui poggia l'inquadratura; in aula lo srotolato restava a 11 px, la legenda diceva «|u|» senza dire «spostamento», il badge e la legenda mostravano due millimetri diversi senza distinguerli, la striscia portava in aula il tutorial da tastiera intero e il bottone non diceva come si esce.
+
+**Ruling registrati** (`NOVA-wt/interfaccia/.superpowers/sdd/2026-09-12-t5-giornata-15-presentazione/progress.md`): 15a (presentazione, viridis, B/N, misure) e 15b (critique, polish, audit) in due PR; viridis sotto 3:1 sul fondo da metà scala, quindi sempre sopra un bordo in inchiostro; il colore segue |u| vero e non il fattore dell'animazione, e per la pushover il massimo è fisso sul passo di riferimento; stantia resta rossa e tratteggiata, senza colori; `Esc` esce dal menu del caso, `P` resta alla ricerca per lettera del menu; i pannelli riaperti in presentazione tengono i caratteri normali; le fasi della corsa si vedono in presentazione; `uMax` con un solo padrone in `app.js` (ribalta un ruling precedente che aveva preferito il risparmio di un calcolo per fotogramma); col titolo nascosto il badge tiene il distacco di 16 px d'oggi, non il ripiego che scala col corpo; la legenda degli stati si mostra solo quando almeno uno stato non è elastica.
+
+**Debiti dichiarati** (issue **#85**): in pushover a 1280×657 le strisce occupano l'81 % dell'altezza e restano otto sovrapposizioni su dieci — vanno accorciate, non spostato il telaio; le strisce sono più grandi del disegno anche a 1920 (telaio 373×269 px contro una banda alta di 302: la legenda dei colori va in basso a sinistra); la coda chiara di viridis sul fondo fa 1,10:1 (fermare la rampa a 0,9 o posarla su una piastra d'inchiostro); lo srotolato e la curva della pushover, nascosti in aula, vanno portati con misure proprie; nessuno prova lo spessore dei cilindri nel 3D (cancellando il ciclo di `rendi` resta tutto verde); il costo per fotogramma con un modo animato (68 mesh rifatte a 60 Hz più due reflow sincroni); i millimetri per pixel si calcolano su `clientWidth/Height` arrotondati mentre il browser rende sul riquadro vero (per questo la soglia del fumo è scesa da 45,99 a 45,9); `TELAIO_MINIMO = 100` px è tarato su un caso solo; il bottone «chiudi pannelli · Esc esce» misura ~380 px e sotto i 1920 copre un angolo del 3D; l'Hermite dei modi disegna una S fra i nodi (issue **#84**, fuori dalla 15a per P7a).
+
+**Lezioni**: misurare il CSS in Chrome **prima** di scriverlo ha evitato una striscia alta 489 px e un fumo verde su un layout sbagliato; un mutante va contato rispetto al controllo nullo, non rispetto a zero (con la base a 1 due mutanti sembravano uccisi); un task che cambia una classe del DOM va chiuso col fumo e non coi soli test a unità; `SOVRAPPOSTE` confronta i testi dell'SVG fra loro e non vede le strisce HTML — le sovrapposizioni vere si misurano coi rettangoli di entrambi; una shorthand CSS con dentro una variabile porta con sé i longhand che non hai scritto; un `offsetHeight` di un elemento nascosto vale 0, e un ripiego «se manca» scatta proprio quando l'elemento non c'è.
