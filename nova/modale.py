@@ -24,6 +24,7 @@ un verdetto che confronta 85 con 0,85 è il difetto che questa conversione chiud
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from meshrec.core import opensees
@@ -84,8 +85,12 @@ def leggi(cartella: Path, modi: int, tag_a_id: dict[int, int], n_nodi: int | Non
     for k in range(1, n + 1):
         forma = opensees._ultima_riga(cartella / f"modo_{k}.out", 3 * n_nodi).reshape(n_nodi, 3)
         f = frequenze[k - 1]
+        # issue #65: λ ≤ 0 è rigidezza tangente non definita positiva -- `sqrt` rende `nan`,
+        # e un λ negativo può anche rendere una frequenza finita ma non fisica. Un modo così
+        # non è un numero guasto da scrivere: è un modo rifiutato, `f`/`T` restano `None`.
+        f = f if math.isfinite(f) and f > 0 else None
         modi_letti.append({
-            "n": k, "f": f, "T": (1.0 / f) if f > 0 else None,
+            "n": k, "f": f, "T": (1.0 / f) if f else None,
             "forma": {str(tag_a_id[t]): [float(x) for x in forma[t - 1]] for t in tag_a_id},
             "massa_partecipante": dict(zip("xyz", (v / 100.0 for v in per_modo[k - 1][:3]))),
             "cumulata": dict(zip("xyz", (v / 100.0 for v in cumulate[k - 1][:3]))),
@@ -136,9 +141,13 @@ def direzioni_con_massa(m: Modello) -> tuple[str, ...]:
 
 
 def abbastanza(modi: list[dict], direzioni) -> bool:
-    if not modi:
+    # issue #65 (review): un modo con `f: None` non è verificato -- la sua cumulata non deve
+    # nascondere che il modo buono precedente non basta. `.get("f", 0)` non esclude i modi
+    # che (come nei test più vecchi) non portano affatto la chiave `f`.
+    buoni = [m for m in modi if m.get("f", 0) is not None]
+    if not buoni:
         return False
-    ultima = modi[-1]["cumulata"]
+    ultima = buoni[-1]["cumulata"]
     return all(ultima[d] >= SOGLIA_MASSA for d in direzioni)
 
 

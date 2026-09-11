@@ -1,4 +1,7 @@
 """La modale: letture dal file di modalProperties, ciclo C2, forma dei risultati."""
+import json
+import math
+
 import pytest
 
 from conftest import FIXTURE, leggi_fixture
@@ -89,6 +92,16 @@ def test_abbastanza_guarda_solo_le_direzioni_con_massa():
     assert not modale.abbastanza([], ("x",))
 
 
+def test_abbastanza_ignora_la_cumulata_del_modo_senza_frequenza_fisica():
+    """Review su #65: `modi[-1]` non è più «l'ultimo modo», è «l'ultimo modo buono» -- un
+    modo con `f: None` in coda non deve far passare una direzione che il modo vero non
+    raggiunge."""
+    modi = [{"f": 5.0, "cumulata": {"x": 0.5, "y": 0.0, "z": 0.5}},
+            {"f": None, "cumulata": {"x": 1.0, "y": 1.0, "z": 1.0}}]
+    assert not modale.abbastanza(modi, ("x",))
+    assert not modale.abbastanza([{"f": None, "cumulata": {"x": 1.0}}], ("x",))
+
+
 def test_i_gradi_liberi_sono_il_tetto_dei_modi():
     """Telaio 2×1: tre nodi incastrati, tre liberi, nove traslazioni con massa."""
     m = modello.carica(leggi_fixture("telaio_2x1.nova.json"))
@@ -124,6 +137,42 @@ def test_i_gradi_liberi_contano_i_nodi_delle_suddivisioni():
         a["suddivisioni"] = 4
     # nove traslazioni dichiarate libere + cinque aste × tre nodi interni × tre gradi
     assert modale.gradi_liberi(modello.carica(m)) == 9 + 45
+
+
+# --- issue #65: una frequenza non finita non deve entrare in `modi[]` come `nan` ---
+
+_MODALPROPERTIES_CON_NAN = (
+    "* 2. EIGENVALUE ANALYSIS:\n"
+    "#          MODE        LAMBDA         OMEGA     FREQUENCY        PERIOD\n"
+    "              1           nan           nan           nan           nan\n"
+    "              2       2988.46       54.6668       8.70049      0.114936\n"
+    "\n\n"
+    "* 9. MODAL PARTICIPATION MASS RATIOS (%):\n"
+    "#          MODE            MX            MY            MZ           RMX           RMY           RMZ\n"
+    "              1             0          50.0             0             0             0             0\n"
+    "              2             0          50.0             0             0             0             0\n"
+    "\n\n"
+    "* 10. MODAL PARTICIPATION MASS RATIOS (%) (cumulative):\n"
+    "#          MODE            MX            MY            MZ           RMX           RMY           RMZ\n"
+    "              1             0          50.0             0             0             0             0\n"
+    "              2             0         100.0             0             0             0             0\n"
+)
+
+
+def test_una_frequenza_non_finita_non_lascia_nan_nei_modi(tmp_path):
+    """issue #65: con un autovalore λ negativo (rigidezza tangente non definita positiva,
+    tipico dopo una pushover) OpenSees scrive `nan` nella colonna FREQUENCY.
+    `opensees.leggi_frequenze` (meshrec, non si tocca) la legge com'è -- `float('nan')`
+    non solleva. Un modo così non deve restare un `nan` in `modi[]`: JSON non ce l'ha, e
+    `json.dumps` lo scrive come `NaN`, che il browser rifiuta (misurato: oggi
+    `modi[0]['f']` è `nan` e `json.dumps(modi, allow_nan=False)` solleva `ValueError`)."""
+    (tmp_path / "massa_modale.out").write_text(_MODALPROPERTIES_CON_NAN)
+    for k in (1, 2):
+        (tmp_path / f"modo_{k}.out").write_text(" ".join(["0.0"] * 18) + "\n")
+    modi = modale.leggi(tmp_path, 2, {t: t for t in range(1, 7)})
+    assert not any(f is not None and (math.isnan(f) or math.isinf(f))
+                   for f in (m["f"] for m in modi))
+    json.dumps(modi, allow_nan=False)  # non deve sollevare: nessun nan/inf residuo
 
 
 def test_direzioni_con_massa_vede_la_direzione_libera_sui_soli_nodi_interni():

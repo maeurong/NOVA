@@ -539,17 +539,35 @@ def _verdetti_modali(modi: list[dict], direzioni: tuple[str, ...]) -> list[dict]
     if not direzioni:
         return [non_applicabile(x, "nessuna traslazione libera con massa: niente da estrarre")
                 for x in ("autovalori", "massa_modale")]
-    autovalori = solve.controlla_autovalori([x["f"] for x in modi])
-    prima = autovalori.get("prima_frequenza_hz")
-    v = [verdetto("autovalori", autovalori, ragione=(
-        f"prima frequenza {'assente' if prima is None else format(prima, '.6g') + ' Hz'} "
-        f"su {len(modi)} modi estratti"))]
-    if modi:
-        cumulata = modi[-1]["cumulata"]
+    # issue #65: `solve.controlla_autovalori` guarda solo prima e seconda frequenza -- una
+    # frequenza non fisica (`f is None`, vedi `modale.leggi`) più in là non è mai letta. Il
+    # cancello sta qui, prima di passargli solo le frequenze buone.
+    # il test C3 passa `modi` costruito a mano, senza transitare da `modale.leggi`: la guardia
+    # rilegge qui la stessa condizione (non `f is None` soltanto), così la frequenza guasta è
+    # rifiutata sia quando arriva già `None` sia quando arriva ancora il numero non fisico.
+    guasti = [n for n, x in enumerate(modi, 1)
+              if x["f"] is None or not math.isfinite(x["f"]) or x["f"] <= 0]
+    if guasti:
+        ragione = ", ".join(f"modo {n}: frequenza non finita o non fisica (λ ≤ 0)" for n in guasti)
+        v = [verdetto("autovalori", {"passato": False, "modi_guasti": guasti}, ragione=ragione)]
+    else:
+        autovalori = solve.controlla_autovalori([x["f"] for x in modi])
+        prima = autovalori.get("prima_frequenza_hz")
+        v = [verdetto("autovalori", autovalori, ragione=(
+            f"prima frequenza {'assente' if prima is None else format(prima, '.6g') + ' Hz'} "
+            f"su {len(modi)} modi estratti"))]
+    # issue #65 (review): la cumulata è quella dell'ultimo modo con frequenza fisica, non
+    # dell'ultimo modo in assoluto -- un modo rifiutato (`f is None`) non deve far passare
+    # una direzione che il modo buono precedente non raggiunge.
+    buoni = [x for x in modi if x["f"] is not None]
+    if buoni:
+        cumulata = buoni[-1]["cumulata"]
         masse = {"catturata": [100.0 * cumulata[x] for x in "xyz"] + [0.0] * 3,
                  "disponibile": [100.0 if x in direzioni else 0.0 for x in "xyz"] + [0.0] * 3}
         ragione = ("cumulata " + ", ".join(f"{x} {cumulata[x]:.4g}" for x in direzioni)
                    + f" sulle direzioni con massa {', '.join(direzioni)}")
+    elif modi:
+        masse, ragione = None, "nessun modo con frequenza fisica: la massa partecipante non è verificata"
     else:
         masse, ragione = None, "nessun modo estratto: la massa partecipante non è verificata"
     v.append(verdetto("massa_modale", solve.controlla_massa_modale(masse, soglia=modale.SOGLIA_MASSA),

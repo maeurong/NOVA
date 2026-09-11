@@ -20,10 +20,12 @@ _MARCA_NOME = "** NOME PASSO:"
 
 # Il tetraedro lineare è l'unico elemento su cui volume e quota tributaria sono esatti:
 # le funzioni di forma sono lineari, l'integrale della gravità è V/4 a ciascuno dei quattro
-# vertici. Su C3D10 sarebbero -V/20 ai vertici e +V/5 ai nodi di lato, e il volume del
-# tetraedro a lati dritti non è nemmeno quello vero (`meshrec/core/solve.py:1091`, che quel
-# conto ce l'ha ma **non è riusabile**: chiama `abaqus.NODI_PER_ELEMENTO`, che in questo
-# checkout non esiste, e solleva `AttributeError`. `meshrec/` non si tocca).
+# vertici. Su C3D10 sarebbero -V/20 ai vertici e +V/5 ai nodi di lato; il volume del
+# tetraedro a lati dritti **è** quello geometrico (misurato con `EVOL`, issue #66,
+# `docs/ricerca/13-solido-calculix.md`): lo scarto (+3,846 %) compare solo con un nodo di
+# lato spostato del 5 %. Il conto per nodo `meshrec/core/solve.py:1091` ce l'ha ma **non è
+# riusabile**: chiama `abaqus.NODI_PER_ELEMENTO`, che in questo checkout non esiste, e
+# solleva `AttributeError` (`meshrec/` non si tocca).
 # Con un altro elemento volume e massa restano `None` e il verdetto sulle reazioni esce
 # `non_applicabile`, che è la risposta onesta: non un numero plausibile e sbagliato.
 TIPO_ESATTO = "C3D4"
