@@ -59,12 +59,15 @@ export const PAROLA_CLASSE = Object.freeze({ concorde: "concorde", vicino: "vici
 
 export const conAbaqus = (tabella) => (tabella?.righe ?? []).some((r) => r.abaqus != null || (r.classe_abaqus ?? "non_confrontabile") !== "non_confrontabile");
 
-/** La didascalia sopra la tabella: dice se Abaqus è davvero appaiato ai casi, o solo chiesto
- *  (CSV caricato ma nessuna riga corrisponde) — l'utente ha premuto un bottone, merita di sapere
- *  perché la terza colonna non compare. */
-export function testoDidascalia(tabella, { abaqusChiesto = false } = {}) {
-  if (conAbaqus(tabella)) return "telaio ↔ solido ↔ Abaqus";
-  return abaqusChiesto ? "telaio ↔ solido · il CSV Abaqus non ha righe appaiate ai casi" : "telaio ↔ solido";
+/** La didascalia sopra la tabella: la catena dei lati davvero a confronto, più il perché di quel
+ *  che manca. Il solido è facoltativo (campo vuoto = senza) e Abaqus può essere chiesto ma non
+ *  appaiato: nominarli comunque farebbe leggere «↔ solido» a una tabella che il solido non ce l'ha. */
+export function testoDidascalia(tabella, { abaqusChiesto = false, solidoChiesto = false } = {}) {
+  const abq = conAbaqus(tabella);
+  const catena = ["telaio", solidoChiesto ? "solido" : null, abq ? "Abaqus" : null].filter(Boolean).join(" ↔ ");
+  return [catena,
+          !solidoChiesto && !abq ? "senza solido" : null,
+          abaqusChiesto && !abq ? "il CSV Abaqus non ha righe appaiate ai casi" : null].filter(Boolean).join(" · ");
 }
 
 /** Bias e ragioni fuori dalle celle (data-ink, `07-ux-modellatore.md:105`): una nota per testo
@@ -102,10 +105,12 @@ export function righeDaMostrare(tabella) {
 
 export function testoConteggio(tabella) {
   const righe = tabella?.righe ?? [];
+  // `filter(Boolean)`: senza avvertenza la riga finisce dove finisce, non con un « · » penzolante.
   const avvertenza = tabella?.avvertenza ?? "";
-  if (righe.length === 0) return `nessuna riga · ${avvertenza}`;
+  if (righe.length === 0) return ["nessuna riga", avvertenza].filter(Boolean).join(" · ");
   const n = righe.filter(nonConfrontabile).length;
-  return `${righe.length} ${righe.length === 1 ? "riga" : "righe"} · ${n} non confrontabil${n === 1 ? "e" : "i"} · ${avvertenza}`;
+  return [`${righe.length} ${righe.length === 1 ? "riga" : "righe"}`,
+          `${n} non confrontabil${n === 1 ? "e" : "i"}`, avvertenza].filter(Boolean).join(" · ");
 }
 
 const dataItaliana = (iso) => {
@@ -143,7 +148,9 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
   let casiInForm = [];         // i casi delle righe caso → passo, per rifarle solo se cambiano
   let cartella = null;         // della tabella a schermo, per «copia»
   let occupato = false;
-  let gen = 0;                 // `azzera()` la fa avanzare: la risposta ancora in volo si scarta
+  let generazione = 0;         // `azzera()` la fa avanzare: la risposta ancora in volo si scarta
+
+  const RIPOSO = bConfronta.textContent;   // il nome del bottone sta nel markup, non qui (`corsa.js:285`)
 
   const righeCasi = () => casiEl.querySelectorAll("input");
   const statoForm = () => ({
@@ -194,7 +201,9 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
 
   const th = (testo, scope = "col") => { const e = document.createElement("th"); e.textContent = testo; e.setAttribute("scope", scope); return e; };
   const td = (testo) => { const e = document.createElement("td"); e.textContent = testo; return e; };
-  // I numeri delle note in apice, nella cella della classe: «lontano 1», «non confrontabile 2 3».
+  // I numeri delle note in apice sull'intestazione di riga: «massa 1», «reazione_x 2 3». La nota
+  // parla della riga intera, e la grandezza è dove si legge la riga — la colonna che il `sticky`
+  // tiene ferma mentre il resto scorre (`docs/ricerca/07-ux-modellatore.md:105`, data-ink).
   // Un `<sup>` dopo un nodo di testo, non un carattere in più nel testo: chi guarda distingue il
   // numero dalla parola, e l'`aria-label` lo legge «nota 2, 3» invece di sillabarlo attaccato.
   const conNote = (cella, note) => {
@@ -222,11 +231,12 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
       const celle = [th(r.grandezza, "row"), td(r.caso), td(r.telaio === "—" ? "—" : `${r.telaio} ${r.unita}`), td(r.solido)];
       if (abq) celle.push(td(r.abaqus), td(r.scartoSolido), td(r.scartoAbaqus), td(r.classeSolido), td(r.classeAbaqus));
       else celle.push(td(r.scartoSolido), td(r.classeSolido));
-      conNote(celle.at(-1), r.note);
+      conNote(celle[0], r.note);
       riga.append(...celle);
       return riga;
     }));
-    didascaliaEl.textContent = testoDidascalia(tabella, { abaqusChiesto: campoAbaqus.value.trim() !== "" });
+    didascaliaEl.textContent = testoDidascalia(tabella, { abaqusChiesto: campoAbaqus.value.trim() !== "",
+                                                          solidoChiesto: campoSolido.value.trim() !== "" });
     const { note } = noteDellaTabella(tabella);
     noteEl.replaceChildren(...note.map(({ testo }) => { const li = document.createElement("li"); li.textContent = testo; return li; }));
     noteEl.hidden = note.length === 0;
@@ -244,13 +254,13 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
     const vuotoANull = (campo) => (campo.value.trim() === "" ? null : campo.value.trim());
     occupato = true; bConfronta.disabled = true;
     bConfronta.textContent = "confronto…";
-    const g = gen;
+    const g = generazione;
     try {
       const r = await chiediJson("/api/confronto", { telaio, solido: vuotoANull(campoSolido), abaqus: vuotoANull(campoAbaqus), mappa_casi });
       // Azzerato mentre girava: questa risposta è di una schermata che non c'è più. Niente DOM,
       // niente messaggio, e soprattutto niente `cartella` — «copia» copierebbe un percorso che
       // non è scritto da nessuna parte.
-      if (g !== gen) return;
+      if (g !== generazione) return;
       cartella = r.cartella ?? null;
       percorsoEl.textContent = cartella ?? "";
       cartellaEl.hidden = cartella === null;
@@ -258,10 +268,12 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
       disegnaTabella(r.tabella ?? { righe: [], provenienza: null, avvertenza: "" });
       suErrore(null);
     } catch (e) {
-      if (g === gen) suErrore(e.message);
+      if (g === generazione) suErrore(e.message);
     } finally {
-      occupato = false; bConfronta.textContent = "confronta";
-      if (g === gen) bConfronta.disabled = false;   // azzerato, il bottone lo ha già spento `azzera()`
+      bConfronta.textContent = RIPOSO;
+      // Il blocco è di questa schermata: se è stata azzerata, `azzera()` lo ha già sciolto e può
+      // averne già avviato un altro. Spegnerlo da qui fermerebbe il confronto nuovo.
+      if (g === generazione) { occupato = false; bConfronta.disabled = false; }
     }
   }
 
@@ -273,7 +285,8 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
   }
 
   function azzera() {
-    gen++;                      // una richiesta in volo non scriverà più su questa schermata
+    generazione++;              // una richiesta in volo non scriverà più su questa schermata
+    occupato = false;           // e non tiene più fermo il bottone: la schermata nuova è libera
     for (const k of Object.keys(toccato)) toccato[k] = false;
     campoTelaio.value = ""; campoSolido.value = ""; campoAbaqus.value = ""; campoNodi.value = "";
     jsonInUso = false; jsonEl.value = ""; titoloAvanzato.textContent = TITOLO_AVANZATO;

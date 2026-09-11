@@ -446,6 +446,15 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #confronto-tabella th[scope="row"], #confronto-tabella td:nth-child(2) { text-align: left; font-weight: 400; }
 #confronto-tabella thead th { color: var(--testo-tenue); font-weight: 600; }
 #confronto-tabella td, #confronto-tabella th[scope="row"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* La colonna «grandezza» resta ferma mentre il resto scorre: la tabella è più larga del pannello
+   (`minmax(220px, 20rem)`), e a scorrimento fatto le cifre resterebbero sole, senza il nome di
+   quel che misurano. Il fondo non è decorazione: `border-collapse` lascia trasparire quel che
+   passa sotto. Ferma anche l'intestazione della colonna, altrimenti sopra la «massa» bloccata
+   scorrerebbe «scarto solido». Il colore del testo continua a venire da `tr.attenuata`: è la
+   riga a essere attenuata, non la cella. */
+#confronto-tabella th[scope="row"], #confronto-tabella thead th:first-child {
+  position: sticky; left: 0; background: var(--fondo);
+}
 #confronto-tabella tr.attenuata { color: var(--testo-tenue); }
 #confronto-note { margin: var(--passo) 0 0; padding-left: 1.2em; font-size: 10px; color: var(--testo-tenue); }
 #confronto-cartella { margin: var(--passo) 0 0; font-size: 11px; overflow-wrap: anywhere; }

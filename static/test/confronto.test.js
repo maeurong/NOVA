@@ -106,6 +106,10 @@ test("testoConteggio: righe, quante attenuate, e l'avvertenza del server — mai
   assert.equal(testoConteggio(t), "5 righe · 2 non confrontabili · verifica del codice, non validazione");
   assert.equal(testoConteggio({ righe: [], avvertenza: "prova" }), "nessuna riga · prova");
   assert.equal(testoConteggio({ righe: [tabella().righe[0]], avvertenza: "x" }), "1 riga · 0 non confrontabili · x");
+  // Il server può non avere nulla da avvertire: la frase finisce dove finisce, senza « · » appeso.
+  assert.equal(testoConteggio({ righe: [], avvertenza: "" }), "nessuna riga");
+  assert.equal(testoConteggio({ righe: [] }), "nessuna riga");
+  assert.equal(testoConteggio({ righe: tabella().righe, avvertenza: "" }), "5 righe · 1 non confrontabile");
 });
 
 test("testoProvenienza: commit, run, versioni brevi, data italiana; i null dicono n/d; null → vuoto", () => {
@@ -114,15 +118,22 @@ test("testoProvenienza: commit, run, versioni brevi, data italiana; i null dicon
   assert.equal(testoProvenienza({ commit_nova: null, run_id_telaio: "a", run_id_solido: null, versione_opensees: null, versione_calculix: null, data: "2026-01-02T03:04:05" }),
     "commit n/d · run telaio a · run solido n/d · OpenSees n/d · CalculiX n/d · 02/01/2026 03:04");
   assert.equal(testoProvenienza(null), "");
+  // Una data che non è una data non inventa un giorno: chiude la riga con «n/d» come gli altri campi.
+  assert.ok(testoProvenienza({ ...tabella().provenienza, data: "boh" }).endsWith(" · n/d"),
+    testoProvenienza({ ...tabella().provenienza, data: "boh" }));
 });
 
-test("testoDidascalia: telaio+solido, +Abaqus solo se davvero appaiato, la frase del CSV solo se richiesto", () => {
-  assert.equal(testoDidascalia(tabella()), "telaio ↔ solido ↔ Abaqus");
+test("testoDidascalia: la catena nomina solo i lati davvero a confronto; senza solido lo dice, la frase del CSV solo se richiesto", () => {
+  assert.equal(testoDidascalia(tabella(), { solidoChiesto: true }), "telaio ↔ solido ↔ Abaqus");
+  // Il solido è facoltativo (campo vuoto = senza): una catena che lo nomina comunque mente.
+  assert.equal(testoDidascalia(tabella()), "telaio ↔ Abaqus");
   const t = tabella();
   t.righe[4].abaqus = null; t.righe[4].classe_abaqus = "non_confrontabile";
-  assert.equal(testoDidascalia(t), "telaio ↔ solido");
-  assert.equal(testoDidascalia(t, { abaqusChiesto: true }), "telaio ↔ solido · il CSV Abaqus non ha righe appaiate ai casi");
-  assert.equal(testoDidascalia({ righe: [] }), "telaio ↔ solido");
+  assert.equal(testoDidascalia(t, { solidoChiesto: true }), "telaio ↔ solido");
+  assert.equal(testoDidascalia(t, { solidoChiesto: true, abaqusChiesto: true }), "telaio ↔ solido · il CSV Abaqus non ha righe appaiate ai casi");
+  assert.equal(testoDidascalia(t), "telaio · senza solido");
+  assert.equal(testoDidascalia({ righe: [] }, { solidoChiesto: true }), "telaio ↔ solido");
+  assert.equal(testoDidascalia({ righe: [] }), "telaio · senza solido");
 });
 
 // --- creaConfronto: il blocco «Confronto» del pannello (Task 2) --------------------------------
@@ -170,6 +181,7 @@ function radiceConfronto() {
   for (const id of ["scorri", "note", "cartella"]) elementi[`#confronto-${id}`].hidden = true;
   elementi["#confronto-confronta"].disabled = true;
   elementi["#confronto-avanzato-titolo"].textContent = "avanzato: mappa_casi in JSON";
+  elementi["#confronto-confronta"].textContent = "confronta";   // come in `index.html`: da lì `creaConfronto` legge il riposo
   return { radice: { querySelector: (sel) => elementi[sel] ?? null }, el: (sel) => elementi[`#confronto-${sel}`] };
 }
 
@@ -224,6 +236,10 @@ test("disegna: precompila i percorsi dalle corse, i nodi dal modello, una riga p
   assert.equal(conZ[3].textContent, "Z1 → ");
   assert.equal(conZ[3]._figli[0].value, "");
   assert.equal(el("json").value, JSON.stringify({ C1: "C1", C2: "C2", C3: "C3", nodi_sommita: [3, 4] }, null, 1));
+  // Solo `Z<n>` è un'azione del telaio: un caso che comincia per Z e prosegue in lettere è un caso
+  // come gli altri, e svuotarne il passo perderebbe l'unica cosa che il form sa proporre.
+  c.disegna({ modello: MURO, telaio: conCasi(["ZONA"]), solido: solidoLavoro() });
+  assert.equal(el("casi")._figli[0]._figli[0].value, "ZONA");
 });
 
 test("un campo toccato non si riscrive; una corsa nuova riscrive quello non toccato", () => {
@@ -285,13 +301,13 @@ test("confronta: la POST porta i percorsi (vuoti → null) e la mappa dal form; 
   assert.equal(el("vuoto").hidden, true);
   assert.equal(el("corpo")._figli.length, 5);
   const prima = el("corpo")._figli[0];
-  assert.equal(prima._figli[0].textContent, "massa", "la massa è la prima riga (story 57)");
+  assert.equal(prima._figli[0].textContent, "massa 1", "la massa è la prima riga (story 57), col richiamo della sua nota");
   assert.equal(prima._figli[0].nome, "th", "la grandezza è l'intestazione di riga");
   assert.equal(el("corpo")._figli[1].className, "attenuata");
   assert.equal(prima.className, "");
   // le colonne Abaqus ci sono perché la tabella le porta (f1 ha un valore Abaqus)
   assert.equal(el("testa")._figli[0]._figli.length, 9);
-  assert.equal(el("didascalia").textContent, "telaio ↔ solido ↔ Abaqus");
+  assert.equal(el("didascalia").textContent, "telaio ↔ Abaqus", "il campo del solido è vuoto: nessun solido nella catena");
   assert.equal(el("note").hidden, false);
   assert.equal(el("note")._figli.length, 3);
   assert.equal(el("note")._figli[1].textContent, RUMORE);
@@ -301,7 +317,7 @@ test("confronta: la POST porta i percorsi (vuoti → null) e la mappa dal form; 
   assert.equal(el("percorso").textContent, "corse/k1");
 });
 
-test("senza Abaqus le colonne sono sei; la nota della riga sta nella cella della classe, in un `<sup>`", async () => {
+test("senza Abaqus le colonne sono sei; la nota della riga sta sull'intestazione di riga, in un `<sup>`", async () => {
   const { radice, el } = radiceConfronto();
   const r = risposta(); r.tabella.righe[4].abaqus = null; r.tabella.righe[4].classe_abaqus = "non_confrontabile";
   fetchFinta([{ stato: 200, dati: r }]);
@@ -311,11 +327,13 @@ test("senza Abaqus le colonne sono sei; la nota della riga sta nella cella della
   assert.equal(el("testa")._figli[0]._figli.length, 6);
   assert.deepEqual(el("testa")._figli[0]._figli.map((th) => th.textContent), ["grandezza", "caso", "telaio", "solido", "scarto", "classe"]);
   const celle = el("corpo")._figli[0]._figli;
-  assert.equal(celle[5].textContent, "lontano 1");
-  assert.equal(celle[5]._figli.at(-1)?.nome, "sup", "il numero della nota è un `<sup>`, non un carattere nel testo");
-  assert.equal(celle[5]._figli.at(-1)?.getAttribute("aria-label"), "nota 1");
-  assert.equal(celle[5]._figli.at(-1)?.getAttribute("role"), "note", "senza un ruolo l'`aria-label` di un `<sup>` non viene esposto");
-  assert.equal(celle[0].textContent, "massa");
+  // Il richiamo sta dove si legge la riga (`docs/ricerca/07-ux-modellatore.md:105`, data-ink): sulla
+  // grandezza, che il `sticky` tiene sempre in vista — non in fondo, dove scorre via.
+  assert.equal(celle[5].textContent, "lontano");
+  assert.equal(celle[0].textContent, "massa 1");
+  assert.equal(celle[0]._figli.at(-1)?.nome, "sup", "il numero della nota è un `<sup>`, non un carattere nel testo");
+  assert.equal(celle[0]._figli.at(-1)?.getAttribute("aria-label"), "nota 1");
+  assert.equal(celle[0]._figli.at(-1)?.getAttribute("role"), "note", "senza un ruolo l'`aria-label` di un `<sup>` non viene esposto");
   assert.equal(celle[0].getAttribute("scope"), "row");
   assert.equal(celle[2].textContent, "0,7694 t", "l'unità sta accanto al valore del telaio, una volta per riga");
   assert.equal(el("corpo")._figli[3]._figli[3].textContent, "-0,17", "il solido resta nudo: l'unità è già scritta nella colonna del telaio");
@@ -342,15 +360,16 @@ test("una tabella assente o senza righe: sola intestazione, «nessuna riga», no
   const c = creaConfronto(radice, { suErrore: () => {} });
   c.disegna({ modello: MURO, telaio: telaioLavoro(), solido: null });
   await el("confronta").dispatch("click");
-  assert.equal(el("stato").textContent, "nessuna riga · ");
+  assert.equal(el("stato").textContent, "nessuna riga", "senza avvertenza la riga finisce lì");
   assert.equal(el("corpo")._figli.length, 0);
   assert.equal(el("note").hidden, true);
   assert.equal(el("cartella").hidden, true, "senza cartella non si offre il «copia»");
+  assert.equal(el("percorso").textContent, "", "e non resta un percorso da copiare");
   assert.equal(el("provenienza").textContent, "");
   await el("confronta").dispatch("click");
   assert.equal(el("stato").textContent, "nessuna riga · nessun caso appaiato");
   assert.equal(el("testa")._figli[0]._figli.length, 6);
-  assert.equal(el("didascalia").textContent, "telaio ↔ solido");
+  assert.equal(el("didascalia").textContent, "telaio · senza solido", "il campo del solido è vuoto");
   assert.equal(el("cartella").hidden, false);
 });
 
@@ -481,6 +500,41 @@ test("azzera() mentre una richiesta gira: la risposta arriva e non tocca niente"
   assert.deepEqual(errori, []);
 });
 
+test("azzera() con una richiesta appesa: il bottone si riaccende e un confronto nuovo parte", async () => {
+  const { radice, el } = radiceConfronto();
+  let sciogli;
+  const cancello = new Promise((r) => { sciogli = r; });
+  const spia = fetchFinta([{ stato: 200, dati: risposta(), attendi: cancello }, { stato: 200, dati: risposta() }]);
+  const c = creaConfronto(radice, { suErrore: () => {} });
+  c.disegna({ modello: MURO, telaio: telaioLavoro(), solido: null });
+  const inVolo = el("confronta").dispatch("click");
+  c.azzera();
+  c.disegna({ modello: MURO, telaio: telaioLavoro(), solido: null });
+  assert.equal(el("confronta").disabled, false, "azzerato e con un telaio nuovo: il bottone è acceso");
+  await el("confronta").dispatch("click");
+  assert.equal(spia.rotte.length, 2, "la richiesta morta non tiene il blocco della schermata nuova");
+  assert.equal(el("corpo")._figli.length, 5);
+  sciogli();
+  await inVolo;
+  assert.equal(el("corpo")._figli.length, 5, "la risposta vecchia non riscrive");
+  assert.equal(el("confronta").disabled, false, "e il suo `finally` non spegne il bottone di quella nuova");
+});
+
+test("azzera() poi un 400: l'errore è di una schermata che non c'è più, e non si dice", async () => {
+  const { radice, el } = radiceConfronto();
+  let sciogli;
+  const cancello = new Promise((r) => { sciogli = r; });
+  fetchFinta([{ stato: 400, attendi: cancello, dati: { esito: "errore", fase: "confronto", motivo: "mappa_casi nomina il passo «X», assente nel solido" } }]);
+  const errori = [];
+  const c = creaConfronto(radice, { suErrore: (m) => errori.push(m) });
+  c.disegna({ modello: MURO, telaio: telaioLavoro(), solido: null });
+  const inVolo = el("confronta").dispatch("click");
+  c.azzera();
+  sciogli();
+  await inVolo;
+  assert.deepEqual(errori, [], "un messaggio qui parlerebbe di percorsi che non sono più nei campi");
+});
+
 // Il codice cerca gli id col `querySelector`: un id rinominato nel markup non rompe nessun test
 // del comportamento — il DOM finto ce l'ha comunque — e si scopre solo a schermo.
 test("index.html porta ogni id che `creaConfronto` cerca, e il titolo dell'avanzato è lo stesso", () => {
@@ -490,4 +544,10 @@ test("index.html porta ogni id che `creaConfronto` cerca, e il titolo dell'avanz
   assert.ok(ids.length >= 20, `gli id cercati sono ${ids.length}: la regex non li ha presi tutti`);
   for (const id of ids) assert.ok(html.includes(`id="${id}"`), `«${id}» è cercato da confronto.js e manca in index.html`);
   assert.equal(html.match(/<summary id="confronto-avanzato-titolo">([^<]*)<\/summary>/)[1], TITOLO_AVANZATO);
+  // Le righe «caso → passo» nascono da JS: senza un `role` col suo nome il gruppo non esiste per
+  // chi naviga a voce, e l'unico posto dove si vede è il markup.
+  assert.match(html, /id="confronto-casi"[^>]*role="group"/);
+  // Il nome a riposo del bottone lo cattura `creaConfronto` dal markup: il DOM finto lo imita, e
+  // qui si verifica che imiti la cosa giusta.
+  assert.match(html, /<button id="confronto-confronta"[^>]*>confronta<\/button>/);
 });

@@ -223,6 +223,11 @@ def test_aprire_un_altro_modello_butta_i_risultati_della_corsa_di_prima(chrome_e
     assert t["dopoApertura"]["controlli"] is False, "il blocco «Risultati» sparisce"
     assert t["dopoApertura"]["vuoto"] is True, "e resta lo stato vuoto"
     assert t["dopoApertura"]["strati"] == 0, "nessuno strato sopra il telaio nuovo"
+    assert t["dopoApertura"]["confrontoVuoto"] is True, "il «Confronto» torna allo stato vuoto"
+    assert t["dopoApertura"]["confrontoTelaio"] == "", (
+        f"il percorso del telaio e' della corsa di prima: {t['dopoApertura']['confrontoTelaio']!r}")
+    assert t["dopoApertura"]["confrontoSolido"] == "", (
+        f"e quello del solido pure: {t['dopoApertura']['confrontoSolido']!r}")
 
 
 def test_la_verifica_del_modello_non_butta_i_risultati_in_vista(chrome_e_server, binario_opensees):
@@ -331,11 +336,14 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
     assert '"C1": "GRAVITA"' in t["json"], t["json"]
     # 1 massa + 3 casi × 4 grandezze + f1-f3 + massa partecipante x/y/z: Z1 non è mappato, niente
     # righe per lui.
-    assert t["righe"] == 19 and t["prima"] == "massa", (t["righe"], t["prima"])
+    # «massa 1»: il richiamo della nota sta sull'intestazione di riga, la colonna che il `sticky`
+    # tiene in vista — non nell'ultima cella, che a pannello stretto scorre via.
+    assert t["righe"] == 19 and t["prima"] == "massa 1", (t["righe"], t["prima"])
     assert t["colonne"] == 9, "col CSV Abaqus le colonne sono nove"
     assert t["abaqusC1"] == "4 250", t["abaqusC1"]   # `conciso`: sopra cento niente decimali
     assert t["stato"] == "19 righe · 17 non confrontabili · verifica del codice, non validazione", t["stato"]
-    assert t["didascalia"] == "telaio ↔ solido ↔ Abaqus", t["didascalia"]
+    # Nessun solido corso e il campo vuoto: la catena non lo nomina. Il confronto qui è a due lati.
+    assert t["didascalia"] == "telaio ↔ Abaqus", t["didascalia"]
     # Due `bias_atteso` distinti (massa; tetraedri), nessuna `ragione` nella corsa: due note.
     assert t["note"] == 2, t["note"]
     assert t["provenienza"].startswith("commit "), t["provenienza"]

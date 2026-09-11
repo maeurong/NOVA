@@ -147,6 +147,11 @@ const COPIONI = {
         controlli: await ev(`!document.getElementById("risultati-controlli").hidden`),
         strati: await ev(`document.querySelectorAll("#piano svg g.risultati").length`),
         vuoto: await ev(`!document.getElementById("risultati-vuoto").hidden`),
+        // Anche il «Confronto» parla della corsa di prima: i percorsi precompilati puntano alla
+        // cartella di un altro telaio, e confrontarli sarebbe numeri veri sul modello sbagliato.
+        confrontoVuoto: await ev(`!document.getElementById("confronto-vuoto").hidden`),
+        confrontoTelaio: await ev(`document.getElementById("confronto-telaio").value`),
+        confrontoSolido: await ev(`document.getElementById("confronto-solido").value`),
       },
       messaggio: await ev(`document.getElementById("messaggio").textContent`),
     };

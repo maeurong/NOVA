@@ -269,10 +269,13 @@ const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
     // Un modello nuovo (aperto o importato) non porta con sé l'ultima corsa di un altro (R5),
-    // né la vista che ne mostrava i numeri.
+    // né la vista che ne mostrava i numeri. Il solido cade con il telaio: il file dei suoi
+    // risultati resta valido su disco, ma la sua pertinenza al modello aperto adesso no, e
+    // `confronto.azzera()` rimette il campo a «mai toccato» — il ridisegno subito dopo lo
+    // ricompilerebbe col solido di prima, e sarebbe telaio B contro solido A senza un segnale.
     corsa.azzera();
     risultati = null;
-    ultimoTelaio = null; confronto.azzera();
+    ultimoTelaio = null; ultimoSolido = null; confronto.azzera();
     // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
     // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
     // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
@@ -298,7 +301,7 @@ const file = creaFile(document, {
     rilievo = daRisposta(risposta, p);
     corsa.azzera();  // idem: una cronologia nuova non porta l'ultima corsa (R5)
     risultati = null;
-    ultimoTelaio = null; confronto.azzera();
+    ultimoTelaio = null; ultimoSolido = null; confronto.azzera();
     chiudiComando();
     selezione = { tipo: "rilievo", id: 0 };
     modo = null;
