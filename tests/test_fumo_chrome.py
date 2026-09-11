@@ -385,6 +385,11 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     assert max(t["bn"]["raggi"]) > min(t["bn"]["raggi"]), "il nodo scelto non è più grosso: in B/N resta solo il colore"
     assert t["bn"]["bordo"] >= 1
     assert schermo.stat().st_size > 10_000, "lo screenshot in scala di grigi non è stato scritto"
+    # E1 — R1 rendeva `altezzaStriscia` e `piano` senza che nessun assert li leggesse: col CSS del
+    # brief (striscia alta 489 px) il test sarebbe restato verde. Misurati 112 e 944 in statica a
+    # 1920: la striscia dei controlli resta una striscia, e il piano si prende il resto.
+    assert t["altezzaStriscia"] <= 130, t["altezzaStriscia"]
+    assert t["piano"][1] >= 900, t["piano"]
     assert t["uscito"] is True
     # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
     assert t["legendaModo"] and "forma normalizzata" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
@@ -407,6 +412,8 @@ def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
     assert t["senzaCorsa"]["acceso"] is True, t["senzaCorsa"]
     assert t["senzaCorsa"]["visibile"] is True and t["senzaCorsa"]["vuoto"] >= 32, t["senzaCorsa"]
     assert t["senzaCorsa"]["bottone"] != "none", t["senzaCorsa"]
+    # E1 — senza corsa la striscia porta il solo stato vuoto di «Risultati»: misurata 102 px.
+    assert t["senzaCorsa"]["altezza"] <= 120, t["senzaCorsa"]
     assert t["pSulBottone"] is True, "P col fuoco su «pannelli» non esce dalla presentazione"
     assert t["aperto"]["acceso"] is True, t["aperto"]
     assert t["aperto"]["etichette"] is not None and t["aperto"]["etichette"] >= 45.99, t["aperto"]
@@ -416,8 +423,39 @@ def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
     assert t["ghost"] == {"acceso": False, "campoAperto": True}, t["ghost"]
     assert t["pannelli"] == {"colonna": True, "dati": True, "vuotoNascosto": True, "storiaNascosta": True,
                              "premuto": "true", "scorre": False}, t["pannelli"]
+    # E4 — il click su «pannelli» ridisegna **da sé**: misurato prima di premere G, che ridisegnava
+    # comunque e mascherava un `ridisegna()` perso. Il piano cambia larghezza, e con lui `s` e le
+    # etichette rese.
+    rid = t["ridisegnoAlClick"]
+    assert rid["prima"]["piano"] != rid["dopo"]["piano"], rid
+    assert rid["prima"]["etichette"] != rid["dopo"]["etichette"], rid
+    # E4 — il titolo della Storia, non solo la sua `ul`: la regola è `h2:has(+ #storia-elenco)`.
+    assert t["titoloStoriaNascosto"] is True, t["titoloStoriaNascosto"]
     assert t["uscitoConPannelli"] == {"acceso": False, "pannelli": False, "premuto": "false"}, t["uscitoConPannelli"]
     assert t["rientro"] == {"acceso": True, "colonna": True}, t["rientro"]
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server, binario_opensees):
+    """Il fix A della 15a: la pushover del MURO 1 a 1920×1080 in presentazione è il caso peggiore —
+    badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori. Nessun nome di
+    nodo e nessun cerchio deve finire sotto una striscia, e nessuna striscia deve sforare il fondo
+    del piano. Misurato prima del fix: telaio da 248, strisce fino a 308, e «sommità sx», «sommità
+    dx» più i due nodi in cima sotto la legenda degli stati — con `sovrapposte` vuoto, perché
+    confronta i `<text>` dell'SVG fra loro e i nomi dei nodi non ci passano."""
+    porta, cdp = chrome_e_server
+    r = copione("presentazionePushover", porta, cdp, fixture=str(FIXTURE / "muro_1_pushover.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    s = t["strisce"]
+    # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero.
+    assert set(s["visibili"]) >= {"badge", "stati", "colori"}, s["visibili"]
+    assert s["addosso"] == [], s["addosso"]
+    assert s["sforano"] == [], s["sforano"]
+    assert t["sovrapposte"] == [], t["sovrapposte"]
+    assert t["scorre"] is False
+    assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
     assert t["messaggio"] == "", t["messaggio"]
 
 

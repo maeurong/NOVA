@@ -84,7 +84,7 @@ body {
    finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
    `pointer-events: none` lascia che il clic sullo sfondo arrivi comunque al piano. */
 #piano .carichi-titolo { position: absolute; top: 6px; left: 8px; margin: 0;
-                         font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none; }
+                         font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none; }
 /* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
    V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
    rosso e la parola: il rosso da solo non basta (story 63). */
@@ -95,7 +95,7 @@ body {
    ne vuole ~460, quindi spariva a sinistra la testa della riga — «o 6 · 181 Hz…», cioè il numero
    del modo. La riga in più la misura `piano.js` (`offsetHeight`), e da lì scende la legenda. */
 #piano .risultati-badge { position: absolute; top: 22px; right: 8px; margin: 0; text-align: right;
-                          font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none;
+                          font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none;
                           white-space: normal; max-width: calc(100% - 16px); }
 #piano .risultati-badge.stantia { color: var(--rosso); }
 /* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
@@ -105,14 +105,14 @@ body {
    badge, così le righe spezzate restano nella sua colonna. Inchiostro, mai rosso: il rosso è
    uno solo. L'altezza che ne esce la **misura** `piano.js` (`offsetHeight`) per l'ostacolo. */
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
-                            font: var(--etichetta, 11px) var(--mono); color: var(--inchiostro); pointer-events: none;
+                            font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none;
                             white-space: normal; max-width: calc(100% - 16px); text-align: right; }
 /* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm», sotto l'ultima striscia
    visibile — il `top` lo scrive `piano.js`. La rampa è in `em`: segue il corpo, e a 32 px un'altezza
    fissa di 10 sarebbe un filo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
 #piano .risultati-colori { position: absolute; top: 38px; right: 8px; margin: 0;
-                           display: flex; gap: 6px; align-items: center; white-space: nowrap;
-                           font: var(--etichetta, 11px) var(--mono); font-variant-numeric: tabular-nums;
+                           display: flex; gap: 0.4em; align-items: center; white-space: nowrap;
+                           font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; font-variant-numeric: tabular-nums;
                            color: var(--inchiostro); pointer-events: none; }
 #piano .risultati-colori[hidden] { display: none; }
 #piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; }
@@ -509,3 +509,20 @@ body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 2
 body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
 #riapri-pannelli { display: none; }
 body[data-presentazione] #riapri-pannelli { display: block; position: fixed; top: var(--passo); right: var(--passo); z-index: 2; font: inherit; font-size: 32px; }
+/* E6 — coi pannelli aperti il bottone (132×52) copriva l'ispettore: misurato a 1920×1080, stava
+   sopra «Selezione», «identificatore» e il suo valore, che partono da x=1449 mentre lui arriva a
+   1912. Aperti i pannelli si sposta all'angolo in alto a destra **delle viste**, appena fuori dalla
+   colonna dell'ispettore. `30rem` è il massimo della sua traccia (`grid-template-columns` qui
+   sopra): se la traccia è più stretta il bottone resta comunque a sinistra di lei, mai sopra. */
+body[data-presentazione][data-pannelli] #riapri-pannelli { right: calc(30rem + var(--passo)); }
+/* E5 — le fasi della corsa si vedono anche in aula (P5, «attesa parlante», `07-ux-modellatore.md:93`).
+   La striscia nasconde tutto il blocco «Corsa», quindi `#corsa-attesa` non si vedeva e dopo ⌘⏎ non
+   restava niente da guardare fino ai risultati. Mentre l'attesa è aperta torna **solo lei** — fasi e
+   secondi, a 32 px — senza bottoni, campi e registro, e senza il titolo «Corsa», che resta nascosto
+   dalla regola qui sopra. Tutto in CSS: `:has()` legge lo stesso `hidden` che scrive `corsa.js`. */
+body[data-presentazione]:not([data-pannelli]) #pannello > #corsa:has(#corsa-attesa:not([hidden])) { display: block; }
+body[data-presentazione]:not([data-pannelli]) #corsa:has(#corsa-attesa:not([hidden])) > :not(#corsa-attesa) { display: none; }
+/* `ol` compreso: `#corsa-fasi` porta un `font-size: 11px` suo (`:401`), e senza di lui restavano a
+   11 px il pallino della lista e il suo `padding-left: 1.2em` — le fasi a 32 px dentro un elenco
+   rientrato di 13. Misurato in presentazione col `hidden` dell'attesa tolto a mano. */
+body[data-presentazione]:not([data-pannelli]) #corsa-attesa :is(ol, li, p) { font-size: 32px; }

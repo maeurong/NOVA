@@ -59,6 +59,36 @@ const ETICHETTE_NODI = ["#piano svg g[data-tipo=nodo] text", "font-size"];
 const ACCESA = `document.body.hasAttribute("data-presentazione")`;
 const COLORI = `(() => { const l = document.querySelector("#piano .risultati-colori"); return l && !l.hidden ? l.textContent : null; })()`;
 
+// I riquadri delle strisce di testo sopra il piano contro i nomi e i cerchi dei nodi (15a, fix A).
+// `SOVRAPPOSTE` qui sopra non serve: confronta i `<text>` dell'SVG **fra loro**, e i nomi dei nodi
+// non passano da `disponi` — il telaio finiva sotto la legenda degli stati con il fumo tutto verde.
+// Mezzo pixel di tolleranza: i bordi che combaciano non sono una sovrapposizione.
+const STRISCE_ADDOSSO = `(() => {
+  const box = (e) => { if (!e || e.hidden || e.offsetParent === null) return null;
+    const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; };
+  const strisce = { titolo: box(document.querySelector("#piano .carichi-titolo")),
+                    badge: box(document.querySelector("#piano .risultati-badge")),
+                    stati: box(document.querySelector("#piano .risultati-legenda")),
+                    colori: box(document.querySelector("#piano .risultati-colori")) };
+  const piano = box(document.getElementById("piano"));
+  const tocca = (a, b) => a && b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5;
+  const addosso = [];
+  for (const t of document.querySelectorAll("#piano svg g[data-tipo=nodo] text")) {
+    const b = box(t);
+    for (const [k, s] of Object.entries(strisce)) if (tocca(b, s)) addosso.push([t.textContent, k]);
+  }
+  for (const c of document.querySelectorAll("#piano svg g[data-tipo=nodo] circle")) {
+    const b = box(c);
+    for (const [k, s] of Object.entries(strisce)) if (tocca(b, s)) addosso.push(["cerchio", k]);
+  }
+  return { addosso,
+           sforano: Object.entries(strisce).filter(([, s]) => s && piano && s.b > piano.b + 0.5).map(([k]) => k),
+           visibili: Object.entries(strisce).filter(([, s]) => s).map(([k]) => k),
+           telaio: (() => { const c = [...document.querySelectorAll("#piano svg g[data-tipo=nodo] circle")].map((e) => e.getBoundingClientRect());
+             return c.length ? Math.round(Math.min(...c.map((x) => x.top))) : null; })(),
+           piano: piano ? Math.round(piano.b - piano.t) : null };
+})()`;
+
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
 // domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
@@ -405,6 +435,23 @@ const COPIONI = {
              colori, legendaColori, bn, uscito, legendaModo, menu, messaggio };
   },
 
+  // Il telaio sotto le strisce (15a, fix A): la pushover del MURO 1 a 1920×1080 in presentazione è il
+  // caso peggiore — badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori —
+  // e lì «sommità sx», «sommità dx» e i due nodi in cima finivano sotto la legenda degli stati.
+  async presentazionePushover() {
+    await apriECorri(arg.fixture, { larghezza: 1920, altezza: 1080 });
+    await scegliCaso("pushover");
+    await pausa(400);
+    await tasto("p");
+    await pausa(700);
+    const strisce = await ev(STRISCE_ADDOSSO);
+    const sovrapposte = await ev(SOVRAPPOSTE);
+    const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    const legendaColori = await ev(COLORI);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { strisce, sovrapposte, scorre, legendaColori, messaggio };
+  },
+
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost
   // dell'estrusione, Esc col campo di comando aperto, «apri» e il ridimensionamento dentro la
   // presentazione, i pannelli aperti con una selezione.
@@ -479,8 +526,22 @@ const COPIONI = {
     // I pannelli aperti con una selezione: albero e ispettore tornano, «Niente di selezionato» e la
     // Storia restano nascosti.
     await tasto("p");
-    await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
     await pausa(200);
+    // **Prima** del click: il click su «pannelli» deve ridisegnare da sé. Con `tasto("g")` subito
+    // dopo, il ridisegno arriverebbe comunque e un `ridisegna()` perso dal listener del bottone
+    // resterebbe invisibile al fumo (E4) — il piano cambia larghezza, quindi `s` e le etichette rese.
+    const primaDelClick = { piano: await ev(`document.getElementById("piano").clientWidth`),
+                            etichette: await reso(...ETICHETTE_NODI) };
+    await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+    await pausa(300);
+    t.ridisegnoAlClick = { prima: primaDelClick,
+                           dopo: { piano: await ev(`document.getElementById("piano").clientWidth`),
+                                   etichette: await reso(...ETICHETTE_NODI) } };
+    // Il titolo della Storia, non solo la sua `ul`: la regola è `h2:has(+ #storia-elenco)`, e
+    // `nascosti` guardava la sola lista — un titolo orfano sarebbe rimasto in aula.
+    t.titoloStoriaNascosto = await ev(`(() => { const h = [...document.querySelectorAll("#pannello h2")]
+      .find((x) => x.nextElementSibling && x.nextElementSibling.id === "storia-elenco");
+      return h ? getComputedStyle(h).display === "none" : null; })()`);
     await tasto("g");
     await pausa(200);
     t.pannelli = {

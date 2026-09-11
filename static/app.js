@@ -114,12 +114,14 @@ function risultatiInVista(m, fattore = 1) {
     : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).scala
     : scalaAuto(m, scelto.perCaso));
   const scala = auto ? (risultati.vista === "deformata" ? scalaDeformata() : 1) : risultati.scalaMano;
-  // |u|max dei colori, solo in vista deformata (R7) e anche con la scala a mano. Caso e modo senza cache:
-  // 0,01-0,03 ms sul MURO 1, e il `perCaso` di un modo è un oggetto nuovo a ogni `casoScelto`. Per un
-  // modo è la forma a scala 1, adimensionale: la legenda dice 0 … 1, mai millimetri.
-  const uMax = risultati.vista !== "deformata" ? null
-    : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).uMax
-    : massimoSpostamento(puntiDeformata(m, scelto.perCaso, 1));
+  // |u|max dei colori: **solo per la pushover** (E3), dove la scala dev'essere quella fissa del passo
+  // di riferimento — altrimenti al passo 1 la deformata sarebbe tutta viola e la legenda respirerebbe.
+  // Per caso e modo `null`, e non il massimo calcolato qui: `u` non porta la scala (`risultati.js:236`,
+  // `Math.hypot` sulle sole componenti), quindi il ripiego di `piano.js` e di `spazio.js` — il massimo
+  // delle deformate **già disegnate** — dà lo stesso identico numero. Così si risparmia un
+  // `puntiDeformata` a fotogramma mentre un modo si anima, e R7 resta soddisfatto alla lettera.
+  const uMax = risultati.vista === "deformata" && scelto.tipo === "pushover"
+    ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).uMax : null;
   const curva = scelto.tipo === "pushover"
     ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
   // Un oggetto solo per il badge e per la striscia: due copie dello stesso passo divergerebbero

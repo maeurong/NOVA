@@ -31,6 +31,9 @@ const OFFSET_ETICHETTA = 16;
 // nominale è un'ipotesi, ma è coerente per tutto il disegno, e il `resize` di `app.js` ridisegna
 // con la misura vera appena c'è.
 const LARGHEZZA_NOMINALE = 800, ALTEZZA_NOMINALE = 600;
+// px: sotto un terzo di questo il telaio non è più un disegno, e la fascia delle strisce (15a, A)
+// non si riserva. Vale per i riquadri degeneri — a zoom 200 % il piano misura 39×10 px.
+const TELAIO_MINIMO = 100;
 
 // Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
 // vince la prima, e il disegno resta identico a parità di stato.
@@ -165,8 +168,36 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // cima è `z0 + altezza`, quindi `y = 2·z0 + altezza − z` porta l'uno sull'altro.
   const schermo = (n) => ({ x: n.x, y: 2 * vista.z0 + vista.altezza - n.z });
 
-  function inquadra(m, ghost, extraMm = 0) {
-    vista = estensione(m, ghost, extraMm);
+  /** `fascia`: i pixel in cima al riquadro occupati dalle strisce di testo visibili (15a, A). Il
+   *  telaio deve cadere **sotto** di loro: a 1920×1080 in presentazione la pushover scriveva fino a
+   *  308 px e il telaio partiva da 248, quindi i due nodi in cima e i loro nomi finivano sotto la
+   *  legenda degli stati. Con `fascia = 0` il riquadro è quello di sempre, al millimetro. */
+  function inquadra(m, ghost, extraMm = 0, fascia = 0) {
+    const e = estensione(m, ghost, extraMm);
+    const { w, h } = pixelDelRiquadro();
+    // Il riquadro utile è l'altezza meno la fascia, ma **mai sotto un terzo**: su un riquadro basso
+    // (la pushover a 1280) le strisce a 46 px prendono più di due terzi, e il resto sarebbe un telaio
+    // di 50 px. Meglio un telaio sotto una striscia che un telaio illeggibile.
+    //
+    // E sotto una certa altezza la fascia non si riserva **per niente**. Misurato a zoom 200 %
+    // (640×400 con dpr 2, il caso del fumo): la griglia lascia a `#viste` 80 px di larghezza, e al
+    // piano un riquadro di **39×10 px** — mentre le strisce ne occupano 115, undici volte il
+    // disegno. Lì riservare vuol dire solo rimpicciolire il telaio di tre volte, e i nomi dei nodi,
+    // che restano di 11 px, finiscono a toccarsi («1» e «2», «2» e «3»: il difetto già misurato
+    // sull'allargamento per i nomi lunghi). Il criterio è assoluto e non proporzionale, perché
+    // proporzionale lo è già il terzo qui sopra: quel che conta è quanto telaio **resta**.
+    const utile = fascia > 0 && h >= 3 * TELAIO_MINIMO ? Math.max(h - fascia, h / 3) : h;
+    if (utile >= h) {
+      vista = e;
+    } else {
+      // Il modello sta centrato nella **parte bassa**: `s` si misura sul riquadro utile, e il riquadro
+      // cresce fino a coprire tutto il viewport, con l'aria in più tutta sopra — `z` alto è schermo
+      // alto, quindi basta alzare la cima. Il `viewBox` resta grande quanto il riquadro intero: le
+      // strisce stanno **sopra** il disegno, non fuori da lui.
+      const s = Math.max(e.larghezza / w, e.altezza / utile);
+      const cx = e.x0 + e.larghezza / 2, cz = e.z0 + e.altezza / 2;
+      vista = { x0: cx - w * s / 2, z0: cz - utile * s / 2, larghezza: w * s, altezza: h * s };
+    }
     svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   }
@@ -346,7 +377,52 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // l'aula. Senza `getComputedStyle` (i test) o senza variabili: i numeri d'oggi (`misure.js`).
     const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
     const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + misure.carattere * 0.6);
-    inquadra(m, ghost);
+    const carattere = misure.carattere;
+    // `vistaRis` e non `vista`: `vista` è il **riquadro**, e serve al badge più giù.
+    const vistaRis = risultati?.vista ?? null;
+    const attivo = vistaRis ? risultati : null;
+
+    // Le strisce si scrivono e si **misurano prima** dell'inquadratura (A): il telaio deve cadere
+    // sotto la fascia che occupano, e quanto sia alta lo sa solo il browser, dopo che il testo c'è.
+    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si dice nel
+    // titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto **e** nascosto,
+    // che una riga vuota alta 11px è comunque un buco nell'angolo.
+    const grav = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
+    titolo.textContent = azioneInVista
+      ? `carichi: ${azioneInVista.nome}${grav ? ` · ${testoCarico(grav).replace("gravità · ", "g ")}` : ""}`
+      : "";
+    titolo.hidden = !azioneInVista;
+    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come va
+    // letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
+    // `...attivo.badge`: modo, passo, caduta e fermo arrivano in un sotto-oggetto, e `testoBadge`
+    // li vuole al primo livello insieme a vista, caso e scala.
+    badge.textContent = attivo ? testoBadge({ ...attivo, ...(attivo.badge ?? {}), ruotate: asteRuotate(m) }) : "";
+    badge.hidden = !attivo;
+    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
+    // La legenda parla solo quando i simboli ci sono: in vista M non c'è niente da decifrare.
+    legenda.textContent = testoLegendaStati();
+    legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata");
+    // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
+    // si scrivono più giù, che vogliono `raccolto.uMax`; qui basta sapere se si vede, perché è alta
+    // una riga sola e l'altezza non dipende da cosa ci sta scritto.
+    colori.hidden = !(attivo && vistaRis === "deformata" && !attivo.stantia);
+    // I `top`: il badge sotto il titolo, la legenda degli stati sotto il badge, quella dei colori
+    // sotto l'ultima visibile. I ripieghi sono per il DOM finto dei test, senza `offsetHeight`, e a
+    // 11 px danno i numeri d'oggi (R9): badge a 22 e alto 14, legenda alta 28, titolo fino a 20.
+    const scendi = (e, top, alta) => { e.style.top = `${top}px`; return e.hidden ? top : top + alta + 2; };
+    const altaBadge = () => badge.offsetHeight || carattere + 3;
+    const altaLegenda = () => legenda.offsetHeight || 2 * (carattere + 3);
+    const altaColori = () => colori.offsetHeight || carattere + 3;
+    const topBadge = 6 + Math.max(16, titolo.offsetHeight || carattere + 5);
+    const topLegenda = scendi(badge, topBadge, altaBadge());
+    const topColori = scendi(legenda, topLegenda, altaLegenda());
+    const fine = scendi(colori, topColori, altaColori());
+    // Il fondo dell'ultima striscia visibile più mezzo corpo d'aria. Nessuna visibile (vista
+    // «niente», nessuna azione) → 0, e l'inquadratura resta identica a oggi.
+    const nessunaStriscia = titolo.hidden && badge.hidden && legenda.hidden && colori.hidden;
+    const fascia = nessunaStriscia ? 0 : Math.max(0, fine - 2) + carattere / 2;
+
+    inquadra(m, ghost, 0, fascia);
     let s = millimetriPerPixel();
     // Le etichette dei nodi stanno in pixel fuori dal nodo, e il margine del 12 % non le conosce:
     // su MURO 1 vale 40 px, mentre «cerniera» ne chiede 53 di solo testo, e usciva dal riquadro
@@ -385,13 +461,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
     if (larghezzaMono(nomePiuLungo, 1, 0, misure.carattere) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
       const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
-      inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P));
+      inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P), fascia);
       s = millimetriPerPixel();
     }
     const gruppo = el("g");
-    // `vistaRis` e non `vista`: `vista` qui sopra è il **riquadro**, e serve al badge più giù.
-    const vistaRis = risultati?.vista ?? null;
-    const attivo = vistaRis ? risultati : null;
 
     for (const a of m.aste) {
       const i = nodo(m, a.nodo_i), j = nodo(m, a.nodo_j);
@@ -494,38 +567,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       gruppo.append(nodoEl);
     }
 
-    // La gravità non ha una freccia — nessun punto d'applicazione nel piano — quindi o si
-    // dice nel titolo o non si vede da nessuna parte. Senza azione il titolo non parla: vuoto
-    // **e** nascosto, che una riga vuota alta 11px è comunque un buco nell'angolo.
-    // Scritti qui, prima dei picchi, perché i due `<p>` sono ostacoli e le etichette li leggono.
-    const g = azioneInVista && (azioneInVista.carichi ?? []).find((c) => c.tipo === "gravita");
-    titolo.textContent = azioneInVista
-      ? `carichi: ${azioneInVista.nome}${g ? ` · ${testoCarico(g).replace("gravità · ", "g ")}` : ""}`
-      : "";
-    titolo.hidden = !azioneInVista;
-    // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
-    // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
-    // `...attivo.badge`: modo, passo, caduta e fermo arrivano in un sotto-oggetto, e `testoBadge`
-    // li vuole al primo livello insieme a vista, caso e scala.
-    badge.textContent = attivo ? testoBadge({ ...attivo, ...(attivo.badge ?? {}), ruotate: asteRuotate(m) }) : "";
-    badge.hidden = !attivo;
-    badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
-    // La legenda parla solo quando i simboli ci sono: in vista M non c'è niente da decifrare.
-    legenda.textContent = testoLegendaStati();
-    legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata");
-    // La legenda dei colori parla quando i colori ci sono: deformata non stantia. `raccolto.uMax` è la
-    // stessa scala con cui lo strato ha colorato i tratti.
+    // I numeri della legenda dei colori arrivano **adesso**: `raccolto.uMax` è la stessa scala con
+    // cui lo strato ha colorato i tratti, e prima dell'inquadratura non esisteva ancora. L'altezza
+    // della striscia non dipende da loro (una riga sola), quindi la fascia era già quella giusta.
     const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo });
     titoloColori.textContent = estremi.titolo;
     minColori.textContent = estremi.min;
     maxColori.textContent = estremi.max;
-    colori.hidden = !(attivo && vistaRis === "deformata" && !attivo.stantia);
 
-    // Le strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
-    // ostacoli un picco negli angoli in alto finisce sotto il loro testo (R6). Il riquadro
-    // `viewBox` non è il ritaglio: con `preserveAspectRatio="xMidYMid meet"` a ritagliare è il
-    // **viewport**, che contiene il riquadro e coincide con lui sul lato stretto. In coordinate
-    // del `viewBox` è il centro più mezza misura in pixel per `s`.
+    // Le strisce di testo stanno sopra il piano, e ora anche **sopra il telaio**, che l'inquadratura
+    // tiene sotto la loro fascia: restano comunque ostacoli, o un picco negli angoli in alto finisce
+    // sotto il loro testo (R6). Il riquadro `viewBox` non è il ritaglio: con
+    // `preserveAspectRatio="xMidYMid meet"` a ritagliare è il **viewport**, che contiene il riquadro
+    // e coincide con lui sul lato stretto. In coordinate del `viewBox` è il centro più mezza misura
+    // in pixel per `s`.
     const { w: larghezzaPx, h: altezzaPx } = pixelDelRiquadro();
     const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
     const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
@@ -534,27 +589,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // `--etichetta` fanno la larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il
     // badge sta su una riga sua e non si tronca — la scala non può mancare. Se là cambiano, qui le
     // etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
-    // Le altezze le sa solo il browser — il badge va a capo, il corpo cambia in aula — quindi si
-    // **misurano**, e i `top` li scrive qui chi misura: il badge sotto il titolo, la legenda degli
-    // stati sotto il badge, quella dei colori sotto l'ultima visibile. I ripieghi sono per il DOM
-    // finto dei test, senza `offsetHeight`, e a 11 px danno i numeri d'oggi (R9): badge a 22 e alto
-    // 14, legenda alta 28, titolo fino a 20. La larghezza non supera il `max-width`: 8 px per lato.
-    const dentro = (testo) => Math.min(larghezzaMono(testo, s, 8, misure.carattere), (larghezzaPx - 16) * s);
-    // Scrive il `top`, fa l'ostacolo se la striscia si vede, e rende il `top` di quella che le va sotto.
-    const striscia = (e, top, alta, testo) => {
-      e.style.top = `${top}px`;
-      if (e.hidden) return top;
-      ostacoli.push({ x0: viewport.x1 - dentro(testo), x1: viewport.x1,
+    // I `top` li ha già scritti il conto della fascia, qui sopra: questi sono i soli ostacoli.
+    const dentro = (testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, carattere), (larghezzaPx - 16) * s);
+    const ostacoloStriscia = (e, top, alta, testo, extra) => {
+      if (e.hidden) return;
+      ostacoli.push({ x0: viewport.x1 - dentro(testo, extra), x1: viewport.x1,
                       y0: viewport.y0 + top * s, y1: viewport.y0 + (top + alta) * s });
-      return top + alta + 2;
     };
-    const carattere = misure.carattere;
-    let sotto = striscia(badge, 6 + Math.max(16, titolo.offsetHeight || carattere + 5),
-                         badge.offsetHeight || carattere + 3, badge.textContent);
-    sotto = striscia(legenda, sotto, legenda.offsetHeight || 2 * (carattere + 3), legenda.textContent);
-    // La rampa è larga 6 em, cioè dieci caratteri del mono, e i tre `gap` valgono circa tre spazi.
-    striscia(colori, sotto, colori.offsetHeight || carattere + 3,
-             `${estremi.titolo} ${estremi.min} ${"x".repeat(10)} ${estremi.max}`);
+    ostacoloStriscia(badge, topBadge, altaBadge(), badge.textContent);
+    ostacoloStriscia(legenda, topLegenda, altaLegenda(), legenda.textContent);
+    // La rampa è larga 6 em, cioè dieci caratteri del mono. I tre `gap` di `.risultati-colori` sono
+    // in `em` (`stile.css`, fix B: a 32 px sei pixel fissi non reggevano e «|u|» si incollava a
+    // «0 mm»), quindi la stima li segue invece di contarli come tre spazi da 0,6 em: 0,4 em l'uno.
+    ostacoloStriscia(colori, topColori, altaColori(),
+                     `${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * carattere);
     // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
                                         x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, carattere), 0.45 * larghezzaPx * s) });

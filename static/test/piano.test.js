@@ -218,14 +218,21 @@ const inOrdine = (radice) => [radice, ...(radice._figli ?? []).flatMap(inOrdine)
 
 test("creaPiano: l'azione in vista disegna le frecce e il titolo, senza toccare il riquadro", () => {
   const { piano, svg, titolo } = pianoFinto();
-  let modello = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
-  modello = creaAzione(modello, { nome: "permanenti travi", natura: "G2" });
-  modello = aggiungiCarico(modello, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
+  let base = estrudi(creaNodo(modelloVuoto(), { x: 0, z: 0 }), { da: 1, dx: 5000, dz: 0 });
+  base = creaAzione(base, { nome: "permanenti travi", natura: "G2" });
+  const modello = aggiungiCarico(base, { azione: 1, carico: { tipo: "distribuito", asta: 1, q: -12.5 } });
   piano.disegna(modello, {});
-  const riquadro = svg.getAttribute("viewBox");
   assert.equal(linee(svg).length, 0, "senza azione in vista nessuna freccia");
   assert.equal(titolo.hidden, true, "senza azione in vista il titolo è nascosto");
   assert.equal(titolo.textContent, "", "senza azione in vista il titolo è vuoto");
+  // Il riquadro di riferimento si prende con l'azione **già in vista** (15a, fix A): il titolo dei
+  // carichi è una striscia, e da quando l'inquadratura le riserva la fascia in alto il riquadro
+  // cambia fra «nessuna azione» e «un'azione», come deve. Quel che non deve cambiare è ciò che il
+  // test difende da sempre: aggiungere un **carico** non muove il riquadro, perché una freccia è
+  // un'annotazione e non entra in `estensione`. Le due pose hanno le stesse strisce visibili.
+  piano.disegna(base, { azioneInVista: base.azioni[0] });
+  const riquadro = svg.getAttribute("viewBox");
+  assert.equal(linee(svg).length, 0, "l'azione senza carichi non ha frecce");
   piano.disegna(modello, { azioneInVista: modello.azioni[0] });
   assert.equal(linee(svg).length, 3, "un distribuito porta tre frecce: a un quarto, a metà, a tre quarti");
   assert.equal(svg.getAttribute("viewBox"), riquadro, "il riquadro non si muove quando compare un carico");
@@ -1501,4 +1508,110 @@ test("piano a 46 px: fra due nomi di pari lunghezza l'allargamento conta quello 
     assert.ok(b.x0 >= ritaglio.x0 && b.x1 <= ritaglio.x1 && b.y0 >= ritaglio.y0 && b.y1 <= ritaglio.y1,
               `«${t.textContent}» esce dal ritaglio di ${((ritaglio.x0 - b.x0) / s).toFixed(1)} px a sinistra`);
   }
+});
+
+// --- fix di fine ramo (15a, A): l'inquadratura riserva la fascia delle strisce -----------------
+// Misurato a 1920×1080 in presentazione sulla pushover del MURO 1 (piano 1152×801): le strisce
+// arrivavano a 308 px e il telaio partiva da 248, quindi «sommità sx», «sommità dx» e i due nodi in
+// cima stavano **sotto** la legenda degli stati. Il fumo non lo vedeva: `SOVRAPPOSTE` confronta solo
+// i `<text>` dell'SVG fra loro, e i nomi dei nodi non passano da `disponi`.
+
+const MURO = { nodi: [
+  { id: 1, nome: "piede sx", x: 0, y: 0, z: 0 },
+  { id: 2, nome: "piede dx", x: 2262, y: 0, z: 0 },
+  { id: 3, nome: "sommità sx", x: 0, y: 0, z: 1607.5 },
+  { id: 4, nome: "sommità dx", x: 2262, y: 0, z: 1607.5 }],
+aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 1, nodo_j: 3 },
+       { id: 3, nodo_i: 2, nodo_j: 4 }, { id: 4, nodo_i: 3, nodo_j: 4 }] };
+
+const E_E = { calcestruzzo: "elastica", acciaio: "elastica" };
+const PUSHOVER = (extra = {}) => ({ vista: "deformata", caso: "pushover", perCaso: { spostamenti: {} }, scala: 1,
+                                    auto: true, stantia: false, tipo: "pushover", stati: { 1: [E_E, E_E] },
+                                    badge: { passo: { k: 0, n: 1, u: 0.5, V: 1.2 } }, ...extra });
+
+// La `y` di una coordinata del `viewBox` in pixel del contenitore. Con `preserveAspectRatio="xMidYMid
+// meet"` il riquadro sta **sempre** centrato nel viewport, quindi la fascia non si vede qui come un
+// ritaglio spostato: si vede come riquadro più alto, con il telaio che scende nella sua metà bassa.
+const inPixel = (svg, w, h) => {
+  const [, z0, larghezza, altezza] = svg.getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larghezza / w, altezza / h);
+  const cima = (z0 + altezza / 2) - h * s / 2;
+  return { s, y: (y) => (y - cima) / s };
+};
+const yDeiNodi = (svg, w, h) => {
+  const { y } = inPixel(svg, w, h);
+  return cerchiDeiNodi(svg).map((c) => y(Number(c.getAttribute("cy"))));
+};
+const altezzaDelRiquadro = (svg) => Number(svg.getAttribute("viewBox").split(" ")[3]);
+
+test("piano: con le strisce visibili il telaio cade sotto la loro fascia, non sotto il loro testo (A)", () => {
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, 1152, 801);
+  badgeDi(contenitore).offsetHeight = 300;   // il badge della pushover a 46 px va a capo più volte
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.equal(badgeDi(contenitore).hidden, false, "il badge si vede: il test non è vuoto");
+  assert.equal(legendaDi(contenitore).hidden, false, "la legenda degli stati si vede");
+  const ys = yDeiNodi(svg(), 1152, 801);
+  assert.equal(ys.length, 4);
+  assert.ok(Math.min(...ys) >= 300, `il nodo più alto sta a ${Math.min(...ys).toFixed(1)} px, sotto le strisce no`);
+  // La fascia è spazio **in più** nel riquadro, non un ritaglio: senza, il riquadro resterebbe
+  // alto quanto il modello e il telaio ripartirebbe da sotto il titolo.
+  assert.ok(altezzaDelRiquadro(svg()) > estensione(MURO).altezza,
+            "il riquadro non si è allargato in verticale per far posto alle strisce");
+});
+
+// --- ingressi degeneri del fix ----------------------------------------------------------------
+
+test("piano: nessuna striscia visibile → inquadratura identica a oggi, nessuna fascia riservata", () => {
+  // Vista «niente», nessuna azione: titolo, badge, legende tutti `hidden`. Il riquadro resta alto
+  // quanto il modello — è il modo di dire «nessuna fascia» senza dipendere dal conto della catena.
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, 1152, 801);
+  piano.disegna(MURO, {});
+  for (const f of [contenitore._figli[1], badgeDi(contenitore), legendaDi(contenitore), coloriDi(contenitore)]) {
+    assert.equal(f.hidden, true, "nessuna striscia deve vedersi");
+  }
+  assert.equal(altezzaDelRiquadro(svg()), estensione(MURO).altezza,
+               "senza strisce il riquadro è quello di prima, al millimetro");
+});
+
+test("piano: strisce più alte di due terzi del piano → il riquadro utile resta un terzo, niente telaio di 50 px", () => {
+  // La pushover su un riquadro basso (1280×657): il badge e la legenda degli stati a 46 px occupano
+  // più di due terzi dell'altezza. Meglio un telaio sotto una striscia che un telaio di 50 px.
+  const w = 1280, h = 657;
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  badgeDi(contenitore).offsetHeight = 500;
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  const [x0, z0, larghezza, altezza] = svg().getAttribute("viewBox").split(" ").map(Number);
+  for (const [nome, v] of [["x0", x0], ["z0", z0], ["larghezza", larghezza], ["altezza", altezza]]) {
+    assert.ok(Number.isFinite(v), `il \`viewBox\` porta ${nome} = ${v}: divisione per zero nell'inquadratura`);
+  }
+  const { s } = inPixel(svg(), w, h);
+  assert.ok(Number.isFinite(s) && s > 0, `millimetri per pixel = ${s}`);
+  // Il telaio resta grande: il riquadro utile si ferma a un terzo, non scende a una striscia di 50 px.
+  const ys = yDeiNodi(svg(), w, h);
+  const altoPx = Math.max(...ys) - Math.min(...ys);
+  assert.ok(altoPx >= h / 3 * 0.5, `il telaio è alto ${altoPx.toFixed(1)} px su ${h}: si è schiacciato`);
+});
+
+test("piano: riquadro degenere (39×10 px, zoom 200 %) → nessuna fascia, il disegno non si rimpicciolisce", () => {
+  // Misurato a zoom 200 % (640×400 con dpr 2): la griglia lascia a `#viste` 80 px, e al piano un
+  // riquadro di 39×10 px, mentre le strisce ne occupano 115. Riservare la fascia lì rimpicciolisce
+  // il telaio di tre volte e i nomi dei nodi — che restano di 11 px — finiscono a toccarsi.
+  const { contenitore, piano, svg } = pianoCon(undefined, 39, 10);
+  badgeDi(contenitore).offsetHeight = 115;
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.equal(badgeDi(contenitore).hidden, false, "la striscia si vede: il test non è vuoto");
+  assert.equal(altezzaDelRiquadro(svg()), estensione(MURO).altezza,
+               "su un riquadro degenere la fascia non si riserva: il riquadro resta quello del modello");
+});
+
+test("piano: senza `getComputedStyle` e senza `offsetHeight` l'inquadratura non porta `NaN` (DOM finto)", () => {
+  // `pianoCon(undefined)`: nessuna variabile CSS → i ripieghi di `MISURE_BASE`; e il DOM finto non
+  // implementa `offsetHeight` → i ripieghi già usati per gli ostacoli. Né l'uno né l'altro deve
+  // entrare nel conto della fascia come `undefined`.
+  const { contenitore, piano, svg } = pianoCon(undefined, 800, 600);
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.equal(badgeDi(contenitore).offsetHeight, undefined, "il DOM finto non ha `offsetHeight`: il test è quello giusto");
+  const numeri = svg().getAttribute("viewBox").split(" ").map(Number);
+  for (const v of numeri) assert.ok(Number.isFinite(v), `\`viewBox\` = ${JSON.stringify(svg().getAttribute("viewBox"))}`);
+  for (const y of yDeiNodi(svg(), 800, 600)) assert.ok(Number.isFinite(y), "un nodo finisce a `NaN` px");
 });
