@@ -121,7 +121,9 @@
     <input id="confronto-abaqus" type="text" spellcheck="false" placeholder="tests/fixture/abaqus_esempio.csv">
     <label for="confronto-nodi">nodi in sommità (id separati da ;)</label>
     <input id="confronto-nodi" type="text" class="numero" spellcheck="false" placeholder="3; 4">
-    <div id="confronto-casi" aria-label="caso del telaio → passo del solido"></div>
+    <!-- `role="group"`: senza un ruolo il nome di un `<div>` non viene esposto, e le righe
+         caso → passo arriverebbero all'ascolto come campi sciolti in mezzo ai percorsi. -->
+    <div id="confronto-casi" role="group" aria-label="caso del telaio → passo del solido"></div>
     <label class="riga"><input id="confronto-assi" type="checkbox"> il solido ha x e y scambiati</label>
     <details id="confronto-avanzato">
       <summary id="confronto-avanzato-titolo">avanzato: mappa_casi in JSON</summary>

@@ -126,7 +126,8 @@ test("testoDidascalia: telaio+solido, +Abaqus solo se davvero appaiato, la frase
 });
 
 // --- creaConfronto: il blocco «Confronto» del pannello (Task 2) --------------------------------
-import { creaConfronto } from "../confronto.js";
+import { readFileSync } from "node:fs";
+import { creaConfronto, TITOLO_AVANZATO } from "../confronto.js";
 
 // In più rispetto a `corsa.test.js`: `checked` (la casella degli assi), `dataset` (il caso di ogni
 // riga), `querySelectorAll("input")` sul contenitore delle righe, `dispatch` che **restituisce** la
@@ -313,6 +314,7 @@ test("senza Abaqus le colonne sono sei; la nota della riga sta nella cella della
   assert.equal(celle[5].textContent, "lontano 1");
   assert.equal(celle[5]._figli.at(-1)?.nome, "sup", "il numero della nota è un `<sup>`, non un carattere nel testo");
   assert.equal(celle[5]._figli.at(-1)?.getAttribute("aria-label"), "nota 1");
+  assert.equal(celle[5]._figli.at(-1)?.getAttribute("role"), "note", "senza un ruolo l'`aria-label` di un `<sup>` non viene esposto");
   assert.equal(celle[0].textContent, "massa");
   assert.equal(celle[0].getAttribute("scope"), "row");
   assert.equal(celle[2].textContent, "0,7694 t", "l'unità sta accanto al valore del telaio, una volta per riga");
@@ -398,6 +400,7 @@ test("un 400 del server arriva in parole e la tabella di prima resta; la rete ch
   assert.equal(errori.at(-1), "il server non risponde");
   assert.equal(spia.rotte.length, 3);
   assert.equal(el("confronta").disabled, false, "il bottone si riaccende dopo l'errore");
+  assert.equal(el("confronta").textContent, "confronta", "e torna a dire il suo nome, non «confronto…»");
 });
 
 test("nodi non interi: messaggio, nessuna richiesta; «copia» scrive la cartella negli appunti e lo dice", async () => {
@@ -454,4 +457,37 @@ test("un clic mentre uno gira è ignorato; azzera() due volte è idempotente", a
   assert.equal(el("casi")._figli.length, 0);
   assert.equal(el("corpo")._figli.length, 0);
   assert.equal(el("stato").textContent, "");
+});
+
+test("azzera() mentre una richiesta gira: la risposta arriva e non tocca niente", async () => {
+  const { radice, el } = radiceConfronto();
+  let sciogli;
+  const cancello = new Promise((r) => { sciogli = r; });
+  fetchFinta([{ stato: 200, dati: risposta(), attendi: cancello }]);
+  const errori = [];
+  const c = creaConfronto(radice, { suErrore: (m) => errori.push(m) });
+  c.disegna({ modello: MURO, telaio: telaioLavoro(), solido: null });
+  const inVolo = el("confronta").dispatch("click");
+  c.azzera();
+  sciogli();
+  await inVolo;
+  assert.equal(el("scorri").hidden, true, "la tabella di una schermata azzerata non compare");
+  assert.equal(el("vuoto").hidden, false);
+  assert.equal(el("corpo")._figli.length, 0);
+  assert.equal(el("cartella").hidden, true);
+  assert.equal(el("percorso").textContent, "", "«copia» non ha una cartella da copiare");
+  assert.equal(el("stato").textContent, "");
+  assert.equal(el("confronta").disabled, true, "azzerato il bottone resta spento: non c'è più un telaio");
+  assert.deepEqual(errori, []);
+});
+
+// Il codice cerca gli id col `querySelector`: un id rinominato nel markup non rompe nessun test
+// del comportamento — il DOM finto ce l'ha comunque — e si scopre solo a schermo.
+test("index.html porta ogni id che `creaConfronto` cerca, e il titolo dell'avanzato è lo stesso", () => {
+  const sorgente = readFileSync(new URL("../confronto.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const ids = [...sorgente.matchAll(/q\("#(confronto-[\w-]+)"\)/g)].map((m) => m[1]);
+  assert.ok(ids.length >= 20, `gli id cercati sono ${ids.length}: la regex non li ha presi tutti`);
+  for (const id of ids) assert.ok(html.includes(`id="${id}"`), `«${id}» è cercato da confronto.js e manca in index.html`);
+  assert.equal(html.match(/<summary id="confronto-avanzato-titolo">([^<]*)<\/summary>/)[1], TITOLO_AVANZATO);
 });

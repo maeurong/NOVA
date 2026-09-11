@@ -121,6 +121,10 @@ export function testoProvenienza(p) {
           dataItaliana(p.data)].join(" · ");
 }
 
+/** Il titolo dell'`<details>` avanzato, qui e non nel markup: il codice gli aggiunge «(in uso)» e
+ *  glielo toglie, quindi la stringa di riposo è sua. Il test la confronta con `index.html`. */
+export const TITOLO_AVANZATO = "avanzato: mappa_casi in JSON";
+
 /** Il blocco «Confronto»: tre percorsi, la mappa dei casi (form o JSON), «confronta», la tabella.
  *  Il DOM è suo come in `creaCorsa` (`corsa.js:113`): `app.js` gli passa lo stato e ridisegna. */
 export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigator?.clipboard ?? null) }) {
@@ -133,13 +137,13 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
   const noteEl = q("#confronto-note"), provenienzaEl = q("#confronto-provenienza"), cartellaEl = q("#confronto-cartella");
   const percorsoEl = q("#confronto-percorso"), bCopia = q("#confronto-copia");
 
-  const TITOLO = "avanzato: mappa_casi in JSON";
   // «toccato» per campo: una corsa nuova riscrive solo i campi che l'utente non ha mai scritto.
   const toccato = { telaio: false, solido: false, nodi: false };
   let jsonInUso = false;       // il textarea ha ricevuto un `input`: da lì comanda lui
   let casiInForm = [];         // i casi delle righe caso → passo, per rifarle solo se cambiano
   let cartella = null;         // della tabella a schermo, per «copia»
   let occupato = false;
+  let gen = 0;                 // `azzera()` la fa avanzare: la risposta ancora in volo si scarta
 
   const righeCasi = () => casiEl.querySelectorAll("input");
   const statoForm = () => ({
@@ -197,6 +201,7 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
     if (!note.length) return cella;
     const sup = document.createElement("sup");
     sup.textContent = note.join(" ");
+    sup.setAttribute("role", "note");   // senza un ruolo, l'`aria-label` di un `<sup>` non viene esposto
     sup.setAttribute("aria-label", `nota ${note.join(", ")}`);
     cella.append(document.createTextNode(" "), sup);
     return cella;
@@ -238,18 +243,25 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
     if (telaio === "") { suErrore("scrivi il percorso dei risultati del telaio"); return; }
     const vuotoANull = (campo) => (campo.value.trim() === "" ? null : campo.value.trim());
     occupato = true; bConfronta.disabled = true;
-    const riposo = bConfronta.textContent; bConfronta.textContent = "confronto…";
+    bConfronta.textContent = "confronto…";
+    const g = gen;
     try {
       const r = await chiediJson("/api/confronto", { telaio, solido: vuotoANull(campoSolido), abaqus: vuotoANull(campoAbaqus), mappa_casi });
+      // Azzerato mentre girava: questa risposta è di una schermata che non c'è più. Niente DOM,
+      // niente messaggio, e soprattutto niente `cartella` — «copia» copierebbe un percorso che
+      // non è scritto da nessuna parte.
+      if (g !== gen) return;
       cartella = r.cartella ?? null;
-      disegnaTabella(r.tabella ?? { righe: [], provenienza: null, avvertenza: "" });
       percorsoEl.textContent = cartella ?? "";
       cartellaEl.hidden = cartella === null;
+      // Dopo la cartella: se il disegno solleva, «copia» offre comunque quel che è a schermo.
+      disegnaTabella(r.tabella ?? { righe: [], provenienza: null, avvertenza: "" });
       suErrore(null);
     } catch (e) {
-      suErrore(e.message);
+      if (g === gen) suErrore(e.message);
     } finally {
-      occupato = false; bConfronta.disabled = false; bConfronta.textContent = riposo;
+      occupato = false; bConfronta.textContent = "confronta";
+      if (g === gen) bConfronta.disabled = false;   // azzerato, il bottone lo ha già spento `azzera()`
     }
   }
 
@@ -261,9 +273,10 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
   }
 
   function azzera() {
+    gen++;                      // una richiesta in volo non scriverà più su questa schermata
     for (const k of Object.keys(toccato)) toccato[k] = false;
     campoTelaio.value = ""; campoSolido.value = ""; campoAbaqus.value = ""; campoNodi.value = "";
-    jsonInUso = false; jsonEl.value = ""; titoloAvanzato.textContent = TITOLO;
+    jsonInUso = false; jsonEl.value = ""; titoloAvanzato.textContent = TITOLO_AVANZATO;
     casiInForm = []; casiEl.replaceChildren();
     cartella = null; percorsoEl.textContent = "";
     testaEl.replaceChildren(); corpoEl.replaceChildren(); noteEl.replaceChildren();
@@ -276,7 +289,7 @@ export function creaConfronto(radice, { suErrore, appunti = (globalThis.navigato
   campoSolido.addEventListener("input", () => { toccato.solido = true; });
   campoNodi.addEventListener("input", () => { toccato.nodi = true; specchiaJson(); });
   assiEl.addEventListener("change", specchiaJson);
-  jsonEl.addEventListener("input", () => { jsonInUso = true; titoloAvanzato.textContent = `${TITOLO} (in uso)`; });
+  jsonEl.addEventListener("input", () => { jsonInUso = true; titoloAvanzato.textContent = `${TITOLO_AVANZATO} (in uso)`; });
   bConfronta.addEventListener("click", () => confronta());
   bCopia.addEventListener("click", () => copia());
 
