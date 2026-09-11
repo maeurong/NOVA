@@ -278,6 +278,20 @@ test("daControllo: i bottoni dell'area file non si tengono i comandi", () => {
   assert.equal(daControllo(eventoDa("button", { key: "s", comando: true })), false);
 });
 
+// 15a: un `select` si tiene le lettere (la ricerca per lettera nel menu) ma non `Esc`. In aula, scelto
+// il caso col mouse, il fuoco resta sul menu del caso: se il menu si tenesse `Esc`, la presentazione
+// non si chiuderebbe più da tastiera.
+const menuDelCaso = (key) => ({ key, metaKey: false, ctrlKey: false, altKey: false,
+  target: { closest: () => ({ tagName: "SELECT", type: "select-one", getAttribute: () => null }) } });
+
+test("daControllo: sul menu del caso Esc passa — esce dalla presentazione", () => {
+  assert.equal(daControllo(menuDelCaso("Escape")), false);
+});
+
+test("daControllo: sul menu del caso le lettere restano sue — P cerca nel menu, non cambia layout", () => {
+  assert.equal(daControllo(menuDelCaso("p")), true);
+});
+
 // --- 11c/A: le voci dell'albero e della Storia sono `<li tabindex=0 role="button">` ---
 // Un `<li>` non è un `<button>` per il selettore, ma per chi lo usa sì. Cercando i soli tag,
 // l'Invio che salta a uno snapshot risaliva **anche** al listener globale, che lo leggeva

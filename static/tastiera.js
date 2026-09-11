@@ -138,6 +138,9 @@ export function daControllo(evento) {
   const tipo = String(elemento.type ?? "").toLowerCase();
   const testuale = !bottone && !NON_TESTUALI.has(tipo);
   const tasto = String(evento.key).toLowerCase();
+  // Un `select` si tiene le lettere (la ricerca per lettera nel menu) ma non Esc: scelto il caso col
+  // mouse il fuoco resta sul menu, e da lì Esc deve uscire dalla presentazione (15a).
+  if (tag === "select" && tasto === "escape") return false;
   return testuale || ATTIVANO.has(tasto) || (!bottone && CON_FRECCE.has(tipo) && NAVIGANO.has(tasto));
 }
 

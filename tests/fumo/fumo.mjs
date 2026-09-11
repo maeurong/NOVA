@@ -1,5 +1,6 @@
 // I copioni del test di fumo: pytest li lancia con un JSON in argv[2] e legge una riga JSON su
 // stdout. Ogni copione preme tasti veri e legge il DOM vero: è l'unico test di `app.js`.
+import { writeFileSync } from "node:fs";
 import { apri, tasto, scrivi, ev, cmd, finche, viewport, erroriRaccolti, chiudi, pausa } from "./cdp.mjs";
 
 const arg = JSON.parse(process.argv[2] ?? "{}");
@@ -24,8 +25,8 @@ const SOVRAPPOSTE = `(() => {
 // `tests/test_fumo_chrome.py:101`): un `finche` più lungo non aspetterebbe di più, farebbe morire
 // node a metà con un `TimeoutExpired` che parla del processo e non della corsa. Il MURO 1 corre
 // la modale in 0,3 s e la pushover in ≈ 2 s (`docs/caso-studio/README.md:208`).
-const apriECorri = async (fixture) => {
-  await apri(url, arg.cdp);
+const apriECorri = async (fixture, dimensioni) => {
+  await apri(url, arg.cdp, dimensioni);
   await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(fixture)}; return true; })()`);
   await tasto("o", { meta: true });
   await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
@@ -49,6 +50,14 @@ const staDentro = (sel, contenitore) => ev(`(() => {
   const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
   return r.left >= p.left - 0.5 && r.right <= p.right + 0.5;
 })()`);
+
+// La misura **resa** di un attributo SVG, la più piccola fra gli elementi: attributo × `getScreenCTM().a`,
+// cioè in pixel dello schermo e non in millimetri del `viewBox`. `null` se non c'è nessun elemento.
+const reso = (sel, attr, fattore = 1) => ev(`(() => { const v = [...document.querySelectorAll(${JSON.stringify(sel)})]
+  .map((e) => parseFloat(e.getAttribute(${JSON.stringify(attr)})) * e.getScreenCTM().a * ${fattore}); return v.length ? Math.min(...v) : null; })()`);
+const ETICHETTE_NODI = ["#piano svg g[data-tipo=nodo] text", "font-size"];
+const ACCESA = `document.body.hasAttribute("data-presentazione")`;
+const COLORI = `(() => { const l = document.querySelector("#piano .risultati-colori"); return l && !l.hidden ? l.textContent : null; })()`;
 
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
@@ -194,8 +203,9 @@ const COPIONI = {
     const statico = await ev(`document.querySelector("#risultati-caso option").value`);
     // **Tutte** le polilinee, non la prima: l'asta 1 del MURO 1 è il cordolo di base fra i due
     // nodi incastrati, e nel modo 2 la sua forma è zero — guardare quella sola direbbe «ferma»
-    // di un'animazione che sta andando. Misurato l'11/09.
-    const punti = () => ev(`[...document.querySelectorAll("#piano svg polyline.deformata")].map((p) => p.getAttribute("points")).join("|")`);
+    // di un'animazione che sta andando. Misurato l'11/09. Dalla 15a la deformata fresca è il bordo
+    // `polyline.deformata-bordo` sotto i tratti in viridis: `polyline.deformata` resta solo da stantia.
+    const punti = () => ev(`[...document.querySelectorAll("#piano svg polyline.deformata-bordo")].map((p) => p.getAttribute("points")).join("|")`);
     const fermo = async () => { const x = await punti(); await pausa(160); return x === await punti(); };
 
     // Spazio sul caso statico di partenza: non c'è animazione da fermare, e il messaggio lo dice.
@@ -271,6 +281,7 @@ const COPIONI = {
     await scegliCaso("pushover");
     await pausa(300);
     const badge1 = await ev(BADGE);
+    const colori1 = await ev(COLORI);
     const cerchi = await ev(`document.querySelectorAll("#srotolato circle.passo").length`);
     await tasto("ArrowLeft"); await tasto("ArrowLeft"); await tasto("ArrowRight");
     await pausa(200);
@@ -281,6 +292,7 @@ const COPIONI = {
     await ev(`(() => { document.querySelector("#srotolato rect.passi").dispatchEvent(new MouseEvent("click", { bubbles: true })); return true; })()`);
     await pausa(200);
     const badge3 = await ev(BADGE);
+    const colori3 = await ev(COLORI);
     const stati = await ev(`document.querySelectorAll("#piano svg circle.stato").length`);
     const legenda = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
     const sovrapposte = await ev(SOVRAPPOSTE);
@@ -297,7 +309,7 @@ const COPIONI = {
     await tasto("Escape");
     await pausa(150);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { badge1, badge2, badge3, badgeConGhost, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
+    return { badge1, badge2, badge3, badgeConGhost, colori1, colori3, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
   },
 
   // La scheda Confronto sul MURO 1: telaio corso qui, niente solido, il CSV Abaqus d'esempio.
@@ -327,6 +339,169 @@ const COPIONI = {
     const rossi = await ev(`[...document.querySelectorAll("#confronto *")].filter((e) => getComputedStyle(e).color === "rgb(184, 50, 30)").length`);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { telaio, nodi, casi, json, righe, prima, colonne, stato, note, didascalia, provenienza, percorso, abaqusC1, scorrePagina, dentro, rossi, messaggio };
+  },
+
+  // Il modo presentazione sul MURO 1 a 1920×1080 (story 62): P entra, le misure rese stanno sopra le
+  // soglie, niente si sovrappone, la pagina non scorre; in scala di grigi i doppi canali restano
+  // (story 63); Esc esce. Le misure si leggono sul **reso**: attributo × `getScreenCTM().a`.
+  async presentazione() {
+    await apriECorri(arg.fixture, { larghezza: 1920, altezza: 1080 });
+    const bottoneFuori = await ev(`getComputedStyle(document.getElementById("riapri-pannelli")).display`);
+    await tasto("p");
+    await pausa(400);
+    const misure = {
+      etichette: await reso(...ETICHETTE_NODI),
+      aste: await reso("#piano svg line[data-tipo=asta]", "stroke-width"),
+      nodi: await reso("#piano svg g[data-tipo=nodo] circle", "r", 2),
+      striscia: await ev(`parseFloat(getComputedStyle(document.getElementById("risultati-caso")).fontSize)`),
+    };
+    const nascosti = await ev(`["colonna", "barra", "storia-elenco"].map((id) => getComputedStyle(document.getElementById(id)).display === "none" || document.getElementById(id).offsetParent === null)`);
+    const strisciaSotto = await ev(`document.getElementById("pannello").getBoundingClientRect().top >= document.getElementById("viste").getBoundingClientRect().bottom - 1`);
+    const altezzaStriscia = await ev(`document.getElementById("pannello").getBoundingClientRect().height`);
+    const piano = await ev(`[document.getElementById("piano").clientWidth, document.getElementById("piano").clientHeight]`);
+    const proporzione = await ev(`document.getElementById("piano").clientWidth / document.getElementById("spazio").clientWidth`);
+    const sovrapposte = await ev(SOVRAPPOSTE);
+    const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    const colori = await ev(`new Set([...document.querySelectorAll("#piano svg line.deformata")].map((l) => l.getAttribute("stroke"))).size`);
+    const legendaColori = await ev(COLORI);
+    // Bianco e nero: il colore spento, i canali che restano. Il badge dice la scala a parole; il nodo
+    // scelto è più grosso (non solo rosso); la deformata ha il bordo in inchiostro.
+    await ev(`(() => { document.documentElement.style.filter = "grayscale(1)"; return true; })()`);
+    await tasto("g");
+    await pausa(200);
+    const bn = {
+      badge: await ev(BADGE),
+      raggi: await ev(`[...document.querySelectorAll("#piano svg g[data-tipo=nodo] circle")].map((c) => parseFloat(c.getAttribute("r")))`),
+      bordo: await ev(`document.querySelectorAll("#piano svg polyline.deformata-bordo").length`),
+    };
+    if (arg.screenshot) {
+      const { data } = await cmd("Page.captureScreenshot", { format: "png" });
+      writeFileSync(arg.screenshot, Buffer.from(data, "base64"));
+    }
+    await ev(`(() => { document.documentElement.style.filter = ""; return true; })()`);
+    // G sceglie un nodo e non apre un gesto, quindi Esc non ha niente da chiudere ed esce dalla presentazione.
+    await tasto("Escape");
+    await pausa(300);
+    const uscito = await ev(`!${ACCESA} && getComputedStyle(document.getElementById("colonna")).display !== "none"`);
+
+    // Un modo in presentazione: la legenda dei colori è la forma normalizzata, 0 … 1, mai in mm.
+    await tasto("p");
+    await scegliCaso("modo:2");
+    await pausa(400);
+    const legendaModo = await ev(COLORI);
+
+    // Il menu del caso in aula: scelto col mouse, il fuoco resta lì. P cerca nel menu e non cambia
+    // layout; Esc esce lo stesso.
+    await ev(`(() => { document.getElementById("risultati-caso").focus(); return true; })()`);
+    await tasto("p");
+    await pausa(150);
+    const menu = { pTiene: await ev(`${ACCESA} && document.activeElement.id === "risultati-caso"`) };
+    await tasto("Escape");
+    await pausa(300);
+    menu.escEsce = await ev(`!${ACCESA}`);
+
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, proporzione, sovrapposte, scorre,
+             colori, legendaColori, bn, uscito, legendaModo, menu, messaggio };
+  },
+
+  // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost
+  // dell'estrusione, Esc col campo di comando aperto, «apri» e il ridimensionamento dentro la
+  // presentazione, i pannelli aperti con una selezione.
+  async presentazioneBordi() {
+    await apri(url, arg.cdp, { larghezza: 1920, altezza: 1080 });
+    const acceso = () => ev(ACCESA);
+    const nascosto = (id) => `(getComputedStyle(document.getElementById("${id}")).display === "none" || document.getElementById("${id}").offsetParent === null)`;
+    const t = {};
+    t.bottoneFuori = await ev(`getComputedStyle(document.getElementById("riapri-pannelli")).display`);
+
+    // P col fuoco nel campo del percorso: la lettera va nel campo.
+    await ev(`(() => { document.getElementById("file-percorso").focus(); return true; })()`);
+    await tasto("p");
+    t.campo = { valore: await ev(`document.getElementById("file-percorso").value`), acceso: await acceso() };
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ""; c.blur(); return true; })()`);
+
+    // P senza nessuna corsa: la striscia porta lo stato vuoto di «Risultati».
+    await tasto("p");
+    await pausa(300);
+    t.senzaCorsa = {
+      acceso: await acceso(),
+      vuoto: await ev(`parseFloat(getComputedStyle(document.getElementById("risultati-vuoto")).fontSize)`),
+      visibile: await ev(`document.getElementById("risultati-vuoto").offsetParent !== null`),
+      altezza: await ev(`document.getElementById("pannello").getBoundingClientRect().height`),
+      bottone: await ev(`getComputedStyle(document.getElementById("riapri-pannelli")).display`),
+    };
+
+    // P col fuoco sul bottone «pannelli»: un bottone si tiene solo Invio, Spazio e ⌫, quindi P alterna.
+    await ev(`(() => { document.getElementById("riapri-pannelli").focus(); return true; })()`);
+    await tasto("p");
+    await pausa(200);
+    t.pSulBottone = !(await acceso());
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+
+    // «apri» un modello dentro la presentazione: resta accesa, e le etichette restano quelle dell'aula.
+    await tasto("p");
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await pausa(200);
+    t.aperto = { acceso: await acceso(), etichette: await reso(...ETICHETTE_NODI) };
+
+    // La finestra ridimensionata: il `resize` ridisegna il piano, e le variabili lette sul `body` restano.
+    await viewport(1600, 900, 1);
+    await pausa(300);
+    t.ridimensionato = await reso(...ETICHETTE_NODI);
+    await viewport(1920, 1080, 1);
+    await pausa(300);
+
+    // Esc col campo di comando aperto: il primo chiude il campo e resta, il secondo esce.
+    await tasto("n");
+    await pausa(150);
+    const campoAperto = await ev(`!document.getElementById("comando").hidden`);
+    await tasto("Escape");
+    await pausa(200);
+    t.primoEsc = { campoAperto, acceso: await acceso(), campoChiuso: await ev(`document.getElementById("comando").hidden`) };
+    await tasto("Escape");
+    await pausa(200);
+    t.secondoEsc = !(await acceso());
+
+    // Il ghost dell'estrusione aperto, col fuoco fuori dal campo: P torna al campo e non cambia layout.
+    await tasto("g");
+    await tasto("b");
+    await pausa(150);
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+    await tasto("p");
+    await pausa(200);
+    t.ghost = { acceso: await acceso(), campoAperto: await ev(`!document.getElementById("comando").hidden`) };
+    await tasto("Escape");
+    await pausa(200);
+
+    // I pannelli aperti con una selezione: albero e ispettore tornano, «Niente di selezionato» e la
+    // Storia restano nascosti.
+    await tasto("p");
+    await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+    await pausa(200);
+    await tasto("g");
+    await pausa(200);
+    t.pannelli = {
+      colonna: await ev(`!${nascosto("colonna")}`),
+      dati: await ev(`!${nascosto("pannello-dati")}`),
+      vuotoNascosto: await ev(nascosto("pannello-vuoto")),
+      storiaNascosta: await ev(nascosto("storia-elenco")),
+      premuto: await ev(`document.getElementById("riapri-pannelli").getAttribute("aria-pressed")`),
+      scorre: await ev(`document.documentElement.scrollWidth > window.innerWidth`),
+    };
+    // Uscire con i pannelli aperti li chiude: rientrando sono di nuovo ritratti.
+    await tasto("Escape");
+    await pausa(200);
+    t.uscitoConPannelli = { acceso: await acceso(), pannelli: await ev(`document.body.hasAttribute("data-pannelli")`),
+                            premuto: await ev(`document.getElementById("riapri-pannelli").getAttribute("aria-pressed")`) };
+    await tasto("p");
+    await pausa(200);
+    t.rientro = { acceso: await acceso(), colonna: await ev(nascosto("colonna")) };
+    await tasto("p");
+    t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return t;
   },
 };
 

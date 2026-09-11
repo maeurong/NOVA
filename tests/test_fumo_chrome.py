@@ -303,6 +303,10 @@ def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, b
     assert t["cerchi"] == 120, f"un cerchio per passo nella striscia: {t['cerchi']}"
     assert "119/120" in t["badge2"], t["badge2"]
     assert "1/120" in t["badge3"], t["badge3"]
+    # 15a: |u|max della legenda è fisso sul passo di riferimento della corsa, come la scala: al passo 1
+    # la deformata è tutta viola e la legenda non respira.
+    assert t["colori1"] and "mm" in t["colori1"], t["colori1"]
+    assert t["colori3"] == t["colori1"], f"|u|max cambia col passo: {t['colori1']!r} → {t['colori3']!r}"
     # C: la scala è **una per corsa**, non una per passo. Con `scalaAuto` sul passo corrente
     # usciva ×10 al passo 30 e ×2 al 120: scorrendo lo scrubber la deformata respirava invece di
     # crescere, e confrontare due passi — che è tutto il senso dello scrubber — diceva il falso.
@@ -351,6 +355,69 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
     assert t["scorrePagina"] is False, "la pagina non deve scorrere in orizzontale"
     assert t["dentro"] is True, "il riquadro della tabella sta nel pannello"
     assert t["rossi"] == 0, "nessun rosso nella scheda: non è un pass/fail"
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario_opensees, tmp_path):
+    """P sul MURO 1 a 1920×1080: etichette ≥ 46 px, aste ≥ 6 px, nodi ≥ 14 px, striscia ≥ 32 px
+    (story 62); niente si sovrappone; la deformata in viridis con la legenda; in scala di grigi la
+    scala resta a parole, il nodo scelto più grosso, la deformata col bordo (story 63); Esc esce."""
+    porta, cdp = chrome_e_server
+    schermo = tmp_path / "presentazione-grigi.png"
+    r = copione("presentazione", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"), screenshot=str(schermo))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["bottoneFuori"] == "none", "«pannelli» si vede fuori dalla presentazione"
+    # Tolleranza di un centesimo: il CTM rende 46,0000003 o 45,9999997 secondo il riquadro.
+    assert t["misure"]["etichette"] >= 45.99, t["misure"]
+    assert t["misure"]["aste"] >= 5.99, t["misure"]
+    assert t["misure"]["nodi"] >= 13.99, t["misure"]
+    assert t["misure"]["striscia"] >= 32, t["misure"]
+    assert all(t["nascosti"]), t["nascosti"]
+    assert t["strisciaSotto"] is True
+    assert 1.3 <= t["proporzione"] <= 1.7, t["proporzione"]
+    assert t["sovrapposte"] == [], t["sovrapposte"]
+    assert t["scorre"] is False
+    assert t["colori"] >= 2, "la deformata non si colora con lo spostamento"
+    assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
+    assert "×" in t["bn"]["badge"], t["bn"]["badge"]
+    assert max(t["bn"]["raggi"]) > min(t["bn"]["raggi"]), "il nodo scelto non è più grosso: in B/N resta solo il colore"
+    assert t["bn"]["bordo"] >= 1
+    assert schermo.stat().st_size > 10_000, "lo screenshot in scala di grigi non è stato scritto"
+    assert t["uscito"] is True
+    # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
+    assert t["legendaModo"] and "forma normalizzata" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
+    assert t["menu"] == {"pTiene": True, "escEsce": True}, t["menu"]
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
+    """Senza corsa, a 1920×1080: P nel campo del percorso scrive, P senza corsa accende con lo stato
+    vuoto a 32 px, P sul bottone «pannelli» alterna, «apri» e il resize restano nell'aula, Esc col
+    campo aperto chiude il campo prima di uscire, il ghost dell'estrusione si tiene P, i pannelli
+    aperti non rimostrano stati vuoti né Storia, e uscire li richiude."""
+    porta, cdp = chrome_e_server
+    r = copione("presentazioneBordi", porta, cdp, fixture=str(FIXTURE / "trave_appoggiata.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["bottoneFuori"] == "none", "«pannelli» si vede fuori dalla presentazione"
+    assert t["campo"] == {"valore": "p", "acceso": False}, t["campo"]
+    assert t["senzaCorsa"]["acceso"] is True, t["senzaCorsa"]
+    assert t["senzaCorsa"]["visibile"] is True and t["senzaCorsa"]["vuoto"] >= 32, t["senzaCorsa"]
+    assert t["senzaCorsa"]["bottone"] != "none", t["senzaCorsa"]
+    assert t["pSulBottone"] is True, "P col fuoco su «pannelli» non esce dalla presentazione"
+    assert t["aperto"]["acceso"] is True, t["aperto"]
+    assert t["aperto"]["etichette"] is not None and t["aperto"]["etichette"] >= 45.99, t["aperto"]
+    assert t["ridimensionato"] is not None and t["ridimensionato"] >= 45.99, t["ridimensionato"]
+    assert t["primoEsc"] == {"campoAperto": True, "acceso": True, "campoChiuso": True}, t["primoEsc"]
+    assert t["secondoEsc"] is True, "il secondo Esc non esce dalla presentazione"
+    assert t["ghost"] == {"acceso": False, "campoAperto": True}, t["ghost"]
+    assert t["pannelli"] == {"colonna": True, "dati": True, "vuotoNascosto": True, "storiaNascosta": True,
+                             "premuto": "true", "scorre": False}, t["pannelli"]
+    assert t["uscitoConPannelli"] == {"acceso": False, "pannelli": False, "premuto": "false"}, t["uscitoConPannelli"]
+    assert t["rientro"] == {"acceso": True, "colonna": True}, t["rientro"]
     assert t["messaggio"] == "", t["messaggio"]
 
 

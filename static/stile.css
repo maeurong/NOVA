@@ -13,6 +13,10 @@
   --mono: ui-monospace, "SF Mono", "Menlo", monospace;
   --testo: -apple-system, "Helvetica Neue", system-ui, sans-serif;
   --passo: 8px;
+  /* Le misure del disegno (15a): i valori d'oggi, ridefiniti per l'aula da `body[data-presentazione]`.
+     `misure.js` li legge; cambiare un numero qui cambia il disegno, e nessun'altra copia resta indietro. */
+  --nodo-raggio: 5px; --asta-tratto: 2px; --asta-tratto-scelta: 3px;
+  --deformata-tratto: 2px; --deformata-bordo: 2px; --etichetta: 11px; --ombra-opacita: 0.3;
 }
 
 * { box-sizing: border-box; }
@@ -319,10 +323,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    3 + 2, con «niente» e «deformata» su una riga e M, V, N sull'altra. */
 #risultati-vista { grid-template-columns: 1fr 1fr; }
 .file-azioni { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.file-azioni button { font: inherit; cursor: pointer; padding: 2px 10px;
+/* «pannelli» (15a) è un bottone del pannello come «apri» e «corri»: stesso selettore, non una copia. */
+.file-azioni button, #riapri-pannelli { font: inherit; cursor: pointer; padding: 2px 10px;
                       background: var(--pannello); color: var(--inchiostro);
                       border: 1px solid var(--tratto-forte); border-radius: 2px; }
-.file-azioni button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+.file-azioni button:focus-visible, #riapri-pannelli:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
 #file-stato { margin: 6px 0 0; font-size: 11px; color: var(--testo-tenue); }
 #file-recenti-vuoto { margin: 6px 0 0; padding: 0; max-width: none; font-size: 11px; }
 #file-recenti { margin: 6px 0 0; padding: 0; list-style: none; max-height: 11rem; overflow-y: auto; }
@@ -469,3 +474,38 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #confronto-cartella { margin: var(--passo) 0 0; font-size: 11px; overflow-wrap: anywhere; }
 #confronto-cartella button { font: inherit; cursor: pointer; padding: 0 6px; margin-left: 4px; }
 #confronto-cartella button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
+/* Il modo presentazione (story 62, `PRODUCT.md:96-101`): un layout, non uno zoom. 1920 px su 2 m letti
+   da 8 m → 45 px di corpo (`docs/ricerca/07-ux-modellatore.md:133`). Le viste prendono la larghezza, il
+   pannello scende a striscia sotto di loro con la sola sezione «Risultati» (`:157`); «pannelli» riporta
+   albero e ispettore senza uscire (`:92`). Misurato a 1920×1080 dall'architect (piano R1): 32 px ovunque
+   nella striscia, piano/spazio 1,499. Si nasconde con `:not([data-pannelli])` e non si riapre con
+   `revert`, che rimostrava gli elementi `hidden`; la Storia resta nascosta anche coi pannelli aperti. */
+body[data-presentazione] {
+  --nodo-raggio: 7px; --asta-tratto: 6px; --asta-tratto-scelta: 9px;
+  --deformata-tratto: 6px; --deformata-bordo: 2px; --etichetta: 46px; --ombra-opacita: 0.55;
+  grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto;
+  grid-template-areas: "viste" "striscia" "messaggio" "comando"; font-size: 32px;
+}
+body[data-presentazione] #barra,
+body[data-presentazione]:not([data-pannelli]) #colonna,
+body[data-presentazione]:not([data-pannelli]) #pannello > :not(#risultati),
+body[data-presentazione] #pannello > :is(#storia-elenco, h2:has(+ #storia-elenco)) { display: none; }
+body[data-presentazione] #viste { grid-template-columns: 3fr 2fr; }
+body[data-presentazione]:not([data-pannelli]) #pannello { grid-area: striscia; border-left: 0; border-top: 1px solid var(--tratto);
+  overflow: visible; padding: calc(var(--passo) / 2) var(--passo); }
+body[data-presentazione] :is(#risultati, #messaggio, #comando) :is(label, legend, select, input, kbd, p, span),
+body[data-presentazione] #messaggio { font-size: 32px; }
+body[data-presentazione] #risultati .vuoto { max-width: none; margin: 0; padding: 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-controlli:not([hidden]) { display: flex; flex-wrap: wrap; gap: 0 1em; align-items: baseline; }
+body[data-presentazione]:not([data-pannelli]) #risultati-controlli > label { display: inline; margin: 0; }
+body[data-presentazione]:not([data-pannelli]) :is(#risultati-caso, #risultati-scala) { width: auto; }
+body[data-presentazione]:not([data-pannelli]) #risultati-scala { width: 5em; }
+body[data-presentazione]:not([data-pannelli]) #risultati-vista { display: flex; gap: 0 0.75em; align-items: baseline; margin: 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-vista legend { float: left; margin: 0 0.25em 0 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-equilibrio { margin: 0; }
+body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 22rem) 1fr minmax(220px, 30rem);
+  grid-template-rows: 1fr auto auto; grid-template-areas: "albero viste pannello" "messaggio messaggio messaggio" "comando comando comando"; }
+body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
+#riapri-pannelli { display: none; }
+body[data-presentazione] #riapri-pannelli { display: block; position: fixed; top: var(--passo); right: var(--passo); z-index: 2; font: inherit; font-size: 32px; }
