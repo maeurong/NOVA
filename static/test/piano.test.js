@@ -1589,7 +1589,10 @@ test("piano: strisce più alte di due terzi del piano → il riquadro utile rest
   // Il telaio resta grande: il riquadro utile si ferma a un terzo, non scende a una striscia di 50 px.
   const ys = yDeiNodi(svg(), w, h);
   const altoPx = Math.max(...ys) - Math.min(...ys);
-  assert.ok(altoPx >= h / 3 * 0.5, `il telaio è alto ${altoPx.toFixed(1)} px su ${h}: si è schiacciato`);
+  // 142 px misurati: il riquadro utile è un terzo di 657 (219) meno i margini dell'inquadratura.
+  // L'intervallo è stretto apposta: con `h / 3 * 0.5` un `h / 3` diventato `h / 4` restava verde.
+  assert.ok(altoPx >= 138 && altoPx <= h / 3,
+            `il telaio è alto ${altoPx.toFixed(1)} px su ${h}: fuori dall'intervallo del riquadro utile`);
 });
 
 test("piano: riquadro degenere (39×10 px, zoom 200 %) → nessuna fascia, il disegno non si rimpicciolisce", () => {
