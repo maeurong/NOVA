@@ -25,6 +25,9 @@ export const TASTI = [
   { codice: "corri",     tasto: "⌘⏎",   etichetta: "corri",     aiuto: "tutte le analisi del modello", contesto: "salvo-ghost", modificatore: "comando" },
   // I risultati (giornata 13): una vista alla volta. Compare solo con una corsa da mostrare.
   { codice: "vista",     tasto: "0-4",   etichetta: "vista",     aiuto: "0 niente · 1 deformata · 2 M · 3 V · 4 N", contesto: "risultati" },
+  // La 14a: un modo si guarda muoversi, e fermarlo è il gesto che serve per leggerne la forma.
+  // Stesso contesto della vista — senza una corsa da mostrare non c'è niente da fermare.
+  { codice: "pausa",     tasto: "Spazio", etichetta: "ferma / riprendi", aiuto: "l'animazione del modo", contesto: "risultati" },
   // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
   // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
   // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
@@ -76,6 +79,8 @@ const SENZA_MODIFICATORE = new Map([
   // Le cifre della vista dei risultati: `0`-`4` nude. Da `5` a `9` non c'è niente, e la cifra
   // resta al browser. Col comando pure: `⌘1` è la scheda 1, non nostra (`CON_COMANDO`).
   ["0", "vista"], ["1", "vista"], ["2", "vista"], ["3", "vista"], ["4", "vista"],
+  // Spazio nudo ferma il modo; ⌘Spazio è di Spotlight e non sta in `CON_COMANDO`.
+  [" ", "pausa"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
@@ -92,6 +97,13 @@ const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"], ["enter", "verifica"]]);
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
 const ATTIVANO = new Set(["enter", " ", "backspace", "delete"]);
 const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"]);
+// R6, e la sua correzione: la freccia resta al controllo **solo** dove ci si naviga davvero.
+// In un gruppo di radio — i cinque della vista — la freccia *è* il modo di cambiare selezione
+// (ARIA), e `←`/`→` per il passo della pushover gliela rubavano. Su un bottone no: una voce
+// dell'albero gestisce Invio e Spazio e basta (`albero.js:16-22`), e lasciarle le frecce
+// significava che dopo aver scelto un nodo da lì i passi non si scorrevano più.
+const NAVIGANO = new Set(["arrowleft", "arrowright", "arrowup", "arrowdown"]);
+const CON_FRECCE = new Set(["radio", "checkbox", "range"]);
 
 /** Se il controllo a fuoco si tiene **questo** tasto. La domanda non è «l'evento viene da un
  *  controllo» ma «il controllo lo userebbe»: la guardia larga di prima spegneva tutti e dodici
@@ -120,8 +132,10 @@ export function daControllo(evento) {
   // tenesse anche le lettere spegnerebbe dodici comandi ogni volta che il fuoco sta su una
   // voce — `N` da lì deve continuare ad aprire il campo.
   const bottone = tag === "button" || elemento.getAttribute?.("role") === "button";
-  const testuale = !bottone && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
-  return testuale || ATTIVANO.has(String(evento.key).toLowerCase());
+  const tipo = String(elemento.type ?? "").toLowerCase();
+  const testuale = !bottone && !NON_TESTUALI.has(tipo);
+  const tasto = String(evento.key).toLowerCase();
+  return testuale || ATTIVANO.has(tasto) || (!bottone && CON_FRECCE.has(tipo) && NAVIGANO.has(tasto));
 }
 
 export function voceDaEvento(evento) {
@@ -147,7 +161,8 @@ export function voceDaEvento(evento) {
  *  arrow place of interest sign return symbol». Le lettere restano lettere; i glifi diventano
  *  parole, nell'ordine in cui si premono. */
 const PAROLE_DEI_GLIFI = [["⇧", "maiuscolo "], ["⌘", "comando "], ["⏎", "invio"], ["⌫", "cancella"],
-                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"]];
+                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"],
+                          ["Spazio", "spazio"]];
 export const nomeTasto = (tasto) => {
   let nome = String(tasto ?? "");
   for (const [glifo, parola] of PAROLE_DEI_GLIFI) nome = nome.split(glifo).join(parola);

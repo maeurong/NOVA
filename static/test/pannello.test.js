@@ -1662,3 +1662,47 @@ test("righe: il terzo argomento è facoltativo", () => {
   assert.equal(righe(CON_CERNIERA(), { tipo: "nodo", id: 1 }).length, 6);
   assert.equal(righe(CON_CERNIERA(), { tipo: "rilievo", id: 0 }), null);
 });
+
+// --- la 14a: l'etichetta del caso nel termine, e la forma modale del nodo ----------
+// Il caso è una chiave a tre forme (`Z1`, `modo:2`, `pushover`): nel termine ci va la sua
+// **etichetta** — «modo 2», «pushover, passo 37» — non la chiave grezza.
+
+// Nove nodi, così anche il 9 esiste: un nodo che nei risultati non ha numeri deve tornare le
+// sue righe di sempre, non `null` (che è la risposta per un nodo che non c'è).
+const traveP = Array.from({ length: 9 }).reduce((m, _, k) => creaNodo(m, { x: k * 1000, z: 3000 }), modelloVuoto());
+
+// Ruling del fix round 1: con un modo scelto l'ispettore stampa **solo** la forma modale. La
+// forma è adimensionale e di ordine 1 (`nova/modale.py`): passarla per `righeSpostamenti` la
+// scriveva «ux 1 mm», e le rotazioni — che `formaComeSpostamenti` mette a zero apposta, perché
+// la forma è lineare fra i nodi — uscivano come «φy 0 mrad», cioè un numero mai calcolato.
+test("pannello: con un modo l'ispettore dice la forma, e non la spaccia per millimetri", () => {
+  const m2 = { n: 2, f: 31.85, T: 0.0314, forma: { 1: [1, 0, -0.03] },
+               massa_partecipante: { x: 0.456215, y: 0, z: 0 }, cumulata: { x: 1, y: 1, z: 1 } };
+  const r = righe(traveP, { tipo: "nodo", id: 1 }, { risultati: {
+    perCaso: { spostamenti: { 1: [1, 0, -0.03, 0, 0, 0] } }, caso: "modo:2", etichetta: "modo 2", modo: m2 } });
+  const termini = r.map(([k]) => k);
+  assert.ok(!termini.some((k) => k.startsWith("spostamenti")), `spostamenti in mm per un modo: ${termini}`);
+  assert.ok(!termini.some((k) => k.startsWith("rotazioni")), `rotazioni inventate per un modo: ${termini}`);
+  assert.ok(termini.includes("forma modale (modo 2, adimensionale)"));
+  const forma = r.find(([k]) => k === "forma modale (modo 2, adimensionale)")[1];
+  assert.equal(forma, "ux 1 · uy 0 · uz -0,03");
+  assert.ok(!forma.includes("mm"), "la forma è adimensionale");
+});
+
+test("pannello: con un passo della pushover il termine dice quale passo; senza `modo` niente riga della forma", () => {
+  const r = righe(traveP, { tipo: "nodo", id: 1 }, { risultati: {
+    perCaso: { spostamenti: { 1: [1, 0, 0, 0, 0, 0] } }, caso: "pushover",
+    etichetta: "pushover, passo 37", modo: null } });
+  const termini = r.map(([k]) => k);
+  assert.ok(termini.includes("spostamenti (pushover, passo 37)"));
+  assert.ok(!termini.some((k) => k.startsWith("forma modale")));
+});
+
+test("pannello: senza `etichetta` il termine ripiega sulla chiave, e un nodo senza numeri non ha righe in più", () => {
+  const r = righe(traveP, { tipo: "nodo", id: 1 }, { risultati: {
+    perCaso: { spostamenti: { 1: [0, 0, 0, 0, 0, 0] } }, caso: "Z1" } });
+  assert.ok(r.map(([k]) => k).includes("spostamenti (Z1)"));
+  const vuoto = righe(traveP, { tipo: "nodo", id: 9 }, { risultati: {
+    perCaso: { spostamenti: {} }, caso: "Z1", etichetta: "Z1" } });
+  assert.ok(!vuoto.map(([k]) => k).some((k) => k.startsWith("spostamenti")));
+});

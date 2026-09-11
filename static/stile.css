@@ -71,6 +71,10 @@ body {
    `.carichi-titolo` (`:75`), che nella colonna sopra fa lo stesso mestiere. */
 #srotolato .titolo { margin: 0 0 2px; padding-left: 8px; font: 11px var(--mono); color: var(--inchiostro); }
 #srotolato .titolo.stantia { color: var(--rosso); }
+/* La curva della pushover (14a): il bersaglio dei clic è **un** rettangolo trasparente sopra la
+   curva (R11), quindi il cursore va detto lì — sui cerchi non arriverebbe mai, coperti come
+   sono. ponytail: nessun `pointer-events` sui cerchi, che stanno sotto e non prendono niente. */
+#srotolato rect.passi { cursor: pointer; }
 #piano svg { width: 100%; height: 100%; display: block; }
 /* Il titolo dei carichi sta sopra l'SVG, non dentro: nel `viewBox` scalava coi millimetri e
    finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
@@ -80,14 +84,25 @@ body {
 /* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
    V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
    rosso e la parola: il rosso da solo non basta (story 63). */
-/* Riga sua, sotto il titolo dei carichi, e **nessun** `max-width`: il troncamento a destra
-   mangiava la coda, che è proprio la scala — «×120 (auto)». La scala del disegno non può
-   mancare (`docs/ricerca/07-ux-modellatore.md:99`), quindi il badge si tiene tutta la larghezza
-   che gli serve e scende invece di accorciarsi. */
+/* Riga sua, sotto il titolo dei carichi, e **nessun troncamento**: la coda è proprio la scala,
+   «×120 (auto)», e la scala del disegno non può mancare (`07-ux-modellatore.md:99`). Quindi il
+   badge **scende**, non si accorcia. Con `nowrap` e senza `max-width` non faceva né l'uno né
+   l'altro: usciva. A 1280 px la colonna del piano è ~430 px e il badge di un modo a forma nulla
+   ne vuole ~460, quindi spariva a sinistra la testa della riga — «o 6 · 181 Hz…», cioè il numero
+   del modo. La riga in più la misura `piano.js` (`offsetHeight`), e da lì scende la legenda. */
 #piano .risultati-badge { position: absolute; top: 22px; right: 8px; margin: 0; text-align: right;
                           font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
-                          white-space: nowrap; }
+                          white-space: normal; max-width: calc(100% - 16px); }
 #piano .risultati-badge.stantia { color: var(--rosso); }
+/* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
+   **Va a capo**: a 1280 px la colonna del piano è larga ~430 px e la riga intera ne vuole il
+   doppio, quindi con `nowrap` usciva a sinistra e veniva tagliata proprio sul primo canale —
+   restava «contorno sottile elastica · …», cioè il solo acciaio. Allineata a destra come il
+   badge, così le righe spezzate restano nella sua colonna. Inchiostro, mai rosso: il rosso è
+   uno solo. L'altezza che ne esce la **misura** `piano.js` (`offsetHeight`) per l'ostacolo. */
+#piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
+                            font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
+                            white-space: normal; max-width: calc(100% - 16px); text-align: right; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 e 22 di `top`, 8 di `left`/`right`, 11 di riga, 14 di
    altezza di riga — li ricopia `piano.js` (`larghezzaTesto` e i due `ostacoli.push`) per farne

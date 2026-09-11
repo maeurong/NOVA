@@ -185,7 +185,8 @@ test("ogni voce si raggiunge da un evento, col suo modificatore", () => {
                 "⌘Z": "z", "⇧⌘Z": "z", "⌘K": "k", "⌘I": "i", "← ↑ → ↓": "ArrowUp",
                 // «0-4» è un intervallo di tasti, non un tasto: la sonda ne prova uno, e che
                 // ci siano tutti e cinque lo prova il test della voce «vista» qui sotto.
-                "⌘⏎": "Enter", "⇧⌘⏎": "Enter", "0-4": "0" };
+                // «Spazio» è la parola stampata sul `kbd`; la `key` dell'evento è lo spazio.
+                "⌘⏎": "Enter", "⇧⌘⏎": "Enter", "0-4": "0", "Spazio": " " };
   for (const v of TASTI) {
     const comando = v.modificatore === "comando";
     const shift = v.tasto.startsWith("⇧");
@@ -520,4 +521,52 @@ test("tastiera: una cifra per vista più lo zero di «niente», e da 5 in su nie
   assert.equal(nudo("5"), null, "da 5 in su la cifra resta al browser");
   assert.equal(voceDaEvento({ key: "1", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }), null,
     "⌘1 è la scheda 1 del browser, non nostra");
+});
+
+// --- la 14a: Spazio ferma il modo, e le frecce restano al controllo che naviga -------
+
+test("tastiera: Spazio è «pausa», e la barra lo promette solo con una corsa da mostrare", () => {
+  assert.equal(voceDaEvento({ key: " " })?.codice, "pausa");
+  // `null`, non `undefined`: è il contratto di `voceDaEvento` per ogni tasto non mappato
+  // (`tastiera.js:139`, e i venti `assert.equal(…, null)` qui sopra).
+  assert.equal(voceDaEvento({ key: " ", metaKey: true }), null, "⌘Spazio è di Spotlight");
+  assert.ok(vociDellaBarra("sempre", null, { risultati: true }).some((v) => v.codice === "pausa"));
+  assert.ok(!vociDellaBarra("sempre", null, { risultati: false }).some((v) => v.codice === "pausa"));
+  assert.ok(!vociDellaBarra("ghost", null, { risultati: true }).some((v) => v.codice === "pausa"),
+            "col ghost aperto il gesto è un altro");
+});
+
+test("tastiera: `nomeTasto(\"Spazio\")` è una parola, per l'`aria-label` del `kbd`", () => {
+  assert.equal(nomeTasto("Spazio"), "spazio");
+});
+
+test("tastiera: le frecce restano al controllo che le usa per navigare (R6)", () => {
+  const radio = { tagName: "INPUT", type: "radio", getAttribute: () => null };
+  const evento = (key, target) => ({ key, target: { closest: () => target } });
+  assert.equal(daControllo(evento("ArrowRight", radio)), true,
+               "in un gruppo di radio le frecce sono il modo di cambiare selezione (ARIA)");
+  assert.equal(daControllo(evento(" ", radio)), true);
+  assert.equal(daControllo(evento("n", radio)), false, "le lettere restano comandi");
+  const voce = { tagName: "LI", type: "", getAttribute: (k) => (k === "role" ? "button" : null) };
+  assert.equal(daControllo(evento(" ", voce)), true, "Spazio attiva la voce dell'albero");
+  assert.equal(daControllo(evento("n", voce)), false);
+});
+
+// Fix round 1, medio 3: R6 chiedeva i **radio**, e le frecce in `ATTIVANO` valevano per ogni
+// bottone. Una voce dell'albero gestisce solo Invio e Spazio (`albero.js:16-22`): dopo aver
+// scelto un nodo lì il fuoco ci resta, e `←`/`→` per il passo della pushover morivano.
+test("tastiera: le frecce su un bottone passano — una voce dell'albero non ci naviga", () => {
+  const evento = (key, target) => ({ key, target: { closest: () => target } });
+  const voce = { tagName: "LI", type: "", getAttribute: (k) => (k === "role" ? "button" : null) };
+  const bottone = { tagName: "BUTTON", type: "", getAttribute: () => null };
+  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+    assert.equal(daControllo(evento(key, voce)), false, `voce: ${key}`);
+    assert.equal(daControllo(evento(key, bottone)), false, `bottone: ${key}`);
+  }
+  // Chi con le frecce ci naviga davvero se le tiene: radio, caselle, cursori.
+  for (const type of ["radio", "checkbox", "range"]) {
+    assert.equal(daControllo(evento("ArrowRight", { tagName: "INPUT", type, getAttribute: () => null })), true, type);
+  }
+  // E il campo di testo come sempre: la freccia muove il cursore nel testo.
+  assert.equal(daControllo(evento("ArrowLeft", { tagName: "INPUT", type: "text", getAttribute: () => null })), true);
 });

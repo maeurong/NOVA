@@ -1,0 +1,108 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { fase, movimentoRidotto, creaAnimazione, PERIODO_MS } from "../animazione.js";
+
+test("fase: seno di un ciclo al secondo", () => {
+  assert.equal(fase(0), 0);
+  assert.ok(Math.abs(fase(250) - 1) < 1e-9);
+  assert.ok(Math.abs(fase(750) + 1) < 1e-9);
+  assert.ok(Math.abs(fase(PERIODO_MS)) < 1e-9);
+  assert.ok(Math.abs(fase(500, 2000) - 1) < 1e-9);
+});
+test("movimentoRidotto: legge matchMedia, senza matchMedia è falso", () => {
+  assert.equal(movimentoRidotto({ matchMedia: () => ({ matches: true }) }), true);
+  assert.equal(movimentoRidotto({ matchMedia: () => ({ matches: false }) }), false);
+  assert.equal(movimentoRidotto({}), false);
+});
+test("creaAnimazione: i fotogrammi arrivano finché non si ferma; avvia due volte non raddoppia", () => {
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  assert.equal(a.inCorso(), false);
+  a.avvia(); a.avvia();
+  assert.equal(coda.length, 1, "una sola richiesta in volo");
+  t = 250; coda.shift()();          // primo fotogramma
+  assert.ok(Math.abs(fotogrammi[0] - 1) < 1e-9);
+  assert.equal(coda.length, 1);
+  a.ferma();
+  t = 500; coda.shift()();          // un fotogramma già richiesto arriva dopo `ferma`: non chiama più
+  assert.equal(fotogrammi.length, 1);
+  assert.equal(coda.length, 0);
+  assert.equal(a.inCorso(), false);
+});
+test("creaAnimazione: riprende dalla fase dov'era, non da capo", () => {
+  // D2a dice «riprende»: con `t0` azzerato a ogni `avvia` la forma saltava da fase 0,998 a 0,063,
+  // cioè un centinaio di millimetri a ×50 su uno `Spazio` che si legge come «continua».
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  a.avvia();
+  t = 250; coda.shift()();
+  assert.ok(Math.abs(fotogrammi[0] - 1) < 1e-9, "fase 1: la forma è al massimo");
+  a.ferma();
+  t = 1000; a.avvia();              // tre quarti di secondo di pausa
+  coda.shift()();
+  assert.ok(Math.abs(fotogrammi[1] - 1) < 1e-9, `riprende da fase 1, non da 0: ${fotogrammi[1]}`);
+  t = 1250; coda.shift()();
+  assert.ok(Math.abs(fotogrammi[2]) < 1e-9, "e da lì il tempo scorre di nuovo");
+});
+test("creaAnimazione: `ferma` senza `avvia` non solleva, e `avvia` dopo parte da fase 0", () => {
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  a.ferma();
+  assert.equal(coda.length, 0);
+  assert.equal(a.inCorso(), false);
+  t = 1234; a.avvia();              // il tempo riparte dall'istante di `avvia`, non dal caricamento
+  assert.equal(a.inCorso(), true);
+  t = 1234 + 250; coda.shift()();
+  assert.ok(Math.abs(fotogrammi[0] - 1) < 1e-9);
+  a.ferma(); coda.shift()();
+  assert.equal(fotogrammi.length, 1);
+  // Riavviata dopo un `ferma` che aveva lasciato un fotogramma in volo: una richiesta sola.
+  a.avvia();
+  assert.equal(coda.length, 1);
+});
+
+test("creaAnimazione: `fattore` rende la fase dove si è fermata, non 1", () => {
+  const coda = [];
+  let t = 0;
+  const a = creaAnimazione({ suFotogramma: () => {}, orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  // Mai avviata: la forma sta al massimo. È il caso del moto ridotto, e il caso di partenza.
+  assert.equal(a.fattore(), 1);
+  a.avvia();
+  t = 250;
+  assert.ok(Math.abs(a.fattore() - 1) < 1e-9, "in corso: la fase di adesso");
+  t = 375; a.ferma();
+  // Ferma a 3/8 di ciclo: `ridisegna` disegna **questa**, non 1. Con 1 la forma saltava al
+  // massimo a ogni Spazio, e al riavvio tornava indietro alla fase di prima.
+  const fermata = a.fattore();
+  assert.ok(Math.abs(fermata - Math.sin(2 * Math.PI * 0.375)) < 1e-9, `${fermata}`);
+  t = 9999;
+  assert.equal(a.fattore(), fermata, "ferma, il tempo che passa non la muove");
+  // E riprendendo si riparte esattamente da lì: la fase è continua attraverso la pausa.
+  a.avvia();
+  assert.ok(Math.abs(a.fattore() - fermata) < 1e-9);
+});
+
+test("creaAnimazione: `azzera` butta via la pausa, e si riparte da fase 1", () => {
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  a.avvia();
+  t = 375; a.ferma();
+  assert.ok(Math.abs(a.fattore() - Math.sin(2 * Math.PI * 0.375)) < 1e-9, "ferma a 3/8 di ciclo");
+  // Il caso che cambia: la fase del modo di prima non vuol dire niente sul modo dopo.
+  a.azzera();
+  assert.equal(a.fattore(), 1, "azzerata: la forma sta al massimo");
+  assert.equal(a.inCorso(), false);
+  // E riavviando il tempo riparte da adesso, non dal `t0` di prima.
+  t = 9000; a.avvia();
+  assert.ok(Math.abs(a.fattore()) < 1e-9, "`avvia` dopo `azzera` parte da fase 0, come da fermo");
+  t = 9250; coda.at(-1)();
+  assert.ok(Math.abs(fotogrammi.at(-1) - 1) < 1e-9);
+});

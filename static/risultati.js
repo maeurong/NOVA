@@ -342,14 +342,52 @@ export function testoValore(vista, v) {
 // scritto «a sinistra di i→j» si legge sul disegno senza contare i nodi.
 const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j, a sinistra di i→j",
                   N: "kN · + trazione, a sinistra di i→j" };
-export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0 }) {
+export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0,
+                             modo = null, passo = null, caduta = null, fermo = false, motivoFermo = null }) {
   if (!vista) return "";
-  const coda = vista === "deformata" ? `×${conciso(scala)} (${auto ? "auto" : "a mano"})` : LEGENDA[vista];
+  const testa = stantia ? "stantia · " : "";
+  // La scala **dichiarata** è l'ampiezza massima: il fattore dell'animazione non entra nel badge,
+  // o il numero cambierebbe sessanta volte al secondo su una grandezza che invece è ferma.
+  const scalaTesto = `×${conciso(scala)} (${auto ? "auto" : "a mano"})`;
+  if (modo) {
+    // La massa partecipante **non** sta qui: la dicono già la voce del menu («modo 2 · 31,85 Hz ·
+    // ux 46 %») e la riga dell'equilibrio, tutte e due sott'occhio nella colonna a destra mentre
+    // si guarda il piano (`07-ux-modellatore.md:103` chiede che stia accanto al numero del modo,
+    // e lì ci sta). Nel badge erano dieci caratteri che a 1280 px, su un modo a forma nulla,
+    // costavano il taglio di tutta la riga a sinistra.
+    const f = Number.isFinite(modo.f) && modo.f > 0
+      ? `${conciso(modo.f)} Hz · T ${conciso(modo.T)} s` : "frequenza non fisica";
+    if (vista !== "deformata") return `${testa}modo ${modo.n} · ${vista} · nessun diagramma per un modo`;
+    // R2: nove modi su 42 del MURO 1 hanno la forma nulla sui nodi del modello — il modo vive
+    // tutto sui nodi delle suddivisioni, che `forma` non porta. Una figura ferma senza una parola
+    // che dica perché si legge come un'animazione rotta, e il modo 6 partecipa il 39,8 % in y.
+    const nulla = ampiezzaModo(modo) === 0 ? " · forma nulla sui nodi" : "";
+    // Fermo perché l'utente ha premuto Spazio, o perché il sistema chiede meno movimento: la
+    // seconda è una cosa che l'utente non ha fatto, e senza il motivo il badge la fa passare per
+    // un'animazione che non parte (R13, D2a).
+    const fermata = fermo ? (motivoFermo ? ` · ferma (${motivoFermo})` : " · ferma") : "";
+    return `${testa}modo ${modo.n} · ${f} · ${scalaTesto}${nulla}${fermata}`;
+  }
+  if (passo) {
+    // «passo» non c'è: a 1280 px la colonna del piano è larga ~430 px e il badge intero veniva
+    // tagliato a sinistra («er · passo…»). Il numero del passo si legge dalla frazione, e il
+    // taglio della scala in coda sarebbe stato peggio (`07-ux-modellatore.md:99`).
+    const p = `pushover · ${passo.k + 1}/${passo.quanti}`;
+    if (vista !== "deformata") return `${testa}${p} · ${vista} · nessun diagramma per un passo`;
+    // Il numero del passo caduto è quello del server (`caduta.n`), non l'indice stretto alla lista.
+    // Qui solo passo e motivo: spostamento e algoritmo stanno nella riga dell'equilibrio, che ha
+    // la larghezza per dirli — il badge ne ha ~430 px a 1280 (punto 2 della review).
+    const c = caduta ? ` · caduta al passo ${caduta.n}: ${motivoInParole(caduta.motivo)}` : "";
+    // Il taglio a una cifra decimale: «70,93 kN» contro «70,9 kN» sono tre caratteri su un badge
+    // che non ci sta, e il centesimo di kN su una spinta non lo guarda nessuno.
+    return `${testa}${p} · u ${conciso(passo.u)} mm · V ${conciso(Math.round(passo.V * 10) / 10)} kN · ${scalaTesto}${c}`;
+  }
+  const coda = vista === "deformata" ? scalaTesto : LEGENDA[vista];
   // Le aste che i diagrammi saltano vanno dette: una che manca senza avviso si legge come «zero».
   // La deformata invece le disegna — è in terna globale e la rotazione della sezione non la tocca.
   const salti = ruotate > 0 && vista !== "deformata"
     ? ` · ${ruotate} ${ruotate === 1 ? "asta" : "aste"} con sezione ruotata non ${ruotate === 1 ? "disegnata" : "disegnate"}` : "";
-  return `${stantia ? "stantia · " : ""}${vista} · ${caso} · ${coda}${salti}`;
+  return `${testa}${vista} · ${caso} · ${coda}${salti}`;
 }
 
 const kN = (v) => `${conciso(v / 1e3)} kN`;
@@ -373,8 +411,37 @@ export function righeReazioni(perCaso, id) {
 }
 
 /** «Σ reazioni (0; 0; 60) kN · Σ carichi (0; 0; −60) kN»: il controllo che contraddice, accanto
- *  al numero (`docs/ricerca/07-ux-modellatore.md:101`). Il caso che non c'è dà un trattino. */
+ *  al numero (`docs/ricerca/07-ux-modellatore.md:101`). Il caso che non c'è dà un trattino.
+ *
+ *  Un modo e un passo non hanno un equilibrio da controllare, ma hanno il numero che si guarda
+ *  nello stesso posto: la massa partecipante (NTC 7.3.3.1 chiede l'85 % cumulato) e il conto dei
+ *  passi convergenti col taglio massimo. */
 export function testoEquilibrio(risultati, caso) {
+  if (typeof caso === "string" && caso.startsWith("modo:")) {
+    const m = modiDi(risultati).find((x) => x.n === Number(caso.slice(5)));
+    if (!m) return "—";
+    const terna = (o) => ["x", "y", "z"].map((k) => `${k} ${percento(o?.[k])}`).join(" · ");
+    return `massa partecipante ${terna(m.massa_partecipante)} · cumulata ${terna(m.cumulata)}`;
+  }
+  if (caso === "pushover") {
+    const passi = passiDi(risultati);
+    if (!passi.length) return "—";
+    const c = curvaPushover(passi, risultati?.caduta);
+    const kMax = c.punti.reduce((a, p) => (p.V > c.punti[a].V ? p.k : a), 0);
+    const u0 = risultati?.run?.pushover?.u0;
+    // I passi in lista sono quelli **convergenti**: la caduta è il passo su cui il solutore si è
+    // fermato, e sta scritta a parte perché è un fatto, non un numero da leggere nella curva.
+    const quanti = `${passi.length} ${passi.length === 1 ? "passo convergente" : "passi convergenti"}`;
+    // Story 50: la caduta si dichiara per intero — dove, di quanto, e quale algoritmo si è arreso.
+    // È la riga larga della colonna a destra, quella che può permetterselo; il badge nel piano ne
+    // tiene la versione corta. `algoritmo` assente → trattino, mai una stringa inventata.
+    const caduta = c.caduta
+      ? `al passo ${c.caduta.n}, u ${conciso(c.caduta.u)} mm, ultimo algoritmo ${c.caduta.algoritmo ?? "—"}` +
+        ` (${motivoInParole(c.caduta.motivo)})`
+      : "nessuna";
+    return `${quanti} · u₀ ${Number.isFinite(u0) ? `${conciso(u0)} mm` : "—"}` +
+           ` · taglio massimo ${conciso(c.vMax)} kN al passo ${passi[kMax]?.n ?? kMax + 1} · caduta: ${caduta}`;
+  }
   const perCaso = risultati?.per_caso?.[caso];
   if (!perCaso) return "—";
   const somma = [0, 0, 0];
@@ -389,4 +456,194 @@ export function srotolato(stazioni, grandezza) {
   const punti = (stazioni ?? []).filter((s) => Number.isFinite(s?.[grandezza]) && Number.isFinite(s?.x_rel))
     .map((s) => ({ x_rel: s.x_rel, valore: s[grandezza] }));
   return { punti, massimo: punti.reduce((a, p) => Math.max(a, Math.abs(p.valore)), 0) };
+}
+
+// --- la 14a: il caso a tre forme (statico, modo, passo della pushover) --------------
+//
+// Il contratto del server: `nova/modale.py:60-97` per `modi[] = {n, f|null, T|null, forma,
+// massa_partecipante, cumulata}` (la forma è adimensionale, di ordine 1, sui soli nodi del
+// modello), `nova/passi.py:187-252` per `passi[] = {n, spostamento, taglio_base, spostamenti,
+// stato_sezioni, algoritmo}`, `caduta` e `run.pushover.u0`.
+
+export const CHIAVE_MODO = (n) => `modo:${n}`;
+
+/** La forma della chiave del caso, in un posto solo: `app.js` ne aveva tre copie
+ *  (`startsWith("modo:")` due volte, `=== "pushover"` una) mentre il Global Constraint dice che
+ *  a interpretare la stringa è questo modulo. Tre copie sono tre posti da cui dimenticarsi una
+ *  forma nuova. */
+export const tipoDelCaso = (caso) => (caso === "pushover" ? "pushover"
+  : String(caso ?? "").startsWith("modo:") ? "modo" : "caso");
+const XI_LOBATTO = [0, 0.1726731646, 0.5, 0.8273268354, 1];   // `nova/deck.py:34`, 5 punti per elemento
+
+/** R3: intero, non «45,62 %». `conciso` terrebbe due decimali sotto 100, e in un menu di 46 voci
+ *  i centesimi di punto non dicono niente. Un valore che non è un numero vale 0, non «NaN %». */
+export const percento = (v) => `${Math.round(100 * (Number(v) || 0))} %`;
+
+/** R3: la direzione della massa partecipante, o `null` sotto l'1 %. Un `reduce` che parte da `"x"`
+ *  renderebbe `"x"` anche con le tre masse a zero esatto — il modo 3 del MURO 1 — e la voce
+ *  direbbe «ux 0 %» accanto a una frequenza vera. Sotto la soglia non c'è una direzione da dire. */
+export function direzioneDominante(mp) {
+  let scelta = null, massimo = 0.01;
+  for (const k of ["x", "y", "z"]) {
+    const v = Number(mp?.[k]) || 0;
+    if (v >= massimo) { massimo = v; scelta = k; }
+  }
+  return scelta;
+}
+
+const modiDi = (risultati) => (Array.isArray(risultati?.modi) ? risultati.modi : []);
+const passiDi = (risultati) => (Array.isArray(risultati?.passi) ? risultati.passi : []);
+
+/** Il massimo `|u|` sulle **tre** componenti della forma. Zero vuol dire forma identicamente nulla
+ *  sui nodi del modello (R2): chi disegna lo distingue da «non ho misurato» e lo scrive nel badge. */
+export const ampiezzaModo = (modo) => Object.values(modo?.forma ?? {})
+  .reduce((a, u) => Math.max(a, Math.abs(Number(u?.[0]) || 0), Math.abs(Number(u?.[1]) || 0), Math.abs(Number(u?.[2]) || 0)), 0);
+
+/** R1: la scala di un modo si misura sulle tre componenti, non sul solo piano. `scalaAuto` passa
+ *  da `frecciaMassima`, che ignora la `y` — giusto per una statica nel piano, sbagliato qui: venti
+ *  modi su 42 del MURO 1 sono fuori piano (`ux = uz = 0`) e uscivano «×1 (auto)», cioè una figura
+ *  sovrapposta all'ombra. Ampiezza nulla → 1 (R2): non c'è niente da amplificare. */
+export function scalaModo(m, modo, frazione = 0.05) {
+  const dmax = ampiezzaModo(modo);
+  return dmax > 0 ? scala125(frazione * latoMaggiore(m) / dmax) : 1;
+}
+
+/** Le voci del menu del caso: i casi statici, poi la pushover, poi i modi. La direzione e la massa
+ *  stanno accanto alla frequenza perché è su quelle che si decide se un modo è locale
+ *  (`docs/ricerca/07-ux-modellatore.md:103`); una frequenza non fisica lo dice invece di stampare
+ *  un numero senza senso (`docs/ricerca/11-modi-sulla-tangente-opensees.md:212-226`). */
+export function vociDelCaso(stato) {
+  const r = stato?.lavoro?.fin?.risultati;
+  if (!r) return [];
+  const voci = casiDi(r).map((c) => ({ valore: c, testo: c, tipo: "caso" }));
+  const passi = passiDi(r);
+  if (passi.length) voci.push({ valore: "pushover", testo: `pushover · ${passi.length} ${passi.length === 1 ? "passo" : "passi"}`, tipo: "pushover" });
+  for (const m of modiDi(r)) {
+    const d = direzioneDominante(m.massa_partecipante);
+    const testo = Number.isFinite(m.f) && m.f > 0
+      ? `modo ${m.n} · ${conciso(m.f)} Hz · ${d ? `u${d} ${percento(m.massa_partecipante?.[d])}` : "massa trascurabile"}`
+      : `modo ${m.n} · frequenza non fisica`;
+    voci.push({ valore: CHIAVE_MODO(m.n), testo, tipo: "modo", n: m.n });
+  }
+  return voci;
+}
+
+/** La forma modale nella stessa forma di `per_caso[caso]`, così il piano e il 3D la disegnano con
+ *  il codice della deformata. Niente rotazioni: la forma è lineare fra i nodi (R4), e una rotazione
+ *  inventata darebbe una curva che il solutore non ha mai calcolato. */
+export const formaComeSpostamenti = (modo) => ({
+  spostamenti: Object.fromEntries(Object.entries(modo?.forma ?? {})
+    .map(([id, u]) => [id, [Number(u?.[0]) || 0, Number(u?.[1]) || 0, Number(u?.[2]) || 0, 0, 0, 0]])),
+});
+
+/** La chiave del caso è a tre forme — `"<caso>"`, `"modo:<n>"`, `"pushover"` — e si traduce qui:
+ *  nessun altro modulo interpreta la stringa. `passo` fuori da [0, quanti) si stringe ai limiti,
+ *  non intero (o assente) vale l'ultimo.
+ *
+ *  Il conteggio dei passi si chiama `quanti` e non `n`: `n` nel ramo del modo è il **numero** del
+ *  modo, e due campi omonimi che vogliono dire due cose diverse nello stesso oggetto sono un
+ *  errore che si scrive da sé. */
+export function casoScelto(stato, caso, passo = null) {
+  const r = stato?.lavoro?.fin?.risultati;
+  if (!r || typeof caso !== "string") return null;
+  if (caso === "pushover") {
+    const passi = passiDi(r);
+    if (!passi.length) return null;
+    const k = Math.min(passi.length - 1, Math.max(0, Number.isInteger(passo) ? passo : passi.length - 1));
+    return { tipo: "pushover", k, quanti: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti ?? {} },
+             // Niente `u0` qui: lo legge `testoEquilibrio` da `run.pushover.u0`, che è dove il
+             // server lo scrive. Portarlo anche di qua era un secondo cammino per lo stesso
+             // numero, e nessuno lo percorreva.
+             stati: passi[k].stato_sezioni ?? null, caduta: r.caduta ?? null };
+  }
+  if (caso.startsWith("modo:")) {
+    const n = Number(caso.slice(5));
+    const modo = modiDi(r).find((m) => m.n === n);
+    return modo ? { tipo: "modo", n, modo, perCaso: formaComeSpostamenti(modo) } : null;
+  }
+  const perCaso = r.per_caso?.[caso];
+  return perCaso ? { tipo: "caso", perCaso } : null;
+}
+
+/** Il passo su cui si misura la scala della pushover: quello di spostamento massimo in modulo.
+ *  La scala è **una per corsa**, non una per passo — con `scalaAuto` sul passo corrente usciva
+ *  ×10 al passo 30 e ×2 al 120, cioè scorrendo i passi la deformata «respirava» invece di
+ *  crescere, e il confronto fra due passi (che è tutto il senso dello scrubber) diceva il falso.
+ *  Lista vuota → `null`: non c'è nessun passo da misurare. */
+export function passoDiRiferimento(passi) {
+  const lista = Array.isArray(passi) ? passi : [];
+  let k = null, massimo = -1;
+  for (let i = 0; i < lista.length; i++) {
+    const u = Math.abs(Number(lista[i]?.spostamento) || 0);
+    if (u > massimo) { massimo = u; k = i; }
+  }
+  return k;
+}
+
+/** Le stazioni di un'asta come le scrive `nova/passi.py:stato_sezioni`: 5 di Lobatto per elemento,
+ *  la prima degli elementi interni saltata → `4n + 1`. `quante` è il conteggio letto dai risultati:
+ *  se non combacia (un file di un'altra versione) si ripiega su stazioni equispaziate, perché
+ *  posare nove simboli su cinque ascisse è peggio che posarli male. */
+export function stazioniDiAsta(a, quante = null) {
+  const n = Math.max(1, Math.floor(Number(a?.suddivisioni) || 1));
+  const x = [];
+  for (let e = 0; e < n; e++) for (let k = 0; k < XI_LOBATTO.length; k++) { if (e > 0 && k === 0) continue; x.push((e + XI_LOBATTO[k]) / n); }
+  if (quante === null || quante === x.length) return x;
+  if (quante <= 0) return [];
+  return quante === 1 ? [0.5] : Array.from({ length: quante }, (_, k) => k / (quante - 1));
+}
+
+// I due canali di `nova/passi.py:31-32`, uno per materiale: il riempimento dice il calcestruzzo,
+// il contorno l'acciaio. Un valore che non è in tabella — o una stazione `null`, che `_peggiore`
+// (`nova/passi.py:109-110`) rende su una lista di fibre vuota — non ha simbolo: inventare
+// «elastica» sarebbe dichiarare un controllo che nessuno ha fatto (R9).
+const RIEMPIMENTO = { elastica: 0, fessurata: 0.5, schiacciata: 1 };
+const CONTORNO = { elastica: "sottile", snervata: "spesso", rotta: "croce" };
+export function simboloStato(stato) {
+  const r = RIEMPIMENTO[stato?.calcestruzzo], c = CONTORNO[stato?.acciaio];
+  return r === undefined || c === undefined ? null : { riempimento: r, contorno: c };
+}
+
+/** La curva taglio–spostamento: `u` in mm (relativo a `u0`, come lo manda il server) e `V` in kN.
+ *  `k` è l'indice del passo nella lista, cioè quello che la striscia e `←`/`→` scorrono.
+ *
+ *  La caduta porta **due** numeri, e non sono lo stesso. `n` è il passo come lo conta il server ed
+ *  è quello che va nei testi; `k` è dove la curva si ferma ed è quello che va nel disegno. Con una
+ *  caduta per non convergenza il passo caduto **non** sta in `passi[]`:
+ *  `tests/test_pushover_binario.py:153` asserisce `caduta["passo"] == len(passi) + 1`, perché
+ *  `nova/deck.py:980-984` dichiara la caduta e rompe il ciclo **prima** della riga che registra il
+ *  passo. Stringere `passo − 1` alla lista e poi stamparlo darebbe «caduta al passo 109» dove il
+ *  server dice 110 — e il 109 è un passo convergente, che risulterebbe caduto. Con
+ *  `motivo: "passi_max"` invece il passo c'è (`caduta["passo"] == len(passi)`) e i due coincidono. */
+export function curvaPushover(passi, caduta) {
+  const lista = Array.isArray(passi) ? passi : [];
+  const punti = lista.map((p, k) => ({ k, u: Number(p.spostamento) || 0, V: (Number(p.taglio_base) || 0) / 1e3 }));
+  const uMax = punti.reduce((a, p) => Math.max(a, p.u), 0), vMax = punti.reduce((a, p) => Math.max(a, p.V), 0);
+  const c = caduta && Number.isFinite(caduta.passo)
+    ? { k: Math.min(lista.length - 1, Math.max(0, caduta.passo - 1)), n: caduta.passo,
+        u: Number(caduta.spostamento) || 0, motivo: String(caduta.motivo ?? ""),
+        // Story 50 chiede anche **quale algoritmo** si è arreso: il server lo scrive
+        // (`nova/deck.py:982,997`, «l'ultimo tentato») e finora nessuno lo leggeva. Assente → il
+        // trattino, la stessa grafia degli altri numeri che mancano.
+        algoritmo: caduta.algoritmo ? String(caduta.algoritmo) : null } : null;
+  return { punti, uMax, vMax, caduta: c };
+}
+
+// I due motivi che il server emette (`nova/deck.py:982,997`) scritti come si leggono. Uno che non
+// è in tabella esce **grezzo**: una versione nuova del solutore ne porterà altri, e una stringa
+// vuota o inventata al posto di un motivo vero è peggio di un identificatore brutto da leggere.
+const MOTIVI = { non_convergenza: "non convergenza", passi_max: "tetto dei passi" };
+// Un motivo vuoto o assente non è «nessun motivo»: la caduta c'è, e la riga non può tacere.
+export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(motivo) : "motivo sconosciuto");
+
+export const testoLegendaStati = () =>
+  "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
+
+/** La forma modale del nodo nell'ispettore: adimensionale, senza unità e senza rotazioni. */
+export function righeModo(modo, id) {
+  const u = modo?.forma?.[String(id)];
+  if (!Array.isArray(u) || u.length < 3) return [];
+  // «adimensionale» scritto, non sottinteso: le righe accanto nell'ispettore sono spostamenti in
+  // mm, e tre numeri di ordine uno senza unità si leggono come millimetri di una struttura ferma.
+  return [[`forma modale (modo ${modo.n}, adimensionale)`, `ux ${conciso(u[0])} · uy ${conciso(u[1])} · uz ${conciso(u[2])}`]];
 }

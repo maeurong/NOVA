@@ -23,7 +23,9 @@ import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { creaCorsa, stantia } from "./corsa.js";
 import { creaEsito, creaSrotolato } from "./esito.js";
-import { VISTE, casiDi, scalaAuto, puntiDeformata } from "./risultati.js";
+import { VISTE, scalaAuto, puntiDeformata, vociDelCaso, casoScelto, scalaModo,
+         curvaPushover, passoDiRiferimento, tipoDelCaso } from "./risultati.js";
+import { creaAnimazione, movimentoRidotto } from "./animazione.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
 import { alternaIncastro, descrizione } from "./vincoli.js";
@@ -54,27 +56,74 @@ let percorso = null, impronta = null;
 // prior» §3). Azzerato in `suApertura` — aprire un file lascia il rilievo di prima senza senso.
 let rilievo = null;
 // L'ultima corsa da mostrare, e come: `null` quando non c'è niente da vedere, altrimenti
-// `{ lavoro, vista, caso, scalaMano }`. `lavoro` è quel che `suEsito` ha ricevuto — snapshot
-// del modello compreso, che è come `stantia` sa se i numeri parlano ancora di questo disegno.
-// `vista` è `null` (niente) o una di `VISTE`; `scalaMano` è `null` per la scala automatica.
+// `{ lavoro, vista, caso, scalaMano, passo, animazione }`. `lavoro` è quel che `suEsito` ha
+// ricevuto — snapshot del modello compreso, che è come `stantia` sa se i numeri parlano ancora
+// di questo disegno. `vista` è `null` (niente) o una di `VISTE`; `scalaMano` è `null` per la
+// scala automatica. Dalla 14a `caso` è una chiave a tre forme (`"Z1"`, `"modo:2"`, `"pushover"`,
+// e a tradurla è `casoScelto`), `passo` è l'indice del passo della pushover (`null` = l'ultimo)
+// e `animazione` è `"va"` o `"ferma"` — quel che Spazio alterna.
 let risultati = null;
+// La preferenza di sistema, letta **al gesto** e non per fotogramma (R13): `matchMedia` è viva,
+// e costruirne una sessanta volte al secondo per una scelta che cambia una volta in un'ora è
+// spreco. `ridisegna` la rinfresca; `risultatiInVista` la legge da qui, anche quando gira dentro
+// un fotogramma dell'animazione. Un cambio a caldo si raccoglie al gesto dopo.
+let motoRidotto = false;
+
+// La scala della pushover si misura **una volta per corsa**, sul passo di spostamento massimo, e
+// non sul passo corrente: con `scalaAuto(passo[k])` usciva ×10 al passo 30 e ×2 al 120, cioè
+// scorrendo lo scrubber la deformata respirava invece di crescere, e confrontare due passi — che
+// è tutto il senso dello scrubber — diceva il falso. La cache sta su `passi` **e** sul modello:
+// `scalaAuto` misura anche `latoMaggiore(m)`, e un modello modificato con la stessa corsa in mano
+// (una corsa stantia) darebbe una scala vecchia per un disegno nuovo.
+let scalaCache = { passi: null, m: null, scala: 1 };
+function scalaDellaPushover(m, passi) {
+  if (scalaCache.passi !== passi || scalaCache.m !== m) {
+    const k = passoDiRiferimento(passi);
+    scalaCache = { passi, m, scala: k === null ? 1 : scalaAuto(m, { spostamenti: passi[k].spostamenti ?? {} }) };
+  }
+  return scalaCache.scala;
+}
 
 /** Lo stato dei risultati tradotto in **vista**, cioè in quel che piano, spazio e striscia
- *  sanno disegnare: `{ vista, caso, perCaso, scala, auto, stantia }` (il contratto di
- *  `piano.disegna`), o `null` quando non c'è niente da mostrare. La scala si calcola qui una
- *  volta sola: piano e spazio devono disegnare la **stessa** deformata, e due `scalaAuto`
- *  chiamate in due posti divergerebbero al primo cambio di frazione. */
-function risultatiInVista(m) {
+ *  sanno disegnare (il contratto di `piano.disegna` più `curva` e `passo` per la striscia), o
+ *  `null` quando non c'è niente da mostrare. La scala si calcola qui una volta sola: piano e
+ *  spazio devono disegnare la **stessa** deformata, e due `scalaAuto` chiamate in due posti
+ *  divergerebbero al primo cambio di frazione.
+ *
+ *  `fattore` è la fase dell'animazione, in [−1, 1]: moltiplica la scala del **disegno**, mai
+ *  quella dichiarata nel badge (Global Constraints). */
+function risultatiInVista(m, fattore = 1) {
   if (!risultati?.vista) return null;
-  const perCaso = risultati.lavoro?.fin?.risultati?.per_caso?.[risultati.caso];
-  if (!perCaso) return null;
+  const scelto = casoScelto(risultati, risultati.caso, risultati.passo);
+  if (!scelto) return null;
   const auto = risultati.scalaMano === null;
   // `scalaAuto` solo in vista deformata: passa da `frecciaMassima` → `puntiDeformata`, cioè un
   // campionamento di Hermite su ogni asta, e in vista M/V/N nessuno lo guarderebbe. Là la scala
   // del disegno la fa `scalaDiagrammaAuto` (`piano.js`), e questa vale 1 per non mentire nel badge.
-  const scala = auto ? (risultati.vista === "deformata" ? scalaAuto(m, perCaso) : 1) : risultati.scalaMano;
-  return { vista: risultati.vista, caso: risultati.caso, perCaso, scala, auto,
-           stantia: stantia(risultati.lavoro, m) };
+  // R1: un modo si misura con `scalaModo`, che guarda le **tre** componenti della forma —
+  // `scalaAuto` ignora la `y`, e venti modi su 42 del MURO 1 uscirebbero «×1 (auto)».
+  const scalaDeformata = () => (scelto.tipo === "modo" ? scalaModo(m, scelto.modo)
+    : scelto.tipo === "pushover" ? scalaDellaPushover(m, risultati.lavoro?.fin?.risultati?.passi)
+    : scalaAuto(m, scelto.perCaso));
+  const scala = auto ? (risultati.vista === "deformata" ? scalaDeformata() : 1) : risultati.scalaMano;
+  const curva = scelto.tipo === "pushover"
+    ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
+  // Un oggetto solo per il badge e per la striscia: due copie dello stesso passo divergerebbero
+  // al primo campo aggiunto. Il conteggio si chiama `quanti` fin qui, come in `casoScelto`:
+  // chiamarlo `n` lo faceva collidere con `caduta.n`, che è il **numero** del passo del server —
+  // due campi omonimi nello stesso badge, e il commento della striscia li raccontava al contrario.
+  const passo = scelto.tipo === "pushover"
+    ? { k: scelto.k, quanti: scelto.quanti, u: Number(scelto.passo?.spostamento) || 0,
+        V: (Number(scelto.passo?.taglio_base) || 0) / 1e3 } : null;
+  return { vista: risultati.vista, caso: risultati.caso, perCaso: scelto.perCaso, scala, auto,
+           stantia: stantia(risultati.lavoro, m), fattore,
+           tipo: scelto.tipo, stati: scelto.stati ?? null, curva, passo,
+           badge: { modo: scelto.modo ?? null, passo, caduta: curva?.caduta ?? null,
+                    // Fermo perché l'utente ha premuto Spazio, o perché il sistema chiede meno
+                    // movimento: la seconda l'utente non l'ha fatta, e senza il motivo il badge
+                    // la fa passare per un'animazione rotta (D2a, R13).
+                    fermo: risultati.animazione !== "va" || motoRidotto,
+                    motivoFermo: motoRidotto ? "preferenza di sistema" : null } };
 }
 
 // Il catalogo delle classi e i legami dei materiali vengono dal server, dove i numeri di
@@ -270,8 +319,13 @@ const corsa = creaCorsa(document, {
   // Il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo.
   suEsito: (esito) => {
     if (esito === null) { ridisegna(); return; }
-    const casi = casiDi(esito?.fin?.risultati);
-    risultati = casi.length ? { lavoro: esito, vista: "deformata", caso: casi[0], scalaMano: null } : null;
+    // `vociDelCaso` e non `casiDi`: dalla 14a una corsa può portare modi e passi senza nessun
+    // caso statico (una modale sola), e partire dal primo caso di `casiDi` vorrebbe dire
+    // buttare via dei risultati che ci sono. La prima voce del menu è il caso di partenza.
+    const voci = vociDelCaso({ lavoro: esito });
+    risultati = voci.length
+      ? { lavoro: esito, vista: "deformata", caso: voci[0].valore, scalaMano: null, passo: null, animazione: "va" }
+      : null;
     ridisegna();
   },
   // Un ghost aperto (estrusione o asta) va chiuso a mano prima di correre: vale per i bottoni
@@ -281,10 +335,34 @@ const corsa = creaCorsa(document, {
 // Il blocco «Risultati» e la striscia dell'M srotolato: leggono lo stato, non lo tengono.
 // `esito` riceve lo **stato** (con `lavoro`), `srotolato` e `piano` la **vista** (R10).
 const esito = creaEsito(document, {
-  suCambio: ({ caso, vista, scalaMano }) => { if (risultati) { risultati = { ...risultati, caso, vista, scalaMano }; ridisegna(); } },
+  // Il passo torna a `null` (l'ultimo) a ogni cambio di caso: il passo 37 della pushover non
+  // vuol dire niente sul modo 2, e riportarlo indietro tornando alla pushover sarebbe una
+  // memoria che nessuno ha chiesto. L'animazione invece resta: è una preferenza di chi guarda.
+  // Il caso che cambia azzera anche la **fase**: quella su cui si era fermato il modo 2 non vuol
+  // dire niente sul modo 6, e riprenderla lo disegnava a metà corsa col badge «ferma» di prima.
+  suCambio: ({ caso, vista, scalaMano }) => {
+    if (!risultati) return;
+    if (caso !== risultati.caso) animazione.azzera();
+    risultati = { ...risultati, caso, vista, scalaMano, passo: null };
+    ridisegna();
+  },
   suAvviso: dì,   // una scala illeggibile torna ad auto, e la riga del messaggio lo dice
 });
-const srotolato = creaSrotolato($("srotolato"));
+// Il clic sulla curva della pushover: la striscia dice **quale** passo, lo stato lo tiene qui.
+const srotolato = creaSrotolato($("srotolato"), {
+  suPasso: (k) => { if (risultati) { risultati = { ...risultati, passo: k }; ridisegna(); } },
+});
+// L'animazione dei modi: un fotogramma ridisegna **solo** piano, striscia e 3D — non
+// `ridisegna()` intero, che rifarebbe albero, pannello e barra sessanta volte al secondo per
+// un disegno che è l'unica cosa a muoversi (Global Constraints). `movimentoRidotto()` non si
+// chiama qui dentro: la legge `ridisegna` (R13).
+const animazione = creaAnimazione({
+  suFotogramma: (fattore) => {
+    const m = corrente(cronologia);
+    const inVista = disegnaPiano(m, fattore, { striscia: false });
+    spazio?.disegna(m, { selezione, deformata: deformataInVista(m, inVista) });
+  },
+});
 
 // La riga del solutore prima di qualunque gesto. Un secondo tentativo dopo un attimo: un
 // ricaricamento mentre la `verifica` di prima è ancora sul sidecar prende un 409, e senza il
@@ -630,29 +708,54 @@ function esegui(fn, etichetta) {
   }
 }
 
-/** I numeri della corsa per l'ispettore: `{perCaso, caso}` presi dallo stato, senza passare dalla
- *  vista. `null` quando non c'è una corsa, o quando il caso scelto non è fra quelli corsi. */
+/** I numeri della corsa per l'ispettore: `{perCaso, caso, etichetta, modo}` presi dallo stato,
+ *  senza passare dalla vista. `null` quando non c'è una corsa, o quando il caso scelto non è fra
+ *  quelli corsi. L'etichetta è la chiave **in parole** — «modo 2», «pushover, passo 37» — perché
+ *  nell'ispettore il termine si legge accanto ai numeri, e «modo:2» è la chiave grezza. */
 function perCasoDelloStato() {
-  const perCaso = risultati?.lavoro?.fin?.risultati?.per_caso?.[risultati.caso];
-  return perCaso ? { perCaso, caso: risultati.caso } : null;
+  const scelto = casoScelto(risultati, risultati?.caso, risultati?.passo);
+  if (!scelto) return null;
+  const etichetta = scelto.tipo === "modo" ? `modo ${scelto.n}`
+    : scelto.tipo === "pushover" ? `pushover, passo ${scelto.k + 1}` : risultati.caso;
+  return { perCaso: scelto.perCaso, caso: risultati.caso, etichetta, modo: scelto.modo ?? null };
 }
+
+/** La fase con cui disegnare **adesso**: quella dell'animazione se il caso è un modo e il sistema
+ *  non chiede meno movimento, altrimenti 1 — la forma al massimo (D2a). La leggono `ridisegna` e
+ *  il listener del `resize`: scritta in un posto solo perché il resize la sbagliava, ridisegnando
+ *  a 1 un modo fermato a metà corsa e facendogli saltare la forma al massimo, dove restava.
+ *  `motoRidotto` è quello letto all'ultimo gesto, mai rinfrescato qui (R13). */
+const fattoreCorrente = () =>
+  (risultati && tipoDelCaso(risultati.caso) === "modo" && !motoRidotto ? animazione.fattore() : 1);
+
+/** La deformata per il 3D: la **stessa** del piano, fattore dell'animazione compreso. Scritta una
+ *  volta perché `ridisegna` e il fotogramma la chiedano identica — due espressioni in due punti
+ *  divergono al primo argomento aggiunto, e il 3D resterebbe fermo mentre il piano respira. */
+const deformataInVista = (m, inVista) => (inVista?.vista === "deformata"
+  ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala * inVista.fattore), stantia: inVista.stantia }
+  : null);
 
 /** Il piano e la striscia: i due che si misurano in pixel del proprio riquadro, e i soli che il
  *  `resize` deve rifare. Estratta perché `ridisegna` e il listener la chiamino con gli **stessi**
  *  argomenti: due `piano.disegna` scritte in due punti divergono al primo argomento aggiunto, e il
  *  disegno cambierebbe a seconda di chi l'ha chiesto. Rende la vista dei risultati, che serve anche
  *  a chi viene dopo (spazio e pannello). */
-function disegnaPiano(m) {
+function disegnaPiano(m, fattore = 1, { striscia = true } = {}) {
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
-  const inVista = risultatiInVista(m);
+  const inVista = risultatiInVista(m, fattore);
   piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
                      proposte: rilievo ? proposteAperte(rilievo, m) : [], risultati: inVista });
-  srotolato.disegna({ risultati: inVista, modello: m, selezione });
+  // La striscia non cambia da un fotogramma all'altro — l'M srotolato non c'è per un modo, e la
+  // curva della pushover non si anima — quindi il ciclo la salta: ricostruirla sessanta volte al
+  // secondo per rimettere in pagina lo stesso testo è lavoro per niente.
+  if (striscia) srotolato.disegna({ risultati: inVista, modello: m, selezione });
   return inVista;
 }
 
 function ridisegna() {
   const m = corrente(cronologia);
+  // R13: la preferenza di sistema si legge qui, al gesto, e mai dentro `suFotogramma`.
+  motoRidotto = movimentoRidotto();
   // Sette tipi selezionabili da quando l'albero porta anche il rilievo: un tipo che non è
   // nell'elenco non esiste, e la selezione cade — non solleva.
   const esiste = (s) => ({ nodo: m.nodi, asta: m.aste, sezione: m.sezioni, materiale: m.materiali,
@@ -679,10 +782,15 @@ function ridisegna() {
   // parte da nessun nodo, e darglielo vorrebbe dire inventargli un'origine: `piano.js` lo
   // riconosce da `punto`.
   rigaComando.hidden = !comando;
-  const inVista = disegnaPiano(m);
+  // L'animazione si decide **prima** del disegno, perché la fase da disegnare è la sua: ferma su
+  // un modo la forma resta dov'era, non salta al massimo. Col moto ridotto invece il massimo è
+  // proprio quel che D2a chiede, e con un caso che non è un modo il fattore non serve a nessuno.
+  const animare = risultati?.animazione === "va" && risultati.vista === "deformata"
+    && tipoDelCaso(risultati.caso) === "modo" && !motoRidotto;
+  if (animare) animazione.avvia(); else animazione.ferma();
+  const inVista = disegnaPiano(m, fattoreCorrente());
   // finché three.js non è arrivato, il piano regge da solo
-  spazio?.disegna(m, { selezione, deformata: inVista?.vista === "deformata"
-    ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala), stantia: inVista.stantia } : null });
+  spazio?.disegna(m, { selezione, deformata: deformataInVista(m, inVista) });
   albero.disegna(m, { selezione, rilievo });
   const scelto = selezione?.tipo === "materiale" ? materiale(m, selezione.id) : null;
   pannello.disegna(m, selezione, {
@@ -714,7 +822,7 @@ let ridisegnoInCoda = false;
 window.addEventListener("resize", () => {
   if (ridisegnoInCoda) return;
   ridisegnoInCoda = true;
-  requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia)); });
+  requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia), fattoreCorrente()); });
 });
 
 function disegnaBarra() {
@@ -751,10 +859,23 @@ window.addEventListener("keydown", (ev) => {
   // rubarla vorrebbe dire togliere al browser lo scorrimento della pagina.
   if (voce.codice === "direzione") {
     const girato = ruotaGhost(modo, ev.key);
-    if (!girato) return;
-    ev.preventDefault();
-    modo = girato;
-    ridisegna();
+    if (girato) {
+      ev.preventDefault();
+      modo = girato;
+      ridisegna();
+      return;
+    }
+    // Senza ghost e con la pushover scelta, `←`/`→` scorrono i passi: è lo scrubber (D5a). Con
+    // un ghost aperto no — la freccia lì è il verso dell'estrusione, e sono due gesti diversi
+    // sullo stesso tasto. `↑`/`↓` restano al browser in ogni caso: la corsa ha una direzione sola.
+    if (!modo && tipoDelCaso(risultati?.caso) === "pushover" && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
+      const s = casoScelto(risultati, "pushover", risultati.passo);
+      if (s) {
+        ev.preventDefault();
+        risultati = { ...risultati, passo: Math.min(s.quanti - 1, Math.max(0, s.k + (ev.key === "ArrowRight" ? 1 : -1))) };
+        ridisegna();
+      }
+    }
     return;
   }
   ev.preventDefault();
@@ -848,6 +969,20 @@ function dispatchVoce(voce, valore = null) {
     const i = testo === "" ? NaN : Number(testo);
     if (!Number.isInteger(i) || i < 0 || i >= tavola.length) { dì(`la vista è una cifra da 0 a ${tavola.length - 1}`); return; }
     risultati = { ...risultati, vista: tavola[i] };
+    dì(null); ridisegna();
+    return;
+  }
+
+  // Spazio ferma e riprende l'animazione del modo (D2a). Solo con un modo scelto: su un caso
+  // statico o sulla pushover non c'è niente che si muova, e fermare in silenzio un'animazione
+  // che non c'è si legge come un tasto rotto. Con `prefers-reduced-motion` l'alternanza c'è
+  // ancora ma non muove niente — a spegnerla è `ridisegna`, e il badge dice perché.
+  if (voce.codice === "pausa") {
+    if (tipoDelCaso(risultati?.caso) !== "modo") {
+      dì("Spazio ferma l'animazione del modo: scegline uno dal menu");
+      return;
+    }
+    risultati = { ...risultati, animazione: risultati.animazione === "va" ? "ferma" : "va" };
     dì(null); ridisegna();
     return;
   }
