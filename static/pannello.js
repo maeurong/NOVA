@@ -12,7 +12,7 @@ import { puntiConcrete02, puntiSteel02, valoriDaMostrare, svgCurva } from "./leg
 import { GRADI, PREIMPOSTAZIONI, vincoloVuoto, nomePreimpostazione, descrizione } from "./vincoli.js";
 import { righeScartate, giunzioneDelNodo, propostaPerNodo, proposteAperte, testoMancano,
          testoGiunzione } from "./rilievo.js";
-import { righeSpostamenti, righeReazioni } from "./risultati.js";
+import { righeSpostamenti, righeReazioni, righeModo } from "./risultati.js";
 
 const mm = (v) => `${millimetri(v)} mm`;
 const CERCA = { nodo, asta, sezione, materiale, azione, combinazione,
@@ -44,8 +44,15 @@ function righeDiNodo(m, n, { rilievo = null, risultati = null } = {}) {
   // (`docs/ricerca/07-ux-modellatore.md:99`). Il caso sta nel termine: due casi aperti uno
   // dopo l'altro danno numeri diversi, e senza il nome non si sa di quale si sta leggendo.
   if (risultati?.perCaso) {
-    righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]),
-               ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${risultati.caso})`, v]));
+    // Dalla 14a il caso è una chiave a tre forme, e «modo:2» nel termine è la chiave grezza:
+    // chi legge vuole «modo 2» e «pushover, passo 37». L'etichetta la compone `app.js`, che sa
+    // quale passo sta mostrando; senza, si ripiega sulla chiave — non su una stringa inventata.
+    const termine = risultati.etichetta ?? risultati.caso;
+    righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${termine})`, v]),
+               ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${termine})`, v]));
+    // La forma modale porta già il modo nel proprio termine (`righeModo`): è adimensionale, e
+    // affiancarla agli spostamenti in mm senza dire di che modo è la farebbe leggere in mm.
+    if (risultati.modo) righe.push(...righeModo(risultati.modo, n.id));
   }
   if (rilievo) {
     const g = giunzioneDelNodo(rilievo, n.id);

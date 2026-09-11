@@ -2,12 +2,35 @@
 // (giornata 13). Lo stato non vive qui: `app.js` lo tiene e lo passa a `disegna`; i controlli
 // chiamano `suCambio` con i tre valori, e `app.js` ridisegna.
 
-import { casiDi, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
+import { vociDelCaso, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
+import { conciso } from "./numeri.js";
 import { leggiEspressione } from "./numeri.js";
 import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const INCHIOSTRO = "#141414", ROSSO = "#b8321e", MONO = 'ui-monospace, "SF Mono", "Menlo", monospace';
+
+// R12: il MURO 1 dà 4 casi e 42 modi, e una lista piatta di 46 voci non si scorre — il gruppo
+// nativo del `<select>` è la cosa che il browser già sa fare, anche con lo screen reader
+// («casi, voce 1 di 4»). Un gruppo vuoto non si scrive: due intestazioni senza niente sotto
+// sarebbero rumore in un modello senza modi e senza pushover.
+const ETICHETTE_GRUPPO = { caso: "casi", pushover: "pushover", modo: "modi" };
+
+function gruppiDelMenu(voci) {
+  const gruppi = [];
+  for (const [tipo, etichetta] of Object.entries(ETICHETTE_GRUPPO)) {
+    const dentro = voci.filter((v) => v.tipo === tipo);
+    if (!dentro.length) continue;
+    const g = document.createElement("optgroup");
+    g.setAttribute("label", etichetta);
+    g.replaceChildren(...dentro.map((v) => {
+      const o = document.createElement("option");
+      o.value = v.valore; o.textContent = v.testo; return o;
+    }));
+    gruppi.push(g);
+  }
+  return gruppi;
+}
 
 export function creaEsito(radice, { suCambio, suAvviso = () => {} }) {
   const q = (sel) => radice.querySelector(sel);
@@ -39,15 +62,16 @@ export function creaEsito(radice, { suCambio, suAvviso = () => {} }) {
     controlliEl.hidden = !risultati;
     if (!risultati) { casiScritti = null; return; }
     const dati = risultati.lavoro.fin.risultati;
-    const casi = casiDi(dati);
+    const voci = vociDelCaso(risultati);
+    const valori = voci.map((v) => v.valore);
     // Le opzioni si riscrivono solo se i casi sono cambiati: ricostruirle a ogni ridisegno
     // staccherebbe dal DOM il select che l'utente sta usando (stessa regola di `pannello.js`).
-    const chiave = casi.join("|");
+    const chiave = valori.join("|");
     if (chiave !== casiScritti) {
-      casoEl.replaceChildren(...casi.map((c) => { const o = document.createElement("option"); o.value = c; o.textContent = c; return o; }));
+      casoEl.replaceChildren(...gruppiDelMenu(voci));
       casiScritti = chiave;
     }
-    const caso = casi.includes(risultati.caso) ? risultati.caso : casi[0];
+    const caso = valori.includes(risultati.caso) ? risultati.caso : valori[0];
     casoEl.value = caso;
     for (const r of radio()) r.checked = r.value === (risultati.vista ?? "");
     if (document.activeElement !== scalaEl) scalaEl.value = risultati.scalaMano === null ? "" : String(risultati.scalaMano).replace(".", ",");
@@ -72,8 +96,11 @@ export function creaEsito(radice, { suCambio, suAvviso = () => {} }) {
 const VISTA_STRISCIA = { V: "V", N: "N" };
 const UNITA_STRISCIA = { M: "kN·m", V: "kN", N: "kN" };
 
-/** La striscia della sollecitazione srotolata: l'asta selezionata, tutte le stazioni, i picchi. */
-export function creaSrotolato(contenitore) {
+/** La striscia della sollecitazione srotolata: l'asta selezionata, tutte le stazioni, i picchi.
+ *  Con la pushover scelta la striscia cambia mestiere: lì la curva taglio–spostamento è *il*
+ *  diagramma da leggere, e un M srotolato del passo corrente non direbbe dove sta la struttura
+ *  lungo la corsa. `suPasso(k)` è il clic su un punto della curva. */
+export function creaSrotolato(contenitore, { suPasso = null } = {}) {
   const el = (nome, attributi = {}) => { const e = document.createElementNS(NS, nome); for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v); return e; };
   const titolo = () => { const p = document.createElement("p"); p.className = "titolo"; return p; };
 
@@ -82,6 +109,17 @@ export function creaSrotolato(contenitore) {
     if (!risultati) { contenitore.replaceChildren(); return; }
     const p = titolo();
     if (risultati.stantia) p.className = "titolo stantia";
+    const prefisso = risultati.stantia ? "stantia · " : "";
+    // Il `tipo` che non si conosce — o che non c'è, come in tutti i chiamanti di prima della
+    // 14a — ricade sulla striscia di sempre: un ramo che solleva su un `tipo` nuovo spegnerebbe
+    // anche l'M srotolato, che con quel tipo non c'entra niente.
+    if (risultati.tipo === "pushover") { disegnaCurva(p, prefisso, risultati); return; }
+    if (risultati.tipo === "modo") {
+      const n = risultati.modo?.n ?? String(risultati.caso ?? "").split(":")[1];
+      p.textContent = `${prefisso}modo ${n}: nessuna sollecitazione da srotolare`;
+      contenitore.replaceChildren(p);
+      return;
+    }
     const id = selezione?.tipo === "asta" ? selezione.id : null;
     const asta = id !== null ? (modello?.aste ?? []).find((a) => a.id === id) : null;
     const vista = VISTA_STRISCIA[risultati.vista] ?? "M";
@@ -134,5 +172,71 @@ export function creaSrotolato(contenitore) {
     }
     contenitore.replaceChildren(p, svg);
   }
+
+  /** La curva taglio–spostamento: un cerchio per passo, il corrente rosso e più grande, la
+   *  caduta segnata con una croce. In pixel come il resto della striscia (R7 della 13): un
+   *  `viewBox` stirato a tutta larghezza schiaccerebbe i glifi di 2,4 a 1. */
+  function disegnaCurva(p, prefisso, risultati) {
+    p.textContent = `${prefisso}pushover · taglio alla base – spostamento del nodo di controllo · kN, mm`;
+    const { punti = [], uMax = 0, vMax = 0, caduta = null } = risultati.curva ?? {};
+    const colore = risultati.stantia ? ROSSO : INCHIOSTRO;
+    // 28 px a sinistra per il numero del taglio, 14 sopra e sotto: sotto ci va lo spostamento.
+    const W = contenitore.clientWidth || 200, H = 96, M = 14, ML = 28;
+    const larghezza = Math.max(0, W - M - ML), altezza = Math.max(0, H - 2 * M);
+    // Una corsa che si ferma al primo passo ha `uMax` e `vMax` a zero: il rapporto non si fa,
+    // il punto sta nell'origine. Senza questa guardia uscirebbe `cx="NaN"` e nessun cerchio.
+    const x = (u) => ML + (uMax > 0 ? (Number(u) || 0) / uMax : 0) * larghezza;
+    const y = (V) => H - M - (vMax > 0 ? (Number(V) || 0) / vMax : 0) * altezza;
+    const svg = el("svg", { width: W, height: H, "aria-label": "curva taglio–spostamento della pushover" });
+    const testo = (attributi, contenuto) => { const t = el("text", { "font-size": 11, fill: colore, "font-family": MONO, ...attributi }); t.textContent = contenuto; return t; };
+    svg.append(el("line", { x1: ML, y1: H - M, x2: W - M, y2: H - M, stroke: colore, "stroke-width": 1 }),
+               el("line", { x1: ML, y1: M, x2: ML, y2: H - M, stroke: colore, "stroke-width": 1 }),
+               testo({ x: ML - 3, y: H - M + 10, "text-anchor": "end" }, "0"),
+               testo({ x: W - M, y: H - M + 10, "text-anchor": "end" }, `${conciso(uMax)} mm`),
+               testo({ x: ML - 3, y: M + 4, "text-anchor": "end" }, `${conciso(vMax)} kN`));
+    svg.append(el("polyline", { points: punti.map((q) => `${x(q.u)},${y(q.V)}`).join(" "),
+                                fill: "none", stroke: colore, "stroke-width": 1.5 }));
+    const corrente = risultati.passo?.k;
+    for (const q of punti) {
+      const sceltoQ = q.k === corrente;
+      // R10: con la corsa stantia la curva è **tutta** rossa (un solo rosso, story 63), quindi
+      // il colore non distingue più niente: il passo corrente si legge dal raggio.
+      svg.append(el("circle", { class: "passo", "data-k": q.k, "aria-label": `passo ${q.k + 1}`,
+                                cx: x(q.u), cy: y(q.V), r: sceltoQ ? 4.5 : 2.5, fill: sceltoQ ? ROSSO : colore }));
+    }
+    if (risultati.passo) {
+      const { k, n, u, V } = risultati.passo;
+      // I due numeri accanto al punto, dalla parte dove c'è spazio: a metà corsa in poi il
+      // testo a destra uscirebbe dalla striscia, e il troncamento mangerebbe proprio il valore.
+      const destra = k < n / 2;
+      const cx = x(u) + (destra ? 7 : -7), ancora = destra ? "start" : "end";
+      svg.append(testo({ x: cx, y: y(V) - 4, "text-anchor": ancora }, `u ${conciso(u)} mm`),
+                 testo({ x: cx, y: y(V) + 12, "text-anchor": ancora }, `V ${conciso(V)} kN`));
+    }
+    const qCaduta = caduta ? punti[caduta.k] : null;
+    if (qCaduta) {
+      const cx = x(qCaduta.u), cy = y(qCaduta.V), b = 5;
+      svg.append(el("line", { x1: cx - b, y1: cy - b, x2: cx + b, y2: cy + b, stroke: ROSSO, "stroke-width": 1.5 }),
+                 el("line", { x1: cx - b, y1: cy + b, x2: cx + b, y2: cy - b, stroke: ROSSO, "stroke-width": 1.5 }),
+                 // `caduta.n` è il numero del passo che manda il server; l'indice + 1 è il
+                 // ripiego per una curva scritta a mano, dove `n` non c'è.
+                 testo({ x: cx, y: M - 4, "text-anchor": "middle", fill: ROSSO }, `caduta al passo ${caduta.n ?? caduta.k + 1}`));
+    }
+    // R11: 120 cerchi da 2,5 px non si prendono col mouse, e 120 listener sono 120 chiusure da
+    // ricostruire a ogni ridisegno. Un solo bersaglio largo quanto la striscia, e il passo si
+    // trova dall'ascissa: i cerchi restano disegno. `transparent` e non `none` — `fill: none`
+    // lascia passare il clic attraverso il rettangolo.
+    const bersaglio = el("rect", { class: "passi", x: 0, y: 0, width: W, height: H, fill: "transparent" });
+    bersaglio.addEventListener("click", (evento) => {
+      if (!suPasso || !punti.length) return;
+      const dove = Number(evento?.offsetX) || 0;
+      let vicino = punti[0];
+      for (const q of punti) if (Math.abs(x(q.u) - dove) < Math.abs(x(vicino.u) - dove)) vicino = q;
+      suPasso(vicino.k);
+    });
+    svg.append(bersaglio);
+    contenitore.replaceChildren(p, svg);
+  }
+
   return { disegna };
 }

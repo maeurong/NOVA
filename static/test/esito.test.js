@@ -22,10 +22,15 @@ function elementoFinto(iniziale = {}) {
 }
 
 function elementoSvgFinto(nome) {
+  const listeners = {};
   return {
     nome, textContent: "", _figli: [], _attrs: {},
     setAttribute(k, v) { this._attrs[k] = String(v); },
     getAttribute(k) { return this._attrs[k] ?? null; },
+    // Il bersaglio della curva (R11) è un `rect` con **un** listener: senza `dispatch` qui
+    // il clic non si potrebbe provare, e i 120 cerchi tornerebbero cliccabili uno per uno.
+    addEventListener(ev, fn) { (listeners[ev] ??= []).push(fn); },
+    dispatch(ev, argomento) { (listeners[ev] ?? []).forEach((fn) => fn(argomento)); },
     append(...figli) { this._figli.push(...figli); },
     replaceChildren(...figli) { this._figli = figli; },
   };
@@ -95,7 +100,7 @@ test("creaEsito: senza risultati lo stato vuoto; con risultati il select dei cas
   esito.disegna({ risultati: risultatiDi(["Z1", "Z2"]) });
   assert.equal(el("#risultati-vuoto").hidden, true);
   assert.equal(el("#risultati-controlli").hidden, false);
-  assert.deepEqual(el("#risultati-caso")._figli.map((o) => o.value), ["Z1", "Z2"]);
+  assert.deepEqual(tutti(el("#risultati-caso"), "option").map((o) => o.value), ["Z1", "Z2"]);
   assert.equal(el("#risultati-caso").value, "Z1");
   assert.equal(radice.querySelectorAll('input[name="vista"]').find((r) => r.checked).value, "deformata");
   assert.equal(el("#risultati-equilibrio").textContent, "Σ reazioni (0; 0; 60) kN · Σ carichi (0; 0; -60) kN");
@@ -329,4 +334,161 @@ test("creaSrotolato: V e N positivi vanno in su come nel piano, M positivo resta
   assert.ok(ordinate("M").every((y) => y > y0), `M positivo in giù, il lato teso: ${ordinate("M")}`);
   assert.ok(ordinate("V").every((y) => y < y0), `V positivo in su: ${ordinate("V")}`);
   assert.ok(ordinate("N").every((y) => y < y0), `N positivo in su: ${ordinate("N")}`);
+});
+
+// --- la 14a: il caso a tre forme nel menu, e la curva della pushover nella striscia ---
+
+const M2 = { n: 2, f: 31.85, T: 0.0314, forma: { 1: [0, 0, 0], 3: [1, 0, -0.03] },
+             massa_partecipante: { x: 0.456215, y: 0, z: 0 }, cumulata: { x: 0.95, y: 0.78, z: 1 } };
+const PASSI = [
+  { n: 1, spostamento: 0.5, taglio_base: 1200, spostamenti: { 3: [0.5, 0, 0, 0, 0, 0] }, stato_sezioni: {} },
+  { n: 2, spostamento: 1.0, taglio_base: 2300, spostamenti: { 3: [1.0, 0, 0, 0, 0, 0] }, stato_sezioni: {} },
+];
+const conModiEPassi = () => ({
+  lavoro: { fin: { risultati: {
+    run: { carico_totale: { Z1: [0, 0, -60000] }, pushover: { u0: 0.0002494 } },
+    per_caso: { Z1: { spostamenti: {}, reazioni: { 1: [0, 0, 60000, 0, 0, 0] }, sollecitazioni: {} } },
+    modi: [M2], passi: PASSI, caduta: null } } },
+  vista: "deformata", caso: "Z1", scalaMano: null });
+
+test("creaEsito: il menu porta casi, pushover e modi, raggruppati; il valore scelto passa a suCambio", () => {
+  const { radice, el } = radiceFinta();
+  const cambi = [];
+  const esito = creaEsito(radice, { suCambio: (c) => cambi.push(c) });
+  esito.disegna({ risultati: conModiEPassi() });
+  const select = el("#risultati-caso");
+  assert.deepEqual(tutti(select, "option").map((o) => o.value), ["Z1", "pushover", "modo:2"]);
+  assert.deepEqual(tutti(select, "option").map((o) => o.textContent),
+                   ["Z1", "pushover · 2 passi", "modo 2 · 31,85 Hz · ux 46 %"]);
+  // R12: tre gruppi nativi, non una lista piatta di 46 voci (MURO 1: 4 casi + 42 modi)
+  assert.deepEqual(select._figli.map((g) => g.getAttribute("label")), ["casi", "pushover", "modi"]);
+  select.value = "modo:2"; select.dispatch("change");
+  assert.deepEqual(cambi.at(-1), { caso: "modo:2", vista: "deformata", scalaMano: null });
+});
+
+test("creaEsito: con un modo scelto l'equilibrio dice le masse; con la pushover dice i passi", () => {
+  const { radice, el } = radiceFinta();
+  const esito = creaEsito(radice, { suCambio: () => {} });
+  esito.disegna({ risultati: { ...conModiEPassi(), caso: "modo:2" } });
+  assert.equal(el("#risultati-equilibrio").textContent,
+               "massa partecipante x 46 % · y 0 % · z 0 % · cumulata x 95 % · y 78 % · z 100 %");
+  esito.disegna({ risultati: { ...conModiEPassi(), caso: "pushover" } });
+  assert.equal(el("#risultati-equilibrio").textContent,
+               "2 passi convergenti · u₀ 0,0002 mm · taglio massimo 2,3 kN al passo 2 · caduta: nessuna");
+});
+
+test("creaSrotolato con la pushover: la curva in pixel, un cerchio per passo, il corrente rosso, la caduta segnata", () => {
+  const contenitore = contenitoreFinto(400);
+  const passi = [];
+  const striscia = creaSrotolato(contenitore, { suPasso: (k) => passi.push(k) });
+  const curva = { punti: [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }], uMax: 1, vMax: 2.3,
+                  caduta: { k: 1, u: 1, motivo: "non converge" } };
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 1, n: 2, u: 1, V: 2.3 }, curva, stantia: false },
+                     modello: null, selezione: null });
+  assert.equal(contenitore.hidden, false);
+  const [titolo] = contenitore._figli;
+  assert.equal(titolo.textContent,
+               "pushover · taglio alla base – spostamento del nodo di controllo · kN, mm");
+  const svg = contenitore._figli[1];
+  assert.equal(tutti(svg, "polyline").length, 1);
+  const cerchi = tutti(svg, "circle").filter((c) => c.getAttribute("class") === "passo");
+  assert.equal(cerchi.length, 2);
+  assert.deepEqual(cerchi.map((c) => c.getAttribute("data-k")), ["0", "1"]);
+  assert.equal(cerchi[1].getAttribute("fill"), "#b8321e", "il passo corrente è una selezione");
+  assert.ok(Number(cerchi[1].getAttribute("r")) > Number(cerchi[0].getAttribute("r")),
+            "R10: il raggio è il secondo canale, e regge anche quando la curva è tutta rossa");
+  assert.deepEqual(cerchi.map((c) => c.getAttribute("aria-label")), ["passo 1", "passo 2"]);
+  const testi = tutti(svg, "text").map((t) => t.textContent);
+  assert.ok(testi.includes("u 1 mm") && testi.includes("V 2,3 kN"));
+  assert.ok(testi.some((t) => t === "caduta al passo 2"));
+  // nessuna coordinata fuori dalla larghezza misurata (la regola della 13, R7)
+  for (const c of cerchi) assert.ok(Number(c.getAttribute("cx")) <= 400);
+});
+
+test("creaSrotolato: il clic su un passo lo dice, con un solo bersaglio largo quanto la striscia (R11)", () => {
+  const contenitore = contenitoreFinto(400);
+  const passi = [];
+  const striscia = creaSrotolato(contenitore, { suPasso: (k) => passi.push(k) });
+  const punti = Array.from({ length: 120 }, (_, k) => ({ k, u: (k + 1) / 2, V: k }));
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 119, n: 120, u: 60, V: 119 },
+                                  curva: { punti, uMax: 60, vMax: 119, caduta: null }, stantia: false },
+                     modello: null, selezione: null });
+  const svg = contenitore._figli[1];
+  const bersaglio = tutti(svg, "rect").find((r) => r.getAttribute("class") === "passi");
+  assert.ok(bersaglio, "un solo rettangolo, non 120 cerchi con un listener ciascuno");
+  assert.equal(bersaglio.getAttribute("fill"), "transparent", "`none` non prenderebbe i clic");
+  assert.equal(Number(bersaglio.getAttribute("width")), 400);
+  bersaglio.dispatch("click", { offsetX: 0 });
+  assert.equal(passi.at(-1), 0);
+  bersaglio.dispatch("click", { offsetX: 400 });
+  assert.equal(passi.at(-1), 119, "l'ultimo passo si prende dal bordo destro");
+  bersaglio.dispatch("click", { offsetX: -50 });
+  assert.equal(passi.at(-1), 0, "fuori a sinistra: stretto al primo");
+});
+
+test("creaSrotolato: senza `suPasso` un clic non solleva; con un passo solo la curva non divide per zero", () => {
+  const contenitore = contenitoreFinto(400);
+  const striscia = creaSrotolato(contenitore, {});
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 0, n: 1, u: 0, V: 0 },
+                                  curva: { punti: [{ k: 0, u: 0, V: 0 }], uMax: 0, vMax: 0, caduta: null },
+                                  stantia: false }, modello: null, selezione: null });
+  const svg = contenitore._figli[1];
+  const [c] = tutti(svg, "circle").filter((x) => x.getAttribute("class") === "passo");
+  assert.ok(Number.isFinite(Number(c.getAttribute("cx"))) && Number.isFinite(Number(c.getAttribute("cy"))));
+  tutti(svg, "rect").find((r) => r.getAttribute("class") === "passi").dispatch("click", { offsetX: 10 });
+});
+
+test("creaSrotolato con un modo: la striscia dice che una forma modale non ha sollecitazioni", () => {
+  const contenitore = contenitoreFinto(400);
+  const striscia = creaSrotolato(contenitore, { suPasso: () => {} });
+  striscia.disegna({ risultati: { tipo: "modo", vista: "deformata", caso: "modo:2",
+                                  modo: M2, stantia: false }, modello: null, selezione: null });
+  assert.equal(contenitore._figli.length, 1, "nessun svg");
+  assert.equal(contenitore._figli[0].textContent, "modo 2: nessuna sollecitazione da srotolare");
+});
+
+test("creaSrotolato: un `tipo` sconosciuto o assente torna alla striscia di oggi", () => {
+  const contenitore = contenitoreFinto(400);
+  const striscia = creaSrotolato(contenitore, { suPasso: () => {} });
+  striscia.disegna({ risultati: { vista: "M", caso: "Z1", perCaso: { sollecitazioni: {} }, stantia: false },
+                     modello: { aste: [] }, selezione: null });
+  assert.ok(contenitore._figli[0].textContent.includes("Seleziona un'asta"));
+});
+
+// La curva senza punti: gli assi si disegnano lo stesso, ma non c'è niente da cliccare e
+// nessuna divisione per zero (ingresso degenere del brief).
+test("creaSrotolato: una curva senza punti disegna gli assi, nessun cerchio, e il clic non solleva", () => {
+  const contenitore = contenitoreFinto(400);
+  const visti = [];
+  const striscia = creaSrotolato(contenitore, { suPasso: (k) => visti.push(k) });
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 0, n: 0, u: 0, V: 0 },
+                                  curva: { punti: [], uMax: 0, vMax: 0, caduta: null }, stantia: false },
+                     modello: null, selezione: null });
+  const svg = contenitore._figli[1];
+  assert.equal(tutti(svg, "circle").filter((c) => c.getAttribute("class") === "passo").length, 0);
+  tutti(svg, "rect").find((r) => r.getAttribute("class") === "passi").dispatch("click", { offsetX: 200 });
+  assert.deepEqual(visti, [], "senza punti non c'è un passo più vicino da dire");
+  for (const e of tutti(svg, "line").concat(tutti(svg, "text"), tutti(svg, "rect"))) {
+    for (const v of Object.values(e._attrs)) assert.ok(!String(v).includes("NaN"), `NaN in ${v}`);
+  }
+});
+
+// R10: con la corsa stantia la curva è tutta rossa, e il passo corrente si distingue dal solo
+// raggio — il colore non è più un canale libero (un solo rosso, `#b8321e`).
+test("creaSrotolato: con la corsa stantia la curva è rossa e il raggio resta il canale del passo", () => {
+  const contenitore = contenitoreFinto(400);
+  const striscia = creaSrotolato(contenitore, { suPasso: () => {} });
+  const curva = { punti: [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }], uMax: 1, vMax: 2.3, caduta: null };
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 0, n: 2, u: 0.5, V: 1.2 }, curva, stantia: true },
+                     modello: null, selezione: null });
+  assert.equal(contenitore._figli[0].className, "titolo stantia");
+  assert.ok(contenitore._figli[0].textContent.startsWith("stantia · "));
+  const cerchi = tutti(contenitore._figli[1], "circle").filter((c) => c.getAttribute("class") === "passo");
+  assert.deepEqual(cerchi.map((c) => c.getAttribute("fill")), ["#b8321e", "#b8321e"]);
+  assert.ok(Number(cerchi[0].getAttribute("r")) > Number(cerchi[1].getAttribute("r")));
 });

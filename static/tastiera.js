@@ -25,6 +25,9 @@ export const TASTI = [
   { codice: "corri",     tasto: "⌘⏎",   etichetta: "corri",     aiuto: "tutte le analisi del modello", contesto: "salvo-ghost", modificatore: "comando" },
   // I risultati (giornata 13): una vista alla volta. Compare solo con una corsa da mostrare.
   { codice: "vista",     tasto: "0-4",   etichetta: "vista",     aiuto: "0 niente · 1 deformata · 2 M · 3 V · 4 N", contesto: "risultati" },
+  // La 14a: un modo si guarda muoversi, e fermarlo è il gesto che serve per leggerne la forma.
+  // Stesso contesto della vista — senza una corsa da mostrare non c'è niente da fermare.
+  { codice: "pausa",     tasto: "Spazio", etichetta: "ferma / riprendi", aiuto: "l'animazione del modo", contesto: "risultati" },
   // «disfa», non «annulla»: l'etichetta era la stessa di Esc (`:41`), e in un elenco che
   // stampa il verbo — la barra, e ora la palette — le due voci si distinguevano solo dal
   // tasto accanto. «disfa» fa coppia con «rifai», che è la relazione vera fra le due.
@@ -76,6 +79,8 @@ const SENZA_MODIFICATORE = new Map([
   // Le cifre della vista dei risultati: `0`-`4` nude. Da `5` a `9` non c'è niente, e la cifra
   // resta al browser. Col comando pure: `⌘1` è la scheda 1, non nostra (`CON_COMANDO`).
   ["0", "vista"], ["1", "vista"], ["2", "vista"], ["3", "vista"], ["4", "vista"],
+  // Spazio nudo ferma il modo; ⌘Spazio è di Spotlight e non sta in `CON_COMANDO`.
+  [" ", "pausa"],
   ["backspace", "elimina"], ["delete", "elimina"],
   ["enter", "conferma"], ["escape", "annulla"],
   ["arrowup", "direzione"], ["arrowdown", "direzione"],
@@ -90,7 +95,12 @@ const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"], ["enter", "verifica"]]);
 
 // Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
-const ATTIVANO = new Set(["enter", " ", "backspace", "delete"]);
+// R6: le frecce sono qui dalla 14a. In un gruppo di radio — i cinque della vista — la freccia
+// **è** il modo di cambiare selezione (ARIA), e lo stesso vale per le voci a `role="button"`
+// dell'albero: intercettandole, `←`/`→` per il passo della pushover rubavano la navigazione al
+// controllo a fuoco e la vista cambiava sotto le dita di chi stava solo scorrendo i radio.
+const ATTIVANO = new Set(["enter", " ", "backspace", "delete",
+                          "arrowleft", "arrowright", "arrowup", "arrowdown"]);
 const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"]);
 
 /** Se il controllo a fuoco si tiene **questo** tasto. La domanda non è «l'evento viene da un
@@ -147,7 +157,8 @@ export function voceDaEvento(evento) {
  *  arrow place of interest sign return symbol». Le lettere restano lettere; i glifi diventano
  *  parole, nell'ordine in cui si premono. */
 const PAROLE_DEI_GLIFI = [["⇧", "maiuscolo "], ["⌘", "comando "], ["⏎", "invio"], ["⌫", "cancella"],
-                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"]];
+                          ["Invio", "invio"], ["Esc", "escape"], ["← ↑ → ↓", "frecce"],
+                          ["Spazio", "spazio"]];
 export const nomeTasto = (tasto) => {
   let nome = String(tasto ?? "");
   for (const [glifo, parola] of PAROLE_DEI_GLIFI) nome = nome.split(glifo).join(parola);

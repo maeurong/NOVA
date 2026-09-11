@@ -71,6 +71,10 @@ body {
    `.carichi-titolo` (`:75`), che nella colonna sopra fa lo stesso mestiere. */
 #srotolato .titolo { margin: 0 0 2px; padding-left: 8px; font: 11px var(--mono); color: var(--inchiostro); }
 #srotolato .titolo.stantia { color: var(--rosso); }
+/* La curva della pushover (14a): il bersaglio dei clic è **un** rettangolo trasparente sopra la
+   curva (R11), quindi il cursore va detto lì — sui cerchi non arriverebbe mai, coperti come
+   sono. ponytail: nessun `pointer-events` sui cerchi, che stanno sotto e non prendono niente. */
+#srotolato rect.passi { cursor: pointer; }
 #piano svg { width: 100%; height: 100%; display: block; }
 /* Il titolo dei carichi sta sopra l'SVG, non dentro: nel `viewBox` scalava coi millimetri e
    finiva sotto l'etichetta del primo nodo. In px costanti non si sovrappone a niente, e
@@ -88,6 +92,12 @@ body {
                           font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
                           white-space: nowrap; }
 #piano .risultati-badge.stantia { color: var(--rosso); }
+/* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
+   `nowrap` perché è una riga sola di simboli e parole, e spezzarla in due le farebbe perdere
+   l'accoppiamento simbolo→stato. Inchiostro, mai rosso: il rosso è uno solo. */
+#piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
+                            font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
+                            white-space: nowrap; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 e 22 di `top`, 8 di `left`/`right`, 11 di riga, 14 di
    altezza di riga — li ricopia `piano.js` (`larghezzaTesto` e i due `ostacoli.push`) per farne
