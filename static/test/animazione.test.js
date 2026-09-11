@@ -87,3 +87,22 @@ test("creaAnimazione: `fattore` rende la fase dove si è fermata, non 1", () => 
   a.avvia();
   assert.ok(Math.abs(a.fattore() - fermata) < 1e-9);
 });
+
+test("creaAnimazione: `azzera` butta via la pausa, e si riparte da fase 1", () => {
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  a.avvia();
+  t = 375; a.ferma();
+  assert.ok(Math.abs(a.fattore() - Math.sin(2 * Math.PI * 0.375)) < 1e-9, "ferma a 3/8 di ciclo");
+  // Il caso che cambia: la fase del modo di prima non vuol dire niente sul modo dopo.
+  a.azzera();
+  assert.equal(a.fattore(), 1, "azzerata: la forma sta al massimo");
+  assert.equal(a.inCorso(), false);
+  // E riavviando il tempo riparte da adesso, non dal `t0` di prima.
+  t = 9000; a.avvia();
+  assert.ok(Math.abs(a.fattore()) < 1e-9, "`avvia` dopo `azzera` parte da fase 0, come da fermo");
+  t = 9250; coda.at(-1)();
+  assert.ok(Math.abs(fotogrammi.at(-1) - 1) < 1e-9);
+});

@@ -253,7 +253,7 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     # (`docs/ricerca/07-ux-modellatore.md:103`): è la riga su cui si decide se un modo è locale.
     assert "modo 2 · 31,85 Hz · ux 46 %" in t["voci"], [v for v in t["voci"] if v.startswith("modo 2")]
     # Spazio sul caso statico di partenza: niente da fermare, e il messaggio dice dove si sceglie.
-    assert t["senzaModo"] == "Spazio ferma l'animazione di un modo: scegline uno dal menu", t["senzaModo"]
+    assert t["senzaModo"] == "Spazio ferma l'animazione del modo: scegline uno dal menu", t["senzaModo"]
     assert t["siMuove"] is True, f"la deformata del modo non si muove, badge: {t['badge']!r}"
     # Senza la pushover scelta la freccia resta al browser: è lo scorrimento della pagina.
     assert t["frecciaLibera"] is False, "`→` senza pushover non deve essere intercettata"
@@ -261,9 +261,15 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     assert t["badge"].startswith("modo 2 · 31,85 Hz"), t["badge"]
     assert "(auto)" in t["badge"], f"la scala va dichiarata sempre (P3): {t['badge']!r}"
     assert t["badgeFerma"].endswith(" · ferma"), t["badgeFerma"]
+    # Il badge sta dentro `#piano` a 1280 px, anche quello lungo del modo a forma nulla.
+    assert t["badgeDentro"] is True, f"badge tagliato: {t['badge']!r}"
+    assert t["badgeNullaDentro"] is True, f"badge del modo a forma nulla tagliato: {t['badgeNulla']!r}"
+    # Il `resize` ridisegna con la fase su cui il modo si è fermato, non con 1: con 1 la forma
+    # saltava al massimo al primo trascinamento del bordo e ci restava.
+    assert t["resizeTieneLaFase"] is True, "dopo il resize la deformata del modo fermo è cambiata"
     # R2: il modo 6 del MURO 1 ha la forma nulla sui nodi del modello — si mostra lo stesso, il
     # badge dice perché, e il disegno non porta un `NaN`.
-    assert "forma nulla sui nodi del modello" in t["badgeNulla"], t["badgeNulla"]
+    assert "forma nulla sui nodi" in t["badgeNulla"], t["badgeNulla"]
     assert t["nan"] is False, "un `NaN` nei punti della deformata"
     assert t["riparte"] is True, "Spazio non ha ripreso l'animazione"
     assert t["fermaDopoCambio"] is True, "il caso statico non ha fermato l'animazione del modo"
@@ -302,6 +308,8 @@ def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, b
     # A e B: niente esce dal proprio riquadro a 1280 px. Il badge accorciato, la legenda che va a
     # capo, il taglio massimo scritto dentro il grafico — tre tagli visti a mano dal controller.
     assert t["dentro"] == {"badge": True, "legenda": True, "taglio": True}, t["dentro"]
+    # Con un ghost aperto la freccia è del gesto, non dello scrubber: il passo non si muove.
+    assert "1/120" in t["badgeConGhost"], t["badgeConGhost"]
     assert t["sovrapposte"] == [], f"etichette sovrapposte: {t['sovrapposte']}"
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
 

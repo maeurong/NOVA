@@ -35,6 +35,10 @@ export function creaAnimazione({ suFotogramma, orologio = () => performance.now(
       if (!inVolo) { inVolo = true; richiedi(passo); }
     },
     ferma() { if (!attiva) return; attiva = false; pausa = orologio(); },
+    // Butta via la pausa: il prossimo `avvia` riparte da fase 1, e `fattore()` intanto rende 1.
+    // Serve al cambio di caso — la fase su cui si era fermato un modo non vuol dire niente sul
+    // modo dopo, e riprenderla lo disegnava a metà corsa, col badge «ferma» di prima.
+    azzera() { attiva = false; t0 = 0; pausa = null; },
     inCorso: () => attiva,
     // La fase da disegnare quando non è il ciclo a chiederla. Ferma: quella dell'istante in cui
     // si è fermata — ridisegnare a 1 faceva saltare la forma al massimo a ogni Spazio, e al

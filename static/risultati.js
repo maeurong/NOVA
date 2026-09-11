@@ -350,15 +350,18 @@ export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate 
   // o il numero cambierebbe sessanta volte al secondo su una grandezza che invece è ferma.
   const scalaTesto = `×${conciso(scala)} (${auto ? "auto" : "a mano"})`;
   if (modo) {
-    const d = direzioneDominante(modo.massa_partecipante);
-    const massa = d ? `u${d} ${percento(modo.massa_partecipante?.[d])}` : "massa trascurabile";
+    // La massa partecipante **non** sta qui: la dicono già la voce del menu («modo 2 · 31,85 Hz ·
+    // ux 46 %») e la riga dell'equilibrio, tutte e due sott'occhio nella colonna a destra mentre
+    // si guarda il piano (`07-ux-modellatore.md:103` chiede che stia accanto al numero del modo,
+    // e lì ci sta). Nel badge erano dieci caratteri che a 1280 px, su un modo a forma nulla,
+    // costavano il taglio di tutta la riga a sinistra.
     const f = Number.isFinite(modo.f) && modo.f > 0
-      ? `${conciso(modo.f)} Hz · T ${conciso(modo.T)} s · ${massa}` : "frequenza non fisica";
+      ? `${conciso(modo.f)} Hz · T ${conciso(modo.T)} s` : "frequenza non fisica";
     if (vista !== "deformata") return `${testa}modo ${modo.n} · ${vista} · nessun diagramma per un modo`;
     // R2: nove modi su 42 del MURO 1 hanno la forma nulla sui nodi del modello — il modo vive
     // tutto sui nodi delle suddivisioni, che `forma` non porta. Una figura ferma senza una parola
     // che dica perché si legge come un'animazione rotta, e il modo 6 partecipa il 39,8 % in y.
-    const nulla = ampiezzaModo(modo) === 0 ? " · forma nulla sui nodi del modello" : "";
+    const nulla = ampiezzaModo(modo) === 0 ? " · forma nulla sui nodi" : "";
     // Fermo perché l'utente ha premuto Spazio, o perché il sistema chiede meno movimento: la
     // seconda è una cosa che l'utente non ha fatto, e senza il motivo il badge la fa passare per
     // un'animazione che non parte (R13, D2a).
@@ -369,10 +372,12 @@ export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate 
     // «passo» non c'è: a 1280 px la colonna del piano è larga ~430 px e il badge intero veniva
     // tagliato a sinistra («er · passo…»). Il numero del passo si legge dalla frazione, e il
     // taglio della scala in coda sarebbe stato peggio (`07-ux-modellatore.md:99`).
-    const p = `pushover · ${passo.k + 1}/${passo.n}`;
+    const p = `pushover · ${passo.k + 1}/${passo.quanti}`;
     if (vista !== "deformata") return `${testa}${p} · ${vista} · nessun diagramma per un passo`;
     // Il numero del passo caduto è quello del server (`caduta.n`), non l'indice stretto alla lista.
-    const c = caduta ? ` · caduta al passo ${caduta.n}: ${caduta.motivo}` : "";
+    // Qui solo passo e motivo: spostamento e algoritmo stanno nella riga dell'equilibrio, che ha
+    // la larghezza per dirli — il badge ne ha ~430 px a 1280 (punto 2 della review).
+    const c = caduta ? ` · caduta al passo ${caduta.n}: ${motivoInParole(caduta.motivo)}` : "";
     // Il taglio a una cifra decimale: «70,93 kN» contro «70,9 kN» sono tre caratteri su un badge
     // che non ci sta, e il centesimo di kN su una spinta non lo guarda nessuno.
     return `${testa}${p} · u ${conciso(passo.u)} mm · V ${conciso(Math.round(passo.V * 10) / 10)} kN · ${scalaTesto}${c}`;
@@ -427,7 +432,13 @@ export function testoEquilibrio(risultati, caso) {
     // I passi in lista sono quelli **convergenti**: la caduta è il passo su cui il solutore si è
     // fermato, e sta scritta a parte perché è un fatto, non un numero da leggere nella curva.
     const quanti = `${passi.length} ${passi.length === 1 ? "passo convergente" : "passi convergenti"}`;
-    const caduta = c.caduta ? `al passo ${c.caduta.n} (${c.caduta.motivo})` : "nessuna";
+    // Story 50: la caduta si dichiara per intero — dove, di quanto, e quale algoritmo si è arreso.
+    // È la riga larga della colonna a destra, quella che può permetterselo; il badge nel piano ne
+    // tiene la versione corta. `algoritmo` assente → trattino, mai una stringa inventata.
+    const caduta = c.caduta
+      ? `al passo ${c.caduta.n}, u ${conciso(c.caduta.u)} mm, ultimo algoritmo ${c.caduta.algoritmo ?? "—"}` +
+        ` (${motivoInParole(c.caduta.motivo)})`
+      : "nessuna";
     return `${quanti} · u₀ ${Number.isFinite(u0) ? `${conciso(u0)} mm` : "—"}` +
            ` · taglio massimo ${conciso(c.vMax)} kN al passo ${passi[kMax]?.n ?? kMax + 1} · caduta: ${caduta}`;
   }
@@ -540,7 +551,10 @@ export function casoScelto(stato, caso, passo = null) {
     if (!passi.length) return null;
     const k = Math.min(passi.length - 1, Math.max(0, Number.isInteger(passo) ? passo : passi.length - 1));
     return { tipo: "pushover", k, quanti: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti ?? {} },
-             stati: passi[k].stato_sezioni ?? null, caduta: r.caduta ?? null, u0: r.run?.pushover?.u0 ?? null };
+             // Niente `u0` qui: lo legge `testoEquilibrio` da `run.pushover.u0`, che è dove il
+             // server lo scrive. Portarlo anche di qua era un secondo cammino per lo stesso
+             // numero, e nessuno lo percorreva.
+             stati: passi[k].stato_sezioni ?? null, caduta: r.caduta ?? null };
   }
   if (caso.startsWith("modo:")) {
     const n = Number(caso.slice(5));
@@ -607,9 +621,19 @@ export function curvaPushover(passi, caduta) {
   const uMax = punti.reduce((a, p) => Math.max(a, p.u), 0), vMax = punti.reduce((a, p) => Math.max(a, p.V), 0);
   const c = caduta && Number.isFinite(caduta.passo)
     ? { k: Math.min(lista.length - 1, Math.max(0, caduta.passo - 1)), n: caduta.passo,
-        u: Number(caduta.spostamento) || 0, motivo: String(caduta.motivo ?? "") } : null;
+        u: Number(caduta.spostamento) || 0, motivo: String(caduta.motivo ?? ""),
+        // Story 50 chiede anche **quale algoritmo** si è arreso: il server lo scrive
+        // (`nova/deck.py:982,997`, «l'ultimo tentato») e finora nessuno lo leggeva. Assente → il
+        // trattino, la stessa grafia degli altri numeri che mancano.
+        algoritmo: caduta.algoritmo ? String(caduta.algoritmo) : null } : null;
   return { punti, uMax, vMax, caduta: c };
 }
+
+// I due motivi che il server emette (`nova/deck.py:982,997`) scritti come si leggono. Uno che non
+// è in tabella esce **grezzo**: una versione nuova del solutore ne porterà altri, e una stringa
+// vuota o inventata al posto di un motivo vero è peggio di un identificatore brutto da leggere.
+const MOTIVI = { non_convergenza: "non convergenza", passi_max: "tetto dei passi" };
+export const motivoInParole = (motivo) => MOTIVI[motivo] ?? String(motivo ?? "");
 
 export const testoLegendaStati = () =>
   "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
@@ -618,5 +642,7 @@ export const testoLegendaStati = () =>
 export function righeModo(modo, id) {
   const u = modo?.forma?.[String(id)];
   if (!Array.isArray(u) || u.length < 3) return [];
-  return [[`forma modale (modo ${modo.n})`, `ux ${conciso(u[0])} · uy ${conciso(u[1])} · uz ${conciso(u[2])}`]];
+  // «adimensionale» scritto, non sottinteso: le righe accanto nell'ispettore sono spostamenti in
+  // mm, e tre numeri di ordine uno senza unità si leggono come millimetri di una struttura ferma.
+  return [[`forma modale (modo ${modo.n}, adimensionale)`, `ux ${conciso(u[0])} · uy ${conciso(u[1])} · uz ${conciso(u[2])}`]];
 }

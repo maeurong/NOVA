@@ -214,10 +214,14 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // Lo stato delle sezioni per stazione, sull'asta deformata: due canali di inchiostro, il
       // riempimento per il calcestruzzo e il contorno per l'acciaio (`07-ux-modellatore.md:100`).
       // Niente colore: il rosso resta ad attenzione e selezione (story 63).
+      // La tavola degli id una volta sola, non un `find` per asta dentro il ciclo: su un telaio
+      // con qualche centinaio di aste erano n² confronti a fotogramma. Un `id` che non c'è più nel
+      // modello rende `undefined`, e `stazioniDiAsta` lo regge come oggi (suddivisioni → 1).
+      const perId = attivo.stati ? new Map(m.aste.map((a) => [a.id, a])) : null;
       for (const d of attivo.stati ? deformate : []) {
         const lista = attivo.stati[String(d.id)];
         if (!Array.isArray(lista) || lista.length === 0 || d.punti.length === 0) continue;
-        const xr = stazioniDiAsta(m.aste.find((x) => x.id === d.id), lista.length);
+        const xr = stazioniDiAsta(perId.get(d.id), lista.length);
         for (let k = 0; k < xr.length; k++) {
           const sim = simboloStato(lista[k]);
           if (!sim) continue;   // stazione senza stato: nessun simbolo, mai uno inventato (R9)
@@ -464,17 +468,23 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta a `top: 22`, su una riga sua, e
     // non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a passare
     // sotto il testo senza che nessun test se ne accorga.
-    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(badge.textContent, s, 8), x1: viewport.x1,
-                                       y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
-    // La legenda sta sotto il badge, stessa colonna a destra: `top: 38px`. Da quando va a capo
-    // (`stile.css`) non è più alta una riga, e quante ne prenda lo sa solo il browser — quindi
-    // l'altezza si **misura**; 28 px (due righe) è il ripiego per il DOM finto dei test, che
-    // `offsetHeight` non ce l'ha. La larghezza non supera il `max-width` di là: 8 px per lato.
+    // Da quando il badge va a capo (`stile.css`) non è più alto una riga sola, e quante ne prenda
+    // lo sa solo il browser: l'altezza si **misura**. 14 px (una riga) è il ripiego per il DOM
+    // finto dei test, che `offsetHeight` non ce l'ha. La larghezza non supera il `max-width` di
+    // là: 8 px per lato. `larga` sta anche nel conto della legenda, che gli va sotto.
+    const dentro = (testo) => Math.min(larghezzaMono(testo, s, 8), (larghezzaPx - 16) * s);
+    const altoBadge = badge.hidden ? 0 : (badge.offsetHeight || 14);
+    if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - dentro(badge.textContent), x1: viewport.x1,
+                                       y0: viewport.y0 + 22 * s, y1: viewport.y0 + (22 + altoBadge) * s });
+    // La legenda sta **sotto il badge**, e il badge è alto quanto è alto: il `top: 38px` di
+    // `stile.css` vale per un badge a una riga sola, e con due le due strisce si sovrapponevano.
+    // Lo scrive qui chi l'altezza la misura, non un numero congelato di là.
+    const topLegenda = 22 + altoBadge + 2;
     if (!legenda.hidden) {
+      legenda.style.top = `${topLegenda}px`;
       const alta = (legenda.offsetHeight || 28) * s;
-      const larga = Math.min(larghezzaMono(legenda.textContent, s, 8), (larghezzaPx - 16) * s);
-      ostacoli.push({ x0: viewport.x1 - larga, x1: viewport.x1,
-                      y0: viewport.y0 + 38 * s, y1: viewport.y0 + 38 * s + alta });
+      ostacoli.push({ x0: viewport.x1 - dentro(legenda.textContent), x1: viewport.x1,
+                      y0: viewport.y0 + topLegenda * s, y1: viewport.y0 + (topLegenda * s) + alta });
     }
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
                                         x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });

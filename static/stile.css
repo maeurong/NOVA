@@ -84,13 +84,15 @@ body {
 /* Il badge dei risultati: la scala della deformata sempre stampata (story 36), la legenda di
    V e N una volta sola. In px costanti come il titolo dei carichi, in alto a destra. Stantia =
    rosso e la parola: il rosso da solo non basta (story 63). */
-/* Riga sua, sotto il titolo dei carichi, e **nessun** `max-width`: il troncamento a destra
-   mangiava la coda, che è proprio la scala — «×120 (auto)». La scala del disegno non può
-   mancare (`docs/ricerca/07-ux-modellatore.md:99`), quindi il badge si tiene tutta la larghezza
-   che gli serve e scende invece di accorciarsi. */
+/* Riga sua, sotto il titolo dei carichi, e **nessun troncamento**: la coda è proprio la scala,
+   «×120 (auto)», e la scala del disegno non può mancare (`07-ux-modellatore.md:99`). Quindi il
+   badge **scende**, non si accorcia. Con `nowrap` e senza `max-width` non faceva né l'uno né
+   l'altro: usciva. A 1280 px la colonna del piano è ~430 px e il badge di un modo a forma nulla
+   ne vuole ~460, quindi spariva a sinistra la testa della riga — «o 6 · 181 Hz…», cioè il numero
+   del modo. La riga in più la misura `piano.js` (`offsetHeight`), e da lì scende la legenda. */
 #piano .risultati-badge { position: absolute; top: 22px; right: 8px; margin: 0; text-align: right;
                           font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
-                          white-space: nowrap; }
+                          white-space: normal; max-width: calc(100% - 16px); }
 #piano .risultati-badge.stantia { color: var(--rosso); }
 /* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
    **Va a capo**: a 1280 px la colonna del piano è larga ~430 px e la riga intera ne vuole il

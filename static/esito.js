@@ -139,7 +139,7 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     const stazioni = risultati.perCaso?.sollecitazioni?.[String(asta.id)];
     // La chiave la decide la giacitura dell'asta, non una costante: su un pilastro è `Mz` (R1).
     const assi = assiDi(nodo(modello, asta.nodo_i) ?? {}, nodo(modello, asta.nodo_j) ?? {});
-    p.textContent = `${risultati.stantia ? "stantia · " : ""}${vista} dell'asta ${asta.id} · ${risultati.caso} · ${UNITA_STRISCIA[vista]}`;
+    p.textContent = `${prefisso}${vista} dell'asta ${asta.id} · ${risultati.caso} · ${UNITA_STRISCIA[vista]}`;
     // Un'asta i cui nodi non ci sono più, o lunga zero, non ha assi: senza assi non c'è chiave, e
     // niente striscia. Niente `?? "My"`: su un pilastro sarebbe la chiave sbagliata, non un ripiego
     // — si leggerebbe una riga piatta al posto della flessione vera.
@@ -223,8 +223,9 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
       const { k, u, V } = risultati.passo;
       // I due numeri accanto al punto, dalla parte dove c'è spazio: a metà corsa in poi il
       // testo a destra uscirebbe dalla striscia, e il troncamento mangerebbe proprio il valore.
-      // Il conteggio è `punti.length`: `passo.n` è il **numero** del passo del server (il Task 1
-      // chiama `quanti` il conteggio), e leggendolo lì i testi restavano sempre a destra.
+      // Il conteggio è `punti.length`, lo stesso che porta `passo.quanti`. Prima quel campo si
+      // chiamava `n`, che nella caduta è il **numero** del passo del server: letto come conteggio
+      // teneva i due testi sempre a destra, e il commento raccontava la confusione al contrario.
       const destra = k < punti.length / 2;
       const cx = x(u) + (destra ? 7 : -7), ancora = destra ? "start" : "end";
       svg.append(testo({ x: cx, y: y(V) - 4, "text-anchor": ancora }, `u ${conciso(u)} mm`),
@@ -238,7 +239,10 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
                  // `caduta.n` è il numero del passo che manda il server, e `curvaPushover` lo
                  // mette sempre: `k` è l'indice nella lista, che con una caduta fuori scala non
                  // è lo stesso numero.
-                 testo({ x: cx, y: M - 4, "text-anchor": "middle", fill: ROSSO }, `caduta al passo ${caduta.n}`));
+                 // Story 50: dove si è fermata **e di quanto**. L'algoritmo no — qui è una riga
+                 // sopra la croce, e ci sta un numero, non una frase; sta nell'equilibrio.
+                 testo({ x: cx, y: M - 4, "text-anchor": "middle", fill: ROSSO },
+                       `caduta al passo ${caduta.n} · u ${conciso(caduta.u)} mm`));
     }
     // R11: 120 cerchi da 2,5 px non si prendono col mouse, e 120 listener sono 120 chiusure da
     // ricostruire a ogni ridisegno. Un solo bersaglio largo quanto la striscia, e il passo si

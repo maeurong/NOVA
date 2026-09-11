@@ -130,7 +130,10 @@ function elementoSvgFinto(nome) {
 // documento, non un `<text>` nel `viewBox` (fix di fine ramo, A1).
 globalThis.document = {
   createElementNS: (_ns, nome) => elementoSvgFinto(nome),
-  createElement: (nome) => ({ ...elementoSvgFinto(nome), className: "", hidden: false }),
+  // `style` c'è perché un `<p>` vero ce l'ha: `piano.js` scrive `legenda.style.top` per farla
+  // scendere sotto un badge andato a capo. `offsetHeight` invece **non** c'è, ed è giusto così —
+  // qui non c'è layout, e il codice ha i suoi ripieghi (14 px per il badge, 28 per la legenda).
+  createElement: (nome) => ({ ...elementoSvgFinto(nome), className: "", hidden: false, style: {} }),
 };
 
 const contenitoreFinto = () => ({

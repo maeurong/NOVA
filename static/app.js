@@ -109,10 +109,11 @@ function risultatiInVista(m, fattore = 1) {
   const curva = scelto.tipo === "pushover"
     ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
   // Un oggetto solo per il badge e per la striscia: due copie dello stesso passo divergerebbero
-  // al primo campo aggiunto. `n` qui è il **conteggio** dei passi (`casoScelto` lo chiama
-  // `quanti`, perché nel ramo del modo `n` è il numero del modo).
+  // al primo campo aggiunto. Il conteggio si chiama `quanti` fin qui, come in `casoScelto`:
+  // chiamarlo `n` lo faceva collidere con `caduta.n`, che è il **numero** del passo del server —
+  // due campi omonimi nello stesso badge, e il commento della striscia li raccontava al contrario.
   const passo = scelto.tipo === "pushover"
-    ? { k: scelto.k, n: scelto.quanti, u: Number(scelto.passo?.spostamento) || 0,
+    ? { k: scelto.k, quanti: scelto.quanti, u: Number(scelto.passo?.spostamento) || 0,
         V: (Number(scelto.passo?.taglio_base) || 0) / 1e3 } : null;
   return { vista: risultati.vista, caso: risultati.caso, perCaso: scelto.perCaso, scala, auto,
            stantia: stantia(risultati.lavoro, m), fattore,
@@ -337,7 +338,14 @@ const esito = creaEsito(document, {
   // Il passo torna a `null` (l'ultimo) a ogni cambio di caso: il passo 37 della pushover non
   // vuol dire niente sul modo 2, e riportarlo indietro tornando alla pushover sarebbe una
   // memoria che nessuno ha chiesto. L'animazione invece resta: è una preferenza di chi guarda.
-  suCambio: ({ caso, vista, scalaMano }) => { if (risultati) { risultati = { ...risultati, caso, vista, scalaMano, passo: null }; ridisegna(); } },
+  // Il caso che cambia azzera anche la **fase**: quella su cui si era fermato il modo 2 non vuol
+  // dire niente sul modo 6, e riprenderla lo disegnava a metà corsa col badge «ferma» di prima.
+  suCambio: ({ caso, vista, scalaMano }) => {
+    if (!risultati) return;
+    if (caso !== risultati.caso) animazione.azzera();
+    risultati = { ...risultati, caso, vista, scalaMano, passo: null };
+    ridisegna();
+  },
   suAvviso: dì,   // una scala illeggibile torna ad auto, e la riga del messaggio lo dice
 });
 // Il clic sulla curva della pushover: la striscia dice **quale** passo, lo stato lo tiene qui.
@@ -712,6 +720,14 @@ function perCasoDelloStato() {
   return { perCaso: scelto.perCaso, caso: risultati.caso, etichetta, modo: scelto.modo ?? null };
 }
 
+/** La fase con cui disegnare **adesso**: quella dell'animazione se il caso è un modo e il sistema
+ *  non chiede meno movimento, altrimenti 1 — la forma al massimo (D2a). La leggono `ridisegna` e
+ *  il listener del `resize`: scritta in un posto solo perché il resize la sbagliava, ridisegnando
+ *  a 1 un modo fermato a metà corsa e facendogli saltare la forma al massimo, dove restava.
+ *  `motoRidotto` è quello letto all'ultimo gesto, mai rinfrescato qui (R13). */
+const fattoreCorrente = () =>
+  (risultati && tipoDelCaso(risultati.caso) === "modo" && !motoRidotto ? animazione.fattore() : 1);
+
 /** La deformata per il 3D: la **stessa** del piano, fattore dell'animazione compreso. Scritta una
  *  volta perché `ridisegna` e il fotogramma la chiedano identica — due espressioni in due punti
  *  divergono al primo argomento aggiunto, e il 3D resterebbe fermo mentre il piano respira. */
@@ -769,11 +785,10 @@ function ridisegna() {
   // L'animazione si decide **prima** del disegno, perché la fase da disegnare è la sua: ferma su
   // un modo la forma resta dov'era, non salta al massimo. Col moto ridotto invece il massimo è
   // proprio quel che D2a chiede, e con un caso che non è un modo il fattore non serve a nessuno.
-  const tipo = risultati ? tipoDelCaso(risultati.caso) : null;
   const animare = risultati?.animazione === "va" && risultati.vista === "deformata"
-    && tipo === "modo" && !motoRidotto;
+    && tipoDelCaso(risultati.caso) === "modo" && !motoRidotto;
   if (animare) animazione.avvia(); else animazione.ferma();
-  const inVista = disegnaPiano(m, tipo === "modo" && !motoRidotto ? animazione.fattore() : 1);
+  const inVista = disegnaPiano(m, fattoreCorrente());
   // finché three.js non è arrivato, il piano regge da solo
   spazio?.disegna(m, { selezione, deformata: deformataInVista(m, inVista) });
   albero.disegna(m, { selezione, rilievo });
@@ -807,7 +822,7 @@ let ridisegnoInCoda = false;
 window.addEventListener("resize", () => {
   if (ridisegnoInCoda) return;
   ridisegnoInCoda = true;
-  requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia)); });
+  requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia), fattoreCorrente()); });
 });
 
 function disegnaBarra() {
@@ -964,7 +979,7 @@ function dispatchVoce(voce, valore = null) {
   // ancora ma non muove niente — a spegnerla è `ridisegna`, e il badge dice perché.
   if (voce.codice === "pausa") {
     if (tipoDelCaso(risultati?.caso) !== "modo") {
-      dì("Spazio ferma l'animazione di un modo: scegline uno dal menu");
+      dì("Spazio ferma l'animazione del modo: scegline uno dal menu");
       return;
     }
     risultati = { ...risultati, animazione: risultati.animazione === "va" ? "ferma" : "va" };

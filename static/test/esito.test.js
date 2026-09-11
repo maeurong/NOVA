@@ -404,7 +404,7 @@ test("creaSrotolato con la pushover: la curva in pixel, un cerchio per passo, il
   assert.deepEqual(cerchi.map((c) => c.getAttribute("aria-label")), ["passo 1", "passo 2"]);
   const testi = tutti(svg, "text").map((t) => t.textContent);
   assert.ok(testi.includes("u 1 mm") && testi.includes("V 2,3 kN"));
-  assert.ok(testi.some((t) => t === "caduta al passo 2"));
+  assert.ok(testi.some((t) => t === "caduta al passo 2 · u 1 mm"));
   // nessuna coordinata fuori dalla larghezza misurata (la regola della 13, R7)
   for (const c of cerchi) assert.ok(Number(c.getAttribute("cx")) <= 400);
   // `hidden` era già `false` prima del disegno: asserirlo qui non provava niente. Quel che

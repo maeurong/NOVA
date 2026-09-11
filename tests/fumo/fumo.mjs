@@ -39,6 +39,17 @@ const scegliCaso = (valore) => ev(`(() => { const s = document.getElementById("r
 
 const BADGE = `document.querySelector("#piano .risultati-badge").textContent`;
 
+// Se un elemento in pixel sta dentro il suo riquadro, misurato col rettangolo vero del browser.
+// A 1280 px la colonna del piano è ~430 px: il badge della pushover e quello di un modo a forma
+// nulla ne uscivano a sinistra, tagliati proprio dove il testo comincia («er · passo…»), e il
+// numero del taglio massimo della curva usciva «2 kN» da «72,12 kN» — un numero diverso, e
+// plausibile. Mezzo pixel di tolleranza: i bordi che combaciano non sono un taglio.
+const staDentro = (sel, contenitore) => ev(`(() => {
+  const p = document.querySelector(${JSON.stringify(contenitore)}).getBoundingClientRect();
+  const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();
+  return r.left >= p.left - 0.5 && r.right <= p.right + 0.5;
+})()`);
+
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
 // domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
@@ -201,12 +212,23 @@ const COPIONI = {
     const ferma = await fermo();
     const badgeFerma = await ev(BADGE);
     const senzaAnimazione = riassunto(await ev(INTERVALLI));
+    const badgeDentro = await staDentro("#piano .risultati-badge", "#piano");
+
+    // Il `resize` ridisegna con la **stessa** fase su cui il modo si è fermato, non con 1: con 1
+    // la forma saltava al massimo e ci restava. Due giri di viewport che tornano alla misura di
+    // partenza — la geometria finale è identica, quindi i punti devono esserlo.
+    const primaDelResize = await punti();
+    await viewport(1281, 800, 1); await pausa(200);
+    await viewport(1280, 800, 1); await pausa(250);
+    const resizeTieneLaFase = (await punti()) === primaDelResize;
 
     // R2: nove modi su 42 del MURO 1 hanno la forma nulla sui nodi del modello. Si mostrano lo
-    // stesso, il badge dice perché, e nel disegno non compare un `NaN`.
+    // stesso, il badge dice perché, e nel disegno non compare un `NaN`. È anche il badge più
+    // lungo che il piano possa ricevere: se ci sta questo, ci stanno tutti.
     await scegliCaso("modo:6");
     await pausa(300);
     const badgeNulla = await ev(BADGE);
+    const badgeNullaDentro = await staDentro("#piano .risultati-badge", "#piano");
     const nan = (await punti()).includes("NaN");
 
     // Spazio riprende, poi il caso torna statico: l'animazione si ferma da sé, e nessun
@@ -233,7 +255,8 @@ const COPIONI = {
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { voci, senzaModo, siMuove: a !== b, frecciaLibera, ferma, badge, badgeFerma,
              badgeNulla, nan, riparte, fermaDopoCambio, badgeRidotto, fermaRidotto,
-             fermaRidottoDopoSpazio, fotogramma: { conAnimazione, senzaAnimazione }, messaggio };
+             fermaRidottoDopoSpazio, badgeDentro, badgeNullaDentro, resizeTieneLaFase,
+             fotogramma: { conAnimazione, senzaAnimazione }, messaggio };
   },
 
   // Pushover sul MURO 1: il caso «pushover», la curva nella striscia, `←`/`→` sui passi, il clic
@@ -256,20 +279,20 @@ const COPIONI = {
     const stati = await ev(`document.querySelectorAll("#piano svg circle.stato").length`);
     const legenda = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
     const sovrapposte = await ev(SOVRAPPOSTE);
-    // A e B: a 1280 px la colonna del piano è ~430 px, e badge e legenda ne uscivano a sinistra —
-    // tagliati proprio dove il testo comincia («er · passo…»). Stessa storia per il numero del
-    // taglio massimo nella curva, che stava nei 28 px a sinistra dell'asse e usciva «2 kN» da
-    // «72,12 kN»: un numero diverso, e plausibile. L'oracolo è il rettangolo vero del browser.
-    const dentro = await ev(`(() => {
-      const sta = (sel, contenitore) => { const p = document.querySelector(contenitore).getBoundingClientRect();
-        const r = document.querySelector(sel).getBoundingClientRect();
-        return r.left >= p.left - 0.5 && r.right <= p.right + 0.5; };
-      return { badge: sta("#piano .risultati-badge", "#piano"),
-               legenda: sta("#piano .risultati-legenda", "#piano"),
-               taglio: sta("#srotolato svg text:nth-of-type(3)", "#srotolato") };
-    })()`);
+    const dentro = { badge: await staDentro("#piano .risultati-badge", "#piano"),
+                     legenda: await staDentro("#piano .risultati-legenda", "#piano"),
+                     taglio: await staDentro("#srotolato svg text:nth-of-type(3)", "#srotolato") };
+    // La guardia `!modo`: con un ghost aperto la freccia è del gesto, non dello scrubber. Il
+    // ghost più economico da aprire è l'asta (`G` sceglie un nodo, `A` apre il modo), e
+    // `ruotaGhost` l'asta non la gira — quindi la freccia non deve fare **niente**, e il passo
+    // resta dov'è. Ultimo blocco del copione: `Esc` lo chiude, ma niente qui sotto ci conta.
+    await tasto("g"); await tasto("a"); await tasto("ArrowRight");
+    await pausa(200);
+    const badgeConGhost = await ev(BADGE);
+    await tasto("Escape");
+    await pausa(150);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { badge1, badge2, badge3, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
+    return { badge1, badge2, badge3, badgeConGhost, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
   },
 };
 

@@ -1683,8 +1683,8 @@ test("pannello: con un modo l'ispettore dice la forma, e non la spaccia per mill
   const termini = r.map(([k]) => k);
   assert.ok(!termini.some((k) => k.startsWith("spostamenti")), `spostamenti in mm per un modo: ${termini}`);
   assert.ok(!termini.some((k) => k.startsWith("rotazioni")), `rotazioni inventate per un modo: ${termini}`);
-  assert.ok(termini.includes("forma modale (modo 2)"));
-  const forma = r.find(([k]) => k === "forma modale (modo 2)")[1];
+  assert.ok(termini.includes("forma modale (modo 2, adimensionale)"));
+  const forma = r.find(([k]) => k === "forma modale (modo 2, adimensionale)")[1];
   assert.equal(forma, "ux 1 · uy 0 · uz -0,03");
   assert.ok(!forma.includes("mm"), "la forma è adimensionale");
 });

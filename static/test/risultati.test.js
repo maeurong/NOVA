@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMassima, scalaAuto, puntiDeformata,
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato,
          vociDelCaso, casoScelto, formaComeSpostamenti, stazioniDiAsta, scalaModo, ampiezzaModo,
          percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, righeModo,
-         tipoDelCaso, passoDiRiferimento } from "../risultati.js";
+         tipoDelCaso, passoDiRiferimento, motivoInParole } from "../risultati.js";
 
 // La trave appoggiata di `tests/fixture/trave_appoggiata.nova.json`: L = 6000, q = −10 N/mm, Z1.
 const trave = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6000, y: 0, z: 0 }],
@@ -534,26 +535,26 @@ test("curvaPushover: u in mm e V in kN, massimi, caduta", () => {
   const c = curvaPushover(PASSI, { passo: 2, spostamento: 1.0, motivo: "non converge" });
   assert.deepEqual(c.punti, [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }]);
   assert.equal(c.uMax, 1); assert.equal(c.vMax, 2.3);
-  assert.deepEqual(c.caduta, { k: 1, n: 2, u: 1, motivo: "non converge" });
+  assert.deepEqual(c.caduta, { k: 1, n: 2, u: 1, motivo: "non converge", algoritmo: null });
   assert.deepEqual(curvaPushover([], null), { punti: [], uMax: 0, vMax: 0, caduta: null });
   assert.deepEqual(curvaPushover(undefined, null).punti, []);
 });
 test("testoBadge per modo e pushover", () => {
-  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2 }), "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto)");
-  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, fermo: true }), "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto) · ferma");
+  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2 }), "modo 2 · 31,85 Hz · T 0,0314 s · ×50 (auto)");
+  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, fermo: true }), "modo 2 · 31,85 Hz · T 0,0314 s · ×50 (auto) · ferma");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, fermo: true, motivoFermo: "preferenza di sistema" }),
-               "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto) · ferma (preferenza di sistema)");
+               "modo 2 · 31,85 Hz · T 0,0314 s · ×50 (auto) · ferma (preferenza di sistema)");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, motivoFermo: "preferenza di sistema" }),
-               "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto)", "senza `fermo` il motivo non si stampa");
+               "modo 2 · 31,85 Hz · T 0,0314 s · ×50 (auto)", "senza `fermo` il motivo non si stampa");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:3", scala: 1, auto: true, modo: M3 }), "modo 3 · frequenza non fisica · ×1 (auto)");
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto)");
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: { k: 1, n: 2, motivo: "non converge" } }),
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, quanti: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto)");
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, quanti: 2, u: 1, V: 2.3 }, caduta: { k: 1, n: 2, motivo: "non converge" } }),
                "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 2: non converge");
-  assert.equal(testoBadge({ vista: "M", caso: "pushover", passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · M · nessun diagramma per un passo");
+  assert.equal(testoBadge({ vista: "M", caso: "pushover", passo: { k: 1, quanti: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · M · nessun diagramma per un passo");
   // A: a 1280 px la colonna del piano è ~430 px e il badge intero veniva tagliato a sinistra.
   // «passo» via, e il taglio a una cifra: «70,93 kN» sono tre caratteri di troppo per un
   // centesimo di kN che su una spinta non guarda nessuno.
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 2, auto: true, passo: { k: 119, n: 120, u: 60, V: 70.9284 } }),
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 2, auto: true, passo: { k: 119, quanti: 120, u: 60, V: 70.9284 } }),
                "pushover · 120/120 · u 60 mm · V 70,9 kN · ×2 (auto)");
 });
 
@@ -583,7 +584,7 @@ test("passoDiRiferimento: il passo di spostamento massimo, non l'ultimo", () => 
   assert.equal(passoDiRiferimento([{ spostamento: 0 }, { spostamento: 0 }]), 0);
 });
 test("righeModo e testoEquilibrio per modo e pushover", () => {
-  assert.deepEqual(righeModo(M2, 3), [["forma modale (modo 2)", "ux 1 · uy 0 · uz -0,03"]]);
+  assert.deepEqual(righeModo(M2, 3), [["forma modale (modo 2, adimensionale)", "ux 1 · uy 0 · uz -0,03"]]);
   assert.deepEqual(righeModo(M2, 9), []);
   assert.equal(testoEquilibrio(R.lavoro.fin.risultati, "modo:2"), "massa partecipante x 92 % · y 0 % · z 1 % · cumulata x 95 % · y 78 % · z 100 %");
   assert.equal(testoEquilibrio(R.lavoro.fin.risultati, "pushover"), "2 passi convergenti · u₀ 0,0002 mm · taglio massimo 2,3 kN al passo 2 · caduta: nessuna");
@@ -607,7 +608,7 @@ test("R2: la forma identicamente nulla rende 1, e `ampiezzaModo` la distingue", 
   assert.equal(ampiezzaModo(null), 0);
   assert.equal(scalaModo(trave, { forma: {} }), 1);
   assert.ok(testoBadge({ vista: "deformata", caso: "modo:6", scala: 1, auto: true, modo: nulla })
-              .includes("forma nulla sui nodi del modello"));
+              .includes("forma nulla sui nodi"));
 });
 test("R3: `percento` intero, `direzioneDominante` null sotto l'1 %", () => {
   assert.equal(percento(0.456215), "46 %");
@@ -627,7 +628,7 @@ test("R3: un modo senza massa dice «massa trascurabile», non «ux 0 %»", () =
   const stato = { lavoro: { fin: { risultati: { per_caso: {}, modi: [senzaMassa] } } } };
   assert.equal(vociDelCaso(stato)[0].testo, "modo 3 · 35,85 Hz · massa trascurabile");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:3", scala: 50, auto: true, modo: senzaMassa }),
-               "modo 3 · 35,85 Hz · T 0,0279 s · massa trascurabile · ×50 (auto)");
+               "modo 3 · 35,85 Hz · T 0,0279 s · ×50 (auto)");
 });
 test("formaComeSpostamenti: forma mancante o vettori corti", () => {
   assert.deepEqual(formaComeSpostamenti(null), { spostamenti: {} });
@@ -641,7 +642,7 @@ test("casoScelto: senza passi, e il passo non intero è l'ultimo", () => {
   assert.equal(casoScelto(R, "pushover", 0.5).k, 1, "non intero → l'ultimo");
   assert.equal(casoScelto(R, "pushover", null).k, 1);
   assert.equal(casoScelto(R, null), null);
-  assert.equal(casoScelto(R, "pushover").u0, 0.0002);
+  assert.equal(casoScelto(R, "pushover").u0, undefined, "`u0` lo legge `testoEquilibrio` da `run`, non di qui");
   assert.deepEqual(casoScelto(R, "pushover").stati, PASSI[1].stato_sezioni);
 });
 test("stazioniDiAsta: suddivisioni guaste valgono 1, `quante` a zero rende la lista vuota", () => {
@@ -661,8 +662,8 @@ test("R9: una stazione con un canale nullo non ha simbolo", () => {
   assert.equal(simboloStato(undefined), null);
 });
 test("curvaPushover: una caduta fuori scala si stringe, e i passi guasti valgono zero", () => {
-  assert.deepEqual(curvaPushover(PASSI, { passo: 99, spostamento: 5, motivo: "diverge" }).caduta, { k: 1, n: 99, u: 5, motivo: "diverge" });
-  assert.deepEqual(curvaPushover(PASSI, { passo: 0, spostamento: 0, motivo: "" }).caduta, { k: 0, n: 0, u: 0, motivo: "" });
+  assert.deepEqual(curvaPushover(PASSI, { passo: 99, spostamento: 5, motivo: "diverge" }).caduta, { k: 1, n: 99, u: 5, motivo: "diverge", algoritmo: null });
+  assert.deepEqual(curvaPushover(PASSI, { passo: 0, spostamento: 0, motivo: "" }).caduta, { k: 0, n: 0, u: 0, motivo: "", algoritmo: null });
   assert.equal(curvaPushover(PASSI, { passo: null }).caduta, null);
   assert.deepEqual(curvaPushover([{ n: 1 }], null).punti, [{ k: 0, u: 0, V: 0 }]);
 });
@@ -671,10 +672,10 @@ test("F1: il passo caduto per non convergenza non sta in `passi[]` — `k` per i
   const c = curvaPushover(PASSI, { passo: 3, spostamento: 1.4, motivo: "non_convergenza" });
   assert.equal(c.caduta.k, 1, "il disegno si ferma sull'ultimo passo che esiste");
   assert.equal(c.caduta.n, 3, "il testo dice il numero del server, non l'indice stretto");
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: c.caduta }),
-               "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 3: non_convergenza");
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, quanti: 2, u: 1, V: 2.3 }, caduta: c.caduta }),
+               "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 3: non convergenza");
   assert.ok(testoEquilibrio({ passi: PASSI, caduta: { passo: 3, spostamento: 1.4, motivo: "non_convergenza" }, run: { pushover: { u0: 0.0002 } } }, "pushover")
-              .endsWith("caduta: al passo 3 (non_convergenza)"));
+              .endsWith("caduta: al passo 3, u 1,4 mm, ultimo algoritmo — (non convergenza)"));
   // `passi_max`: il passo c'è (`caduta["passo"] == len(passi)`), e i due numeri coincidono.
   const m = curvaPushover(PASSI, { passo: 2, spostamento: 1, motivo: "passi_max" });
   assert.equal(m.caduta.k, 1); assert.equal(m.caduta.n, 2);
@@ -682,7 +683,7 @@ test("F1: il passo caduto per non convergenza non sta in `passi[]` — `k` per i
 test("testoEquilibrio: la pushover con una caduta, e senza passi", () => {
   const conCaduta = { passi: PASSI, caduta: { passo: 2, spostamento: 1, motivo: "non converge" }, run: { pushover: { u0: 0.0002 } } };
   assert.equal(testoEquilibrio(conCaduta, "pushover"),
-               "2 passi convergenti · u₀ 0,0002 mm · taglio massimo 2,3 kN al passo 2 · caduta: al passo 2 (non converge)");
+               "2 passi convergenti · u₀ 0,0002 mm · taglio massimo 2,3 kN al passo 2 · caduta: al passo 2, u 1 mm, ultimo algoritmo — (non converge)");
   assert.equal(testoEquilibrio({ passi: [] }, "pushover"), "—");
   assert.equal(testoEquilibrio(null, "pushover"), "—");
   assert.ok(testoEquilibrio({ passi: PASSI }, "pushover").includes("u₀ —"), "senza `run.pushover.u0` non si inventa uno zero");
@@ -695,4 +696,47 @@ test("i casi statici di `testoBadge` non cambiano", () => {
   assert.equal(testoBadge({ vista: "deformata", caso: "Z1", scala: 10, auto: true }), "deformata · Z1 · ×10 (auto)");
   assert.equal(testoBadge({ vista: "M", caso: "Z1", ruotate: 1 }), "M · Z1 · kN·m · lato teso · 1 asta con sezione ruotata non disegnata");
   assert.equal(testoBadge({ vista: null, caso: "Z1" }), "");
+});
+
+test("i motivi della caduta si leggono in italiano, e uno sconosciuto esce grezzo", () => {
+  // I due che il server emette (`nova/deck.py:982,997`).
+  assert.equal(motivoInParole("non_convergenza"), "non convergenza");
+  assert.equal(motivoInParole("passi_max"), "tetto dei passi");
+  // Una versione nuova del solutore ne porterà altri: meglio un identificatore brutto che una
+  // riga vuota dove c'era un fatto, o una parola inventata al posto di quella vera.
+  assert.equal(motivoInParole("boh"), "boh");
+  assert.equal(motivoInParole(undefined), "");
+});
+
+test("story 50: la caduta dichiara passo, spostamento e ultimo algoritmo", () => {
+  const caduta = { passo: 110, spostamento: 55.2, algoritmo: "KrylovNewton", motivo: "non_convergenza" };
+  const c = curvaPushover(PASSI, caduta);
+  assert.equal(c.caduta.n, 110, "il numero del server, non l'indice stretto alla lista");
+  assert.equal(c.caduta.u, 55.2);
+  assert.equal(c.caduta.algoritmo, "KrylovNewton");
+  assert.equal(testoEquilibrio({ passi: PASSI, caduta, run: { pushover: { u0: 0.0002 } } }, "pushover")
+                 .split(" · caduta: ")[1],
+               "al passo 110, u 55,2 mm, ultimo algoritmo KrylovNewton (non convergenza)");
+  // Il badge del piano ne tiene la versione corta: lì di larghezza ce n'è ~430 px.
+  assert.ok(testoBadge({ vista: "deformata", caso: "pushover", scala: 2, auto: true,
+                         passo: { k: 1, quanti: 2, u: 1, V: 2.3 }, caduta: c.caduta })
+              .endsWith(" · caduta al passo 110: non convergenza"));
+  // `algoritmo` che il server non manda: il trattino, la stessa grafia degli altri numeri assenti.
+  const senzaAlgoritmo = { passo: 2, spostamento: 1, motivo: "passi_max" };
+  assert.equal(curvaPushover(PASSI, senzaAlgoritmo).caduta.algoritmo, null);
+  assert.ok(testoEquilibrio({ passi: PASSI, caduta: senzaAlgoritmo }, "pushover")
+              .includes("ultimo algoritmo — (tetto dei passi)"));
+});
+
+test("XI_LOBATTO è la copia di `nova/deck.py`, e il test la confronta col file vero", () => {
+  // La tavola è duplicata in due linguaggi per necessità (il browser non legge Python): quel che
+  // si può fare è accorgersene quando divergono, invece di scoprirlo da simboli posati storti.
+  const deck = readFileSync(new URL("../../nova/deck.py", import.meta.url), "utf8");
+  const riga = deck.match(/^XI_LOBATTO = \(([^)]*)\)/m);
+  assert.ok(riga, "`XI_LOBATTO` non si trova più in `nova/deck.py`: il confronto è cieco");
+  const dalFile = riga[1].split(",").map((v) => Number(v.trim()));
+  assert.deepEqual(dalFile, [0, 0.1726731646, 0.5, 0.8273268354, 1]);
+  // E che la copia JS sia quella: `stazioniDiAsta` su un'asta indivisa rende le cinque ascisse.
+  assert.deepEqual(stazioniDiAsta({ suddivisioni: 1 }), dalFile);
+  assert.equal(Number(deck.match(/^STAZIONI = (\d+)/m)[1]), dalFile.length);
 });
