@@ -1006,3 +1006,132 @@ test("piano con vista M: il picco alla base di un pilastro d'angolo trova posto"
   const testi = tutti(strato(pianoDelPiede()), "text").map((t) => t.textContent);
   assert.ok(testi.includes("-0,693 kN·m"), `il picco del piede è posato: ${testi}`);
 });
+
+// --- il fattore dell'animazione, lo stato delle sezioni, la legenda (giornata 14a, Task 2) ------
+
+// La legenda degli stati è il quarto figlio del contenitore, come il badge è il terzo
+// (`piano.js`: `replaceChildren(svg, titolo, badge, legenda)`).
+const legendaDi = (contenitore) => contenitore._figli[3];
+const statiDi = (svg) => tutti(svg, "circle").filter((c) => c.getAttribute("class") === "stato");
+const nuovoPiano = () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
+  return { contenitore, piano, svg: () => contenitore._figli[0] };
+};
+const ultimoPunto = (svg) =>
+  tutti(strato(svg), "polyline")[0].getAttribute("points").split(" ").at(-1).split(",").map(Number);
+
+// Una forma modale: nessuna rotazione, il nodo 2 alzato di 3 mm in z (R4: fra i nodi è una retta).
+const FORMA_2 = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -3, 0, 0, 0] } };
+const MODO_2 = { n: 2, f: 31.85, T: 0.0314, massa_partecipante: { x: 0.456215, y: 0, z: 0 } };
+
+test("piano: il fattore dell'animazione moltiplica la scala del disegno, non il numero nel badge", () => {
+  const { contenitore, piano, svg } = nuovoPiano();
+  const base = { vista: "deformata", caso: "modo:2", perCaso: FORMA_2, scala: 100, auto: true,
+                 stantia: false, tipo: "modo", badge: { modo: MODO_2 } };
+  piano.disegna(traveR, { risultati: { ...base, fattore: 1 } });
+  const pieno = ultimoPunto(svg());
+  piano.disegna(traveR, { risultati: { ...base, fattore: 0.5 } });
+  const mezzo = ultimoPunto(svg());
+  piano.disegna(traveR, { risultati: { ...base, fattore: 0 } });
+  const fermo = ultimoPunto(svg());
+  // Lo scostamento dall'indeformata (fattore 0) è esattamente la metà: niente `schermoDi` da
+  // replicare, si confronta il disegno con sé stesso a tre fattori.
+  assert.ok(Math.abs((mezzo[1] - fermo[1]) * 2 - (pieno[1] - fermo[1])) < 1e-9);
+  assert.ok(Math.abs(pieno[1] - fermo[1]) > 1, "a fattore 1 la deformata si vede");
+  // il badge dice la scala **dichiarata**, che è l'ampiezza massima: il fattore non ci entra
+  assert.ok(badgeDi(contenitore).textContent.startsWith("modo 2 · 31,85 Hz"));
+  assert.ok(badgeDi(contenitore).textContent.includes("×100 (auto)"));
+});
+
+test("piano: `fattore` assente vale 1, e a fattore 0 la deformata cade sull'ombra senza NaN", () => {
+  const { piano, svg } = nuovoPiano();
+  const base = { vista: "deformata", caso: "modo:2", perCaso: FORMA_2, scala: 100, auto: true,
+                 stantia: false, tipo: "modo", badge: { modo: MODO_2 } };
+  piano.disegna(traveR, { risultati: base });                      // niente `fattore`
+  const senza = ultimoPunto(svg());
+  piano.disegna(traveR, { risultati: { ...base, fattore: 1 } });
+  assert.deepEqual(ultimoPunto(svg()), senza, "`fattore` assente = 1");
+  piano.disegna(traveR, { risultati: { ...base, fattore: 0 } });
+  assert.ok(ultimoPunto(svg()).every(Number.isFinite), "nessun NaN a fattore zero");
+});
+
+test("piano: gli stati delle sezioni sono simboli sulla deformata, con la legenda; senza `stati` niente", () => {
+  const { contenitore, piano, svg } = nuovoPiano();
+  const E = { calcestruzzo: "elastica", acciaio: "elastica" };
+  const stati = { 1: [E, { calcestruzzo: "fessurata", acciaio: "snervata" },
+                      { calcestruzzo: "schiacciata", acciaio: "rotta" }, E, E] };
+  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "pushover", perCaso: { spostamenti: {} },
+                                       scala: 1, auto: true, stantia: false, stati, tipo: "pushover",
+                                       badge: { passo: { k: 0, n: 1, u: 0.5, V: 1.2 } } } });
+  const simboli = statiDi(svg());
+  assert.equal(simboli.length, 5, "cinque stazioni di Lobatto su un'asta non suddivisa");
+  assert.equal(simboli[0].getAttribute("fill-opacity"), "0");      // elastica: vuoto
+  assert.equal(simboli[1].getAttribute("fill-opacity"), "0.5");    // fessurata: mezzo
+  assert.equal(simboli[2].getAttribute("fill-opacity"), "1");      // schiacciata: pieno
+  assert.ok(Number(simboli[1].getAttribute("stroke-width")) > Number(simboli[0].getAttribute("stroke-width")),
+            "acciaio snervato: contorno spesso");
+  assert.equal(tutti(svg(), "line").filter((l) => l.getAttribute("class") === "stato-croce").length, 2,
+               "rotta: una croce, cioè due tratti");
+  // I simboli sono inchiostro, non colore: il doppio canale è riempimento + contorno
+  // (`07-ux-modellatore.md:100`). Il rosso resta a stantia e selezione.
+  assert.equal(simboli[2].getAttribute("fill"), "#141414");
+  assert.equal(legendaDi(contenitore).hidden, false);
+  assert.ok(legendaDi(contenitore).textContent.startsWith("calcestruzzo:"));
+  piano.disegna(traveR, { risultati: conRisultati("deformata") });
+  assert.equal(statiDi(svg()).length, 0, "un caso statico non ha stati");
+  assert.equal(legendaDi(contenitore).hidden, true);
+});
+
+test("piano: stati con un conteggio che non combacia → equispaziati; un'asta che non c'è → niente, mai un errore", () => {
+  const { piano, svg } = nuovoPiano();
+  const E = { calcestruzzo: "elastica", acciaio: "elastica" };
+  const conStati = (stati) => ({ vista: "deformata", caso: "pushover", perCaso: { spostamenti: {} },
+                                 scala: 1, auto: true, stantia: false, stati, tipo: "pushover",
+                                 badge: { passo: { k: 0, n: 1, u: 0, V: 0 } } });
+  piano.disegna(traveR, { risultati: conStati({ 1: [E, E] }) });
+  assert.equal(statiDi(svg()).length, 2);
+  piano.disegna(traveR, { risultati: conStati({ 99: [E] }) });
+  assert.equal(statiDi(svg()).length, 0, "un'asta che non c'è non ha simboli");
+  piano.disegna(traveR, { risultati: conStati({ 1: [] }) });
+  assert.equal(statiDi(svg()).length, 0, "lista vuota: nessun simbolo");
+});
+
+test("piano: una stazione con uno stato sconosciuto o nullo si salta, le altre si disegnano (R9)", () => {
+  const { piano, svg } = nuovoPiano();
+  const E = { calcestruzzo: "elastica", acciaio: "elastica" };
+  // `_peggiore` rende `null` su una lista vuota di fibre: è quel che arriva davvero dal server.
+  const stati = { 1: [E, { calcestruzzo: null, acciaio: "elastica" }, null,
+                      { calcestruzzo: "boh", acciaio: "elastica" }, E] };
+  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "pushover", perCaso: { spostamenti: {} },
+                                       scala: 1, auto: true, stantia: false, stati, tipo: "pushover",
+                                       badge: { passo: { k: 0, n: 1, u: 0, V: 0 } } } });
+  assert.equal(statiDi(svg()).length, 2, "le due elastiche restano, le tre senza stato si saltano");
+});
+
+test("piano: con un modo o un passo non si scrive l'etichetta della freccia (R5), e in vista M il badge lo dice", () => {
+  const { contenitore, piano, svg } = nuovoPiano();
+  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "modo:2", perCaso: FORMA_2, scala: 100,
+                                       auto: true, stantia: false, fattore: 1, tipo: "modo",
+                                       badge: { modo: MODO_2 } } });
+  assert.deepEqual(tutti(strato(svg()), "text").map((t) => t.textContent), [],
+                   "la forma modale è adimensionale: nessun numero sulla freccia");
+  piano.disegna(traveR, { risultati: { vista: "M", caso: "modo:2", perCaso: FORMA_2, scala: 1,
+                                       auto: true, stantia: false, tipo: "modo", badge: { modo: MODO_2 } } });
+  assert.ok(badgeDi(contenitore).textContent.includes("nessun diagramma per un modo"));
+  // L'ingresso degenere «vista M/V/N con un modo»: lo strato resta vuoto, cioè nessun poligono —
+  // la forma modale non porta sollecitazioni e `diagramma` salta l'asta senza stazioni.
+  assert.equal(tutti(strato(svg()), "polygon").length, 0, "nessun diagramma da una forma modale");
+});
+
+test("piano: la legenda entra fra gli ostacoli, cioè nessuna etichetta le finisce sotto", () => {
+  const { contenitore, piano, svg } = nuovoPiano();
+  const E = { calcestruzzo: "elastica", acciaio: "elastica" };
+  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "pushover", perCaso: Z1R, scala: 100,
+                                       auto: true, stantia: false, stati: { 1: [E, E, E, E, E] },
+                                       tipo: "pushover", badge: { passo: { k: 0, n: 1, u: 1, V: 2 } } } });
+  assert.equal(legendaDi(contenitore).hidden, false);
+  // La legenda sta in px fuori dal `viewBox`, come il badge: l'ostacolo è il suo rettangolo, e
+  // nessun `<text>` dello strato ci cade dentro (stessa prova del badge, R6 della 13).
+  for (const t of tutti(strato(svg()), "text")) assert.ok(Number(t.getAttribute("y")) > 0);
+});

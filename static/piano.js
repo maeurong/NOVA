@@ -10,7 +10,7 @@ import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
 import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima,
-         asteRuotate } from "./risultati.js";
+         asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -124,7 +124,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // con lo schermo non sa che la scala del disegno è cambiata sotto le dita.
   badge.setAttribute("aria-live", "polite");
   badge.hidden = true;
-  contenitore.replaceChildren(svg, titolo, badge);
+  // La legenda dei simboli dello stato delle sezioni, sotto il badge: i due canali (riempimento
+  // per il calcestruzzo, contorno per l'acciaio) non si indovinano, vanno scritti
+  // (`docs/ricerca/07-ux-modellatore.md:100`). Si vede solo con la pushover in vista deformata.
+  const legenda = document.createElement("p");
+  legenda.className = "risultati-legenda";
+  legenda.hidden = true;
+  contenitore.replaceChildren(svg, titolo, badge, legenda);
   let vista = estensione({ nodi: [] });
 
   svg.addEventListener("click", (ev) => {
@@ -176,7 +182,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const g = el("g", { class: "risultati", "pointer-events": "none" });
     const coppia = (p) => `${p.x},${p.y}`;
     if (vistaRis === "deformata") {
-      for (const d of puntiDeformata(m, attivo.perCaso, attivo.scala)) {
+      // Il fattore dell'animazione moltiplica la **scala del disegno**, non la scala dichiarata:
+      // il badge dice l'ampiezza massima, che è ferma, mentre il disegno respira (Global
+      // Constraints). Assente = 1; a 0 la deformata cade esattamente sull'ombra indeformata.
+      const scalaDisegno = attivo.scala * (attivo.fattore ?? 1);
+      const deformate = puntiDeformata(m, attivo.perCaso, scalaDisegno);
+      for (const d of deformate) {
         const punti = d.punti.map((p) => schermo(p));
         g.append(el("polyline", {
           class: "deformata", points: punti.map(coppia).join(" "),
@@ -186,14 +197,47 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       }
       // La freccia massima sta **fra** i nodi, non su un nodo: su una trave appoggiata gli
       // appoggi sono fermi. L'etichetta va dove la freccia è, e `frecciaMassima` dice dove.
-      const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
-      if (valore > 0 && punto) {
-        // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
-        const p = schermo({ x: indeformato.x + attivo.scala * (punto.x - indeformato.x),
-                            z: indeformato.z + attivo.scala * (punto.z - indeformato.z) });
-        const base = schermo(indeformato);
-        richieste.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
-                                  priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
+      // Con un modo o un passo non si scrive affatto — la forma modale è adimensionale, e lo
+      // spostamento del passo è già nel badge — quindi `frecciaMassima` non si chiama nemmeno:
+      // è il 26 % del costo per fotogramma speso per un'etichetta che poi non esce (R5).
+      if (attivo.tipo !== "modo" && attivo.tipo !== "pushover") {
+        const { valore, punto, indeformato } = frecciaMassima(m, attivo.perCaso);
+        if (valore > 0 && punto) {
+          // Il punto campionato è a scala 1: sul disegno lo scostamento è amplificato di `scala`.
+          const p = schermo({ x: indeformato.x + scalaDisegno * (punto.x - indeformato.x),
+                              z: indeformato.z + scalaDisegno * (punto.z - indeformato.z) });
+          const base = schermo(indeformato);
+          richieste.push({ id: "freccia", x: p.x, y: p.y, testo: testoValore("deformata", valore),
+                                    priorita: 2, preferito: { dx: p.x - base.x, dy: p.y - base.y } });
+        }
+      }
+      // Lo stato delle sezioni per stazione, sull'asta deformata: due canali di inchiostro, il
+      // riempimento per il calcestruzzo e il contorno per l'acciaio (`07-ux-modellatore.md:100`).
+      // Niente colore: il rosso resta ad attenzione e selezione (story 63).
+      for (const d of attivo.stati ? deformate : []) {
+        const lista = attivo.stati[String(d.id)];
+        if (!Array.isArray(lista) || lista.length === 0 || d.punti.length === 0) continue;
+        const xr = stazioniDiAsta(m.aste.find((x) => x.id === d.id), lista.length);
+        for (let k = 0; k < xr.length; k++) {
+          const sim = simboloStato(lista[k]);
+          if (!sim) continue;   // stazione senza stato: nessun simbolo, mai uno inventato (R9)
+          // Il punto della deformata più vicino per `r`: le stazioni di Lobatto non cadono sui
+          // campioni della cubica, e spostare il simbolo di un campione costa meno che
+          // ricalcolare la deformata in un'ascissa sua.
+          // ponytail: scansione lineare su una decina di punti per asta; se un giorno i
+          // campioni diventassero centinaia, si passa a una ricerca binaria su `r` crescente.
+          const q = d.punti.reduce((a, b) => (Math.abs(b.r - xr[k]) < Math.abs(a.r - xr[k]) ? b : a));
+          const p = schermo(q);
+          g.append(el("circle", { class: "stato", cx: p.x, cy: p.y, r: 3.5 * s,
+                                  fill: colore, "fill-opacity": sim.riempimento, stroke: colore,
+                                  "stroke-width": (sim.contorno === "spesso" ? 2.5 : 1) * s }));
+          if (sim.contorno === "croce") for (const verso of [-1, 1]) {
+            g.append(el("line", { class: "stato-croce", x1: p.x - 4 * s, y1: p.y - 4 * s * verso,
+                                  x2: p.x + 4 * s, y2: p.y + 4 * s * verso,
+                                  stroke: colore, "stroke-width": 1.5 * s }));
+          }
+          linee.push({ x0: p.x - 4 * s, y0: p.y - 4 * s, x1: p.x + 4 * s, y1: p.y + 4 * s });
+        }
       }
     } else {
       const scalaD = scalaDiagrammaAuto(m, attivo.perCaso, vistaRis);
@@ -397,9 +441,14 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     titolo.hidden = !azioneInVista;
     // La scala e le unità si stampano sempre, anche su un modello senza aste: dichiarano come
     // va letto il disegno, non cosa c'è dentro. Stantia = rosso **e** la parola (story 63).
-    badge.textContent = attivo ? testoBadge({ ...attivo, ruotate: asteRuotate(m) }) : "";
+    // `...attivo.badge`: modo, passo, caduta e fermo arrivano in un sotto-oggetto, e `testoBadge`
+    // li vuole al primo livello insieme a vista, caso e scala.
+    badge.textContent = attivo ? testoBadge({ ...attivo, ...(attivo.badge ?? {}), ruotate: asteRuotate(m) }) : "";
     badge.hidden = !attivo;
     badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
+    // La legenda parla solo quando i simboli ci sono: in vista M non c'è niente da decifrare.
+    legenda.textContent = testoLegendaStati();
+    legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata");
 
     // Le due strisce di testo stanno **fuori** dal `viewBox` ma sopra il piano: senza questi
     // ostacoli un picco negli angoli in alto finisce sotto il loro testo (R6). Il riquadro
@@ -417,6 +466,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // sotto il testo senza che nessun test se ne accorga.
     if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(badge.textContent, s, 8), x1: viewport.x1,
                                        y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
+    // La legenda sta sotto il badge, stessa colonna a destra: `top: 38px`, una riga alta 14.
+    if (!legenda.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(legenda.textContent, s, 8), x1: viewport.x1,
+                                         y0: viewport.y0 + 38 * s, y1: viewport.y0 + 52 * s });
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
                                         x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });
 
