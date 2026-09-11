@@ -23,6 +23,7 @@ import { creaFile, chiediJson } from "./file.js";
 import { creaStoria } from "./storia.js";
 import { creaCorsa, stantia } from "./corsa.js";
 import { creaEsito, creaSrotolato } from "./esito.js";
+import { creaConfronto } from "./confronto.js";
 import { VISTE, scalaAuto, puntiDeformata, vociDelCaso, casoScelto, scalaModo,
          curvaPushover, passoDiRiferimento, tipoDelCaso } from "./risultati.js";
 import { creaAnimazione, movimentoRidotto } from "./animazione.js";
@@ -68,6 +69,9 @@ let risultati = null;
 // spreco. `ridisegna` la rinfresca; `risultatiInVista` la legge da qui, anche quando gira dentro
 // un fotogramma dell'animazione. Un cambio a caldo si raccoglie al gesto dopo.
 let motoRidotto = false;
+// Le due ultime corse per la scheda Confronto: `corsa.js` ne tiene una sola (`:124`) e il solido
+// sovrascrive il telaio.
+let ultimoTelaio = null, ultimoSolido = null;
 
 // La scala della pushover si misura **una volta per corsa**, sul passo di spostamento massimo, e
 // non sul passo corrente: con `scalaAuto(passo[k])` usciva ×10 al passo 30 e ×2 al 120, cioè
@@ -265,9 +269,13 @@ const file = creaFile(document, {
   suApertura: (p, m, i) => {
     cronologia = nuovaCronologia(m, `aperto ${p}`);
     // Un modello nuovo (aperto o importato) non porta con sé l'ultima corsa di un altro (R5),
-    // né la vista che ne mostrava i numeri.
+    // né la vista che ne mostrava i numeri. Il solido cade con il telaio: il file dei suoi
+    // risultati resta valido su disco, ma la sua pertinenza al modello aperto adesso no, e
+    // `confronto.azzera()` rimette il campo a «mai toccato» — il ridisegno subito dopo lo
+    // ricompilerebbe col solido di prima, e sarebbe telaio B contro solido A senza un segnale.
     corsa.azzera();
     risultati = null;
+    ultimoTelaio = null; ultimoSolido = null; confronto.azzera();
     // Anche il campo, non solo selezione e modo: il bersaglio è congelato per id, gli id
     // ripartono da 1 in ogni file, e la guardia di `ridisegna` chiede che il bersaglio
     // *esista*, non che sia dello stesso modello. Senza questo, «sposta il nodo 3» aperto
@@ -293,6 +301,7 @@ const file = creaFile(document, {
     rilievo = daRisposta(risposta, p);
     corsa.azzera();  // idem: una cronologia nuova non porta l'ultima corsa (R5)
     risultati = null;
+    ultimoTelaio = null; ultimoSolido = null; confronto.azzera();
     chiudiComando();
     selezione = { tipo: "rilievo", id: 0 };
     modo = null;
@@ -319,6 +328,9 @@ const corsa = creaCorsa(document, {
   // Il messaggio «già in corso» lo toglie `corsa.js`, che sa se è suo.
   suEsito: (esito) => {
     if (esito === null) { ridisegna(); return; }
+    // Una corsa rifiutata o in errore è comunque «l'ultima»: `percorsoRisultati` la scarta se non
+    // ha cartella, e `casiCorsi` dà `[]`.
+    if (esito.solido) ultimoSolido = esito; else ultimoTelaio = esito;
     // `vociDelCaso` e non `casiDi`: dalla 14a una corsa può portare modi e passi senza nessun
     // caso statico (una modale sola), e partire dal primo caso di `casiDi` vorrebbe dire
     // buttare via dei risultati che ci sono. La prima voce del menu è il caso di partenza.
@@ -348,6 +360,7 @@ const esito = creaEsito(document, {
   },
   suAvviso: dì,   // una scala illeggibile torna ad auto, e la riga del messaggio lo dice
 });
+const confronto = creaConfronto(document, { suErrore: (msg) => dì(msg) });
 // Il clic sulla curva della pushover: la striscia dice **quale** passo, lo stato lo tiene qui.
 const srotolato = creaSrotolato($("srotolato"), {
   suPasso: (k) => { if (risultati) { risultati = { ...risultati, passo: k }; ridisegna(); } },
@@ -808,6 +821,7 @@ function ridisegna() {
   // `stantia` dallo **stato**, non dalla vista: il blocco «Risultati» c'è anche con `0` premuto,
   // e la riga dell'equilibrio deve dire lo stesso della riga della corsa.
   esito.disegna({ risultati, stantia: risultati ? stantia(risultati.lavoro, m) : false });
+  confronto.disegna({ modello: m, telaio: ultimoTelaio, solido: ultimoSolido });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
 }

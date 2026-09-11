@@ -223,6 +223,11 @@ def test_aprire_un_altro_modello_butta_i_risultati_della_corsa_di_prima(chrome_e
     assert t["dopoApertura"]["controlli"] is False, "il blocco «Risultati» sparisce"
     assert t["dopoApertura"]["vuoto"] is True, "e resta lo stato vuoto"
     assert t["dopoApertura"]["strati"] == 0, "nessuno strato sopra il telaio nuovo"
+    assert t["dopoApertura"]["confrontoVuoto"] is True, "il «Confronto» torna allo stato vuoto"
+    assert t["dopoApertura"]["confrontoTelaio"] == "", (
+        f"il percorso del telaio e' della corsa di prima: {t['dopoApertura']['confrontoTelaio']!r}")
+    assert t["dopoApertura"]["confrontoSolido"] == "", (
+        f"e quello del solido pure: {t['dopoApertura']['confrontoSolido']!r}")
 
 
 def test_la_verifica_del_modello_non_butta_i_risultati_in_vista(chrome_e_server, binario_opensees):
@@ -314,6 +319,39 @@ def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, b
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
 
 
+def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_e_server, binario_opensees):
+    """Telaio corso dalla UI, nessun solido, il CSV Abaqus d'esempio: la tabella arriva con la massa
+    in testa (story 57), le note a piè e il conteggio con l'avvertenza (story 61); il pannello non
+    si allarga e la pagina non scorre in orizzontale."""
+    porta, cdp = chrome_e_server
+    r = copione("confronto", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"), csv=str(FIXTURE / "abaqus_esempio.csv"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["telaio"].endswith("/risultati.nova.risultati.json"), t["telaio"]
+    assert t["nodi"] == "3; 4", t["nodi"]
+    # run.casi del MURO 1 è ["C1","C2","C3","Z1"]: gli `Z<n>` restano col passo vuoto (`confronto.js`
+    # non propone un passo del solido per un'azione del telaio).
+    assert t["casi"] == ["C1→C1", "C2→C2", "C3→C3", "Z1→"], t["casi"]
+    assert '"C1": "GRAVITA"' in t["json"], t["json"]
+    # 1 massa + 3 casi × 4 grandezze + f1-f3 + massa partecipante x/y/z: Z1 non è mappato, niente
+    # righe per lui.
+    # «massa 1»: il richiamo della nota sta sull'intestazione di riga, la colonna che il `sticky`
+    # tiene in vista — non nell'ultima cella, che a pannello stretto scorre via.
+    assert t["righe"] == 19 and t["prima"] == "massa 1", (t["righe"], t["prima"])
+    assert t["colonne"] == 9, "col CSV Abaqus le colonne sono nove"
+    assert t["abaqusC1"] == "4 250", t["abaqusC1"]   # `conciso`: sopra cento niente decimali
+    assert t["stato"] == "19 righe · 17 non confrontabili · verifica del codice, non validazione", t["stato"]
+    # Nessun solido corso e il campo vuoto: la catena non lo nomina. Il confronto qui è a due lati.
+    assert t["didascalia"] == "telaio ↔ Abaqus", t["didascalia"]
+    # Due `bias_atteso` distinti (massa; tetraedri), nessuna `ragione` nella corsa: due note.
+    assert t["note"] == 2, t["note"]
+    assert t["provenienza"].startswith("commit "), t["provenienza"]
+    assert t["percorso"] != "", "la cartella degli export si stampa"
+    assert t["scorrePagina"] is False, "la pagina non deve scorrere in orizzontale"
+    assert t["dentro"] is True, "il riquadro della tabella sta nel pannello"
+    assert t["rossi"] == 0, "nessun rosso nella scheda: non è un pass/fail"
+    assert t["messaggio"] == "", t["messaggio"]
 
 
 def test_chrome_assente_salta_col_motivo(monkeypatch, tmp_path):

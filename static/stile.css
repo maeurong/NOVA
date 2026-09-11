@@ -292,13 +292,18 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* `#risultati-controlli > label` e non `#risultati label`: le etichette dei radio della vista
    sono figlie del `<fieldset>` e la loro regola è `.vincolo-gradi label` (`:112`), che un
    selettore con un id batte per specificità — uscivano a blocco, tenui e a 11 px. */
-#file label, #corsa label, #risultati-controlli > label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
-#file-percorso, #comando-campo, #corsa-inp, #risultati-scala, #risultati-caso {
+/* R10: i campi del «Confronto» entrano negli stessi tre selettori, per la stessa ragione — sono i
+   campi del pannello, non campi nuovi. `#confronto label.riga` resta `display: flex` e li batte
+   per specificità (la riga del caso e la casella degli assi stanno in linea, non a blocco). */
+#file label, #corsa label, #risultati-controlli > label, #confronto label { display: block; font-size: 11px; color: var(--testo-tenue); margin-bottom: 4px; }
+#file-percorso, #comando-campo, #corsa-inp, #risultati-scala, #risultati-caso,
+#confronto input[type="text"], #confronto-json {
                  width: 100%; font-family: var(--mono); font-size: 12px;
                  background: var(--pannello); color: var(--inchiostro);
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
 #file-percorso:focus-visible, #comando-campo:focus-visible, #corsa-inp:focus-visible,
-#risultati-scala:focus-visible, #risultati-caso:focus-visible {
+#risultati-scala:focus-visible, #risultati-caso:focus-visible,
+#confronto input[type="text"]:focus-visible, #confronto-json:focus-visible {
                  outline: 2px solid var(--rosso); outline-offset: 1px; }
 /* Le etichette dei radio le porta già `.vincolo-gradi label` (`:112`): il fieldset della vista
    riusa quella classe e ne cambia le sole colonne — cinque radio in `repeat(3, 1fr)` uscirebbero
@@ -397,7 +402,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
               font-family: var(--mono); white-space: pre-wrap; }
 /* Come `#file-recenti-vuoto`: dentro il pannello lo stato vuoto non porta il padding né il
    `max-width` della versione a tutta pagina, che qui non ha spazio da riempire. */
-#corsa-vuoto { margin: var(--passo) 0 0; padding: 0; max-width: none; font-size: 11px; }
+#corsa-vuoto, #confronto-vuoto { margin: var(--passo) 0 0; padding: 0; max-width: none; font-size: 11px; }
 #corsa-verdetti { margin: var(--passo) 0 0; padding: 0; list-style: none; }
 .verdetto { display: grid; grid-template-columns: 1em 1fr auto; column-gap: 6px; font-size: 11px;
             padding: 3px 0; border-top: 1px solid var(--tratto); }
@@ -418,3 +423,40 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
                    padding: 0 8px; border: 1px solid var(--tratto-forte); border-radius: 2px;
                    background: var(--pannello); color: var(--inchiostro); cursor: pointer; }
 .verdetto button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+
+/* La scheda «Confronto»: la tabella scorre nel suo riquadro, mai la pagina (il pannello è al più
+   20 rem, `grid-template-columns` a `:24`). Nessun rosso e nessun verde: le classi sono parole, e
+   una riga non confrontabile si attenua **e** lo dice (WCAG 1.4.1: il colore non è il canale).
+   Campi, etichette, bottone e stato vuoto stanno nei selettori di sopra (R10, R11): qui resta
+   solo ciò che è davvero di questa scheda. */
+#confronto label { margin-top: var(--passo); }
+#confronto label.riga { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
+#confronto label.riga input[type="text"] { flex: 1; min-width: 0; }
+#confronto-casi { display: grid; gap: 2px; margin-top: var(--passo); }
+#confronto-avanzato { margin-top: var(--passo); font-size: 11px; }
+#confronto-avanzato summary { cursor: pointer; }
+#confronto-avanzato summary:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#confronto-json { font-size: 10px; margin-top: 4px; resize: vertical; }
+#confronto-stato, #confronto-provenienza { margin: var(--passo) 0 0; font-size: 11px; overflow-wrap: anywhere; }
+#confronto-scorri { overflow-x: auto; margin-top: var(--passo); max-width: 100%; }
+#confronto-scorri:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
+#confronto-tabella { border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+#confronto-tabella caption { text-align: left; color: var(--testo-tenue); font-size: 10px; padding-bottom: 4px; }
+#confronto-tabella th, #confronto-tabella td { padding: 2px 6px; text-align: right; border-bottom: 1px solid var(--tratto); }
+#confronto-tabella th[scope="row"], #confronto-tabella td:nth-child(2) { text-align: left; font-weight: 400; }
+#confronto-tabella thead th { color: var(--testo-tenue); font-weight: 600; }
+#confronto-tabella td, #confronto-tabella th[scope="row"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* La colonna «grandezza» resta ferma mentre il resto scorre: la tabella è più larga del pannello
+   (`minmax(220px, 20rem)`), e a scorrimento fatto le cifre resterebbero sole, senza il nome di
+   quel che misurano. Il fondo non è decorazione: `border-collapse` lascia trasparire quel che
+   passa sotto. Ferma anche l'intestazione della colonna, altrimenti sopra la «massa» bloccata
+   scorrerebbe «scarto solido». Il colore del testo continua a venire da `tr.attenuata`: è la
+   riga a essere attenuata, non la cella. */
+#confronto-tabella th[scope="row"], #confronto-tabella thead th:first-child {
+  position: sticky; left: 0; background: var(--fondo);
+}
+#confronto-tabella tr.attenuata { color: var(--testo-tenue); }
+#confronto-note { margin: var(--passo) 0 0; padding-left: 1.2em; font-size: 10px; color: var(--testo-tenue); }
+#confronto-cartella { margin: var(--passo) 0 0; font-size: 11px; overflow-wrap: anywhere; }
+#confronto-cartella button { font: inherit; cursor: pointer; padding: 0 6px; margin-left: 4px; }
+#confronto-cartella button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }

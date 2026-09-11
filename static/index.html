@@ -107,6 +107,44 @@
       <p id="risultati-equilibrio" class="numero"></p>
     </div>
   </section>
+  <!-- Il confronto telaio ↔ solido ↔ Abaqus (story 56-57, 61): tre percorsi, la mappa dei casi da
+       un form minimo (o dal JSON, se lo si tocca), la tabella con scarto e classe, le note a piè.
+       Nessun rosso e nessun verde: non è un pass/fail, è «verifica del codice, non validazione». -->
+  <h2 class="staccato">Confronto</h2>
+  <section id="confronto" aria-label="confronto telaio e solido">
+    <p class="vuoto" id="confronto-vuoto">Telaio contro solido, per caso e grandezza: scarto, classe di concordanza e bias atteso. Corri il telaio (e il solido, se c'è), poi «confronta».</p>
+    <label for="confronto-telaio">risultati del telaio</label>
+    <input id="confronto-telaio" type="text" spellcheck="false" placeholder="corse/<run>/risultati.nova.risultati.json">
+    <label for="confronto-solido">risultati del solido (vuoto = senza)</label>
+    <input id="confronto-solido" type="text" spellcheck="false" placeholder="corse/<run>/risultati_solido.json">
+    <label for="confronto-abaqus">CSV Abaqus (vuoto = senza)</label>
+    <input id="confronto-abaqus" type="text" spellcheck="false" placeholder="tests/fixture/abaqus_esempio.csv">
+    <label for="confronto-nodi">nodi in sommità (id separati da ;)</label>
+    <input id="confronto-nodi" type="text" class="numero" spellcheck="false" placeholder="3; 4">
+    <!-- `role="group"`: senza un ruolo il nome di un `<div>` non viene esposto, e le righe
+         caso → passo arriverebbero all'ascolto come campi sciolti in mezzo ai percorsi. -->
+    <div id="confronto-casi" role="group" aria-label="caso del telaio → passo del solido"></div>
+    <label class="riga"><input id="confronto-assi" type="checkbox"> il solido ha x e y scambiati</label>
+    <details id="confronto-avanzato">
+      <summary id="confronto-avanzato-titolo">avanzato: mappa_casi in JSON</summary>
+      <textarea id="confronto-json" class="numero" rows="4" spellcheck="false" aria-label="mappa_casi in JSON"></textarea>
+    </details>
+    <div class="file-azioni"><button id="confronto-confronta" type="button" disabled>confronta</button></div>
+    <p id="confronto-stato" class="numero"></p>
+    <!-- `tabindex="0"` e il ruolo: la tabella scorre in orizzontale dentro i 20 rem del pannello, e
+         un riquadro che scorre senza contenuto attivabile non si raggiunge da tastiera (WCAG 2.1.1).
+         Il nome glielo dà la didascalia, che dice quali lati sono a confronto. -->
+    <div id="confronto-scorri" role="region" aria-labelledby="confronto-didascalia" tabindex="0" hidden>
+      <table id="confronto-tabella">
+        <caption id="confronto-didascalia">telaio ↔ solido ↔ Abaqus</caption>
+        <thead id="confronto-testa"></thead>
+        <tbody id="confronto-corpo"></tbody>
+      </table>
+    </div>
+    <ol id="confronto-note" aria-label="note della tabella" hidden></ol>
+    <p id="confronto-provenienza" class="numero"></p>
+    <p id="confronto-cartella" class="numero" hidden>export in <span id="confronto-percorso"></span> <button id="confronto-copia" type="button">copia</button></p>
+  </section>
   <h2 class="staccato">Storia</h2>
   <ul id="storia-elenco" aria-label="cronologia dei comandi"></ul>
 </aside>

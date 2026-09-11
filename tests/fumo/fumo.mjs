@@ -147,6 +147,11 @@ const COPIONI = {
         controlli: await ev(`!document.getElementById("risultati-controlli").hidden`),
         strati: await ev(`document.querySelectorAll("#piano svg g.risultati").length`),
         vuoto: await ev(`!document.getElementById("risultati-vuoto").hidden`),
+        // Anche il «Confronto» parla della corsa di prima: i percorsi precompilati puntano alla
+        // cartella di un altro telaio, e confrontarli sarebbe numeri veri sul modello sbagliato.
+        confrontoVuoto: await ev(`!document.getElementById("confronto-vuoto").hidden`),
+        confrontoTelaio: await ev(`document.getElementById("confronto-telaio").value`),
+        confrontoSolido: await ev(`document.getElementById("confronto-solido").value`),
       },
       messaggio: await ev(`document.getElementById("messaggio").textContent`),
     };
@@ -293,6 +298,35 @@ const COPIONI = {
     await pausa(150);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { badge1, badge2, badge3, badgeConGhost, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
+  },
+
+  // La scheda Confronto sul MURO 1: telaio corso qui, niente solido, il CSV Abaqus d'esempio.
+  // La tabella arriva, la massa è la prima riga, le note e il conteggio ci sono, la pagina non
+  // scorre in orizzontale e il riquadro della tabella sta nel pannello.
+  async confronto() {
+    await apriECorri(arg.fixture);
+    const telaio = await ev(`document.getElementById("confronto-telaio").value`);
+    const nodi = await ev(`document.getElementById("confronto-nodi").value`);
+    const casi = await ev(`[...document.querySelectorAll("#confronto-casi input")].map((i) => i.dataset.caso + "→" + i.value)`);
+    await ev(`(() => { const c = document.getElementById("confronto-abaqus"); c.value = ${JSON.stringify(arg.csv)}; c.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+    // il caso C1 appaiato al passo «GRAVITA» del CSV: la riga reazione_z C1 prende il valore Abaqus
+    await ev(`(() => { const c = document.querySelector('#confronto-casi input[data-caso="C1"]'); c.value = "GRAVITA"; c.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+    const json = await ev(`document.getElementById("confronto-json").value`);
+    await ev(`(() => { document.getElementById("confronto-confronta").click(); return true; })()`);
+    const righe = await finche(`document.querySelectorAll("#confronto-corpo tr").length`, 20000, 250);
+    const prima = await ev(`document.querySelector("#confronto-corpo tr th").textContent`);
+    const colonne = await ev(`document.querySelectorAll("#confronto-testa th").length`);
+    const stato = await ev(`document.getElementById("confronto-stato").textContent`);
+    const note = await ev(`document.querySelectorAll("#confronto-note li").length`);
+    const didascalia = await ev(`document.getElementById("confronto-didascalia").textContent`);
+    const provenienza = await ev(`document.getElementById("confronto-provenienza").textContent`);
+    const percorso = await ev(`document.getElementById("confronto-percorso").textContent`);
+    const abaqusC1 = await ev(`(() => { const r = [...document.querySelectorAll("#confronto-corpo tr")].find((t) => t.children[0].textContent === "reazione_z" && t.children[1].textContent === "C1"); return r ? r.children[4].textContent : null; })()`);
+    const scorrePagina = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    const dentro = await staDentro("#confronto-scorri", "#pannello");
+    const rossi = await ev(`[...document.querySelectorAll("#confronto *")].filter((e) => getComputedStyle(e).color === "rgb(184, 50, 30)").length`);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { telaio, nodi, casi, json, righe, prima, colonne, stato, note, didascalia, provenienza, percorso, abaqusC1, scorrePagina, dentro, rossi, messaggio };
   },
 };
 
