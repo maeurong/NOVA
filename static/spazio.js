@@ -50,7 +50,7 @@ export function calcolaInquadratura(nodi, distanzaMinima = DISTANZA_MINIMA) {
  *  escono a spessore nullo fino al primo `rendi` misurato, mai `NaN` o `Infinity` nella scala. */
 export function pixelInMondo(distanza, fov, altezza) {
   const k = (2 * distanza * Math.tan((fov * Math.PI) / 360)) / altezza;
-  return altezza > 0 && Number.isFinite(k) ? k : 0;
+  return Number.isFinite(k) ? k : 0;
 }
 
 /** I tratti di una polilinea, `a`/`b` come `{x, y, z}` puri (la conversione in `Vector3` sta in
@@ -83,17 +83,6 @@ export function raggioCilindro(occhio, estremi, fov, altezza, tratto) {
   // tratto esce appena più spesso del voluto e mai più sottile.
   const lontano = Math.max(...estremi.map((p) => Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z)));
   return (pixelInMondo(lontano, fov, altezza) * tratto) / 2;
-}
-
-/** Un oggetto per chiave, creato alla prima richiesta e poi sempre lo stesso. Per i materiali di
- *  viridis: il tetto è dei colori che `viridis` può rendere (648 misurati), e buttarli a ogni
- *  `disegna` costa 3× il fotogramma e fa ricompilare il programma WebGL. */
-export function perColore(crea) {
-  const fatti = new Map();
-  return (colore) => {
-    if (!fatti.has(colore)) fatti.set(colore, crea(colore));
-    return fatti.get(colore);
-  };
 }
 
 /** Non rigetta **mai**: un guasto qui torna uno spazio che si dichiara assente, e il piano
@@ -145,7 +134,10 @@ async function costruisci(contenitore) {
   // colorato al centro le copre, ai lati restano scure. Con `renderOrder` e le facce anteriori il
   // depth test scarta il colorato, che sta dentro: un tubo tutto nero (misurato in r185).
   const bordo = new THREE.MeshBasicMaterial({ color: INCHIOSTRO, side: THREE.BackSide });
-  const viridisDi = perColore((c) => new THREE.MeshBasicMaterial({ color: c }));
+  // I materiali di viridis, uno per colore, **mai** svuotati: il tetto sono i colori che `viridis` può
+  // rendere (648 misurati), e buttarli a ogni `disegna` costa 3× il fotogramma e fa ricompilare il
+  // programma WebGL.
+  const viridisDi = new Map();
   const puntoInchiostro = new THREE.PointsMaterial({ color: INCHIOSTRO, size: 10, sizeAttenuation: false });
   const puntoRosso = new THREE.PointsMaterial({ color: ROSSO, size: 16, sizeAttenuation: false });
   let disegnato = new THREE.Group();
@@ -180,6 +172,10 @@ async function costruisci(contenitore) {
     );
     camera.up.set(0, 0, 1);
     camera.lookAt(centro);
+    // `near` segue la distanza: fisso a 1 mm, fra il colorato e la parete dietro del bordo restavano
+    // pochi passi di profondità, e da lontano la deformata usciva a chiazze nere.
+    const near = distanza / 100;
+    if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
     for (const o of disegnato.children) if (o.userData.tratto) {
       o.scale.x = o.scale.z = raggioCilindro(camera.position, o.userData.estremi, camera.fov, contenitore.clientHeight, o.userData.tratto);
     }
@@ -255,7 +251,8 @@ async function costruisci(contenitore) {
       const a = v(t.a), b = v(t.b);
       if (t.colore === null) { cilindroFra(a, b, rosso, misure.trattoDeformata); continue; }
       cilindroFra(a, b, bordo, misure.trattoDeformata + 2 * misure.bordoDeformata);
-      cilindroFra(a, b, viridisDi(t.colore), misure.trattoDeformata);
+      if (!viridisDi.has(t.colore)) viridisDi.set(t.colore, new THREE.MeshBasicMaterial({ color: t.colore }));
+      cilindroFra(a, b, viridisDi.get(t.colore), misure.trattoDeformata);
     }
     const evidenziato = (n) => scelto("nodo", n.id) || (estremiAstaScelta?.has(n.id) ?? false);
     const normali = m.nodi.filter((n) => !evidenziato(n));

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dimensioniSicure, calcolaAspect, calcolaInquadratura, creaSpazio, pixelInMondo, tratti,
-         trattiDellaDeformata, raggioCilindro, perColore } from "../spazio.js";
+         trattiDellaDeformata, raggioCilindro } from "../spazio.js";
 import { coloreSpostamento, massimoSpostamento, VIRIDIS } from "../risultati.js";
 
 test("contenitore di dimensione 0: nessun NaN nell'aspect della camera", () => {
@@ -97,14 +97,4 @@ test("raggioCilindro: preso sull'estremo lontano, mai sotto tratto/2 px su nessu
     assert.ok(pxAlCapo >= 3 - 1e-9, `capo a ${p.z}: ${pxAlCapo} px`);
   }
   assert.equal(raggioCilindro(occhio, estremi, 90, 0, 6), 0); // riquadro non misurato: spessore nullo, non NaN
-});
-
-test("perColore: cento disegna sugli stessi colori → un materiale per colore distinto, mai uno nuovo dopo il primo giro", () => {
-  let creati = 0;
-  const materiale = perColore((c) => ({ c, n: ++creati }));
-  const colori = ["#440154", "#26828e", "#fde725"];
-  const primo = colori.map(materiale);
-  for (let giro = 0; giro < 100; giro++) for (const c of colori) materiale(c);
-  assert.equal(creati, 3);
-  assert.deepEqual(colori.map(materiale), primo); // lo stesso oggetto, non una copia
 });
