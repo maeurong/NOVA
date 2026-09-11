@@ -43,7 +43,9 @@ globalThis.document = {
 };
 
 const contenitoreFinto = (clientWidth = 800) => ({
-  hidden: false, clientWidth, _figli: [],
+  hidden: false, clientWidth, _figli: [], _attrs: {},
+  setAttribute(k, v) { this._attrs[k] = String(v); },
+  getAttribute(k) { return this._attrs[k] ?? null; },
   replaceChildren(...figli) { this._figli = figli; },
 });
 
@@ -381,12 +383,13 @@ test("creaSrotolato con la pushover: la curva in pixel, un cerchio per passo, il
   const contenitore = contenitoreFinto(400);
   const passi = [];
   const striscia = creaSrotolato(contenitore, { suPasso: (k) => passi.push(k) });
+  // `caduta.n` è il numero del passo che manda il server, e `curvaPushover` lo mette sempre:
+  // è quello che va scritto, non l'indice nella lista.
   const curva = { punti: [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }], uMax: 1, vMax: 2.3,
-                  caduta: { k: 1, u: 1, motivo: "non converge" } };
+                  caduta: { k: 1, n: 2, u: 1, motivo: "non converge" } };
   striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
                                   passo: { k: 1, n: 2, u: 1, V: 2.3 }, curva, stantia: false },
                      modello: null, selezione: null });
-  assert.equal(contenitore.hidden, false);
   const [titolo] = contenitore._figli;
   assert.equal(titolo.textContent,
                "pushover · taglio alla base – spostamento del nodo di controllo · kN, mm");
@@ -404,6 +407,9 @@ test("creaSrotolato con la pushover: la curva in pixel, un cerchio per passo, il
   assert.ok(testi.some((t) => t === "caduta al passo 2"));
   // nessuna coordinata fuori dalla larghezza misurata (la regola della 13, R7)
   for (const c of cerchi) assert.ok(Number(c.getAttribute("cx")) <= 400);
+  // `hidden` era già `false` prima del disegno: asserirlo qui non provava niente. Quel che
+  // cambia è il bersaglio dei clic, che senza la curva non c'è.
+  assert.ok(tutti(svg, "rect").some((r) => r.getAttribute("class") === "passi"));
 });
 
 test("creaSrotolato: il clic su un passo lo dice, con un solo bersaglio largo quanto la striscia (R11)", () => {
@@ -491,4 +497,69 @@ test("creaSrotolato: con la corsa stantia la curva è rossa e il raggio resta il
   const cerchi = tutti(contenitore._figli[1], "circle").filter((c) => c.getAttribute("class") === "passo");
   assert.deepEqual(cerchi.map((c) => c.getAttribute("fill")), ["#b8321e", "#b8321e"]);
   assert.ok(Number(cerchi[0].getAttribute("r")) > Number(cerchi[1].getAttribute("r")));
+});
+
+// --- fix round 1 ------------------------------------------------------------------
+
+// Una seconda corsa sullo stesso modello (una sezione cambiata) ha gli stessi `valore` —
+// `modo:1…42`, `pushover` — e testi tutti diversi: le frequenze sono altre e i passi sono
+// meno. Con la chiave sui soli valori il menu restava quello di prima, in silenzio.
+test("creaEsito: il menu si riscrive quando cambiano i testi, non solo i valori", () => {
+  const { radice, el } = radiceFinta();
+  const esito = creaEsito(radice, { suCambio: () => {} });
+  esito.disegna({ risultati: conModiEPassi() });
+  const prima = el("#risultati-caso")._figli;
+  // stessi valori, stessi testi: non si tocca niente (il fuoco resta dov'è)
+  esito.disegna({ risultati: conModiEPassi() });
+  assert.equal(el("#risultati-caso")._figli, prima, "niente di cambiato: le opzioni restano");
+  // stesso `modo:2`, frequenza nuova e un passo in meno
+  const dopo = conModiEPassi();
+  dopo.lavoro.fin.risultati.modi = [{ ...M2, f: 28.4 }];
+  dopo.lavoro.fin.risultati.passi = [PASSI[0]];
+  esito.disegna({ risultati: dopo });
+  const testi = tutti(el("#risultati-caso"), "option").map((o) => o.textContent);
+  assert.deepEqual(tutti(el("#risultati-caso"), "option").map((o) => o.value), ["Z1", "pushover", "modo:2"],
+                   "gli stessi valori, sì");
+  assert.ok(testi.includes("modo 2 · 28,4 Hz · ux 46 %"), `frequenza vecchia nel menu: ${testi}`);
+  assert.ok(testi.includes("pushover · 1 passo"), `conteggio vecchio nel menu: ${testi}`);
+});
+
+// I due numeri accanto al passo corrente vanno dalla parte dove c'è spazio, e «dove sta il
+// passo» si misura sui punti della curva: `passo.n` è il numero del passo del server (fino a
+// 120), non il conteggio — leggendolo lì i testi finivano sempre a destra, fuori dalla striscia.
+test("creaSrotolato: i valori del passo stanno dalla parte dove c'è spazio, misurata sui punti", () => {
+  const punti = Array.from({ length: 120 }, (_, k) => ({ k, u: (k + 1) / 2, V: k }));
+  const ancore = (k) => {
+    const contenitore = contenitoreFinto(400);
+    creaSrotolato(contenitore, {}).disegna({
+      risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                   passo: { k, n: k + 1, u: punti[k].u, V: punti[k].V },
+                   curva: { punti, uMax: 60, vMax: 119, caduta: null }, stantia: false },
+      modello: null, selezione: null });
+    return tutti(contenitore._figli[1], "text")
+      .filter((t) => t.textContent.startsWith("u ") || t.textContent.startsWith("V "))
+      .map((t) => t.getAttribute("text-anchor"));
+  };
+  assert.deepEqual(ancore(100), ["end", "end"], "oltre la metà: i numeri a sinistra del punto");
+  assert.deepEqual(ancore(10), ["start", "start"], "sotto la metà: a destra");
+});
+
+// L'`aria-label` del riquadro era fisso «M srotolato dell'asta selezionata» anche con la curva
+// della pushover dentro: a voce la striscia prometteva una cosa e ne conteneva un'altra.
+test("creaSrotolato: il riquadro dice a voce quel che porta davvero", () => {
+  const contenitore = contenitoreFinto(400);
+  const striscia = creaSrotolato(contenitore, {});
+  const modello = { nodi: [{ id: 1, x: 0, z: 0 }, { id: 2, x: 6000, z: 0 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
+  striscia.disegna({ risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                                  passo: { k: 0, n: 1, u: 0, V: 0 },
+                                  curva: { punti: [{ k: 0, u: 0, V: 0 }], uMax: 0, vMax: 0, caduta: null },
+                                  stantia: false }, modello, selezione: null });
+  assert.equal(contenitore.getAttribute("aria-label"), "curva taglio–spostamento della pushover");
+  striscia.disegna({ risultati: { tipo: "modo", vista: "deformata", caso: "modo:2", modo: M2, stantia: false },
+                     modello, selezione: null });
+  assert.equal(contenitore.getAttribute("aria-label"), "modo 2");
+  const perCaso = { sollecitazioni: { 1: [{ x_rel: 0, My: 0 }, { x_rel: 1, My: 12e6 }] } };
+  striscia.disegna({ risultati: { vista: "V", caso: "Z1", perCaso, stantia: false },
+                     modello, selezione: { tipo: "asta", id: 1 } });
+  assert.equal(contenitore.getAttribute("aria-label"), "V srotolato dell'asta selezionata");
 });

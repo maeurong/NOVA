@@ -43,16 +43,19 @@ function righeDiNodo(m, n, { rilievo = null, risultati = null } = {}) {
   // Le sei componenti del nodo a portata del gesto che l'ha già selezionato
   // (`docs/ricerca/07-ux-modellatore.md:99`). Il caso sta nel termine: due casi aperti uno
   // dopo l'altro danno numeri diversi, e senza il nome non si sa di quale si sta leggendo.
-  if (risultati?.perCaso) {
+  // Un modo non ha spostamenti: ha una forma, adimensionale e di ordine 1 (`nova/modale.py`).
+  // Passarla per `righeSpostamenti` la scriveva «ux 1 mm» — un millimetro che nessuno ha
+  // calcolato — e stampava «φy 0 mrad» per rotazioni che `formaComeSpostamenti` mette a zero
+  // apposta, perché la forma è lineare fra i nodi. Qui c'è **solo** la forma.
+  if (risultati?.modo) {
+    righe.push(...righeModo(risultati.modo, n.id));
+  } else if (risultati?.perCaso) {
     // Dalla 14a il caso è una chiave a tre forme, e «modo:2» nel termine è la chiave grezza:
-    // chi legge vuole «modo 2» e «pushover, passo 37». L'etichetta la compone `app.js`, che sa
-    // quale passo sta mostrando; senza, si ripiega sulla chiave — non su una stringa inventata.
+    // chi legge vuole «pushover, passo 37». L'etichetta la compone `app.js`, che sa quale passo
+    // sta mostrando; senza, si ripiega sulla chiave — non su una stringa inventata.
     const termine = risultati.etichetta ?? risultati.caso;
     righe.push(...righeSpostamenti(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${termine})`, v]),
                ...righeReazioni(risultati.perCaso, n.id).map(([k, v]) => [`${k} (${termine})`, v]));
-    // La forma modale porta già il modo nel proprio termine (`righeModo`): è adimensionale, e
-    // affiancarla agli spostamenti in mm senza dire di che modo è la farebbe leggere in mm.
-    if (risultati.modo) righe.push(...righeModo(risultati.modo, n.id));
   }
   if (rilievo) {
     const g = giunzioneDelNodo(rilievo, n.id);

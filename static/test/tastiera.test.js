@@ -549,6 +549,24 @@ test("tastiera: le frecce restano al controllo che le usa per navigare (R6)", ()
   assert.equal(daControllo(evento("n", radio)), false, "le lettere restano comandi");
   const voce = { tagName: "LI", type: "", getAttribute: (k) => (k === "role" ? "button" : null) };
   assert.equal(daControllo(evento(" ", voce)), true, "Spazio attiva la voce dell'albero");
-  assert.equal(daControllo(evento("ArrowDown", voce)), true);
   assert.equal(daControllo(evento("n", voce)), false);
+});
+
+// Fix round 1, medio 3: R6 chiedeva i **radio**, e le frecce in `ATTIVANO` valevano per ogni
+// bottone. Una voce dell'albero gestisce solo Invio e Spazio (`albero.js:16-22`): dopo aver
+// scelto un nodo lì il fuoco ci resta, e `←`/`→` per il passo della pushover morivano.
+test("tastiera: le frecce su un bottone passano — una voce dell'albero non ci naviga", () => {
+  const evento = (key, target) => ({ key, target: { closest: () => target } });
+  const voce = { tagName: "LI", type: "", getAttribute: (k) => (k === "role" ? "button" : null) };
+  const bottone = { tagName: "BUTTON", type: "", getAttribute: () => null };
+  for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+    assert.equal(daControllo(evento(key, voce)), false, `voce: ${key}`);
+    assert.equal(daControllo(evento(key, bottone)), false, `bottone: ${key}`);
+  }
+  // Chi con le frecce ci naviga davvero se le tiene: radio, caselle, cursori.
+  for (const type of ["radio", "checkbox", "range"]) {
+    assert.equal(daControllo(evento("ArrowRight", { tagName: "INPUT", type, getAttribute: () => null })), true, type);
+  }
+  // E il campo di testo come sempre: la freccia muove il cursore nel testo.
+  assert.equal(daControllo(evento("ArrowLeft", { tagName: "INPUT", type: "text", getAttribute: () => null })), true);
 });

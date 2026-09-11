@@ -1671,16 +1671,22 @@ test("righe: il terzo argomento è facoltativo", () => {
 // sue righe di sempre, non `null` (che è la risposta per un nodo che non c'è).
 const traveP = Array.from({ length: 9 }).reduce((m, _, k) => creaNodo(m, { x: k * 1000, z: 3000 }), modelloVuoto());
 
-test("pannello: il termine porta l'etichetta del caso, e con un modo la riga della forma", () => {
+// Ruling del fix round 1: con un modo scelto l'ispettore stampa **solo** la forma modale. La
+// forma è adimensionale e di ordine 1 (`nova/modale.py`): passarla per `righeSpostamenti` la
+// scriveva «ux 1 mm», e le rotazioni — che `formaComeSpostamenti` mette a zero apposta, perché
+// la forma è lineare fra i nodi — uscivano come «φy 0 mrad», cioè un numero mai calcolato.
+test("pannello: con un modo l'ispettore dice la forma, e non la spaccia per millimetri", () => {
   const m2 = { n: 2, f: 31.85, T: 0.0314, forma: { 1: [1, 0, -0.03] },
                massa_partecipante: { x: 0.456215, y: 0, z: 0 }, cumulata: { x: 1, y: 1, z: 1 } };
   const r = righe(traveP, { tipo: "nodo", id: 1 }, { risultati: {
     perCaso: { spostamenti: { 1: [1, 0, -0.03, 0, 0, 0] } }, caso: "modo:2", etichetta: "modo 2", modo: m2 } });
   const termini = r.map(([k]) => k);
-  assert.ok(termini.includes("spostamenti (modo 2)"), "l'etichetta, non la chiave grezza «modo:2»");
+  assert.ok(!termini.some((k) => k.startsWith("spostamenti")), `spostamenti in mm per un modo: ${termini}`);
+  assert.ok(!termini.some((k) => k.startsWith("rotazioni")), `rotazioni inventate per un modo: ${termini}`);
   assert.ok(termini.includes("forma modale (modo 2)"));
   const forma = r.find(([k]) => k === "forma modale (modo 2)")[1];
   assert.equal(forma, "ux 1 · uy 0 · uz -0,03");
+  assert.ok(!forma.includes("mm"), "la forma è adimensionale");
 });
 
 test("pannello: con un passo della pushover il termine dice quale passo; senza `modo` niente riga della forma", () => {

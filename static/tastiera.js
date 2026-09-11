@@ -95,13 +95,15 @@ const CON_COMANDO_E_SHIFT = new Map([["z", "rifai"], ["enter", "verifica"]]);
 
 // Ciò che un bottone o una casella si tiene: quello che li attiva o li modifica, e basta.
 // Il ⌫ è qui perché era il difetto originale — premuto su «cerniera» eliminava il nodo.
-// R6: le frecce sono qui dalla 14a. In un gruppo di radio — i cinque della vista — la freccia
-// **è** il modo di cambiare selezione (ARIA), e lo stesso vale per le voci a `role="button"`
-// dell'albero: intercettandole, `←`/`→` per il passo della pushover rubavano la navigazione al
-// controllo a fuoco e la vista cambiava sotto le dita di chi stava solo scorrendo i radio.
-const ATTIVANO = new Set(["enter", " ", "backspace", "delete",
-                          "arrowleft", "arrowright", "arrowup", "arrowdown"]);
+const ATTIVANO = new Set(["enter", " ", "backspace", "delete"]);
 const NON_TESTUALI = new Set(["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"]);
+// R6, e la sua correzione: la freccia resta al controllo **solo** dove ci si naviga davvero.
+// In un gruppo di radio — i cinque della vista — la freccia *è* il modo di cambiare selezione
+// (ARIA), e `←`/`→` per il passo della pushover gliela rubavano. Su un bottone no: una voce
+// dell'albero gestisce Invio e Spazio e basta (`albero.js:16-22`), e lasciarle le frecce
+// significava che dopo aver scelto un nodo da lì i passi non si scorrevano più.
+const NAVIGANO = new Set(["arrowleft", "arrowright", "arrowup", "arrowdown"]);
+const CON_FRECCE = new Set(["radio", "checkbox", "range"]);
 
 /** Se il controllo a fuoco si tiene **questo** tasto. La domanda non è «l'evento viene da un
  *  controllo» ma «il controllo lo userebbe»: la guardia larga di prima spegneva tutti e dodici
@@ -130,8 +132,10 @@ export function daControllo(evento) {
   // tenesse anche le lettere spegnerebbe dodici comandi ogni volta che il fuoco sta su una
   // voce — `N` da lì deve continuare ad aprire il campo.
   const bottone = tag === "button" || elemento.getAttribute?.("role") === "button";
-  const testuale = !bottone && !NON_TESTUALI.has(String(elemento.type ?? "").toLowerCase());
-  return testuale || ATTIVANO.has(String(evento.key).toLowerCase());
+  const tipo = String(elemento.type ?? "").toLowerCase();
+  const testuale = !bottone && !NON_TESTUALI.has(tipo);
+  const tasto = String(evento.key).toLowerCase();
+  return testuale || ATTIVANO.has(tasto) || (!bottone && CON_FRECCE.has(tipo) && NAVIGANO.has(tasto));
 }
 
 export function voceDaEvento(evento) {
