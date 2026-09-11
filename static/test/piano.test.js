@@ -1253,7 +1253,7 @@ test("piano senza `getComputedStyle`: nodi, aste, ombra, deformata e badge hanno
     const [bordo] = diClasse(strato(svg()), "polyline", "deformata-bordo");
     assert.ok(quasi(bordo.getAttribute("stroke-width"), 6 * s), "2 di tratto più 2 di bordo per lato");
     for (const l of diClasse(strato(svg()), "line", "deformata")) assert.ok(quasi(l.getAttribute("stroke-width"), 2 * s));
-    assert.equal(badgeDi(contenitore).style.top, "6px", "titolo nascosto: il badge non scende sotto una striscia che non c'è (W1)");
+    assert.equal(badgeDi(contenitore).style.top, "22px", "titolo nascosto: il badge tiene il distacco d'oggi (16 px), non il ripiego che scala col corpo (W1)");
     piano.disegna(dueCampate, { selezione: { tipo: "nodo", id: 2 } });
     assert.ok(quasi(cerchiDeiNodi(svg())[1].getAttribute("r"), 5 * 1.6 * s), "il nodo scelto: 5 × 1,6");
   } finally {
@@ -1426,16 +1426,17 @@ test("piano: le strisce scendono dal titolo solo quando il titolo c'è, e dalle 
   const AZIONE = { id: 1, nome: "peso proprio", carichi: [] };
   const tops = (contenitore) => [badgeDi, legendaDi, coloriDi].map((f) => f(contenitore).style.top);
   const stati = { stati: { 1: [{ calcestruzzo: "elastica", acciaio: "elastica" }, FESSURATA] } };
-  // **W1** — senza azione in vista il titolo è vuoto **e** nascosto: non occupa niente, e il badge
-  // parte da 6. Prima scendeva comunque di `max(16, corpo + 5)`, cioè di 16 px a 11 e di **51 in
-  // aula**: in presentazione un piano senza azione riservava mezza striscia a un testo che non c'è.
+  // **W1** — senza azione in vista il titolo è vuoto **e** nascosto: il badge tiene il distacco
+  // d'oggi, 16 px, che a 11 px fanno il `top: 22` di `stile.css`. Prima scendeva del ripiego
+  // `max(16, corpo + 5)`, cioè di **51 px in aula**: un piano senza azione riservava mezza striscia
+  // a un testo che non c'è, e il telaio si schiacciava di altrettanto.
   const oggi = pianoCon(undefined);
   oggi.piano.disegna(traveR, { risultati: pushover(stati) });
   assert.equal(contenitoreTitolo(oggi.contenitore).hidden, true, "nessuna azione in vista: il titolo è nascosto");
-  assert.deepEqual(tops(oggi.contenitore), ["6px", "22px", "52px"], "11 px: badge 6, legenda 6 + 14 + 2, colori 22 + 28 + 2");
+  assert.deepEqual(tops(oggi.contenitore), ["22px", "38px", "68px"], "11 px: badge 6 + 16, legenda 22 + 14 + 2, colori 38 + 28 + 2");
   const aula = pianoCon(variabili({ "--etichetta": "46px" }));
   aula.piano.disegna(traveR, { risultati: pushover(stati) });
-  assert.deepEqual(tops(aula.contenitore), ["6px", "57px", "157px"], "46 px: badge 6, legenda 6 + 49 + 2, colori 57 + 98 + 2");
+  assert.deepEqual(tops(aula.contenitore), ["22px", "73px", "173px"], "46 px: badge 6 + 16 e non 6 + 51, legenda 22 + 49 + 2, colori 73 + 98 + 2");
   // Titolo **visibile**: la fascia torna a partire da lui, col ripiego `corpo + 5` stretto a 16.
   aula.piano.disegna(traveR, { azioneInVista: AZIONE, risultati: pushover(stati) });
   assert.equal(contenitoreTitolo(aula.contenitore).hidden, false, "con l'azione in vista il titolo parla");
@@ -1443,12 +1444,12 @@ test("piano: le strisce scendono dal titolo solo quando il titolo c'è, e dalle 
   // Senza gli stati delle sezioni la legenda tace e la legenda dei colori le prende il posto.
   aula.piano.disegna(traveR, { risultati: pushover() });
   assert.equal(legendaDi(aula.contenitore).hidden, true);
-  assert.equal(coloriDi(aula.contenitore).style.top, "57px", "senza legenda degli stati, sotto il badge");
+  assert.equal(coloriDi(aula.contenitore).style.top, "73px", "senza legenda degli stati, sotto il badge");
   // Le altezze misurate vincono sui ripieghi — quella del titolo solo se il titolo si vede.
   contenitoreTitolo(aula.contenitore).offsetHeight = 70;
   badgeDi(aula.contenitore).offsetHeight = 100;
   aula.piano.disegna(traveR, { risultati: pushover() });
-  assert.deepEqual([badgeDi(aula.contenitore).style.top, coloriDi(aula.contenitore).style.top], ["6px", "108px"],
+  assert.deepEqual([badgeDi(aula.contenitore).style.top, coloriDi(aula.contenitore).style.top], ["22px", "124px"],
                    "titolo nascosto: la sua altezza misurata non entra nel conto");
   aula.piano.disegna(traveR, { azioneInVista: AZIONE, risultati: pushover() });
   assert.deepEqual([badgeDi(aula.contenitore).style.top, coloriDi(aula.contenitore).style.top], ["76px", "178px"],
@@ -1466,14 +1467,15 @@ test("piano: la legenda dei colori è un ostacolo alto quanto misura, e l'etiche
                                          stantia: false, tipo: "caso", badge: {} } });
   const colori = coloriDi(contenitore);
   assert.equal(colori.hidden, false);
-  // 22 e non 38: col titolo dei carichi nascosto il badge parte da 6 e non da 22 (W1).
-  assert.equal(colori.style.top, "22px");
+  // 38: col titolo dei carichi nascosto il badge parte da 22 (6 + 16) e la legenda dei colori gli
+  // va sotto, 22 + 14 del ripiego + 2 (W1).
+  assert.equal(colori.style.top, "38px");
   // Il box come lo stima `piano.js`: alto quanto misura, largo quanto i suoi testi più la rampa di 6 em.
   const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
   const x1 = cx + 800 * s / 2, bordo = cy - 600 * s / 2;
   const [titolo, min, max] = testiColori(contenitore);
   const larga = (`${titolo} ${min} ${"x".repeat(10)} ${max}`.length * 6.6 + 8) * s;
-  const scatola = { x0: x1 - larga, y0: bordo + 22 * s, x1, y1: bordo + (22 + 40) * s };
+  const scatola = { x0: x1 - larga, y0: bordo + 38 * s, x1, y1: bordo + (38 + 40) * s };
   const testi = tutti(strato(svg()), "text");
   assert.ok(testi.length >= 1, "l'etichetta della freccia si scrive: il test non è vuoto");
   for (const t of testi) {

@@ -419,7 +419,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const altaColori = () => colori.offsetHeight || carattere + 3;
     // **W1** — `offsetHeight` di un elemento nascosto è 0, e il ripiego scattava lo stesso: in aula
     // 51 px di fascia riservati a una striscia che non c'è, su ogni piano senza azione in vista.
-    const topBadge = 6 + (titolo.hidden ? 0 : Math.max(16, titolo.offsetHeight || carattere + 5));
+    // Col titolo nascosto si tiene il distacco d'oggi — 16 px, che a 11 px fanno il `top: 22` di
+    // `stile.css` — e **non** il ripiego che scala col corpo: così in aula non si riserva spazio per
+    // una striscia che non esiste, e fuori il disegno resta identico al pixel.
+    const topBadge = 6 + (titolo.hidden ? 16 : Math.max(16, titolo.offsetHeight || carattere + 5));
     const topLegenda = scendi(badge, topBadge, altaBadge());
     const topColori = scendi(legenda, topLegenda, altaLegenda());
     const fine = scendi(colori, topColori, altaColori());
