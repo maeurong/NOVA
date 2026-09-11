@@ -1,6 +1,6 @@
 // I copioni del test di fumo: pytest li lancia con un JSON in argv[2] e legge una riga JSON su
 // stdout. Ogni copione preme tasti veri e legge il DOM vero: è l'unico test di `app.js`.
-import { apri, tasto, scrivi, ev, finche, viewport, erroriRaccolti, chiudi, pausa } from "./cdp.mjs";
+import { apri, tasto, scrivi, ev, cmd, finche, viewport, erroriRaccolti, chiudi, pausa } from "./cdp.mjs";
 
 const arg = JSON.parse(process.argv[2] ?? "{}");
 const url = `http://127.0.0.1:${arg.porta}/`;
@@ -16,6 +16,28 @@ const SOVRAPPOSTE = `(() => {
   }
   return s;
 })()`;
+
+// Apri la fixture, corri, aspetta il blocco «Risultati». Scritta una volta per i due copioni
+// della 14a invece che come sesta copia della sequenza.
+//
+// **R14** — l'attesa della corsa sta **sotto** il tetto di `copione(...)` (120 s,
+// `tests/test_fumo_chrome.py:101`): un `finche` più lungo non aspetterebbe di più, farebbe morire
+// node a metà con un `TimeoutExpired` che parla del processo e non della corsa. Il MURO 1 corre
+// la modale in 0,3 s e la pushover in ≈ 2 s (`docs/caso-studio/README.md:208`).
+const apriECorri = async (fixture) => {
+  await apri(url, arg.cdp);
+  await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(fixture)}; return true; })()`);
+  await tasto("o", { meta: true });
+  await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+  await tasto("Enter", { meta: true });   // ⌘⏎: corri
+  await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+  await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+};
+
+// Il menu del caso come lo usa il mouse: `change` è l'evento che `esito.js` ascolta.
+const scegliCaso = (valore) => ev(`(() => { const s = document.getElementById("risultati-caso"); s.value = ${JSON.stringify(valore)}; s.dispatchEvent(new Event("change", { bubbles: true })); return true; })()`);
+
+const BADGE = `document.querySelector("#piano .risultati-badge").textContent`;
 
 const COPIONI = {
   // La pagina si apre, la tastiera risponde dal primo secondo, un nodo si posa da tastiera.
@@ -136,6 +158,95 @@ const COPIONI = {
       },
       messaggio: await ev(`document.getElementById("messaggio").textContent`),
     };
+  },
+
+  // La 14a. Modale sul MURO 1: si sceglie il modo 2 dal menu, la deformata si muove da sola;
+  // Spazio la ferma e il badge lo dice. Che il piano si muova non lo può vedere nessun test JS —
+  // ci vogliono due letture a 160 ms di distanza del `points` vero.
+  async modale() {
+    await apriECorri(arg.fixture);
+    const voci = await ev(`[...document.querySelectorAll("#risultati-caso option")].map((o) => o.textContent)`);
+    const statico = await ev(`document.querySelector("#risultati-caso option").value`);
+    // **Tutte** le polilinee, non la prima: l'asta 1 del MURO 1 è il cordolo di base fra i due
+    // nodi incastrati, e nel modo 2 la sua forma è zero — guardare quella sola direbbe «ferma»
+    // di un'animazione che sta andando. Misurato l'11/09.
+    const punti = () => ev(`[...document.querySelectorAll("#piano svg polyline.deformata")].map((p) => p.getAttribute("points")).join("|")`);
+    const fermo = async () => { const x = await punti(); await pausa(160); return x === await punti(); };
+
+    // Spazio sul caso statico di partenza: non c'è animazione da fermare, e il messaggio lo dice.
+    await tasto(" ");
+    await pausa(150);
+    const senzaModo = await ev(`document.getElementById("messaggio").textContent`);
+
+    await scegliCaso("modo:2");
+    await pausa(400);
+    const a = await punti(); await pausa(160); const b = await punti();
+    const badge = await ev(BADGE);
+    // Senza la pushover scelta `←`/`→` restano al browser: nessun `preventDefault`, o si
+    // porterebbe via lo scorrimento della pagina a chi sta solo guardando un modo.
+    const frecciaLibera = await ev(`(() => { const e = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented; })()`);
+
+    await tasto(" ");
+    await pausa(200);
+    const ferma = await fermo();
+    const badgeFerma = await ev(BADGE);
+
+    // R2: nove modi su 42 del MURO 1 hanno la forma nulla sui nodi del modello. Si mostrano lo
+    // stesso, il badge dice perché, e nel disegno non compare un `NaN`.
+    await scegliCaso("modo:6");
+    await pausa(300);
+    const badgeNulla = await ev(BADGE);
+    const nan = (await punti()).includes("NaN");
+
+    // Spazio riprende, poi il caso torna statico: l'animazione si ferma da sé, e nessun
+    // fotogramma orfano continua a ridisegnare la forma di prima.
+    await scegliCaso("modo:2");
+    await tasto(" ");
+    await pausa(200);
+    const riparte = !(await fermo());
+    await scegliCaso(statico);
+    await pausa(200);
+    const fermaDopoCambio = await fermo();
+
+    // R13/D2a: `prefers-reduced-motion: reduce` spegne il moto e il badge dice perché. La
+    // preferenza si raccoglie al gesto dopo — qui il gesto è la scelta del caso.
+    await cmd("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+    await scegliCaso("modo:2");
+    await pausa(300);
+    const badgeRidotto = await ev(BADGE);
+    const fermaRidotto = await fermo();
+    await tasto(" ");   // Spazio con il moto ridotto: alterna lo stato, ma non anima niente
+    await pausa(200);
+    const fermaRidottoDopoSpazio = await fermo();
+
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { voci, senzaModo, siMuove: a !== b, frecciaLibera, ferma, badge, badgeFerma,
+             badgeNulla, nan, riparte, fermaDopoCambio, badgeRidotto, fermaRidotto,
+             fermaRidottoDopoSpazio, messaggio };
+  },
+
+  // Pushover sul MURO 1: il caso «pushover», la curva nella striscia, `←`/`→` sui passi, il clic
+  // sulla striscia, lo stato delle sezioni e la sua legenda.
+  async pushover() {
+    await apriECorri(arg.fixture);
+    await scegliCaso("pushover");
+    await pausa(300);
+    const badge1 = await ev(BADGE);
+    const cerchi = await ev(`document.querySelectorAll("#srotolato circle.passo").length`);
+    await tasto("ArrowLeft"); await tasto("ArrowLeft"); await tasto("ArrowRight");
+    await pausa(200);
+    const badge2 = await ev(BADGE);
+    // R11: il bersaglio del clic è il `<rect>` a tutta striscia, non i cerchi da 2,5 px — un
+    // clic su un cerchio non arriva al listener, che sta su un fratello. `offsetX` a zero cade
+    // sul passo più vicino all'origine, cioè il primo.
+    await ev(`(() => { document.querySelector("#srotolato rect.passi").dispatchEvent(new MouseEvent("click", { bubbles: true })); return true; })()`);
+    await pausa(200);
+    const badge3 = await ev(BADGE);
+    const stati = await ev(`document.querySelectorAll("#piano svg circle.stato").length`);
+    const legenda = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
+    const sovrapposte = await ev(SOVRAPPOSTE);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { badge1, badge2, badge3, cerchi, stati, legenda, sovrapposte, messaggio };
   },
 };
 

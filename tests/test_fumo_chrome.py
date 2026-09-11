@@ -20,6 +20,9 @@ import pytest
 RADICE = Path(__file__).resolve().parent.parent
 FUMO = RADICE / "tests" / "fumo" / "fumo.mjs"
 FIXTURE = RADICE / "tests" / "fixture"
+# Il MURO 1 del caso studio: la modale con 42 modi e la pushover con 120 passi. Non sta in
+# `tests/fixture` perché è il modello della tesi, non un banco scritto apposta per i test.
+CASO_STUDIO = RADICE / "docs" / "caso-studio"
 CANDIDATI_CHROME = (
     shutil.which("google-chrome"), shutil.which("chromium"), shutil.which("chromium-browser"),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -200,6 +203,60 @@ def test_la_verifica_del_modello_non_butta_i_risultati_in_vista(chrome_e_server,
     assert t["dopo"]["poligoni"] == t["prima"]["poligoni"], "e dopo è ancora lì"
     assert t["dopo"]["badge"] == t["prima"]["badge"], f"badge cambiato: {t['prima']['badge']!r} → {t['dopo']['badge']!r}"
     assert t["dopo"]["controlli"] is True
+
+
+# La 14a: i modi animati e la pushover scorsa, sul MURO 1 vero. Sono le due cuciture che nessun
+# test JS può vedere — che il disegno si **muova**, e che una freccia o un clic cambino il passo.
+
+
+def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_opensees):
+    """Il modo 2 del MURO 1 (31,85 Hz, ux 46 %) si muove da solo, e Spazio lo ferma."""
+    porta, cdp = chrome_e_server
+    r = copione("modale", porta, cdp, fixture=str(CASO_STUDIO / "muro_1.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    # La voce del menu porta frequenza, direzione e massa partecipante accanto al numero del modo
+    # (`docs/ricerca/07-ux-modellatore.md:103`): è la riga su cui si decide se un modo è locale.
+    assert "modo 2 · 31,85 Hz · ux 46 %" in t["voci"], [v for v in t["voci"] if v.startswith("modo 2")]
+    # Spazio sul caso statico di partenza: niente da fermare, e il messaggio dice dove si sceglie.
+    assert t["senzaModo"] == "Spazio ferma l'animazione di un modo: scegline uno dal menu", t["senzaModo"]
+    assert t["siMuove"] is True, f"la deformata del modo non si muove, badge: {t['badge']!r}"
+    # Senza la pushover scelta la freccia resta al browser: è lo scorrimento della pagina.
+    assert t["frecciaLibera"] is False, "`→` senza pushover non deve essere intercettata"
+    assert t["ferma"] is True, "dopo Spazio la deformata si muove ancora"
+    assert t["badge"].startswith("modo 2 · 31,85 Hz"), t["badge"]
+    assert "(auto)" in t["badge"], f"la scala va dichiarata sempre (P3): {t['badge']!r}"
+    assert t["badgeFerma"].endswith(" · ferma"), t["badgeFerma"]
+    # R2: il modo 6 del MURO 1 ha la forma nulla sui nodi del modello — si mostra lo stesso, il
+    # badge dice perché, e il disegno non porta un `NaN`.
+    assert "forma nulla sui nodi del modello" in t["badgeNulla"], t["badgeNulla"]
+    assert t["nan"] is False, "un `NaN` nei punti della deformata"
+    assert t["riparte"] is True, "Spazio non ha ripreso l'animazione"
+    assert t["fermaDopoCambio"] is True, "il caso statico non ha fermato l'animazione del modo"
+    # R13/D2a: con `prefers-reduced-motion: reduce` niente moto, e il badge ne dice il motivo —
+    # un'animazione che non parte senza spiegazione si legge come rotta.
+    assert t["badgeRidotto"].endswith(" · ferma (preferenza di sistema)"), t["badgeRidotto"]
+    assert t["fermaRidotto"] is True, "col moto ridotto la deformata si muove lo stesso"
+    assert t["fermaRidottoDopoSpazio"] is True, "col moto ridotto Spazio fa ripartire l'animazione"
+    assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
+
+
+def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, binario_opensees):
+    """120 passi: si parte dall'ultimo, `←←→` porta al 119, il clic sulla striscia al primo."""
+    porta, cdp = chrome_e_server
+    r = copione("pushover", porta, cdp, fixture=str(CASO_STUDIO / "muro_1_pushover.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert "passo 120/120" in t["badge1"], t["badge1"]
+    assert t["cerchi"] == 120, f"un cerchio per passo nella striscia: {t['cerchi']}"
+    assert "passo 119/120" in t["badge2"], t["badge2"]
+    assert "passo 1/120" in t["badge3"], t["badge3"]
+    assert t["stati"] > 0, "nessun simbolo dello stato delle sezioni sulla deformata"
+    assert t["legenda"] is False, "i simboli ci sono e la legenda no"
+    assert t["sovrapposte"] == [], f"etichette sovrapposte: {t['sovrapposte']}"
+    assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
 
 
 
