@@ -758,8 +758,12 @@ direzioneDominante(mp)                // R3: null se max(mp) < 0.01 → la voce 
 
 // Task 1 → Task 3, dentro `risultati` di `creaSrotolato().disegna`
 { ...il precedente, curva, passo }
-// curva: { punti: [{k, u, V}], uMax, vMax, caduta: {k, u, motivo}|null }  — solo con tipo "pushover"
-// passo: { k, n, u, V }                                                   — solo con tipo "pushover"
+// curva: { punti: [{k, u, V}], uMax, vMax, caduta: {k, n, u, motivo}|null }  — solo con tipo "pushover"
+//   caduta.k = dove si ferma il disegno (stretto in [0, punti.length − 1]); caduta.n = il passo
+//   come lo conta il server, ed è quello dei **testi**: con `non_convergenza` il passo caduto non
+//   sta in `passi[]` (`tests/test_pushover_binario.py:153`: `caduta["passo"] == len(passi) + 1`)
+// passo: { k, n, u, V }                                                      — solo con tipo "pushover"
+//   qui `n` è il conteggio dei passi, e lo costruisce il Task 4 da `casoScelto(...).quanti`
 
 // Task 3 → Task 4
 creaSrotolato(contenitore, { suPasso })     // suPasso(k): k intero già stretto in [0, n)
@@ -827,8 +831,9 @@ export function vociDelCaso(risultati)
 export function casoScelto(risultati, caso, passo = null)
 // → null | { tipo: "caso", perCaso }
 //   | { tipo: "modo", n, modo, perCaso: formaComeSpostamenti(modo) }
-//   | { tipo: "pushover", k, n: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti }, stati: passi[k].stato_sezioni, caduta, u0 }
-//   `passo` null → l'ultimo (k = n − 1); fuori da [0, n) → stretto ai limiti
+//   | { tipo: "pushover", k, quanti: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti }, stati: passi[k].stato_sezioni, caduta, u0 }
+//   `passo` null → l'ultimo (k = quanti − 1); fuori da [0, quanti) → stretto ai limiti
+//   il conteggio è `quanti`, non `n`: nel ramo del modo `n` è il **numero** del modo
 export function formaComeSpostamenti(modo)        // { spostamenti: { "<id>": [ux, uy, uz, 0, 0, 0] } } (niente rotazioni: la forma è lineare fra i nodi)
 export function stazioniDiAsta(a, quante = null)  // [x_rel…] da XI_LOBATTO e `a.suddivisioni` (default 1); se `quante` è dato e non combacia → equispaziate su `quante`
 export function scalaModo(m, modo, frazione = 0.05)
@@ -838,9 +843,13 @@ export function scalaModo(m, modo, frazione = 0.05)
 export function percento(v)                       // R3: `${Math.round(100 * v)} %`; `null` → «0 %»
 export function direzioneDominante(mp)            // R3: "x"|"y"|"z", o `null` se il massimo è < 1 %
 export function simboloStato(stato)               // { riempimento: 0|0.5|1, contorno: "sottile"|"spesso"|"croce" } | null
-export function curvaPushover(passi, caduta)      // { punti: [{k, u, V}], uMax, vMax, caduta: {k, u, motivo}|null } — u in mm (relativo), V in kN
-export function testoBadge({ vista, caso, scala, auto, stantia, ruotate, modo, passo, fermo })
-// modo: «modo 2 · 31,85 Hz · T 0,0314 s · ux 46 % · ×n (auto)» + « · ferma» se fermo; f null → «modo 3 · frequenza non fisica · ×n (auto)»
+export function curvaPushover(passi, caduta)      // { punti: [{k, u, V}], uMax, vMax, caduta: {k, n, u, motivo}|null } — u in mm (relativo), V in kN
+// caduta: `k` per il disegno (stretto alla lista), `n` per i testi (il passo del server, che con
+// `non_convergenza` è `len(passi) + 1` e quindi **non** è un passo della lista)
+export function testoBadge({ vista, caso, scala, auto, stantia, ruotate, modo, passo, caduta, fermo, motivoFermo })
+// modo: «modo 2 · 31,85 Hz · T 0,0314 s · ux 46 % · ×n (auto)» + « · forma nulla sui nodi del modello» (R2)
+//       + « · ferma» se fermo, « · ferma (preferenza di sistema)» se anche `motivoFermo`;
+//       f null → «modo 3 · frequenza non fisica · ×n (auto)»; massa sotto l'1 % → «massa trascurabile» (R3)
 // pushover: «pushover · passo 37/120 · u 18,5 mm · V 42,3 kN · ×n (auto)» + « · caduta al passo 89: <motivo>» se caduta
 export function testoLegendaStati()               // «calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta»
 export function righeModo(modo, id)               // [["forma modale (modo 2)", "ux 0,12 · uy 0 · uz −0,03"]] o []
