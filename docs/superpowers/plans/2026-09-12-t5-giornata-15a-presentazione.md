@@ -25,6 +25,398 @@
 
 **Ramo:** `feat/interfaccia-15-presentazione` da `main` `f277425`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-15` (venv pronto, `nova ok 3.12.13`). PR verso `main`; merge solo con via libera dell'autore.
 
+## Annotazione dell'architect (12/09/2026)
+
+Worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-15`, ramo `feat/interfaccia-15-presentazione`, HEAD **`d5484aa`**
+(questo piano, sopra `f277425`), albero pulito prima e dopo (`git -C … status --short` vuoto). Premesse
+**misurate lanciando il codice**: server `.venv/bin/python -P -m nova --porta 8824` (serve
+`interfaccia-15/nova/__init__.py`, verificato), Chrome headless pilotato con `tests/fumo/cdp.mjs` a
+1920×1080, il CSS del Task 4 **iniettato nella pagina servita** (niente scritto in `static/`), MURO 1 e
+MURO 1 pushover corsi davvero (OpenSees `~/.local/bin/OpenSees`). Script: `/tmp/misura15/misura.mjs`,
+`/tmp/misura15/compatta.mjs`; contrasto con `/Users/mario/.claude/jobs/4fd80bf5/tmp/viridis-contrasto.py`.
+Server e Chrome spenti alla fine. WebGL headless: «ANGLE Metal Renderer: Apple A18 Pro» — i millisecondi
+del 3D sono di questa macchina.
+
+**Cosa cambia il piano sta in R1-R8.** Il blocco CSS del Task 4 così com'è fa fallire il fumo: la striscia
+esce a 10-12 px e alta 489 px, e `revert` fa riapparire gli elementi `hidden`. Il bordo coassiale del 3D,
+come scritto, nasconde il colore. E l'allargamento del riquadro per i nomi, a 46 px, rimpicciolisce il
+MURO 1 a 356×253 px.
+
+### 0. Le premesse misurate
+
+**Contrasto su `#dcdad5`** (WCAG, colore composto sul fondo):
+
+| grafica | reso | contrasto |
+|---|---|---|
+| ombra inchiostro a 0,3 (oggi) | `#a09f9b` | **1,90** — sotto 3:1 |
+| ombra a 0,55 (presentazione) | `#6e6d6b` | **3,70** ✅ |
+| opacità minima per 3:1 | — | **0,4773** |
+| rosso `#b8321e` | — | 4,28 ✅ |
+| `--testo-tenue` `#141414a0` | `#5f5e5c` | 4,64 ✅ |
+| inchiostro | — | 13,19 |
+| bordo inchiostro **sull'ombra** a 0,55 | — | 3,56 ✅ |
+| tappe di viridis sull'ombra a 0,55 | — | 2,95 (t=0) → 1,15 (t≈0,44) → 4,09 (t=1) |
+
+0,55 basta. Fuori presentazione l'ombra resta a 1,90 come oggi: la soglia è dell'aula (story 62).
+
+**Layout a 1920×1080 in presentazione** (`getBoundingClientRect`, `clientWidth/Height`):
+
+| | CSS del Task 4 alla lettera | CSS di R1 |
+|---|---|---|
+| senza corsa: altezza della striscia | 553 px (`.vuoto` a `max-width: 24rem`, `stile.css:241`) | **102 px** |
+| MURO 1 statica: piano / striscia | 1151×567 / **489 px** | **1151×944 / 112 px** |
+| pushover: piano / srotolato / striscia | 1151×471 / 120 / 489 | **1151×801 / 120 / 159 px** |
+| corpo di `select` · `label` · `legend` · `kbd` · `input` | **12 · 11 · 10 · 10 · 12 px** | 32 px tutti |
+| `#messaggio` | 19,2 px | 32 px |
+| `#piano` / `#spazio` (`clientWidth`) | 1151 / 768 = **1,499** | uguale |
+| la pagina scorre | no | no |
+
+A 12 px perché `font-size: 32px` su `body` **non arriva** dove un selettore scrive un corpo suo:
+`stile.css:298` (`#risultati-controlli > label`, 11 px), `:299-303` (`#risultati-caso`, `#risultati-scala`,
+12 px), `.vincolo-gradi label` 11 px e `legend` 10 px (`:129`, `:152`), `#risultati-vista kbd` 10 px
+(`:246`). L'asserzione del fumo `striscia >= 32`, letta su `#risultati-caso`, leggerebbe **12**. A 489 px
+perché il `width: 100%` di menu e campo (`:300`) e i radio a due colonne (`:311`) mettono ogni controllo su
+una riga sua.
+
+**I pannelli con `display: revert`**: `#pannello-dati` esce `display: block` **con `hidden = true`**.
+`revert` torna all'origine del browser, e in Chrome l'attributo `hidden` è un hint di presentazione che lì
+non c'è: **gli elementi `hidden` riappaiono** (il vuoto dell'ispettore anche con una selezione, gli editor
+vuoti). E la Storia torna (`display: block`), contro P1a.
+
+**Il bottone «pannelli»** a `top/left: 8px` occupa 126×52 px da (8, 8); il titolo dei carichi a 46 px
+occupa 518×54 da (8, 6): **lo copre**.
+
+**Le strisce sopra il piano** (`offsetHeight`):
+
+| | titolo | badge | legenda degli stati | somma con i `top` |
+|---|---|---|---|---|
+| tutto a 46 px, statica (piano 944) | 54 | 54 | 216 | 332 px = 35 % |
+| tutto a 46 px, pushover (piano 801) | 54 | 108 | 216 | 386 px = 48 %, + legenda dei colori ≈ 54 → **55 %** |
+| titolo e legende a 32, badge a 46 | 38 | 54 / 108 | 114 | 214 / 268 (+38) = 23 % / **38 %** |
+
+**Etichette dei nodi del MURO 1 a 46 px**, con le formule del Task 2 e le `estensione`/`versoLibero` vere
+(`piano.js:69`, `:87`; nomi da `tests/fixture/muro_1.nova.json:123-173`: «piede sx», «piede dx», «sommità
+sx», «sommità dx»). **Le etichette dei nodi non passano da `disponi`**: le posa `versoLibero` (`:417`);
+`disponi` posa solo picchi e carichi (`:576`). Offset `max(16, 7 + 27,6)` = 34,6 px, box da 223-278 × 49
+px. **Zero sovrapposizioni** fra etichette, cerchi e simboli, tutte dentro il ritaglio, su ogni riquadro
+provato. Il riquadro invece no:
+
+| piano | con l'allargamento del piano (`:315-326`) | minimo che basta |
+|---|---|---|
+| 1151×567 | non scatta (`W > 2P` falso): telaio 517×368 px | — |
+| 1151×944 | scatta: telaio **356×253 px** | 545×387 |
+| 1151×801 | scatta: telaio **194×138 px** | 545×387 |
+
+L'extra va su **tutti e due** gli assi (`piano.js:80-81`) ed è calcolato sul lato che comanda; aggiunto,
+comanda l'altro lato e `s` cresce. A 11 px non si vede: su 430×770 e 679×989 (le forme del piano a 1280 e
+a 1920) il minimo simmetrico e quello solo in x coincidono (e = 390 e 75 mm, stesso telaio). Da qui R3.
+
+**three.js r185** (`static/vendor/three.core.js:6`): `CylinderGeometry(1, 1, 1, 8)` sta sull'asse y,
+centrata (box y ∈ [−0,5, 0,5]; `:30019`); `Quaternion.setFromUnitVectors` c'è (`:4337`); `BackSide` = 1
+(`:104`); `PointsMaterial.size` × `pixelRatio` (`three.module.js:15272`). **Bordo coassiale**: una colonna
+di pixel attraverso un cilindro r=10 inchiostro attorno a uno r=4 giallo:
+
+- come dice il piano (colorato a `renderOrder` maggiore, `depthWrite` normale): **12 righe inchiostro,
+  0 gialle** — il colorato sta dentro il bordo e il depth test lo scarta;
+- bordo con `side: BackSide`: 4 inchiostro · 4 giallo · 4 inchiostro ✅;
+- bordo con `depthWrite: false`: stesso disegno, ma il bordo smette di coprire quel che ha dietro.
+
+**Quanti cilindri**: 4 aste × 4 suddivisioni × 8 campioni = **32 tratti per asta, 128 in tutto** (contati
+sulle `polyline.deformata` della pagina corsa); 128 colorati + 128 bordi + 4 aste = **260 mesh**; la
+pushover ha la stessa geometria (`muro_1_pushover.nova.json:183-207`). **Costo di un fotogramma** (260
+`Mesh` rifatte + `render` + `gl.finish`, 768×591 px, 60 giri): materiali in una `Map` persistente
+**0,78 ms** (max 1,5); `Map` svuotata con `dispose()` a ogni giro ma con un `MeshBasicMaterial` fisso ancora
+vivo **2,45 ms**; senza nessun materiale vivo **5,15 ms, e 13,7 / 11,6 ms nei primi giri** (il programma si
+butta e si ricompila). Colori distinti che `viridis` può rendere: **648** (t campionato a 10⁻⁶).
+
+**Profondità vera nel 3D** (orbita di partenza θ 0,6, φ 1,1, `spazio.js:88`; distanza 4995 mm da
+`calcolaInquadratura`): i nodi stanno da 3799 a 6192 mm di profondità. Con `k` preso al centro dell'orbita,
+un tratto voluto di 6 px esce **4,84 px** al piede sx e **7,89 px** alla sommità dx: −19 % / +31 %, non
+«sotto il pixel». Da qui R6.
+
+**Le misure rese**: su un nodo del MURO 1 a 1920, `r · 2 · getScreenCTM().a` = **10,0000003** contro
+`getBoundingClientRect().width` = 10, e `font-size · CTM.a` = 11,0000003; `a = d`, `b = c = 0`. Il metodo
+regge; il rumore è ±3·10⁻⁸ relativo e può cadere sotto (R12).
+
+**|u|max a ogni giro**: `puntiDeformata(m, perCaso, 1)` sul MURO 1 con tre stazioni interne per asta (33
+punti per asta) costa **0,011-0,034 ms** a chiamata (node, 1000 giri). Da qui R7.
+
+**Le pure del Task 1**: `0.6 * 11 === 6.6` → true; `0.6 * 46` = 27,599999999999998 (il test ha la
+tolleranza); `viridis(1/9)` = `#482878` (`pos` = 1 esatto); `viridis(0.5)` = `#23908c`; `conciso(12.34)` =
+«12,34» (`numeri.js:182-195`: due decimali sotto 100); la trave del test: `assiDi` (`risultati.js:157-167`)
+dà `e2 = (−0, 1)`, quindi `w1 = −4`, `a1 = 3`, Hermite esatto a s = 1 → `hypot` = 5 esatto. Gli oracoli del
+Task 1 passano come sono scritti; **il codice no** (R8). Il Task 3 invece ha un oracolo che non passa:
+`pixelInMondo(1000, 90, 500)` rende **3,9999999999999996** (`Math.tan(π/4)` = 0,9999999999999999), e
+`assert.equal(…, 4)` è rosso → tolleranza `< 1e-9`.
+
+### 1. I puntamenti che non combaciano
+
+Corretti qui, non nel corpo. Nessuno cambia *cosa* fare.
+
+| citato | vero |
+|---|---|
+| `piano.js:26` `LARGHEZZA_NOMINALE` | **`:29`** |
+| `piano.js:186-197` ramo deformata | **`:184-197`** (`:184` è l'`if`) |
+| `piano.js:340` ombra | `:340` è il tratto delle aste; l'ombra è **`:344`** |
+| `spazio.js:98-107` `ridimensiona` | **`:94-103`** |
+| `spazio.js:109-122` `rendi` | **`:105-118`** |
+| `stile.css:98-105` `.risultati-legenda` | la regola è **`:103-105`** (`:97-102` il commento) |
+| `app.js:835-840` `resize` | il listener apre a **`:836`** |
+| `app.js:919-921` | `dispatchVoce` **`:920`**, `annulla` `:921`; la guardia del campo sta a **`:965`** |
+| «`risultati.tipo` arriva da `app.js` (Task 4)» | c'è già: `app.js:124` (`tipo: scelto.tipo`). Il Task 4 aggiunge solo `uMax` |
+| `07-ux-modellatore.md:157` per i 46 px | la riga dice «scala tipo ×1,6»; i 46 px stanno a **`:133`** e in `PRODUCT.md:96-101` (11 → 46 è ×4,2) |
+
+Combaciano, aperte qui: `risultati.js:87`, `:127`, `:199`, `:224`, `:229`, `:233`, `:345`, `:546`, `:639`;
+`app.js:82-83`, `:99`, `:372-378`, `:398`, `:741`, `:747`, `:756`, `:768`, `:864`; `tastiera.js:14-57`,
+`:71-88`, `:98`, `:126-139`, `:166-170`, `:172-193`; `tastiera.test.js:56`, `:86`; `piano.test.js:118-156`,
+`:416`, `:453-467`, `:1017`, `:1024`; `palette.js:27`; `cdp.mjs:7`, `:29`, `:37-38`, `:41`, `:51`, `:73`;
+`fumo.mjs:10-18`, `:27-35`, `:47-51`; `test_fumo_chrome.py:96`, `:135-139`; `stile.css:3-16`, `:20-38`,
+`:48-53`, `:57`, `:66`, `:82`, `:93`; `docs/ricerca/index.md:19` (= ricerca 07); `07-ux-modellatore.md:92`,
+`:100` (WCAG **1.4.11**, giusto), `:133`, `:154`; spec `:115-117`.
+
+### 2. I rischi, con il ruling
+
+**R1 — Il blocco CSS del Task 4 si sostituisce con questo**, misurato (colonna destra del §0). Nasconde con
+`:not([data-pannelli])` invece di riaprire con `revert`; porta a 32 px i controlli che hanno un corpo loro;
+mette la striscia in riga; tiene la Storia nascosta anche coi pannelli aperti (P1a).
+
+```css
+body[data-presentazione] {
+  --nodo-raggio: 7px; --asta-tratto: 6px; --asta-tratto-scelta: 9px;
+  --deformata-tratto: 6px; --deformata-bordo: 2px; --etichetta: 46px; --ombra-opacita: 0.55;
+  grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto;
+  grid-template-areas: "viste" "striscia" "messaggio" "comando"; font-size: 32px;
+}
+body[data-presentazione] #barra,
+body[data-presentazione]:not([data-pannelli]) #colonna,
+body[data-presentazione]:not([data-pannelli]) #pannello > :not(#risultati),
+body[data-presentazione] #pannello > :is(#storia-elenco, h2:has(+ #storia-elenco)) { display: none; }
+body[data-presentazione] #viste { grid-template-columns: 3fr 2fr; }
+body[data-presentazione]:not([data-pannelli]) #pannello { grid-area: striscia; border-left: 0; border-top: 1px solid var(--tratto);
+  overflow: visible; padding: calc(var(--passo) / 2) var(--passo); }
+body[data-presentazione] :is(#risultati, #messaggio, #comando) :is(label, legend, select, input, kbd, p, span),
+body[data-presentazione] #messaggio { font-size: 32px; }
+body[data-presentazione] #risultati .vuoto { max-width: none; margin: 0; padding: 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-controlli:not([hidden]) { display: flex; flex-wrap: wrap; gap: 0 1em; align-items: baseline; }
+body[data-presentazione]:not([data-pannelli]) #risultati-controlli > label { display: inline; margin: 0; }
+body[data-presentazione]:not([data-pannelli]) :is(#risultati-caso, #risultati-scala) { width: auto; }
+body[data-presentazione]:not([data-pannelli]) #risultati-scala { width: 5em; }
+body[data-presentazione]:not([data-pannelli]) #risultati-vista { display: flex; gap: 0 0.75em; align-items: baseline; margin: 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-vista legend { float: left; margin: 0 0.25em 0 0; }
+body[data-presentazione]:not([data-pannelli]) #risultati-equilibrio { margin: 0; }
+body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 22rem) 1fr minmax(220px, 30rem);
+  grid-template-rows: 1fr auto auto; grid-template-areas: "albero viste pannello" "messaggio messaggio messaggio" "comando comando comando"; }
+body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
+#riapri-pannelli { display: none; }
+body[data-presentazione] #riapri-pannelli { display: block; position: fixed; top: var(--passo); right: var(--passo); z-index: 2; font: inherit; font-size: 32px; }
+```
+
+`float` sulla `legend`: una legenda flottante smette di essere la legenda del fieldset e diventa un figlio
+del flex (misurato: sta in riga). Coi pannelli aperti, misurato dopo `G`: Storia `none`, «Niente di
+selezionato» resta `hidden`, `#pannello-dati` visibile. Le ultime tre regole (strisce a 32, bottone)
+vengono da R2 e R9. **Costo se sbaglio:** il fumo rosso su `striscia >= 32`, il piano più basso del 40 %, e
+coi pannelli aperti blocchi `hidden` in vista.
+
+**R2 — Il bottone «pannelli» va in alto a destra**, sopra il 3D (regola in R1): a sinistra copre il titolo
+dei carichi (misurato). Il 3D non ha niente in quell'angolo (`spazio.js:77`: il solo canvas) — posizione
+**non misurata**, la prova il Task 5. Il bottone è primo nel DOM (`index.html`, prima di `#colonna`), quindi
+in presentazione è la prima fermata di ⇥: WCAG 2.4.3 regge. 126×52 px ≥ 24: 2.5.8 regge. **Costo se
+sbaglio:** il nome dell'azione illeggibile in aula.
+
+**R3 — L'allargamento per i nomi va solo in x, calcolato sempre sulla larghezza** (Task 2). Il nome sta di
+fianco al nodo (`versoLibero`: ←, →, ↖, ↗ sul MURO 1), e l'extra in z serve solo a far comandare l'altro
+lato:
+
+```js
+// piano.js, estensione (:81): l'extra è dei nomi dei nodi, che stanno di fianco — in z non va.
+  const mx = larghezza * MARGINE + extra, mz = altezza * MARGINE;
+```
+
+```js
+// piano.js, disegna (:317-318): sempre la larghezza. Col lato che comanda, a 46 px l'extra finiva
+// anche in z, comandava l'altro lato e il MURO 1 usciva 356×253 px su 1151×944 (minimo: 545×387).
+    const W = pxL, L0 = vista.larghezza;
+```
+
+(`orizzontale` sparisce.) Nessun test chiama `estensione` col terzo argomento (`piano.test.js:79-107`).
+Fuori presentazione, sui riquadri alti — l'unica forma che il piano ha a 1280 e a 1920 — il telaio esce
+identico (misurato); cambia solo in un riquadro più largo che alto, dove oggi il conto usava l'altezza per
+un'etichetta che è larga. **Costo se sbaglio:** in aula il telaio occupa il 31 % della larghezza del piano
+(statica) o il 17 % (pushover).
+
+**R4 — Il bordo del 3D è un cilindro coassiale con `side: THREE.BackSide`** (Task 3), senza
+`renderOrder` né `depthWrite`: le sole facce posteriori del cilindro grosso lasciano passare il colorato al
+centro e restano scure ai lati (misurato 4 · 4 · 4). Il `renderOrder` del piano rende un tubo nero.
+**Costo se sbaglio:** nel 3D nessun colore, la legenda del piano non ha niente a cui riferirsi.
+
+**R5 — I materiali di viridis stanno in una `Map` persistente, mai svuotata né buttata.** Il tetto è
+misurato: 648 colori. Svuotarla a ogni `disegna` costa 3× (2,45 contro 0,78 ms), e se in scena non resta
+un `MeshBasicMaterial` vivo il programma si ricompila (13,7 ms nei primi giri: fotogramma sforato). Il
+materiale dell'ombra resta uno solo, trasparente a `misure.ombra`, riscritto a ogni `disegna`. Cambia
+l'ingresso degenere del Task 3 (§7).
+
+**R6 — Nel 3D lo spessore si misura sull'estremo più lontano di ogni cilindro**, non al centro
+dell'orbita: su profondità vera lo scarto è −19 % / +31 % e l'asta lontana scende a 4,84 px, sotto i 6
+della story. In `rendi()`, prima di `renderer.render`, con `userData.estremi = [a, b]` (due `Vector3`)
+scritto da `cilindroFra`:
+
+```js
+    // ponytail: la distanza euclidea dell'estremo lontano, non la profondità lungo l'asse della camera:
+    // è più grande, quindi il tratto esce appena più spesso e mai più sottile del voluto. Il capo vicino
+    // ingrossa: è la prospettiva.
+    for (const o of disegnato.children) if (o.userData.tratto) {
+      const lontano = Math.max(...o.userData.estremi.map((p) => camera.position.distanceTo(p)));
+      o.scale.x = o.scale.z = pixelInMondo(lontano, camera.fov, contenitore.clientHeight) * o.userData.tratto / 2;
+    }
+```
+
+**Costo se sbaglio:** metà del telaio sotto soglia proprio nella vista che l'aula guarda di più.
+
+**R7 — |u|max senza cache per caso e modo, e solo in vista deformata.** 0,011-0,034 ms a chiamata sul
+MURO 1 contro 16,7 ms di fotogramma: una cache vorrebbe una chiave, e il `perCaso` di un modo è un oggetto
+nuovo a ogni `casoScelto` (`risultati.js:562`). La pushover resta in cache accanto a `scalaCache`
+(`app.js:82`) come scritto. In M/V/N `uMax` non si calcola: sta nello stesso ramo di `scalaDeformata`
+(`app.js:109-112`). **Costo se sbaglio:** su un telaio di 80 aste ≈ 0,7 ms a fotogramma; misurabile, non
+bloccante.
+
+**R8 — `puntiDeformata`: `uy` si dichiara prima di `y`.** Il piano mette `const uy = …` al posto del `push`
+(`:233`) e chiede a `const y` (`:229`) di usarlo: così è una `ReferenceError` (TDZ) al primo punto. Ordine
+giusto: `const uy = (1 - s) * q0.u[1] + s * q1.u[1];` subito prima di `:229`, e `:229` diventa
+`i.y + r * (j.y - i.y) + scala * uy`. **Costo se sbaglio:** ogni vista deformata solleva.
+
+**R9 — Le misure dell'SVG: fuori dall'aula il disegno resta quello d'oggi, ripieghi compresi** (Task 2).
+Ogni ripiego del DOM finto, a 11 px, deve dare il numero d'oggi:
+
+- titolo: `titolo.offsetHeight || misure.carattere + 9` (= 20, `piano.js:489`);
+- badge: `top = 6 + Math.max(16, titolo.offsetHeight || misure.carattere + 5)` (= 22 col titolo nascosto,
+  come `stile.css:93`). Il piano scrive `6 + altoTitolo`, che col titolo nascosto dà 6 e sposta il badge
+  **anche fuori dall'aula**; l'ingresso degenere «titolo nascosto → badge a `top = 6`» del Task 2 diventa
+  «→ `top = 22` a 11 px»;
+- riga del badge `badge.offsetHeight || misure.carattere + 3` (= 14, `:476`); legenda
+  `|| 2 * (misure.carattere + 3)` (= 28, `:485`);
+- picchi e freccia: `font-size: misure.carattere * s` (`:584`) e `altezza: (misure.carattere + 3) * s`
+  (`:575`) — il piano nomina solo le etichette dei nodi, ma picchi a 11 px accanto a nomi da 46 non si
+  leggono da 8 m;
+- `RAGGIO` resta nei simboli dei vincoli (`:497`) e nel cerchio del ghost (`:363`): «i simboli restano come
+  sono». `misure.raggioNodo` va solo a `:408` e `:411`;
+- `div.risultati-colori` si appende **in coda** a `replaceChildren` (`:133`): `badgeDi` = `_figli[2]`
+  (`piano.test.js:416`) e `legendaDi` = `_figli[3]` (`:1017`) restano validi;
+- `.risultati-colori svg { width: 6em; height: 0.6em; }` invece di 120×10 fissi: a 32 px un'altezza di 10 è
+  un filo;
+- le strisce sopra il piano: il badge a `var(--etichetta)` (è la scala stampata della story 62); titolo,
+  legenda degli stati e legenda dei colori a 32 px in presentazione (regola in R1), 11 px fuori. Misurato:
+  sulla pushover il testo sopra il piano passa dal 55 % al 38 % dell'altezza.
+
+**Costo se sbaglio:** i test d'oggi restano verdi ma il disegno fuori dall'aula cambia senza che nessuno se
+ne accorga, oppure sulla pushover in aula metà piano è testo e i picchi non trovano posto.
+
+**R10 — Nel 3D il disegno cambia anche fuori dall'aula**, per come il piano l'ha costruito: le aste passano
+da una `Line` di 1 px (`spazio.js:167`) a cilindri di 2 px, e i nodi, con `size = 2 · raggioNodo`, da 6 a
+10 px (inchiostro) e da 10 a 16 px (rosso) — le misure del piano SVG. «Il disegno non cambia di un pixel»
+vale per l'SVG; per il 3D è un cambio dichiarato, da scrivere nell'Esito. Nessun ripiego apposta (P7a).
+
+**R11 — `Esc` dopo la selezione.** `G` non è un gesto: `annulla` guarda solo `modo` e `comando`
+(`app.js:921`), quindi `G` poi `Esc` esce dalla presentazione e il copione regge. Il suo commento
+(«chiude la selezione? no…») va riscritto come frase. `P` sta sotto la guardia del campo (`:965`) e sopra
+quella del modo, come `vista`: in modo asta `P` alterna — accettato.
+
+**R12 — Il fumo con tolleranza e senza copie.** `reso(...)` legge 46,0000003 oppure 45,9999997, secondo il
+CTM: soglie `>= 45.99`, `>= 5.99`, `>= 13.99`. `apriECorri(fixture, dimensioni)` passa le dimensioni ad
+`apri(url, arg.cdp, dimensioni)`: niente «come apriECorri» ricopiato. `proporzione` misurata 1,499 ✅;
+`strisciaSotto` ✅ (il pannello comincia a y 968, dove finiscono le viste).
+
+**R13 — La palette.** `filtraVoci` dà 120 al tasto uguale alla query (`palette.js:27`): con «p»
+`presentazione` scavalca `pausa` (100 per `codice`). Vale solo per la query di una lettera; «pa» e «pau»
+restano a `pausa`. Accettato: è la regola di «n» → nodo.
+
+**R14 — (g), (h), (i).** Pushover con |u|max fisso sul passo di riferimento: al passo 1 tutto viola, ed è
+giusto, perché la legenda non respira. Deformata sopra l'ombra: il bordo inchiostro stacca l'ombra a 3,56:1;
+le tappe basse di viridis sull'ombra scendono a 1,15, ma la forma la porta il bordo, e in B/N anche il
+colore. WebGL assente: `assente` rende `disegna() {}` (`spazio.js:192-199`); `pixelInMondo` e `tratti` stanno
+fuori da `costruisci`, quindi `spazio.test.js` le importa senza three.
+
+### 3. Le domande aperte (senza ruling)
+
+- **Il fuoco sul menu del caso.** Scelto il caso col mouse, il fuoco resta sul `select`, che si tiene le
+  lettere (`tastiera.js:136`: `select` è «testuale»). `P` per uscire salta all'opzione «pushover» e **cambia
+  il caso**; `Esc` non esce. Il rimedio (un `select` che lascia passare le lettere di comando) tocca tutti i
+  menu dell'editor: decide l'autore, dopo la prova del Task 5.
+- **Lo srotolato in presentazione**: 24 px con la statica, 120 con la pushover (la curva). P1a non lo
+  nomina; oggi resta.
+- **Le soglie nel 3D**: il fumo le misura solo sull'SVG. Nel 3D le reggono R6 e la prova a mano.
+
+### 4. Chi esegue, con quale modello, in quale ordine
+
+| Task | Subagente | Modello | Parallelo? | Skill-gate | Riferimento |
+|---|---|---|---|---|---|
+| 1 — `misure.js`, viridis, \|u\| per punto, `P` (R8) | `frontend-engineer` | `sonnet` | no, primo | **sì** | `docs/ricerca/07-ux-modellatore.md:154` |
+| 2 — piano: misure, deformata in viridis, legenda, allargamento (R3, R9) | `frontend-engineer`, con `impeccable` | **`opus`** | **‖ Task 3**, dopo 1 | **sì** | `docs/ricerca/07-ux-modellatore.md:154` |
+| 3 — 3D: cilindri, `BackSide`, spessore sull'estremo, `Map` persistente (R4-R6) | `frontend-engineer` | **`opus`** | **‖ Task 2**, dopo 1 | **sì** | `docs/ricerca/07-ux-modellatore.md:157` |
+| 4 — CSS di R1, `P`/`Esc`, bottone, `uMax`, fumo (R1, R2, R7, R11, R12) | `frontend-engineer`, con `impeccable` | **`opus`** | no, dopo 2 **e** 3 | **sì** | `docs/ricerca/07-ux-modellatore.md:133` |
+| 5 — prova a 1920 e al 25 %, review di ramo, Esito | controller | — | ultimo | — | `docs/ricerca/07-ux-modellatore.md:133` |
+
+Riferimenti secondari per il brief: Task 2 anche `:100` (doppio canale) e `:133`; Task 4 anche `:157` e
+`:92`.
+
+**Disgiunzione, file per file.** Task 2 scrive `static/piano.js`, `static/stile.css` (solo
+`.risultati-colori` e il `font-size` di `:83`, `:94`, `:104`), `static/test/piano.test.js`. Task 3 scrive
+`static/spazio.js`, `static/test/spazio.test.js`. Tutti e due **leggono** `misure.js` e `risultati.js`,
+nessuno li scrive: 2 ‖ 3 regge. Il Task 4 scrive `stile.css` **dopo** il Task 2 (stesso file) e `app.js`,
+che passa `uMax` a entrambi: dopo tutti e due.
+
+**Perché `opus` su 2, 3 e 4:** ognuno deve decidere mentre scrive — ripieghi che a 11 px diano i numeri
+d'oggi (R9) e un allargamento che cambia asse (R3); profondità, facce e materiali del 3D (R4-R6); un CSS che
+il fumo misura al pixel (R1). Il Task 1 ha oracoli e codice già scritti, verificati al §0, più una riga da
+spostare (R8): `sonnet` basta.
+
+### 5. La ricerca che regge ogni task
+
+Aperte e confrontate: `07-ux-modellatore.md:92` (Figma «Minimize UI», pannelli che si ritraggono) ✅;
+`:100` (doppio canale, WCAG **1.4.11** ≥ 3:1 sulla grafica) ✅; `:133` (ISO 9241-303, proav 4 mm/m, 20
+arcmin ≈ 45 px su 2 m letti da 8 m) ✅; `:154` (principio 7: viridis, mai rainbow, stampabile in B/N) ✅;
+`:157` (principio 10: modo presentazione, pannelli ritratti, contrasto ≥ 3:1) ✅ — ma il suo «×1,6» non è il
+numero del piano: i 46 px vengono da `:133`. Nessun task senza riferimento.
+
+### 6. I test del piano, letti col DOM finto in mano
+
+- **Task 1**: tutti gli oracoli passano (§0). L'unico rosso sarebbe il codice (R8).
+- **Task 2, test esistenti che cambiano.** `piano.test.js:453-467`: `polilinee.length === 1` regge (è il
+  bordo), **`stroke-dasharray` no** (il bordo non è tratteggiato) → diventa «bordo senza tratteggio, otto
+  `line.deformata`». `:532-533` (una polilinea con spostamenti vuoti) regge, e ora ha anche 8
+  `line.deformata` alla tappa bassa. `:958` regge. `:1024` `ultimoPunto` prende la prima `polyline`, che è
+  il bordo coi punti di sempre: **nessuna modifica**. Nessuna asserzione su `stroke-width`, `r` o
+  `font-size` assoluti (`:1075` confronta due `stroke-width` fra loro).
+- **Task 2, test nuovo 7**: ripiego del titolo `carattere + 9`, top del badge
+  `6 + max(16, carattere + 5)` (R9) — a 46 px `top` 57, non «6 + 55».
+- **Task 2, test nuovo sull'allargamento** (R3): MURO 1 su un contenitore 1151×944 con `--etichetta 46px` →
+  `2262 / s ≥ 540`.
+- **Task 3, test 1**: `pixelInMondo(1000, 90, 500)` = 3,9999999999999996 → `Math.abs(… - 4) < 1e-9`, non
+  `assert.equal`.
+- **`tastiera.test.js:56`** → `"w"`. `:86` (`p` col comando → null) regge. «Nessuna coppia
+  tasto+modificatore due volte» e «ogni voce si raggiunge da un evento» reggono con `P`.
+  `palette.test.js` conta `TASTI.length` (`:13`, `:19`, `:131`, `:220`, `:241`): regge da solo.
+
+### 7. Firme e contratto degli ingressi
+
+- `spazio.js` consuma anche `massimoSpostamento` (l'ingresso «`deformata.uMax` assente» lo usa): va
+  nell'`import`, il contratto nomina solo `leggiMisure` e `coloreSpostamento`.
+- `tratti(punti, uMax)` rende `a`/`b` come `{x, y, z}`; `cilindroFra` vuole `Vector3`: la conversione sta in
+  `disegna`, non nella pura.
+- `leggiMisure(globalThis.getComputedStyle?.(contenitore))` nel piano e nello spazio: le variabili stanno su
+  `body` ed ereditano nei due contenitori ✅.
+- `testoScalaColori({ uMax, tipo })` con `tipo` ∈ `"caso" | "modo" | "pushover"` (`risultati.js:553-565`) ✅.
+
+Ingressi degeneri **in più**, da aggiungere alle sezioni dei task:
+
+- Task 2 — MURO 1 su 1151×944 a 46 px → telaio largo ≥ 540 px, nessuna etichetta fuori dal ritaglio.
+- Task 2 — titolo nascosto a 11 px → badge a `top` 22, come oggi (sostituisce «→ `top = 6`»).
+- Task 3 — cilindro con gli estremi a distanze diverse dalla camera → raggio preso dall'estremo lontano,
+  mai sotto `tratto / 2` px.
+- Task 3 — cento `disegna` sugli stessi colori → nessun `MeshBasicMaterial` nuovo dopo il primo giro, la
+  `Map` non supera i colori distinti già visti (sostituisce «svuotata e i materiali `dispose()`»).
+- Task 4 — `P` col fuoco sul bottone «pannelli» → alterna (un bottone si tiene solo Invio, Spazio e ⌫).
+- Task 4 — pannelli aperti con una selezione → «Niente di selezionato» resta nascosto, Storia nascosta.
+
 ## Global Constraints
 
 - **Lingua italiana** in interfaccia, commenti, commit; identificatori invariati.
