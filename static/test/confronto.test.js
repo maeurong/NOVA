@@ -39,6 +39,8 @@ test("nodiInSommita: i nodi alla quota massima entro la tolleranza, id crescenti
   assert.deepEqual(nodiInSommita(m), [3, 4]);
   assert.deepEqual(nodiInSommita({ nodi: [{ id: 7, x: 0, z: 100 }, { id: 8, x: 1, z: 99.5 }] }), [7, 8]);   // entro 1 mm
   assert.deepEqual(nodiInSommita({ nodi: [{ id: 7, x: 0, z: 100 }, { id: 8, x: 1, z: 98 }] }), [7]);
+  // Il bordo è dentro: a un millimetro esatto il nodo è ancora in sommità («>» al posto di «>=» lo perderebbe).
+  assert.deepEqual(nodiInSommita({ nodi: [{ id: 7, x: 0, z: 100 }, { id: 8, x: 1, z: 99 }] }), [7, 8]);
   assert.deepEqual(nodiInSommita({ nodi: [] }), []);
   assert.deepEqual(nodiInSommita(null), []);
 });
@@ -78,6 +80,9 @@ test("noteDellaTabella: bias poi ragione, dedup per testo, numerate da 1, una li
   assert.deepEqual(note.map((n) => n.n), [1, 2, 3]);
   assert.deepEqual(perRiga, [[1], [2], [], [3], []]);
   assert.deepEqual(noteDellaTabella({ righe: [] }), { note: [], perRiga: [] });
+  // Due righe con la stessa ragione → una nota sola, e tutte e due la richiamano (senza dedup ne uscirebbero due).
+  const doppia = { righe: [riga("reazione_x", "C1", { ragione: RUMORE }), riga("reazione_x", "C3", { ragione: RUMORE })] };
+  assert.deepEqual(noteDellaTabella(doppia), { note: [{ n: 1, testo: RUMORE }], perRiga: [[1], [1]] });
 });
 
 test("righeDaMostrare: numeri con la virgola, null → «—», classi in parole, attenuata solo se entrambe non confrontabili", () => {
@@ -110,6 +115,9 @@ test("testoConteggio: righe, quante attenuate, e l'avvertenza del server — mai
   assert.equal(testoConteggio({ righe: [], avvertenza: "" }), "nessuna riga");
   assert.equal(testoConteggio({ righe: [] }), "nessuna riga");
   assert.equal(testoConteggio({ righe: tabella().righe, avvertenza: "" }), "5 righe · 1 non confrontabile");
+  // «Non confrontabile» vuol dire su **entrambi** i lati: una riga senza solido ma con Abaqus concorde si conta come confrontata.
+  const abq = tabella(); abq.righe[2].classe_solido = "non_confrontabile"; abq.righe[2].classe_abaqus = "concorde";
+  assert.equal(testoConteggio(abq), "5 righe · 1 non confrontabile · verifica del codice, non validazione");
 });
 
 test("testoProvenienza: commit, run, versioni brevi, data italiana; i null dicono n/d; null → vuoto", () => {
