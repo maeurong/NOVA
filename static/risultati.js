@@ -345,7 +345,13 @@ export function testoValore(vista, v) {
 // scritto «a sinistra di i→j» si legge sul disegno senza contare i nodi.
 const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j, a sinistra di i→j",
                   N: "kN · + trazione, a sinistra di i→j" };
-export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0,
+/** Il badge, coi separatori attaccati a quel che li precede da uno spazio insecabile (C7a): la riga
+ *  si spezza **dopo** il `·`, mai prima, e la scala scende intera invece di aprire la seconda riga
+ *  con «· ×2 (auto)» — misurato a 1920 in presentazione. Un passaggio solo qui, invece di sedici
+ *  `·` da ricordarsi uno per uno dentro `badgeGrezzo`. */
+export const testoBadge = (campi) => badgeGrezzo(campi).replaceAll(" · ", "\u00a0· ");
+
+function badgeGrezzo({ vista, caso, scala, auto, stantia = false, ruotate = 0,
                              modo = null, passo = null, caduta = null, fermo = false, motivoFermo = null }) {
   if (!vista) return "";
   const testa = stantia ? "stantia · " : "";
@@ -639,6 +645,13 @@ const MOTIVI = { non_convergenza: "non convergenza", passi_max: "tetto dei passi
 // Un motivo vuoto o assente non è «nessun motivo»: la caduta c'è, e la riga non può tacere.
 export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(motivo) : "motivo sconosciuto");
 
+/** La legenda degli stati serve solo se **almeno un simbolo non è quello dell'elastica** (C7b): con
+ *  tutte le sezioni elastiche i simboli sono tutti uguali e la riga che spiega i due canali è gergo
+ *  — in aula, 114 px su tre righe, con «rotta» da sola sull'ultima. Uno stato senza simbolo
+ *  (`simboloStato` rende `null`) non è uno stato diverso: il disegno lo salta, e la legenda pure. */
+export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
+  .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
+
 export const testoLegendaStati = () =>
   "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
@@ -673,7 +686,13 @@ export function massimoSpostamento(deformate) {
 
 export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
 
+/** Gli estremi della rampa viridis. C2 — «|u|» da solo è gergo da vicino e illeggibile da 8 m: la
+ *  grandezza si scrive per nome. C3 — «max» davanti al numero perché il badge, due righe sopra,
+ *  dice «u 60 mm» (lo spostamento del **nodo di controllo**) mentre qui c'è «64,34 mm» (il massimo
+ *  di |u| su tutto il telaio): due numeri della stessa grandezza, e niente diceva quale fosse quale.
+ *  Un modo non ha millimetri, e il suo titolo dice già cosa valgono 0 e 1: lì «max» sarebbe un terzo
+ *  modo di dire la stessa cosa. */
 export function testoScalaColori({ uMax, tipo }) {
-  if (tipo === "modo") return { min: "0", max: "1", titolo: "|u| · forma normalizzata" };
-  return { min: "0 mm", max: `${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`, titolo: "|u|" };
+  if (tipo === "modo") return { min: "0", max: "1", titolo: "forma del modo · 0 fermo, 1 massimo" };
+  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`, titolo: "spostamento |u|" };
 }

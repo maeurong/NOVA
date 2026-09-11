@@ -10,7 +10,7 @@ import { nodo, asteDelNodo } from "./modello.js";
 import { frecceDeiCarichi, testoCarico } from "./carichi.js";
 import { GRADI, nomePreimpostazione } from "./vincoli.js";
 import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, testoBadge, frecciaMassima,
-         asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, VIRIDIS, massimoSpostamento,
+         asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, legendaStatiServe, VIRIDIS,
          coloreSpostamento, testoScalaColori } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
 import { leggiMisure, avanzamentoMono } from "./misure.js";
@@ -31,8 +31,8 @@ const OFFSET_ETICHETTA = 16;
 // nominale è un'ipotesi, ma è coerente per tutto il disegno, e il `resize` di `app.js` ridisegna
 // con la misura vera appena c'è.
 const LARGHEZZA_NOMINALE = 800, ALTEZZA_NOMINALE = 600;
-// px: sotto un terzo di questo il telaio non è più un disegno, e la fascia delle strisce (15a, A)
-// non si riserva. Vale per i riquadri degeneri — a zoom 200 % il piano misura 39×10 px.
+// px: il telaio che resta **sotto** la fascia delle strisce (15a, A) non può scendere qui sotto, o
+// non è più un disegno; quando non ci starebbe, la fascia non si riserva affatto (W4).
 const TELAIO_MINIMO = 100;
 
 // Le otto direzioni candidate per l'etichetta, in ordine fisso: a parità di punteggio
@@ -175,18 +175,17 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   function inquadra(m, ghost, extraMm = 0, fascia = 0) {
     const e = estensione(m, ghost, extraMm);
     const { w, h } = pixelDelRiquadro();
-    // Il riquadro utile è l'altezza meno la fascia, ma **mai sotto un terzo**: su un riquadro basso
-    // (la pushover a 1280) le strisce a 46 px prendono più di due terzi, e il resto sarebbe un telaio
-    // di 50 px. Meglio un telaio sotto una striscia che un telaio illeggibile.
+    // **W4** — un criterio solo, e sul **telaio che resta**: o la fascia ci sta lasciando sotto di sé
+    // almeno `TELAIO_MINIMO` px di disegno, o non si riserva niente e le strisce tornano sopra il
+    // telaio intero. Meglio un telaio sotto una striscia che un telaio illeggibile.
     //
-    // E sotto una certa altezza la fascia non si riserva **per niente**. Misurato a zoom 200 %
-    // (640×400 con dpr 2, il caso del fumo): la griglia lascia a `#viste` 80 px di larghezza, e al
-    // piano un riquadro di **39×10 px** — mentre le strisce ne occupano 115, undici volte il
-    // disegno. Lì riservare vuol dire solo rimpicciolire il telaio di tre volte, e i nomi dei nodi,
-    // che restano di 11 px, finiscono a toccarsi («1» e «2», «2» e «3»: il difetto già misurato
-    // sull'allargamento per i nomi lunghi). Il criterio è assoluto e non proporzionale, perché
-    // proporzionale lo è già il terzo qui sopra: quel che conta è quanto telaio **resta**.
-    const utile = fascia > 0 && h >= 3 * TELAIO_MINIMO ? Math.max(h - fascia, h / 3) : h;
+    // Il criterio di prima guardava il **riquadro** (`h >= 3 · TELAIO_MINIMO`) e poi ripiegava su
+    // `h / 3`, e nella banda 300-400 px sbagliava due volte: con le misure d'aula la fascia vale
+    // ~229 px, la soglia passava, e `h / 3` lasciava 100-133 px di telaio con nomi da 46 px dentro.
+    // Sui riquadri degeneri il risultato non cambia: misurato a zoom 200 % (640×400 con dpr 2, il
+    // caso del fumo) la griglia lascia a `#viste` 80 px di larghezza e al piano un riquadro di 39×10
+    // px, mentre le strisce ne occupano 115 — undici volte il disegno, e nessuna fascia si riserva.
+    const utile = fascia > 0 && h - fascia >= TELAIO_MINIMO ? h - fascia : h;
     if (utile >= h) {
       vista = e;
     } else {
@@ -242,9 +241,12 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // Constraints). Assente = 1; a 0 la deformata cade esattamente sull'ombra indeformata.
       const scalaDisegno = attivo.scala * (attivo.fattore ?? 1);
       const deformate = puntiDeformata(m, attivo.perCaso, scalaDisegno);
-      // |u|max della legenda: quello che `app.js` passa (fisso per la corsa della pushover) o quello
-      // che si vede. Stantia non si colora: numeri vecchi in viridis si leggerebbero come nuovi.
-      const uMax = Number.isFinite(attivo.uMax) ? attivo.uMax : massimoSpostamento(deformate);
+      // |u|max della legenda: **solo** quello che `app.js` passa (N6). Il ripiego di qui, quello di
+      // `spazio.js` e il calcolo di `risultatiInVista` erano tre padroni dello stesso numero, e
+      // coincidevano solo finché `u` non porta la scala — il primo che gliela desse li farebbe
+      // divergere in silenzio, con la legenda che dice un massimo e i colori un altro. Stantia non
+      // si colora: numeri vecchi in viridis si leggerebbero come nuovi.
+      const uMax = attivo.uMax;
       raccolto.uMax = uMax;
       for (const d of deformate) {
         const punti = d.punti.map((p) => ({ ...schermo(p), u: p.u }));
@@ -376,7 +378,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // Le misure a ogni disegno, dalle variabili CSS del riquadro, che la presentazione ridefinisce per
     // l'aula. Senza `getComputedStyle` (i test) o senza variabili: i numeri d'oggi (`misure.js`).
     const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
-    const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + misure.carattere * 0.6);
+    const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + avanzamentoMono(misure.carattere));
     const carattere = misure.carattere;
     // `vistaRis` e non `vista`: `vista` è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
@@ -399,9 +401,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     badge.textContent = attivo ? testoBadge({ ...attivo, ...(attivo.badge ?? {}), ruotate: asteRuotate(m) }) : "";
     badge.hidden = !attivo;
     badge.className = attivo?.stantia ? "risultati-badge stantia" : "risultati-badge";
-    // La legenda parla solo quando i simboli ci sono: in vista M non c'è niente da decifrare.
+    // La legenda parla solo quando i simboli ci sono **e dicono cose diverse**: in vista M non c'è
+    // niente da decifrare, e con tutte le sezioni elastiche i simboli sono tutti uguali — la riga
+    // resterebbe gergo, e in aula costa 114 px su tre righe con «rotta» da sola sull'ultima (C7b).
     legenda.textContent = testoLegendaStati();
-    legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata");
+    legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
     // si scrivono più giù, che vogliono `raccolto.uMax`; qui basta sapere se si vede, perché è alta
     // una riga sola e l'altezza non dipende da cosa ci sta scritto.
@@ -413,7 +417,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const altaBadge = () => badge.offsetHeight || carattere + 3;
     const altaLegenda = () => legenda.offsetHeight || 2 * (carattere + 3);
     const altaColori = () => colori.offsetHeight || carattere + 3;
-    const topBadge = 6 + Math.max(16, titolo.offsetHeight || carattere + 5);
+    // **W1** — `offsetHeight` di un elemento nascosto è 0, e il ripiego scattava lo stesso: in aula
+    // 51 px di fascia riservati a una striscia che non c'è, su ogni piano senza azione in vista.
+    const topBadge = 6 + (titolo.hidden ? 0 : Math.max(16, titolo.offsetHeight || carattere + 5));
     const topLegenda = scendi(badge, topBadge, altaBadge());
     const topColori = scendi(legenda, topLegenda, altaLegenda());
     const fine = scendi(colori, topColori, altaColori());

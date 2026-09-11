@@ -114,14 +114,16 @@ function risultatiInVista(m, fattore = 1) {
     : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).scala
     : scalaAuto(m, scelto.perCaso));
   const scala = auto ? (risultati.vista === "deformata" ? scalaDeformata() : 1) : risultati.scalaMano;
-  // |u|max dei colori: **solo per la pushover** (E3), dove la scala dev'essere quella fissa del passo
-  // di riferimento — altrimenti al passo 1 la deformata sarebbe tutta viola e la legenda respirerebbe.
-  // Per caso e modo `null`, e non il massimo calcolato qui: `u` non porta la scala (`risultati.js:236`,
-  // `Math.hypot` sulle sole componenti), quindi il ripiego di `piano.js` e di `spazio.js` — il massimo
-  // delle deformate **già disegnate** — dà lo stesso identico numero. Così si risparmia un
-  // `puntiDeformata` a fotogramma mentre un modo si anima, e R7 resta soddisfatto alla lettera.
-  const uMax = risultati.vista === "deformata" && scelto.tipo === "pushover"
-    ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).uMax : null;
+  // |u|max dei colori, calcolato **qui per tutti** (N6): la pushover dal passo di riferimento, dove
+  // la scala dev'essere quella fissa della corsa — altrimenti al passo 1 la deformata sarebbe tutta
+  // viola e la legenda respirerebbe (E3) — caso e modo dal massimo delle loro deformate. Il ruling
+  // E3 del giro prima lasciava il conto ai ripieghi di `piano.js` e `spazio.js`: tre padroni dello
+  // stesso numero, che coincidono solo finché `u` non porta la scala. Misurato 0,011-0,034 ms a
+  // chiamata: un padrone solo vale più di quel risparmio. La scala passata è 1 e non cambia niente:
+  // `u` è in mm del modello, senza scala del disegno (`risultati.js`, `puntiDeformata`).
+  const uMax = risultati.vista !== "deformata" ? null
+    : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).uMax
+    : massimoSpostamento(puntiDeformata(m, scelto.perCaso, 1));
   const curva = scelto.tipo === "pushover"
     ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
   // Un oggetto solo per il badge e per la striscia: due copie dello stesso passo divergerebbero
@@ -856,15 +858,22 @@ window.addEventListener("resize", () => {
 // spazio rileggono le variabili e il proprio riquadro.
 const bottonePannelli = $("riapri-pannelli");
 const presentazione = () => document.body.hasAttribute("data-presentazione");
+/** Lo stato del bottone scritto **a parole**, non solo in `aria-pressed`: premuto, a 8 m cambiava
+ *  soltanto un attributo che nessuno vede (C6). E l'uscita dall'aula sta scritta lì sopra, perché
+ *  a schermo quello è l'unico bottone e nessuno diceva come si torna indietro (C5). */
+const scriviBottonePannelli = (aperti) => {
+  bottonePannelli.setAttribute("aria-pressed", String(aperti));
+  bottonePannelli.textContent = `${aperti ? "chiudi pannelli" : "pannelli"} · Esc esce`;
+};
 function alternaPresentazione(accesa = !presentazione()) {
   document.body.toggleAttribute("data-presentazione", accesa);
   // Si entra e si esce coi pannelli ritratti: aperti in un giro non restano aperti al giro dopo.
   document.body.removeAttribute("data-pannelli");
-  bottonePannelli.setAttribute("aria-pressed", "false");
+  scriviBottonePannelli(false);
   ridisegna();
 }
 bottonePannelli.addEventListener("click", () => {
-  bottonePannelli.setAttribute("aria-pressed", String(document.body.toggleAttribute("data-pannelli")));
+  scriviBottonePannelli(document.body.toggleAttribute("data-pannelli"));
   ridisegna();
 });
 

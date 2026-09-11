@@ -104,9 +104,12 @@ body {
    restava «contorno sottile elastica · …», cioè il solo acciaio. Allineata a destra come il
    badge, così le righe spezzate restano nella sua colonna. Inchiostro, mai rosso: il rosso è
    uno solo. L'altezza che ne esce la **misura** `piano.js` (`offsetHeight`) per l'ostacolo. */
+/* `text-wrap: balance` (C7b): a 46 px la riga si spezzava in tre, e l'ultima portava la sola parola
+   «rotta» — un canale isolato dal suo elenco si legge come un'etichetta a sé. Bilanciate, le righe
+   restano lunghe uguali e i due canali non si separano dai propri valori. */
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
                             font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none;
-                            white-space: normal; max-width: calc(100% - 16px); text-align: right; }
+                            white-space: normal; max-width: calc(100% - 16px); text-align: right; text-wrap: balance; }
 /* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm», sotto l'ultima striscia
    visibile — il `top` lo scrive `piano.js`. La rampa è in `em`: segue il corpo, e a 32 px un'altezza
    fissa di 10 sarebbe un filo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
@@ -507,6 +510,14 @@ body[data-presentazione]:not([data-pannelli]) #risultati-equilibrio { margin: 0;
 body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 22rem) 1fr minmax(220px, 30rem);
   grid-template-rows: 1fr auto auto; grid-template-areas: "albero viste pannello" "messaggio messaggio messaggio" "comando comando comando"; }
 body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
+/* C1 — la striscia dell'M srotolato non ha misure d'aula: la curva della pushover, i suoi numeri e la
+   riga «Seleziona un'asta…» restano a 11 px, illeggibili da 8 m, e si prendono la riga sotto il piano.
+   Qui si toglie di mezzo e il piano si prende l'altezza; portarla in aula con misure sue è un debito
+   della 15b (già in issue). Il piano non la misura, quindi nessun conto della fascia cambia. */
+body[data-presentazione] #srotolato { display: none; }
+/* C4 — la coda dei tasti negli stati vuoti: alla scrivania insegna, in aula è un muro di testo su
+   una striscia che deve dire cosa fare **adesso**. */
+body[data-presentazione] .vuoto .aiuto { display: none; }
 #riapri-pannelli { display: none; }
 body[data-presentazione] #riapri-pannelli { display: block; position: fixed; top: var(--passo); right: var(--passo); z-index: 2; font: inherit; font-size: 32px; }
 /* E6 — coi pannelli aperti il bottone (132×52) copriva l'ispettore: misurato a 1920×1080, stava

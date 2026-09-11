@@ -312,6 +312,12 @@ const COPIONI = {
     await pausa(300);
     const badge1 = await ev(BADGE);
     const colori1 = await ev(COLORI);
+    // C7b — la legenda degli stati parla solo se un simbolo non è quello dell'elastica. Si legge
+    // **all'ultimo passo**, dove il danno c'è, e più giù al primo, dove il telaio è ancora sano.
+    // Anche `dentro.legenda` si misura qui: nascosta, il suo rettangolo è tutto zeri e il confronto
+    // col riquadro direbbe il falso.
+    const legendaUltimo = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
+    const dentroLegenda = await staDentro("#piano .risultati-legenda", "#piano");
     const cerchi = await ev(`document.querySelectorAll("#srotolato circle.passo").length`);
     await tasto("ArrowLeft"); await tasto("ArrowLeft"); await tasto("ArrowRight");
     await pausa(200);
@@ -324,10 +330,10 @@ const COPIONI = {
     const badge3 = await ev(BADGE);
     const colori3 = await ev(COLORI);
     const stati = await ev(`document.querySelectorAll("#piano svg circle.stato").length`);
-    const legenda = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
+    const legendaPasso1 = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const dentro = { badge: await staDentro("#piano .risultati-badge", "#piano"),
-                     legenda: await staDentro("#piano .risultati-legenda", "#piano"),
+                     legenda: dentroLegenda,
                      taglio: await staDentro("#srotolato svg text:nth-of-type(3)", "#srotolato") };
     // La guardia `!modo`: con un ghost aperto la freccia è del gesto, non dello scrubber. Il
     // ghost più economico da aprire è l'asta (`G` sceglie un nodo, `A` apre il modo), e
@@ -339,7 +345,8 @@ const COPIONI = {
     await tasto("Escape");
     await pausa(150);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { badge1, badge2, badge3, badgeConGhost, colori1, colori3, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
+    return { badge1, badge2, badge3, badgeConGhost, colori1, colori3, cerchi, stati,
+             legendaUltimo, legendaPasso1, dentro, sovrapposte, messaggio };
   },
 
   // La scheda Confronto sul MURO 1: telaio corso qui, niente solido, il CSV Abaqus d'esempio.
@@ -439,17 +446,35 @@ const COPIONI = {
   // caso peggiore — badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori —
   // e lì «sommità sx», «sommità dx» e i due nodi in cima finivano sotto la legenda degli stati.
   async presentazionePushover() {
-    await apriECorri(arg.fixture, { larghezza: 1920, altezza: 1080 });
-    await scegliCaso("pushover");
-    await pausa(400);
+    // **N5** — `P` **prima** di ⌘⏎, non dopo: solo così la corsa gira dentro la presentazione, e le
+    // regole `:has()` che riportano `#corsa-attesa` in aula (E5) hanno qualcuno che le guardi. Col
+    // copione di prima — corri, poi entra — cancellarle lasciava il fumo tutto verde.
+    await apri(url, arg.cdp, { larghezza: 1920, altezza: 1080 });
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
     await tasto("p");
+    await pausa(300);
+    const accesaPrimaDellaCorsa = await ev(ACCESA);
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri, con l'aula già accesa
+    // L'attesa parlante **mentre la corsa gira**: `offsetParent` nullo vuol dire che una regola la
+    // nasconde, e le fasi scritte sono la prova che non è un riquadro vuoto rimasto in pagina. Se le
+    // regole di E5 spariscono, `finche` scade e il copione muore col suo motivo.
+    const attesaInAula = await finche(`(() => {
+      const a = document.getElementById("corsa-attesa"), voci = document.querySelectorAll("#corsa-fasi li");
+      return !a.hidden && a.offsetParent !== null && voci.length > 0
+        ? { fasi: voci.length, corpo: parseFloat(getComputedStyle(voci[0]).fontSize) } : null; })()`, 30000, 100);
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await scegliCaso("pushover");
     await pausa(700);
+    const srotolatoInAula = await ev(`document.getElementById("srotolato").offsetParent !== null`);
     const strisce = await ev(STRISCE_ADDOSSO);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const legendaColori = await ev(COLORI);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { strisce, sovrapposte, scorre, legendaColori, messaggio };
+    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, strisce, sovrapposte, scorre, legendaColori, messaggio };
   },
 
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost
@@ -492,7 +517,9 @@ const COPIONI = {
     await tasto("o", { meta: true });
     await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
     await pausa(200);
-    t.aperto = { acceso: await acceso(), etichette: await reso(...ETICHETTE_NODI) };
+    t.aperto = { acceso: await acceso(), etichette: await reso(...ETICHETTE_NODI),
+                 riquadro: await ev(`(() => { const p = document.getElementById("piano");
+                   return { vero: p.getBoundingClientRect().width, arrotondato: p.clientWidth }; })()`) };
 
     // La finestra ridimensionata: il `resize` ridisegna il piano, e le variabili lette sul `body` restano.
     await viewport(1600, 900, 1);

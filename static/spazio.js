@@ -10,7 +10,7 @@
 // cui gli ingressi degeneri di questo modulo si provano fuori dal browser.
 
 import { leggiMisure } from "./misure.js";
-import { coloreSpostamento, massimoSpostamento } from "./risultati.js";
+import { coloreSpostamento } from "./risultati.js";
 
 // Stessi valori di `piano.js` (`INCHIOSTRO`, `ROSSO`): non importabili da lì, quel modulo
 // non li esporta e non è nello scope di questo task toccarlo.
@@ -70,8 +70,10 @@ export function tratti(punti, uMax) {
  *  numeri che non corrispondono più al modello direbbe un valore falso. */
 export function trattiDellaDeformata(deformata) {
   if (!deformata) return [];
-  const uMax = Number.isFinite(deformata.uMax) ? deformata.uMax : massimoSpostamento(deformata.aste);
-  const fuori = (deformata.aste ?? []).flatMap((d) => tratti(d.punti ?? [], uMax));
+  // N6: il massimo arriva da `app.js` e basta. Il ripiego di qui e quello di `piano.js` davano lo
+  // stesso numero del calcolo di `risultatiInVista` solo finché `u` non porta la scala: tre padroni
+  // dello stesso valore, destinati a divergere in silenzio al primo che gliela desse.
+  const fuori = (deformata.aste ?? []).flatMap((d) => tratti(d.punti ?? [], deformata.uMax));
   return deformata.stantia ? fuori.map((t) => ({ ...t, colore: null })) : fuori;
 }
 
@@ -207,7 +209,8 @@ async function costruisci(contenitore) {
     disegnato.traverse((o) => { if (o.geometry !== cilindro) o.geometry?.dispose(); });
     disegnato = new THREE.Group();
 
-    const misure = leggiMisure(getComputedStyle(contenitore));
+    // Come in `piano.js`: senza `getComputedStyle` (i test) `leggiMisure` cade sui numeri d'oggi.
+    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
     inchiostroTenue.opacity = misure.ombra;
     puntoInchiostro.size = 2 * misure.raggioNodo;
     puntoRosso.size = 2 * misure.raggioNodo * 1.6;

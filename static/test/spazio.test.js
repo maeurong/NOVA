@@ -69,14 +69,17 @@ test("tratti: due punti coincidenti (o non finiti) → saltati, niente direzione
   assert.deepEqual(fuori[0].b, { x: 2, y: 1, z: 1 });
 });
 
-test("trattiDellaDeformata: uMax assente → massimoSpostamento delle aste", () => {
+test("trattiDellaDeformata: la scala arriva da `app.js`, non se la ricalcola (N6)", () => {
   const aste = [{ id: 1, punti: [{ x: 0, y: 0, z: 0, u: 0 }, { x: 1, y: 0, z: 0, u: 8 }] },
                 { id: 2, punti: [{ x: 1, y: 0, z: 0, u: 8 }, { x: 1, y: 0, z: 1, u: 2 }] }];
-  assert.equal(massimoSpostamento(aste), 8);
-  const senza = trattiDellaDeformata({ aste, stantia: false });
-  assert.deepEqual(senza.map((t) => t.colore), [coloreSpostamento(4, 8), coloreSpostamento(5, 8)]);
   assert.deepEqual(trattiDellaDeformata({ aste, stantia: false, uMax: 10 }).map((t) => t.colore),
                    [coloreSpostamento(4, 10), coloreSpostamento(5, 10)]);
+  // **N6** — il massimo aveva tre padroni (`app.js`, `piano.js`, questo) e coincidevano solo perché
+  // `u` non porta la scala. Ora lo calcola `app.js` e basta: senza, la rampa resta alla tappa bassa
+  // invece di inventare una scala che diverga da quella del piano e della legenda.
+  assert.deepEqual(trattiDellaDeformata({ aste, stantia: false }).map((t) => t.colore),
+                   [VIRIDIS[0], VIRIDIS[0]]);
+  assert.equal(massimoSpostamento(aste), 8, "il massimo si sa ancora calcolare: lo fa `app.js`");
   assert.deepEqual(trattiDellaDeformata(null), []);
 });
 

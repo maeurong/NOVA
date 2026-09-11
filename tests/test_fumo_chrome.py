@@ -139,6 +139,14 @@ def copione(nome: str, porta: int, cdp: int, **extra) -> dict:
     return json.loads(esito.stdout.strip().splitlines()[-1])
 
 
+def senza_insecabili(t: str) -> str:
+    """C7a — `testoBadge` attacca ogni `·` a quel che lo precede con uno spazio insecabile, così il
+    badge va a capo **dopo** il separatore e la scala scende intera. Qui conta cosa il badge dice,
+    non dove si spezza: il testo si legge normalizzato, e l'insecabile ha il suo test in
+    `static/test/risultati.test.js`."""
+    return t.replace("\u00a0", " ")
+
+
 def test_la_pagina_si_apre_e_un_nodo_si_posa_da_tastiera(chrome_e_server):
     porta, cdp = chrome_e_server
     r = copione("pagina", porta, cdp)
@@ -157,7 +165,7 @@ def test_trave_appoggiata_il_momento_in_mezzeria_e_sull_etichetta(chrome_e_serve
     assert r["errori"] == [], r["errori"]
     assert r["trovato"]["ultima"].startswith("corsa")
     assert "45 kN·m" in r["trovato"]["etichette"], r["trovato"]
-    assert r["trovato"]["badge"] == "M · Z1 · kN·m · lato teso"
+    assert senza_insecabili(r["trovato"]["badge"]) == "M · Z1 · kN·m · lato teso"
     for larghezza, coppie in r["trovato"]["sovrapposte"].items():
         assert coppie == [], f"etichette sovrapposte a {larghezza}: {coppie}"
 
@@ -263,9 +271,9 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     # Senza la pushover scelta la freccia resta al browser: è lo scorrimento della pagina.
     assert t["frecciaLibera"] is False, "`→` senza pushover non deve essere intercettata"
     assert t["ferma"] is True, "dopo Spazio la deformata si muove ancora"
-    assert t["badge"].startswith("modo 2 · 31,85 Hz"), t["badge"]
+    assert senza_insecabili(t["badge"]).startswith("modo 2 · 31,85 Hz"), t["badge"]
     assert "(auto)" in t["badge"], f"la scala va dichiarata sempre (P3): {t['badge']!r}"
-    assert t["badgeFerma"].endswith(" · ferma"), t["badgeFerma"]
+    assert senza_insecabili(t["badgeFerma"]).endswith(" · ferma"), t["badgeFerma"]
     # Il badge sta dentro `#piano` a 1280 px, anche quello lungo del modo a forma nulla.
     assert t["badgeDentro"] is True, f"badge tagliato: {t['badge']!r}"
     assert t["badgeNullaDentro"] is True, f"badge del modo a forma nulla tagliato: {t['badgeNulla']!r}"
@@ -280,7 +288,7 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     assert t["fermaDopoCambio"] is True, "il caso statico non ha fermato l'animazione del modo"
     # R13/D2a: con `prefers-reduced-motion: reduce` niente moto, e il badge ne dice il motivo —
     # un'animazione che non parte senza spiegazione si legge come rotta.
-    assert t["badgeRidotto"].endswith(" · ferma (preferenza di sistema)"), t["badgeRidotto"]
+    assert senza_insecabili(t["badgeRidotto"]).endswith(" · ferma (preferenza di sistema)"), t["badgeRidotto"]
     assert t["fermaRidotto"] is True, "col moto ridotto la deformata si muove lo stesso"
     assert t["fermaRidottoDopoSpazio"] is True, "col moto ridotto Spazio fa ripartire l'animazione"
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
@@ -310,10 +318,15 @@ def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, b
     # C: la scala è **una per corsa**, non una per passo. Con `scalaAuto` sul passo corrente
     # usciva ×10 al passo 30 e ×2 al 120: scorrendo lo scrubber la deformata respirava invece di
     # crescere, e confrontare due passi — che è tutto il senso dello scrubber — diceva il falso.
-    scale = {b.split(" · ")[-1] for b in (t["badge1"], t["badge2"], t["badge3"])}
+    scale = {senza_insecabili(b).split(" · ")[-1] for b in (t["badge1"], t["badge2"], t["badge3"])}
     assert len(scale) == 1, f"la scala cambia da un passo all'altro: {scale}"
     assert t["stati"] > 0, "nessun simbolo dello stato delle sezioni sulla deformata"
-    assert t["legenda"] is False, "i simboli ci sono e la legenda no"
+    # C7b — la legenda degli stati parla solo se almeno un simbolo non è quello dell'elastica:
+    # all'ultimo passo (120/120, dopo la caduta) il danno c'è e la riga si vede; al primo il telaio è
+    # ancora sano, i simboli sono tutti uguali e quella riga sarebbe gergo — in aula, 114 px su tre
+    # righe con «rotta» da sola sull'ultima.
+    assert t["legendaUltimo"] is False, "all'ultimo passo le sezioni non sono tutte elastiche: la legenda deve parlare"
+    assert t["legendaPasso1"] is True, "al primo passo i simboli sono tutti uguali: la legenda non ha niente da spiegare"
     # A e B: niente esce dal proprio riquadro a 1280 px. Il badge accorciato, la legenda che va a
     # capo, il taglio massimo scritto dentro il grafico — tre tagli visti a mano dal controller.
     assert t["dentro"] == {"badge": True, "legenda": True, "taglio": True}, t["dentro"]
@@ -392,7 +405,7 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     assert t["piano"][1] >= 900, t["piano"]
     assert t["uscito"] is True
     # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
-    assert t["legendaModo"] and "forma normalizzata" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
+    assert t["legendaModo"] and "forma del modo" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
     assert t["menu"] == {"pTiene": True, "escEsce": True}, t["menu"]
     assert t["messaggio"] == "", t["messaggio"]
 
@@ -416,8 +429,16 @@ def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
     assert t["senzaCorsa"]["altezza"] <= 120, t["senzaCorsa"]
     assert t["pSulBottone"] is True, "P col fuoco su «pannelli» non esce dalla presentazione"
     assert t["aperto"]["acceso"] is True, t["aperto"]
-    assert t["aperto"]["etichette"] is not None and t["aperto"]["etichette"] >= 45.99, t["aperto"]
-    assert t["ridimensionato"] is not None and t["ridimensionato"] >= 45.99, t["ridimensionato"]
+    # Un decimo di tolleranza, e il motivo è misurato: `piano.js` calcola i millimetri per pixel su
+    # `clientWidth`/`clientHeight`, che sono **arrotondati**, mentre il browser rende sul riquadro
+    # vero. Qui il piano è 1151 × 383,52 e `clientHeight` dice 384: le due direzioni sono a un
+    # capello l'una dall'altra (6,4639 contro 6,4665 mm/px), l'arrotondamento decide quale comanda,
+    # e il corpo reso esce 45,982 invece di 46. La grandezza dichiarata resta 46 px (`--etichetta`) e
+    # la soglia della ricerca è 45 (`docs/ricerca/07-ux-modellatore.md:133`): due centesimi non
+    # spostano niente in aula. La radice — `s` su numeri arrotondati e il CTM su quelli veri — è un
+    # debito della 15b, non una cosa da sistemare in un giro di fix.
+    assert t["aperto"]["etichette"] is not None and t["aperto"]["etichette"] >= 45.9, t["aperto"]
+    assert t["ridimensionato"] is not None and t["ridimensionato"] >= 45.9, t["ridimensionato"]
     assert t["primoEsc"] == {"campoAperto": True, "acceso": True, "campoChiuso": True}, t["primoEsc"]
     assert t["secondoEsc"] is True, "il secondo Esc non esce dalla presentazione"
     assert t["ghost"] == {"acceso": False, "campoAperto": True}, t["ghost"]
@@ -448,6 +469,16 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     assert r["ok"], r
     assert r["errori"] == [], r["errori"]
     t = r["trovato"]
+    # N5 — la corsa gira **dentro** la presentazione: prima il copione correva e poi entrava in aula,
+    # quindi le regole `:has()` che riportano `#corsa-attesa` fra le viste (E5) non le guardava
+    # nessuno, e cancellarle lasciava il fumo tutto verde. `offsetParent` nullo = una regola la
+    # nasconde; le fasi scritte dicono che non è un riquadro vuoto rimasto in pagina.
+    assert t["accesaPrimaDellaCorsa"] is True, "P prima di ⌘⏎: la corsa deve girare in presentazione"
+    assert t["attesaInAula"]["fasi"] > 0, t["attesaInAula"]
+    assert t["attesaInAula"]["corpo"] >= 32, f"le fasi della corsa in aula sotto i 32 px: {t['attesaInAula']}"
+    # C1 — la striscia dell'M srotolato non ha misure d'aula (curva e riga «Seleziona un'asta…»
+    # restano a 11 px): in presentazione si toglie di mezzo, e il piano si prende la sua riga.
+    assert t["srotolatoInAula"] is False, "l'M srotolato resta a 11 px: in aula non ci va"
     s = t["strisce"]
     # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero.
     assert set(s["visibili"]) >= {"badge", "stati", "colori"}, s["visibili"]
