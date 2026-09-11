@@ -753,6 +753,9 @@ test("viridis: gli estremi sono le tappe, il mezzo interpolato, fuori scala stre
   assert.equal(viridis(NaN), "#440154");
   assert.equal(viridis(1 / 9), "#482878", "una tappa intera cade esatta");
   assert.match(viridis(0.5), /^#[0-9a-f]{6}$/);
+  // Fra due tappe il colore è la miscela, non la tappa più vicina: a t = 0,08 si sta al 72 % fra la prima e
+  // la seconda, e «Math.round» al posto di «Math.floor» prenderebbe la seconda coppia di tappe.
+  assert.equal(viridis(0.08), "#471d6e");
 });
 
 test("puntiDeformata: ogni punto porta |u| in mm senza scala — la scala sposta il disegno, non il valore", () => {
@@ -783,4 +786,6 @@ test("testoScalaColori: estremi con l'unità; per un modo la forma normalizzata,
   assert.deepEqual(testoScalaColori({ uMax: 12.34, tipo: "caso" }), { min: "0 mm", max: "12,34 mm", titolo: "|u|" });
   assert.deepEqual(testoScalaColori({ uMax: 0.8, tipo: "modo" }), { min: "0", max: "1", titolo: "|u| · forma normalizzata" });
   assert.deepEqual(testoScalaColori({ uMax: 0, tipo: "pushover" }), { min: "0 mm", max: "0 mm", titolo: "|u|" });
+  // Un massimo che manca non diventa «NaN mm» né «undefined mm».
+  assert.deepEqual(testoScalaColori({ uMax: undefined, tipo: "caso" }), { min: "0 mm", max: "0 mm", titolo: "|u|" });
 });
