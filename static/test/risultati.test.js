@@ -506,7 +506,8 @@ test("casoScelto: le tre forme, il passo di default è l'ultimo, un passo fuori 
   assert.equal(m.tipo, "modo"); assert.equal(m.n, 2);
   assert.deepEqual(m.perCaso.spostamenti[3], [1, 0, -0.03, 0, 0, 0]);
   const p = casoScelto(R, "pushover");
-  assert.equal(p.k, 1); assert.equal(p.n, 2); assert.deepEqual(p.perCaso.spostamenti[3], [1, 0, 0, 0, 0, 0]);
+  assert.equal(p.k, 1); assert.equal(p.quanti, 2); assert.deepEqual(p.perCaso.spostamenti[3], [1, 0, 0, 0, 0, 0]);
+  assert.equal(p.n, undefined, "il conteggio dei passi si chiama `quanti`: `n` è il numero del modo");
   assert.equal(casoScelto(R, "pushover", 0).k, 0);
   assert.equal(casoScelto(R, "pushover", 99).k, 1);
   assert.equal(casoScelto(R, "pushover", -3).k, 0);
@@ -532,16 +533,20 @@ test("curvaPushover: u in mm e V in kN, massimi, caduta", () => {
   const c = curvaPushover(PASSI, { passo: 2, spostamento: 1.0, motivo: "non converge" });
   assert.deepEqual(c.punti, [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }]);
   assert.equal(c.uMax, 1); assert.equal(c.vMax, 2.3);
-  assert.deepEqual(c.caduta, { k: 1, u: 1, motivo: "non converge" });
+  assert.deepEqual(c.caduta, { k: 1, n: 2, u: 1, motivo: "non converge" });
   assert.deepEqual(curvaPushover([], null), { punti: [], uMax: 0, vMax: 0, caduta: null });
   assert.deepEqual(curvaPushover(undefined, null).punti, []);
 });
 test("testoBadge per modo e pushover", () => {
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2 }), "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto)");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, fermo: true }), "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto) · ferma");
+  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, fermo: true, motivoFermo: "preferenza di sistema" }),
+               "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto) · ferma (preferenza di sistema)");
+  assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, motivoFermo: "preferenza di sistema" }),
+               "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto)", "senza `fermo` il motivo non si stampa");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:3", scala: 1, auto: true, modo: M3 }), "modo 3 · frequenza non fisica · ×1 (auto)");
   assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto)");
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: { k: 1, motivo: "non converge" } }),
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: { k: 1, n: 2, motivo: "non converge" } }),
                "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 2: non converge");
   assert.equal(testoBadge({ vista: "M", caso: "pushover", passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · passo 2/2 · M · nessun diagramma per un passo");
 });
@@ -624,10 +629,23 @@ test("R9: una stazione con un canale nullo non ha simbolo", () => {
   assert.equal(simboloStato(undefined), null);
 });
 test("curvaPushover: una caduta fuori scala si stringe, e i passi guasti valgono zero", () => {
-  assert.deepEqual(curvaPushover(PASSI, { passo: 99, spostamento: 5, motivo: "diverge" }).caduta, { k: 1, u: 5, motivo: "diverge" });
-  assert.deepEqual(curvaPushover(PASSI, { passo: 0, spostamento: 0, motivo: "" }).caduta, { k: 0, u: 0, motivo: "" });
+  assert.deepEqual(curvaPushover(PASSI, { passo: 99, spostamento: 5, motivo: "diverge" }).caduta, { k: 1, n: 99, u: 5, motivo: "diverge" });
+  assert.deepEqual(curvaPushover(PASSI, { passo: 0, spostamento: 0, motivo: "" }).caduta, { k: 0, n: 0, u: 0, motivo: "" });
   assert.equal(curvaPushover(PASSI, { passo: null }).caduta, null);
   assert.deepEqual(curvaPushover([{ n: 1 }], null).punti, [{ k: 0, u: 0, V: 0 }]);
+});
+test("F1: il passo caduto per non convergenza non sta in `passi[]` — `k` per il disegno, `n` per i testi", () => {
+  // La forma vera: `tests/test_pushover_binario.py:153` asserisce `caduta["passo"] == len(passi) + 1`.
+  const c = curvaPushover(PASSI, { passo: 3, spostamento: 1.4, motivo: "non_convergenza" });
+  assert.equal(c.caduta.k, 1, "il disegno si ferma sull'ultimo passo che esiste");
+  assert.equal(c.caduta.n, 3, "il testo dice il numero del server, non l'indice stretto");
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: c.caduta }),
+               "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 3: non_convergenza");
+  assert.ok(testoEquilibrio({ passi: PASSI, caduta: { passo: 3, spostamento: 1.4, motivo: "non_convergenza" }, run: { pushover: { u0: 0.0002 } } }, "pushover")
+              .endsWith("caduta: al passo 3 (non_convergenza)"));
+  // `passi_max`: il passo c'è (`caduta["passo"] == len(passi)`), e i due numeri coincidono.
+  const m = curvaPushover(PASSI, { passo: 2, spostamento: 1, motivo: "passi_max" });
+  assert.equal(m.caduta.k, 1); assert.equal(m.caduta.n, 2);
 });
 test("testoEquilibrio: la pushover con una caduta, e senza passi", () => {
   const conCaduta = { passi: PASSI, caduta: { passo: 2, spostamento: 1, motivo: "non converge" }, run: { pushover: { u0: 0.0002 } } };

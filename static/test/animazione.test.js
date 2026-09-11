@@ -31,7 +31,24 @@ test("creaAnimazione: i fotogrammi arrivano finché non si ferma; avvia due volt
   assert.equal(coda.length, 0);
   assert.equal(a.inCorso(), false);
 });
-test("creaAnimazione: `ferma` senza `avvia` non solleva, e `avvia` dopo riparte da capo", () => {
+test("creaAnimazione: riprende dalla fase dov'era, non da capo", () => {
+  // D2a dice «riprende»: con `t0` azzerato a ogni `avvia` la forma saltava da fase 0,998 a 0,063,
+  // cioè un centinaio di millimetri a ×50 su uno `Spazio` che si legge come «continua».
+  const coda = [];
+  let t = 0;
+  const fotogrammi = [];
+  const a = creaAnimazione({ suFotogramma: (f) => fotogrammi.push(f), orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  a.avvia();
+  t = 250; coda.shift()();
+  assert.ok(Math.abs(fotogrammi[0] - 1) < 1e-9, "fase 1: la forma è al massimo");
+  a.ferma();
+  t = 1000; a.avvia();              // tre quarti di secondo di pausa
+  coda.shift()();
+  assert.ok(Math.abs(fotogrammi[1] - 1) < 1e-9, `riprende da fase 1, non da 0: ${fotogrammi[1]}`);
+  t = 1250; coda.shift()();
+  assert.ok(Math.abs(fotogrammi[2]) < 1e-9, "e da lì il tempo scorre di nuovo");
+});
+test("creaAnimazione: `ferma` senza `avvia` non solleva, e `avvia` dopo parte da fase 0", () => {
   const coda = [];
   let t = 0;
   const fotogrammi = [];

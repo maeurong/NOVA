@@ -13,7 +13,7 @@ export const movimentoRidotto = (finestra = globalThis) =>
   Boolean(finestra.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 
 export function creaAnimazione({ suFotogramma, orologio = () => performance.now(), richiedi = (f) => requestAnimationFrame(f) }) {
-  let attiva = false, inVolo = false, t0 = 0;
+  let attiva = false, inVolo = false, t0 = 0, pausa = null;
   const passo = () => {
     inVolo = false;
     if (!attiva) return;           // fermata dopo la richiesta: il fotogramma arriva e non disegna
@@ -23,8 +23,18 @@ export function creaAnimazione({ suFotogramma, orologio = () => performance.now(
   return {
     // `inVolo` regge il caso del riavvio mentre un fotogramma della corsa precedente è ancora in
     // coda: senza, `avvia` dopo `ferma` ne metterebbe un secondo e il moto andrebbe al doppio.
-    avvia() { if (attiva) return; attiva = true; t0 = orologio(); if (!inVolo) { inVolo = true; richiedi(passo); } },
-    ferma() { attiva = false; },
+    // `pausa` è l'altra metà: D2a dice «riprende», e riprendere vuol dire ripartire dalla fase
+    // dov'era — azzerare `t0` faceva saltare la forma da 0,998 a 0,063, cioè un centinaio di
+    // millimetri a ×50 su uno `Spazio` che l'utente legge come «continua».
+    avvia() {
+      if (attiva) return;
+      attiva = true;
+      const ora = orologio();
+      t0 = pausa === null ? ora : t0 + (ora - pausa);
+      pausa = null;
+      if (!inVolo) { inVolo = true; richiedi(passo); }
+    },
+    ferma() { if (!attiva) return; attiva = false; pausa = orologio(); },
     inCorso: () => attiva,
   };
 }

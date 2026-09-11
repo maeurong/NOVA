@@ -343,7 +343,7 @@ export function testoValore(vista, v) {
 const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j, a sinistra di i→j",
                   N: "kN · + trazione, a sinistra di i→j" };
 export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0,
-                             modo = null, passo = null, caduta = null, fermo = false }) {
+                             modo = null, passo = null, caduta = null, fermo = false, motivoFermo = null }) {
   if (!vista) return "";
   const testa = stantia ? "stantia · " : "";
   // La scala **dichiarata** è l'ampiezza massima: il fattore dell'animazione non entra nel badge,
@@ -359,12 +359,17 @@ export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate 
     // tutto sui nodi delle suddivisioni, che `forma` non porta. Una figura ferma senza una parola
     // che dica perché si legge come un'animazione rotta, e il modo 6 partecipa il 39,8 % in y.
     const nulla = ampiezzaModo(modo) === 0 ? " · forma nulla sui nodi del modello" : "";
-    return `${testa}modo ${modo.n} · ${f} · ${scalaTesto}${nulla}${fermo ? " · ferma" : ""}`;
+    // Fermo perché l'utente ha premuto Spazio, o perché il sistema chiede meno movimento: la
+    // seconda è una cosa che l'utente non ha fatto, e senza il motivo il badge la fa passare per
+    // un'animazione che non parte (R13, D2a).
+    const fermata = fermo ? (motivoFermo ? ` · ferma (${motivoFermo})` : " · ferma") : "";
+    return `${testa}modo ${modo.n} · ${f} · ${scalaTesto}${nulla}${fermata}`;
   }
   if (passo) {
     const p = `pushover · passo ${passo.k + 1}/${passo.n}`;
     if (vista !== "deformata") return `${testa}${p} · ${vista} · nessun diagramma per un passo`;
-    const c = caduta ? ` · caduta al passo ${caduta.k + 1}: ${caduta.motivo}` : "";
+    // Il numero del passo caduto è quello del server (`caduta.n`), non l'indice stretto alla lista.
+    const c = caduta ? ` · caduta al passo ${caduta.n}: ${caduta.motivo}` : "";
     return `${testa}${p} · u ${conciso(passo.u)} mm · V ${conciso(passo.V)} kN · ${scalaTesto}${c}`;
   }
   const coda = vista === "deformata" ? scalaTesto : LEGENDA[vista];
@@ -417,7 +422,7 @@ export function testoEquilibrio(risultati, caso) {
     // I passi in lista sono quelli **convergenti**: la caduta è il passo su cui il solutore si è
     // fermato, e sta scritta a parte perché è un fatto, non un numero da leggere nella curva.
     const quanti = `${passi.length} ${passi.length === 1 ? "passo convergente" : "passi convergenti"}`;
-    const caduta = c.caduta ? `al passo ${passi[c.caduta.k]?.n ?? c.caduta.k + 1} (${c.caduta.motivo})` : "nessuna";
+    const caduta = c.caduta ? `al passo ${c.caduta.n} (${c.caduta.motivo})` : "nessuna";
     return `${quanti} · u₀ ${Number.isFinite(u0) ? `${conciso(u0)} mm` : "—"}` +
            ` · taglio massimo ${conciso(c.vMax)} kN al passo ${passi[kMax]?.n ?? kMax + 1} · caduta: ${caduta}`;
   }
@@ -509,8 +514,12 @@ export const formaComeSpostamenti = (modo) => ({
 });
 
 /** La chiave del caso è a tre forme — `"<caso>"`, `"modo:<n>"`, `"pushover"` — e si traduce qui:
- *  nessun altro modulo interpreta la stringa. `passo` fuori da [0, n) si stringe ai limiti, non
- *  intero (o assente) vale l'ultimo. */
+ *  nessun altro modulo interpreta la stringa. `passo` fuori da [0, quanti) si stringe ai limiti,
+ *  non intero (o assente) vale l'ultimo.
+ *
+ *  Il conteggio dei passi si chiama `quanti` e non `n`: `n` nel ramo del modo è il **numero** del
+ *  modo, e due campi omonimi che vogliono dire due cose diverse nello stesso oggetto sono un
+ *  errore che si scrive da sé. */
 export function casoScelto(stato, caso, passo = null) {
   const r = stato?.lavoro?.fin?.risultati;
   if (!r || typeof caso !== "string") return null;
@@ -518,7 +527,7 @@ export function casoScelto(stato, caso, passo = null) {
     const passi = passiDi(r);
     if (!passi.length) return null;
     const k = Math.min(passi.length - 1, Math.max(0, Number.isInteger(passo) ? passo : passi.length - 1));
-    return { tipo: "pushover", k, n: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti ?? {} },
+    return { tipo: "pushover", k, quanti: passi.length, passo: passi[k], perCaso: { spostamenti: passi[k].spostamenti ?? {} },
              stati: passi[k].stato_sezioni ?? null, caduta: r.caduta ?? null, u0: r.run?.pushover?.u0 ?? null };
   }
   if (caso.startsWith("modo:")) {
@@ -555,13 +564,23 @@ export function simboloStato(stato) {
 }
 
 /** La curva taglio–spostamento: `u` in mm (relativo a `u0`, come lo manda il server) e `V` in kN.
- *  `k` è l'indice del passo nella lista, cioè quello che la striscia e `←`/`→` scorrono. */
+ *  `k` è l'indice del passo nella lista, cioè quello che la striscia e `←`/`→` scorrono.
+ *
+ *  La caduta porta **due** numeri, e non sono lo stesso. `n` è il passo come lo conta il server ed
+ *  è quello che va nei testi; `k` è dove la curva si ferma ed è quello che va nel disegno. Con una
+ *  caduta per non convergenza il passo caduto **non** sta in `passi[]`:
+ *  `tests/test_pushover_binario.py:153` asserisce `caduta["passo"] == len(passi) + 1`, perché
+ *  `nova/deck.py:980-984` dichiara la caduta e rompe il ciclo **prima** della riga che registra il
+ *  passo. Stringere `passo − 1` alla lista e poi stamparlo darebbe «caduta al passo 109» dove il
+ *  server dice 110 — e il 109 è un passo convergente, che risulterebbe caduto. Con
+ *  `motivo: "passi_max"` invece il passo c'è (`caduta["passo"] == len(passi)`) e i due coincidono. */
 export function curvaPushover(passi, caduta) {
   const lista = Array.isArray(passi) ? passi : [];
   const punti = lista.map((p, k) => ({ k, u: Number(p.spostamento) || 0, V: (Number(p.taglio_base) || 0) / 1e3 }));
   const uMax = punti.reduce((a, p) => Math.max(a, p.u), 0), vMax = punti.reduce((a, p) => Math.max(a, p.V), 0);
   const c = caduta && Number.isFinite(caduta.passo)
-    ? { k: Math.min(lista.length - 1, Math.max(0, caduta.passo - 1)), u: Number(caduta.spostamento) || 0, motivo: String(caduta.motivo ?? "") } : null;
+    ? { k: Math.min(lista.length - 1, Math.max(0, caduta.passo - 1)), n: caduta.passo,
+        u: Number(caduta.spostamento) || 0, motivo: String(caduta.motivo ?? "") } : null;
   return { punti, uMax, vMax, caduta: c };
 }
 
