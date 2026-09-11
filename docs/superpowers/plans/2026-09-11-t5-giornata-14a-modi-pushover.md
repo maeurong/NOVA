@@ -886,7 +886,7 @@ disegna(m, { …, risultati })   // risultati: null | { vista, caso, perCaso, sc
 
 **Interfaces:** vedi «Contratto dei moduli». `vociDelCaso` e `casoScelto` leggono `risultati.lavoro.fin.risultati` (`per_caso`, `modi`, `passi`, `caduta`, `run.pushover`).
 
-- [ ] **Step 1: i test** (in coda a `risultati.test.js`; fixture a mano):
+- [x] **Step 1: i test** (in coda a `risultati.test.js`; fixture a mano):
 
 ```js
 const M2 = { n: 2, f: 31.85, T: 0.0314, forma: { 1: [0, 0, 0], 3: [1, 0, -0.03] }, massa_partecipante: { x: 0.92, y: 0, z: 0.01 }, cumulata: { x: 0.95, y: 0.78, z: 1 } };
@@ -997,9 +997,9 @@ test("creaAnimazione: i fotogrammi arrivano finché non si ferma; avvia due volt
 });
 ```
 
-- [ ] **Step 2: rosso** (`Cannot find module '../animazione.js'`, `vociDelCaso is not a function`).
+- [x] **Step 2: rosso** (`Cannot find module '../animazione.js'`, `vociDelCaso is not a function`).
 
-- [ ] **Step 3: il codice** — `animazione.js`:
+- [x] **Step 3: il codice** — `animazione.js`:
 
 ```js
 // L'animazione dei modi: una fase sinusoidale a un ciclo al secondo (la frequenza vera non si
@@ -1139,8 +1139,8 @@ export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate 
 
 `testoEquilibrio(risultati, caso)`: in testa, se `caso` comincia per `modo:` → la riga delle masse (o «—» se il modo non c'è); se `caso === "pushover"` → «N passi convergenti · u₀ … mm · taglio massimo … kN al passo k · caduta: nessuna | al passo k (motivo)» (o «—» senza passi); altrimenti il corpo di oggi.
 
-- [ ] **Step 4: verde**: `env -C …/static node --test test/risultati.test.js test/animazione.test.js`, poi tutti (761 + nuovi).
-- [ ] **Step 5: Commit** `feat(interfaccia): risultati.js — casi a tre forme (caso, modo, pushover), stazioni, stato delle sezioni, curva; animazione.js`.
+- [x] **Step 4: verde**: `env -C …/static node --test test/risultati.test.js test/animazione.test.js`, poi tutti (761 + nuovi).
+- [x] **Step 5: Commit** `feat(interfaccia): risultati.js — casi a tre forme (caso, modo, pushover), stazioni, stato delle sezioni, curva; animazione.js`.
 
 ## Ingressi degeneri
 - `vociDelCaso(null)`, risultati senza `modi`/`passi` → solo i casi; `modi` con `f: null` → voce «frequenza non fisica»
@@ -1167,7 +1167,7 @@ Riferimento: `docs/ricerca/07-ux-modellatore.md:103` (animazione a scala dichiar
 
 **Interfaces:** consuma `simboloStato`, `stazioniDiAsta`, `testoBadge`, `testoLegendaStati` (Task 1); `risultati` con `fattore`, `stati`, `tipo`, `badge`.
 
-- [ ] **Step 1: i test** (DOM finto già in `piano.test.js:117-156`; `traveR`/`Z1R` da lì):
+- [x] **Step 1: i test** (DOM finto già in `piano.test.js:117-156`; `traveR`/`Z1R` da lì):
 
 ```js
 test("piano: il fattore dell'animazione moltiplica la scala della deformata, non il badge", () => {
@@ -1213,13 +1213,13 @@ test("piano: stati con un conteggio che non combacia con le stazioni di Lobatto 
 
 (`schermoDi(m, id)` e `legendaDi(contenitore)` sono due helper da scrivere nel test: il primo replica `schermo` con `estensione`, il secondo prende il quarto figlio del contenitore.)
 
-- [ ] **Step 2: rosso.**
-- [ ] **Step 3: il codice** in `piano.js`:
+- [x] **Step 2: rosso.**
+- [x] **Step 3: il codice** in `piano.js`:
   1. In `creaPiano`, accanto al badge: `const legenda = document.createElement("p"); legenda.className = "risultati-legenda"; legenda.hidden = true; contenitore.replaceChildren(svg, titolo, badge, legenda);`.
   2. Nel ramo deformata di `stratoDeiRisultati`: la scala del disegno è `attivo.scala * (attivo.fattore ?? 1)` (sia `puntiDeformata` sia il punto della freccia); con `attivo.tipo === "modo"` o `"pushover"` **niente etichetta della freccia** (il badge dice già il numero: per un modo la forma è adimensionale, per un passo `u` è nel badge).
   3. Dopo le polilinee, se `attivo.stati`: per ogni asta `d` di `puntiDeformata` con `attivo.stati[String(d.id)]` lista non vuota: `const xr = stazioniDiAsta(asta, lista.length)`; per ogni stazione `k` il punto della deformata più vicino per `r` (`d.punti` portano `r`), il simbolo `simboloStato(lista[k])` (se `null` si salta): `<circle class="stato" r=3.5·s fill=colore fill-opacity=riempimento stroke=colore stroke-width=(contorno==="spesso" ? 2.5 : 1)·s>`; per `croce` due `<line class="stato-croce">` di ±4·s sulle diagonali. I cerchi entrano fra gli ostacoli (`linee`) e hanno `pointer-events: none` (ereditato dallo strato).
   4. Il badge: `testoBadge({ ...attivo, ...(attivo.badge ?? {}), ruotate: asteRuotate(m) })`; la legenda: `legenda.textContent = testoLegendaStati(); legenda.hidden = !(attivo && attivo.stati && vistaRis === "deformata")`; la legenda entra fra gli ostacoli come il badge (sotto di lui, `top: 38px`, altezza 14 px) quando non è `hidden`.
-- [ ] **Step 4: verde** (tutti i test JS); **Step 5: Commit** `feat(interfaccia): il piano anima la deformata col fattore, disegna lo stato delle sezioni a due canali e la legenda`.
+- [x] **Step 4: verde** (tutti i test JS); **Step 5: Commit** `feat(interfaccia): il piano anima la deformata col fattore, disegna lo stato delle sezioni a due canali e la legenda`.
 
 ## Ingressi degeneri
 - `fattore` assente → 1; `fattore` 0 → deformata uguale all'ombra, nessun `NaN`
@@ -1243,7 +1243,7 @@ Riferimento: `docs/ricerca/07-ux-modellatore.md:100` (doppio canale: forma e rie
 
 **Interfaces:** consuma Task 1. Produce: `creaSrotolato(contenitore, { suPasso })`; il pannello riceve `risultati = { perCaso, caso, etichetta, modo }` (etichetta = testo fra parentesi: `Z1`, `modo 2`, `pushover, passo 37`).
 
-- [ ] **Step 1: i test** (DOM finto di `esito.test.js`; radice con `#risultati-caso` che tiene le `<option>`):
+- [x] **Step 1: i test** (DOM finto di `esito.test.js`; radice con `#risultati-caso` che tiene le `<option>`):
 
 ```js
 test("creaEsito: il menu porta casi, pushover e modi con i testi di vociDelCaso; il valore scelto passa a suCambio", () => { /* select con 4 opzioni, value "modo:2" → suCambio({caso: "modo:2", …}); equilibrio = testoEquilibrio del modo */ });
@@ -1257,15 +1257,15 @@ test("tastiera: Spazio è «pausa», solo con risultati nella barra", () => { as
 test("pannello: il termine porta l'etichetta del caso; con un modo la riga della forma", () => { /* righe(m, {tipo:"nodo", id:1}, {risultati: {perCaso, caso: "modo:2", etichetta: "modo 2", modo: M2}}) → "forma modale (modo 2)" presente, "spostamenti (modo 2)" presente */ });
 ```
 
-- [ ] **Step 2: rosso.**
-- [ ] **Step 3: il codice**:
+- [x] **Step 2: rosso.**
+- [x] **Step 3: il codice**:
   - `esito.js` `creaEsito`: le `<option>` da `vociDelCaso(risultati)` (`value` = `valore`, `textContent` = `testo`), chiave di riscrittura = i valori uniti; `caso` corretto sul primo se non c'è; equilibrio da `testoEquilibrio(dati, caso)` (già estesa nel Task 1).
   - `creaSrotolato(contenitore, { suPasso = () => {} })`: se `risultati?.tipo === "pushover"` disegna la curva: titolo «pushover · taglio alla base – spostamento del nodo di controllo · kN, mm» (+ «stantia · »), `W = clientWidth || 200`, `H = 96`, margini 28 px a sinistra e 14 sopra/sotto; assi con gli estremi scritti («0», `uMax mm`, `vMax kN`); `<polyline>` dei punti; `<circle class="passo" r=2.5 data-k=k>` per passo, `pointer-events: all`, `click` → `suPasso(k)`; il corrente `r=4.5 fill=ROSSO`; due `<text>` accanto al corrente («u … mm», «V … kN»), a destra se `k < n/2` altrimenti a sinistra; caduta: `<line>` a croce sul punto `caduta.k` e `<text>` «caduta al passo k+1»; `aria-label` sui cerchi «passo k+1». Con `tipo === "modo"`: titolo «modo n: nessuna sollecitazione da srotolare». Altrimenti com'è.
   - `tastiera.js`: `{ codice: "pausa", tasto: "Spazio", etichetta: "ferma / riprendi", aiuto: "l'animazione del modo", contesto: "risultati" }` dopo `vista`; `[" ", "pausa"]` in `SENZA_MODIFICATORE`; `nomeTasto("Spazio")` → «spazio» (aggiungi a `PAROLE_DEI_GLIFI`).
   - `pannello.js` `righeDiNodo`: il termine usa `risultati.etichetta ?? risultati.caso`; se `risultati.modo` aggiunge `righeModo(risultati.modo, n.id)`.
   - `index.html` `#risultati-vuoto`: «Nessuna corsa da mostrare. Dopo ⌘⏎ scegli il caso, un modo o la pushover dal menu; `1` deformata, `2 3 4` M, V, N, `0` nessuna; `Spazio` ferma il modo, `← →` scorrono i passi.»
   - `stile.css`: `#piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0; font: 11px var(--mono); color: var(--inchiostro); pointer-events: none; white-space: nowrap; }`; `#srotolato circle.passo { cursor: pointer; }`.
-- [ ] **Step 4: verde**; **Step 5: Commit** `feat(interfaccia): il menu del caso con modi e pushover, la curva taglio–spostamento nella striscia, Spazio, la forma modale nell'ispettore`.
+- [x] **Step 4: verde**; **Step 5: Commit** `feat(interfaccia): il menu del caso con modi e pushover, la curva taglio–spostamento nella striscia, Spazio, la forma modale nell'ispettore`.
 
 ## Ingressi degeneri
 - `vociDelCaso` vuota → select vuoto e blocco nascosto come oggi
@@ -1290,7 +1290,7 @@ Riferimento: `docs/ricerca/07-ux-modellatore.md:99` (clic sul punto → valore),
 
 **Interfaces:** consuma tutto. `risultati = { lavoro, vista, caso, scalaMano, passo, animazione }`.
 
-- [ ] **Step 1: `app.js`**:
+- [x] **Step 1: `app.js`**:
   1. Stato: `risultati = { lavoro, vista: "deformata", caso: casi[0], scalaMano: null, passo: null, animazione: "va" }` in `suEsito`.
   2. `risultatiInVista(m, fattore = 1)`: `const scelto = casoScelto(risultati, risultati.caso, risultati.passo); if (!scelto) return null;` → `{ vista, caso, perCaso: scelto.perCaso, scala, auto, stantia, fattore, tipo: scelto.tipo, stati: scelto.stati ?? null, badge: …, curva: scelto.tipo === "pushover" ? curvaPushover(passi, scelto.caduta) : null, passo: scelto.tipo === "pushover" ? { k, n, u, V } : null }` con `badge = { modo: scelto.modo, passo: { k, n, u: passo.spostamento, V: passo.taglio_base / 1e3 }, caduta: curva.caduta, fermo: animazione ferma o movimento ridotto }`; la scala auto per un modo si calcola da `formaComeSpostamenti` come per un caso.
   3. `perCasoDelloStato()` → `{ perCaso: scelto.perCaso, caso, etichetta, modo: scelto.modo ?? null }` con `etichetta` = `caso` / `modo n` / `pushover, passo k+1`.
@@ -1300,7 +1300,7 @@ Riferimento: `docs/ricerca/07-ux-modellatore.md:99` (clic sul punto → valore),
   7. `←`/`→` nel keydown: `if (voce.codice === "direzione") { const girato = ruotaGhost(modo, ev.key); if (girato) { …come oggi… ; return; } if (!modo && risultati?.caso === "pushover" && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) { ev.preventDefault(); const s = casoScelto(risultati, "pushover", risultati.passo); risultati = { ...risultati, passo: Math.min(s.n - 1, Math.max(0, s.k + (ev.key === "ArrowRight" ? 1 : -1))) }; ridisegna(); } return; }`.
   8. `creaSrotolato($("srotolato"), { suPasso: (k) => { if (risultati) { risultati = { ...risultati, passo: k }; ridisegna(); } } })`.
   9. Cambio del caso dal menu (`suCambio`): `passo` torna `null` (l'ultimo), `animazione` resta.
-- [ ] **Step 2: il fumo** — copioni in `fumo.mjs`:
+- [x] **Step 2: il fumo** — copioni in `fumo.mjs`:
 
 ```js
   // Modale sul MURO 1: scegli il modo 2, la deformata si muove; Spazio la ferma.
@@ -1348,7 +1348,7 @@ Riferimento: `docs/ricerca/07-ux-modellatore.md:99` (clic sul punto → valore),
 
 Test in `test_fumo_chrome.py` (con `binario_opensees`): `test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma` (voci contengono «modo 2 · 31,85 Hz · ux 46 %» (misurato l'11/09, R3) — controlla il numero esatto della massa dal run: se differisce, assert su `startsWith("modo 2 · 31,85 Hz")`; `siMuove` true; `ferma` true; `badge` comincia per «modo 2 · 31,85 Hz»; `badgeFerma` finisce per «· ferma»; messaggio vuoto) e `test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic` (`badge1` contiene «passo 120/120»; `cerchi == 120`; `badge2` contiene «passo 119/120»; `badge3` contiene «passo 1/120»; `stati > 0`; `legenda` false; nessuna sovrapposizione; messaggio vuoto). Fixture: `docs/caso-studio/muro_1.nova.json` e `muro_1_pushover.nova.json`.
 
-- [ ] **Step 3: tutti i test** (JS, pytest intero, fumo 18). **Step 4: Commit** `feat(interfaccia): modi animati e pushover nel piano — menu del caso, Spazio, ← → sui passi, fumo sul MURO 1`.
+- [x] **Step 3: tutti i test** (JS, pytest intero, fumo 18). **Step 4: Commit** `feat(interfaccia): modi animati e pushover nel piano — menu del caso, Spazio, ← → sui passi, fumo sul MURO 1`.
 
 ## Ingressi degeneri
 - `suEsito` con risultati senza `modi` né `passi` → tutto come nella 13
@@ -1399,3 +1399,26 @@ R1 e i nove nulli di R2).
   solo l'occhio.
 - **R11** il bersaglio del clic che non stringe `k` ai limiti → cade «`offsetX` negativo → passo 0».
 - `percento` senza `Math.round` → cade «`0,456215` → 46 %».
+
+
+## Esito (11/09/2026, notte autonoma)
+
+Ramo `feat/interfaccia-14a-modi-pushover` da `main` `2a2a44a`; codice fino a **7a8c15c**. Test finali: **819 test JS**, **744 pytest + 3 skip, invariati: niente sotto `nova/`**, **19 di fumo in Chrome headless** (16 della 13 più `modale` e `pushover` sul MURO 1 e la misura del fotogramma).
+
+**Fatto come da piano e dalle decisioni D1-D8**: i modi nel menu del caso («modo 2 · 31,85 Hz · ux 46 %», «massa trascurabile» sotto l'1 %, `<optgroup>` per casi, pushover e 42 modi), la deformata che li anima a un ciclo al secondo con `Spazio` che ferma **sul posto** e riprende, `prefers-reduced-motion` che ferma al massimo e lo dice; la pushover con la curva taglio–spostamento nella striscia (clic su un bersaglio unico, `←`/`→`, il passo corrente rosso e più grande), la deformata che segue il passo nel piano e nel 3D, lo stato delle sezioni per stazione a due canali (riempimento per il calcestruzzo, contorno per l'acciaio) con la legenda, la caduta dichiarata come vuole la story 50 («al passo 110, u 55,2 mm, ultimo algoritmo KrylovNewton (non convergenza)» nell'equilibrio, corta nel badge e nella striscia); forma modale (adimensionale) e spostamenti per passo nell'ispettore; badge con frequenza, periodo e scala.
+
+**Misurato dall'architect prima del dispatch** (la lezione della 13 applicata): la forma modale `-unorm` è adimensionale di ordine 1 e **venti modi su 42** del MURO 1 non hanno componente nel piano — `scalaAuto` li avrebbe resi invisibili (×1): `scalaModo` misura le tre componenti (modo 2 → ×50, 4,7 % del lato); nove modi hanno forma nulla e il badge lo dice; le stazioni sono `4n+1` come nel deck; il ridisegno per fotogramma costa 0,04 ms nel DOM finto e **0,24 ms** in Chrome sul MURO 1 (il resto è il vsync).
+
+**Trovato dalle review e a mano**: la caduta per non convergenza sta **fuori** da `passi[]` (`passo = n+1`) e il testo scriveva il passo prima; con Spazio la forma saltava al massimo (ora `fattore()` dell'animazione ferma) e al **resize** saltava di nuovo (ora `fattoreCorrente()` serve `ridisegna` e il resize); la fase della pausa sopravviveva al cambio di caso (un modo nuovo disegnato sull'ombra del vecchio col badge «ferma»: ora `azzera()`); la scala auto della pushover si ricalcolava a ogni passo (×2 → ×10 scorrendo) e ora è fissa sul passo di |u| massimo; badge e legenda più larghi del piano a 1280 px — il badge della pushover accorciato, quello del modo a forma nulla **va a capo** e la legenda scende di quanto misura; l'etichetta «72,12 kN» dell'asse tagliata; `motivo` della caduta in chiaro («non_convergenza») ora in parole; le frecce in `ATTIVANO` anche sui bottoni spegnevano lo scrubber dall'albero; il menu non si aggiornava alla seconda corsa sullo stesso modello; l'ispettore stampava «mm» su una forma adimensionale; `n` voleva dire conteggio e numero del passo (ora `quanti`); `esito.js` conteneva un **NUL** letterale e git lo trattava come binario (la review del Task 3 ha letto il file, non il diff). Mutanti di ramo: 19 su 19 uccisi; la guardia delle frecce col ghost aperto ha un oracolo nel fumo (con `←` il mutante sopravviveva, col `→` muore).
+
+**Ruling registrati** (`.superpowers/sdd/2026-09-11-t5-giornata-14a-modi-pushover/progress.md`): R1-R15 dell'architect; col fuoco sul menu `←`/`→` scelgono la voce (è un `<select>`), lo scrubber vuole il fuoco fuori — dichiarato nello stato vuoto; la forma nulla non ferma l'animazione (R2); scala della pushover una volta per corsa (e per modello); la massa partecipante sta nella voce del menu e nell'equilibrio, non nel badge (spazio).
+
+**Debiti dichiarati**:
+- La forma modale è **lineare fra i nodi** (niente rotazioni né nodi interni nei modi): sul MURO 1 il modo 2 è un parallelogramma (R4). I passi della pushover non portano `spostamenti_interni` (contratto della spec): la deformata di un passo passa dai soli nodi.
+- `taglio_base` non passa da `_numero` nel server: un `inf` uscirebbe come `Infinity` e la curva collasserebbe (F4 della review del Task 1, `nova/`, fuori scope).
+- Il fotogramma calcola `puntiDeformata` due volte e il 3D ricostruisce le geometrie: vale 0,01 ms su 0,24; la dedup pulita tocca tre punti di `piano.js` e il contratto di `disegnaPiano`, da fare quando una misura su un modello grande lo chiede.
+- Senza test: la corsa nuova durante l'animazione (l'oracolo del fumo passerebbe per il motivo sbagliato); il cambio di caso da fermo è coperto solo a unità (nel fumo flakerebbe con la fase ≈ 1).
+- Il badge a due righe e la legenda a capo prendono ~52 px in alto a destra: su un piano stretto le etichette hanno meno posto.
+- `XI_LOBATTO` copiato in JS da `nova/deck.py:34`, con un test che rilegge il file.
+
+**Lezioni**: misurare le convenzioni fisiche **prima** del dispatch ha funzionato (R1: nessun ritorno); il diff binario di un file con un NUL rende cieca una review — controllare `Bin` nei pacchetti; la scala di una serie (passi) si decide sulla serie, non sul campione corrente; un oracolo va mutato prima di fidarsi (il `←` sul passo 0); una scheda di Chrome in secondo piano non fa girare `requestAnimationFrame` — la prova a mano del moto vale solo con la scheda in vista.
