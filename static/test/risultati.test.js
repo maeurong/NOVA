@@ -6,7 +6,8 @@ import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMass
          testoEquilibrio, srotolato,
          vociDelCaso, casoScelto, formaComeSpostamenti, stazioniDiAsta, scalaModo, ampiezzaModo,
          percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, righeModo,
-         tipoDelCaso, passoDiRiferimento, motivoInParole } from "../risultati.js";
+         tipoDelCaso, passoDiRiferimento, motivoInParole,
+         VIRIDIS, viridis, massimoSpostamento, coloreSpostamento, testoScalaColori } from "../risultati.js";
 
 // La trave appoggiata di `tests/fixture/trave_appoggiata.nova.json`: L = 6000, q = −10 N/mm, Z1.
 const trave = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6000, y: 0, z: 0 }],
@@ -64,8 +65,8 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   const [d] = puntiDeformata(trave, perCaso, 1, 8);
   assert.equal(d.id, 1);
   assert.equal(d.punti.length, 9);
-  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0 });
-  assert.deepEqual(d.punti[8], { x: 6000, y: 0, z: 0, r: 1 });
+  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0, u: 0 });
+  assert.deepEqual(d.punti[8], { x: 6000, y: 0, z: 0, r: 1, u: 0 });
   assert.ok(d.punti[4].z < -1, `la mezzeria scende: z = ${d.punti[4].z}`);
   assert.ok(Math.abs(d.punti[4].x - 3000) < 1e-9);
   // La scala moltiplica gli spostamenti, non le coordinate.
@@ -73,8 +74,8 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   assert.ok(Math.abs(d10.punti[4].z - 10 * d.punti[4].z) < 1e-9);
   // Uno spostamento assiale di j allunga l'asta; uno lungo y (fuori dal piano) va lineare.
   const [e] = puntiDeformata(trave, { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [6, 8, 0, 0, 0, 0] } }, 1, 2);
-  assert.deepEqual(e.punti[2], { x: 6006, y: 8, z: 0, r: 1 });
-  assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0, r: 0.5 });
+  assert.deepEqual(e.punti[2], { x: 6006, y: 8, z: 0, r: 1, u: 10 });
+  assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0, r: 0.5, u: 5 });
 });
 
 test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spostamenti fermo, lista vuota", () => {
@@ -82,7 +83,7 @@ test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spos
   const orfana = { nodi: trave.nodi, aste: [{ id: 7, nodo_i: 1, nodo_j: 99 }] };
   assert.deepEqual(puntiDeformata(orfana, Z1, 1), []);
   const [d] = puntiDeformata(trave, { spostamenti: {} }, 100, 4);
-  assert.deepEqual(d.punti[2], { x: 3000, y: 0, z: 0, r: 0.5 }, "senza spostamenti la deformata è l'ombra");
+  assert.deepEqual(d.punti[2], { x: 3000, y: 0, z: 0, r: 0.5, u: 0 }, "senza spostamenti la deformata è l'ombra");
   const [z] = puntiDeformata(trave, Z1, 1, 0);
   assert.equal(z.punti.length, 2, "segmenti ≤ 1 diventa 1: i due estremi");
 });
@@ -318,7 +319,7 @@ test("degeneri: uno spostamento con un NaN o corto vale come assente, non si pro
   const [d] = puntiDeformata(trave, rotto, 100, 4);
   assert.ok(d.punti.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)),
             "nodo fermo, non un NaN nel `points`");
-  assert.deepEqual(d.punti[4], { x: 6000, y: 0, z: 0, r: 1 });
+  assert.deepEqual(d.punti[4], { x: 6000, y: 0, z: 0, r: 1, u: 0 });
   const conNull = { spostamenti: { 2: [0, 0, null, 0, 0, 0] } };
   assert.equal(frecciaMassima(trave, conNull).valore, 0);
 });
@@ -424,8 +425,8 @@ test("puntiDeformata: col nodo interno la mezzeria è la freccia vera, non i 4/5
   assert.equal(d.punti.length, 17, "due tratti da otto segmenti, il nodo in comune una volta sola");
   assert.equal(d.punti[8].r, 0.5);
   assert.ok(Math.abs(d.punti[8].z - (-1.5709)) < 1e-12, `la mezzeria è il nodo interno: ${d.punti[8].z}`);
-  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0 }, "gli estremi restano sui nodi del modello");
-  assert.deepEqual(d.punti[16], { x: 6000, y: 0, z: 0, r: 1 });
+  assert.deepEqual(d.punti[0], { x: 0, y: 0, z: 0, r: 0, u: 0 }, "gli estremi restano sui nodi del modello");
+  assert.deepEqual(d.punti[16], { x: 6000, y: 0, z: 0, r: 1, u: 0 });
   // La scala moltiplica lo spostamento, il nodo interno compreso.
   const [d10] = puntiDeformata(trave, perCaso, 10, 8);
   assert.ok(Math.abs(d10.punti[8].z - (-15.709)) < 1e-11);
@@ -741,4 +742,45 @@ test("XI_LOBATTO è la copia di `nova/deck.py`, e il test la confronta col file 
   // E che la copia JS sia quella: `stazioniDiAsta` su un'asta indivisa rende le cinque ascisse.
   assert.deepEqual(stazioniDiAsta({ suddivisioni: 1 }), dalFile);
   assert.equal(Number(deck.match(/^STAZIONI = (\d+)/m)[1]), dalFile.length);
+});
+
+test("viridis: gli estremi sono le tappe, il mezzo interpolato, fuori scala stretto", () => {
+  assert.equal(VIRIDIS.length, 10);
+  assert.equal(viridis(0), "#440154");
+  assert.equal(viridis(1), "#fde725");
+  assert.equal(viridis(-3), "#440154");
+  assert.equal(viridis(7), "#fde725");
+  assert.equal(viridis(NaN), "#440154");
+  assert.equal(viridis(1 / 9), "#482878", "una tappa intera cade esatta");
+  assert.match(viridis(0.5), /^#[0-9a-f]{6}$/);
+});
+
+test("puntiDeformata: ogni punto porta |u| in mm senza scala — la scala sposta il disegno, non il valore", () => {
+  // una trave orizzontale di 1000 mm, il nodo 2 abbassato di 4 mm e spostato di 3 in x
+  const m = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 1000, y: 0, z: 0 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [3, 0, -4, 0, 0, 0] } };
+  const a1 = puntiDeformata(m, perCaso, 1)[0].punti, a50 = puntiDeformata(m, perCaso, 50)[0].punti;
+  assert.equal(a1.at(0).u, 0);
+  assert.ok(Math.abs(a1.at(-1).u - 5) < 1e-9, "all'estremo 3-4-5");
+  assert.deepEqual(a1.map((p) => p.u), a50.map((p) => p.u));
+  assert.notDeepEqual(a1.map((p) => p.x), a50.map((p) => p.x));
+});
+
+test("massimoSpostamento: il massimo dei punti; niente punti o u non finiti → 0", () => {
+  assert.equal(massimoSpostamento([{ punti: [{ u: 1 }, { u: 4 }] }, { punti: [{ u: 2 }] }]), 4);
+  assert.equal(massimoSpostamento([]), 0);
+  assert.equal(massimoSpostamento(null), 0);
+  assert.equal(massimoSpostamento([{ punti: [{ u: NaN }, {}] }]), 0);
+});
+
+test("coloreSpostamento: la frazione sul massimo; massimo zero → la tappa bassa, non NaN", () => {
+  assert.equal(coloreSpostamento(4, 4), "#fde725");
+  assert.equal(coloreSpostamento(0, 4), "#440154");
+  assert.equal(coloreSpostamento(3, 0), "#440154");
+});
+
+test("testoScalaColori: estremi con l'unità; per un modo la forma normalizzata, senza mm", () => {
+  assert.deepEqual(testoScalaColori({ uMax: 12.34, tipo: "caso" }), { min: "0 mm", max: "12,34 mm", titolo: "|u|" });
+  assert.deepEqual(testoScalaColori({ uMax: 0.8, tipo: "modo" }), { min: "0", max: "1", titolo: "|u| · forma normalizzata" });
+  assert.deepEqual(testoScalaColori({ uMax: 0, tipo: "pushover" }), { min: "0 mm", max: "0 mm", titolo: "|u|" });
 });

@@ -53,7 +53,7 @@ test("un tasto mappato si riconosce dall'evento", () => {
 });
 
 test("un tasto non mappato torna null", () => {
-  assert.equal(voceDaEvento({ key: "p", metaKey: false, ctrlKey: false, altKey: false }), null);
+  assert.equal(voceDaEvento({ key: "w", metaKey: false, ctrlKey: false, altKey: false }), null);
 });
 
 test("un contesto sconosciuto dà le voci di sempre, non un'eccezione", () => {
@@ -569,4 +569,12 @@ test("tastiera: le frecce su un bottone passano — una voce dell'albero non ci 
   }
   // E il campo di testo come sempre: la freccia muove il cursore nel testo.
   assert.equal(daControllo(evento("ArrowLeft", { tagName: "INPUT", type: "text", getAttribute: () => null })), true);
+});
+
+test("P alterna la presentazione, nudo; ⌘P resta al browser (stampa)", () => {
+  assert.equal(voceDaEvento({ key: "p", metaKey: false, ctrlKey: false, altKey: false }).codice, "presentazione");
+  assert.equal(voceDaEvento({ key: "P", metaKey: false, ctrlKey: false, altKey: false }).codice, "presentazione");
+  assert.equal(voceDaEvento({ key: "p", metaKey: true, ctrlKey: false, altKey: false }), null);
+  assert.ok(vociDellaBarra("sempre").some((v) => v.codice === "presentazione"));
+  assert.ok(!vociDellaBarra("ghost").some((v) => v.codice === "presentazione"), "col ghost aperto la barra non la promette");
 });
