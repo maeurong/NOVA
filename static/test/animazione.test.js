@@ -66,3 +66,24 @@ test("creaAnimazione: `ferma` senza `avvia` non solleva, e `avvia` dopo parte da
   a.avvia();
   assert.equal(coda.length, 1);
 });
+
+test("creaAnimazione: `fattore` rende la fase dove si è fermata, non 1", () => {
+  const coda = [];
+  let t = 0;
+  const a = creaAnimazione({ suFotogramma: () => {}, orologio: () => t, richiedi: (fn) => coda.push(fn) });
+  // Mai avviata: la forma sta al massimo. È il caso del moto ridotto, e il caso di partenza.
+  assert.equal(a.fattore(), 1);
+  a.avvia();
+  t = 250;
+  assert.ok(Math.abs(a.fattore() - 1) < 1e-9, "in corso: la fase di adesso");
+  t = 375; a.ferma();
+  // Ferma a 3/8 di ciclo: `ridisegna` disegna **questa**, non 1. Con 1 la forma saltava al
+  // massimo a ogni Spazio, e al riavvio tornava indietro alla fase di prima.
+  const fermata = a.fattore();
+  assert.ok(Math.abs(fermata - Math.sin(2 * Math.PI * 0.375)) < 1e-9, `${fermata}`);
+  t = 9999;
+  assert.equal(a.fattore(), fermata, "ferma, il tempo che passa non la muove");
+  // E riprendendo si riparte esattamente da lì: la fase è continua attraverso la pausa.
+  a.avvia();
+  assert.ok(Math.abs(a.fattore() - fermata) < 1e-9);
+});

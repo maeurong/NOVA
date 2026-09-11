@@ -24,7 +24,7 @@ import { creaStoria } from "./storia.js";
 import { creaCorsa, stantia } from "./corsa.js";
 import { creaEsito, creaSrotolato } from "./esito.js";
 import { VISTE, scalaAuto, puntiDeformata, vociDelCaso, casoScelto, scalaModo,
-         curvaPushover } from "./risultati.js";
+         curvaPushover, passoDiRiferimento, tipoDelCaso } from "./risultati.js";
 import { creaAnimazione, movimentoRidotto } from "./animazione.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
@@ -69,6 +69,21 @@ let risultati = null;
 // un fotogramma dell'animazione. Un cambio a caldo si raccoglie al gesto dopo.
 let motoRidotto = false;
 
+// La scala della pushover si misura **una volta per corsa**, sul passo di spostamento massimo, e
+// non sul passo corrente: con `scalaAuto(passo[k])` usciva ×10 al passo 30 e ×2 al 120, cioè
+// scorrendo lo scrubber la deformata respirava invece di crescere, e confrontare due passi — che
+// è tutto il senso dello scrubber — diceva il falso. La cache sta su `passi` **e** sul modello:
+// `scalaAuto` misura anche `latoMaggiore(m)`, e un modello modificato con la stessa corsa in mano
+// (una corsa stantia) darebbe una scala vecchia per un disegno nuovo.
+let scalaCache = { passi: null, m: null, scala: 1 };
+function scalaDellaPushover(m, passi) {
+  if (scalaCache.passi !== passi || scalaCache.m !== m) {
+    const k = passoDiRiferimento(passi);
+    scalaCache = { passi, m, scala: k === null ? 1 : scalaAuto(m, { spostamenti: passi[k].spostamenti ?? {} }) };
+  }
+  return scalaCache.scala;
+}
+
 /** Lo stato dei risultati tradotto in **vista**, cioè in quel che piano, spazio e striscia
  *  sanno disegnare (il contratto di `piano.disegna` più `curva` e `passo` per la striscia), o
  *  `null` quando non c'è niente da mostrare. La scala si calcola qui una volta sola: piano e
@@ -87,7 +102,9 @@ function risultatiInVista(m, fattore = 1) {
   // del disegno la fa `scalaDiagrammaAuto` (`piano.js`), e questa vale 1 per non mentire nel badge.
   // R1: un modo si misura con `scalaModo`, che guarda le **tre** componenti della forma —
   // `scalaAuto` ignora la `y`, e venti modi su 42 del MURO 1 uscirebbero «×1 (auto)».
-  const scalaDeformata = () => (scelto.tipo === "modo" ? scalaModo(m, scelto.modo) : scalaAuto(m, scelto.perCaso));
+  const scalaDeformata = () => (scelto.tipo === "modo" ? scalaModo(m, scelto.modo)
+    : scelto.tipo === "pushover" ? scalaDellaPushover(m, risultati.lavoro?.fin?.risultati?.passi)
+    : scalaAuto(m, scelto.perCaso));
   const scala = auto ? (risultati.vista === "deformata" ? scalaDeformata() : 1) : risultati.scalaMano;
   const curva = scelto.tipo === "pushover"
     ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
@@ -334,7 +351,7 @@ const srotolato = creaSrotolato($("srotolato"), {
 const animazione = creaAnimazione({
   suFotogramma: (fattore) => {
     const m = corrente(cronologia);
-    const inVista = disegnaPiano(m, fattore);
+    const inVista = disegnaPiano(m, fattore, { striscia: false });
     spazio?.disegna(m, { selezione, deformata: deformataInVista(m, inVista) });
   },
 });
@@ -707,12 +724,15 @@ const deformataInVista = (m, inVista) => (inVista?.vista === "deformata"
  *  argomenti: due `piano.disegna` scritte in due punti divergono al primo argomento aggiunto, e il
  *  disegno cambierebbe a seconda di chi l'ha chiesto. Rende la vista dei risultati, che serve anche
  *  a chi viene dopo (spazio e pannello). */
-function disegnaPiano(m, fattore = 1) {
+function disegnaPiano(m, fattore = 1, { striscia = true } = {}) {
   const ghost = comando ? ghostDelComando(comando, modo) : ghostDisegnabile(m, modo);
   const inVista = risultatiInVista(m, fattore);
   piano.disegna(m, { selezione, ghost, azioneInVista: azioneDestinazione(m),
                      proposte: rilievo ? proposteAperte(rilievo, m) : [], risultati: inVista });
-  srotolato.disegna({ risultati: inVista, modello: m, selezione });
+  // La striscia non cambia da un fotogramma all'altro — l'M srotolato non c'è per un modo, e la
+  // curva della pushover non si anima — quindi il ciclo la salta: ricostruirla sessanta volte al
+  // secondo per rimettere in pagina lo stesso testo è lavoro per niente.
+  if (striscia) srotolato.disegna({ risultati: inVista, modello: m, selezione });
   return inVista;
 }
 
@@ -746,7 +766,14 @@ function ridisegna() {
   // parte da nessun nodo, e darglielo vorrebbe dire inventargli un'origine: `piano.js` lo
   // riconosce da `punto`.
   rigaComando.hidden = !comando;
-  const inVista = disegnaPiano(m);
+  // L'animazione si decide **prima** del disegno, perché la fase da disegnare è la sua: ferma su
+  // un modo la forma resta dov'era, non salta al massimo. Col moto ridotto invece il massimo è
+  // proprio quel che D2a chiede, e con un caso che non è un modo il fattore non serve a nessuno.
+  const tipo = risultati ? tipoDelCaso(risultati.caso) : null;
+  const animare = risultati?.animazione === "va" && risultati.vista === "deformata"
+    && tipo === "modo" && !motoRidotto;
+  if (animare) animazione.avvia(); else animazione.ferma();
+  const inVista = disegnaPiano(m, tipo === "modo" && !motoRidotto ? animazione.fattore() : 1);
   // finché three.js non è arrivato, il piano regge da solo
   spazio?.disegna(m, { selezione, deformata: deformataInVista(m, inVista) });
   albero.disegna(m, { selezione, rilievo });
@@ -768,13 +795,6 @@ function ridisegna() {
   esito.disegna({ risultati, stantia: risultati ? stantia(risultati.lavoro, m) : false });
   storia.disegna(etichette(cronologia));
   disegnaBarra();
-  // In coda al disegno, non prima: `avvia` mette subito un fotogramma in coda, e quello deve
-  // trovare lo stato di adesso. Un caso che non è più un modo — o una vista che non è più la
-  // deformata, o «apri» che ha azzerato tutto — ferma il ciclo qui, e nessun fotogramma orfano
-  // ridisegna la forma di prima: `creaAnimazione` scarta quello già in volo.
-  const animare = risultati?.animazione === "va" && risultati.vista === "deformata"
-    && String(risultati.caso).startsWith("modo:") && !motoRidotto;
-  if (animare) animazione.avvia(); else animazione.ferma();
 }
 
 // Il piano si disegna in millimetri per pixel: cambiata la finestra, `s` cambia e con lui tratti,
@@ -833,7 +853,7 @@ window.addEventListener("keydown", (ev) => {
     // Senza ghost e con la pushover scelta, `←`/`→` scorrono i passi: è lo scrubber (D5a). Con
     // un ghost aperto no — la freccia lì è il verso dell'estrusione, e sono due gesti diversi
     // sullo stesso tasto. `↑`/`↓` restano al browser in ogni caso: la corsa ha una direzione sola.
-    if (!modo && risultati?.caso === "pushover" && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
+    if (!modo && tipoDelCaso(risultati?.caso) === "pushover" && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
       const s = casoScelto(risultati, "pushover", risultati.passo);
       if (s) {
         ev.preventDefault();
@@ -943,7 +963,7 @@ function dispatchVoce(voce, valore = null) {
   // che non c'è si legge come un tasto rotto. Con `prefers-reduced-motion` l'alternanza c'è
   // ancora ma non muove niente — a spegnerla è `ridisegna`, e il badge dice perché.
   if (voce.codice === "pausa") {
-    if (!String(risultati?.caso ?? "").startsWith("modo:")) {
+    if (tipoDelCaso(risultati?.caso) !== "modo") {
       dì("Spazio ferma l'animazione di un modo: scegline uno dal menu");
       return;
     }

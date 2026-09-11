@@ -4,7 +4,8 @@ import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMass
          scalaDiagrammaAuto, diagramma, picchi, testoValore, testoBadge, righeSpostamenti, righeReazioni,
          testoEquilibrio, srotolato,
          vociDelCaso, casoScelto, formaComeSpostamenti, stazioniDiAsta, scalaModo, ampiezzaModo,
-         percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, righeModo } from "../risultati.js";
+         percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, righeModo,
+         tipoDelCaso, passoDiRiferimento } from "../risultati.js";
 
 // La trave appoggiata di `tests/fixture/trave_appoggiata.nova.json`: L = 6000, q = −10 N/mm, Z1.
 const trave = { nodi: [{ id: 1, x: 0, y: 0, z: 0 }, { id: 2, x: 6000, y: 0, z: 0 }],
@@ -545,10 +546,41 @@ test("testoBadge per modo e pushover", () => {
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:2", scala: 50, auto: true, modo: M2, motivoFermo: "preferenza di sistema" }),
                "modo 2 · 31,85 Hz · T 0,0314 s · ux 92 % · ×50 (auto)", "senza `fermo` il motivo non si stampa");
   assert.equal(testoBadge({ vista: "deformata", caso: "modo:3", scala: 1, auto: true, modo: M3 }), "modo 3 · frequenza non fisica · ×1 (auto)");
-  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto)");
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto)");
   assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: { k: 1, n: 2, motivo: "non converge" } }),
-               "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 2: non converge");
-  assert.equal(testoBadge({ vista: "M", caso: "pushover", passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · passo 2/2 · M · nessun diagramma per un passo");
+               "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 2: non converge");
+  assert.equal(testoBadge({ vista: "M", caso: "pushover", passo: { k: 1, n: 2, u: 1, V: 2.3 } }), "pushover · 2/2 · M · nessun diagramma per un passo");
+  // A: a 1280 px la colonna del piano è ~430 px e il badge intero veniva tagliato a sinistra.
+  // «passo» via, e il taglio a una cifra: «70,93 kN» sono tre caratteri di troppo per un
+  // centesimo di kN che su una spinta non guarda nessuno.
+  assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 2, auto: true, passo: { k: 119, n: 120, u: 60, V: 70.9284 } }),
+               "pushover · 120/120 · u 60 mm · V 70,9 kN · ×2 (auto)");
+});
+
+test("tipoDelCaso: la chiave a tre forme si legge in un posto solo", () => {
+  assert.equal(tipoDelCaso("Z1"), "caso");
+  assert.equal(tipoDelCaso("modo:2"), "modo");
+  assert.equal(tipoDelCaso("pushover"), "pushover");
+  // Chi la chiama le passa `risultati?.caso`, che senza corsa non c'è: non è un modo e non è la
+  // pushover, ed è quello che le tre guardie di `app.js` devono leggere.
+  assert.equal(tipoDelCaso(undefined), "caso");
+  assert.equal(tipoDelCaso(null), "caso");
+  // «modo» senza due punti è un caso statico che si chiama così, non un modo.
+  assert.equal(tipoDelCaso("modo"), "caso");
+});
+
+test("passoDiRiferimento: il passo di spostamento massimo, non l'ultimo", () => {
+  assert.equal(passoDiRiferimento(PASSI), 1);
+  // C: la scala della pushover si misura qui, e una corsa che dopo il picco **scende** (softening,
+  // o un controllo in spostamento che torna indietro) ha il massimo in mezzo, non in coda. Con
+  // l'ultimo passo la deformata del picco sarebbe uscita fuori dal riquadro.
+  assert.equal(passoDiRiferimento([{ spostamento: 1 }, { spostamento: 9 }, { spostamento: 4 }]), 1);
+  // Il modulo, non il segno: una spinta verso −x ha spostamenti negativi e una scala positiva.
+  assert.equal(passoDiRiferimento([{ spostamento: -9 }, { spostamento: 4 }]), 0);
+  assert.equal(passoDiRiferimento([]), null, "nessun passo, nessun riferimento");
+  assert.equal(passoDiRiferimento(null), null);
+  // Tutti a zero: il primo, e chi chiama ci fa `scalaAuto` su una deformata nulla → 1.
+  assert.equal(passoDiRiferimento([{ spostamento: 0 }, { spostamento: 0 }]), 0);
 });
 test("righeModo e testoEquilibrio per modo e pushover", () => {
   assert.deepEqual(righeModo(M2, 3), [["forma modale (modo 2)", "ux 1 · uy 0 · uz -0,03"]]);
@@ -640,7 +672,7 @@ test("F1: il passo caduto per non convergenza non sta in `passi[]` — `k` per i
   assert.equal(c.caduta.k, 1, "il disegno si ferma sull'ultimo passo che esiste");
   assert.equal(c.caduta.n, 3, "il testo dice il numero del server, non l'indice stretto");
   assert.equal(testoBadge({ vista: "deformata", caso: "pushover", scala: 20, auto: true, passo: { k: 1, n: 2, u: 1, V: 2.3 }, caduta: c.caduta }),
-               "pushover · passo 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 3: non_convergenza");
+               "pushover · 2/2 · u 1 mm · V 2,3 kN · ×20 (auto) · caduta al passo 3: non_convergenza");
   assert.ok(testoEquilibrio({ passi: PASSI, caduta: { passo: 3, spostamento: 1.4, motivo: "non_convergenza" }, run: { pushover: { u0: 0.0002 } } }, "pushover")
               .endsWith("caduta: al passo 3 (non_convergenza)"));
   // `passi_max`: il passo c'è (`caduta["passo"] == len(passi)`), e i due numeri coincidono.

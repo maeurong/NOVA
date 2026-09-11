@@ -366,11 +366,16 @@ export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate 
     return `${testa}modo ${modo.n} · ${f} · ${scalaTesto}${nulla}${fermata}`;
   }
   if (passo) {
-    const p = `pushover · passo ${passo.k + 1}/${passo.n}`;
+    // «passo» non c'è: a 1280 px la colonna del piano è larga ~430 px e il badge intero veniva
+    // tagliato a sinistra («er · passo…»). Il numero del passo si legge dalla frazione, e il
+    // taglio della scala in coda sarebbe stato peggio (`07-ux-modellatore.md:99`).
+    const p = `pushover · ${passo.k + 1}/${passo.n}`;
     if (vista !== "deformata") return `${testa}${p} · ${vista} · nessun diagramma per un passo`;
     // Il numero del passo caduto è quello del server (`caduta.n`), non l'indice stretto alla lista.
     const c = caduta ? ` · caduta al passo ${caduta.n}: ${caduta.motivo}` : "";
-    return `${testa}${p} · u ${conciso(passo.u)} mm · V ${conciso(passo.V)} kN · ${scalaTesto}${c}`;
+    // Il taglio a una cifra decimale: «70,93 kN» contro «70,9 kN» sono tre caratteri su un badge
+    // che non ci sta, e il centesimo di kN su una spinta non lo guarda nessuno.
+    return `${testa}${p} · u ${conciso(passo.u)} mm · V ${conciso(Math.round(passo.V * 10) / 10)} kN · ${scalaTesto}${c}`;
   }
   const coda = vista === "deformata" ? scalaTesto : LEGENDA[vista];
   // Le aste che i diagrammi saltano vanno dette: una che manca senza avviso si legge come «zero».
@@ -450,6 +455,13 @@ export function srotolato(stazioni, grandezza) {
 // stato_sezioni, algoritmo}`, `caduta` e `run.pushover.u0`.
 
 export const CHIAVE_MODO = (n) => `modo:${n}`;
+
+/** La forma della chiave del caso, in un posto solo: `app.js` ne aveva tre copie
+ *  (`startsWith("modo:")` due volte, `=== "pushover"` una) mentre il Global Constraint dice che
+ *  a interpretare la stringa è questo modulo. Tre copie sono tre posti da cui dimenticarsi una
+ *  forma nuova. */
+export const tipoDelCaso = (caso) => (caso === "pushover" ? "pushover"
+  : String(caso ?? "").startsWith("modo:") ? "modo" : "caso");
 const XI_LOBATTO = [0, 0.1726731646, 0.5, 0.8273268354, 1];   // `nova/deck.py:34`, 5 punti per elemento
 
 /** R3: intero, non «45,62 %». `conciso` terrebbe due decimali sotto 100, e in un menu di 46 voci
@@ -537,6 +549,21 @@ export function casoScelto(stato, caso, passo = null) {
   }
   const perCaso = r.per_caso?.[caso];
   return perCaso ? { tipo: "caso", perCaso } : null;
+}
+
+/** Il passo su cui si misura la scala della pushover: quello di spostamento massimo in modulo.
+ *  La scala è **una per corsa**, non una per passo — con `scalaAuto` sul passo corrente usciva
+ *  ×10 al passo 30 e ×2 al 120, cioè scorrendo i passi la deformata «respirava» invece di
+ *  crescere, e il confronto fra due passi (che è tutto il senso dello scrubber) diceva il falso.
+ *  Lista vuota → `null`: non c'è nessun passo da misurare. */
+export function passoDiRiferimento(passi) {
+  const lista = Array.isArray(passi) ? passi : [];
+  let k = null, massimo = -1;
+  for (let i = 0; i < lista.length; i++) {
+    const u = Math.abs(Number(lista[i]?.spostamento) || 0);
+    if (u > massimo) { massimo = u; k = i; }
+  }
+  return k;
 }
 
 /** Le stazioni di un'asta come le scrive `nova/passi.py:stato_sezioni`: 5 di Lobatto per elemento,

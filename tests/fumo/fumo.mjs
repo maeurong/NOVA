@@ -39,6 +39,15 @@ const scegliCaso = (valore) => ev(`(() => { const s = document.getElementById("r
 
 const BADGE = `document.querySelector("#piano .risultati-badge").textContent`;
 
+// Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
+// un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
+// domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
+// Si legge due volte — animazione che gira e animazione ferma — perché è la differenza fra le due
+// a dire quanto costa il nostro giro, non il valore assoluto (che il vsync tiene fermo comunque).
+const INTERVALLI = `new Promise((ok) => { const t = []; const g = () => { t.push(performance.now()); if (t.length < 31) requestAnimationFrame(g); else ok(t.slice(1).map((v, i) => v - t[i])); }; requestAnimationFrame(g); })`;
+const riassunto = (v) => ({ media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
+                            massimo: Math.round(Math.max(...v) * 100) / 100 });
+
 const COPIONI = {
   // La pagina si apre, la tastiera risponde dal primo secondo, un nodo si posa da tastiera.
   async pagina() {
@@ -185,11 +194,13 @@ const COPIONI = {
     // Senza la pushover scelta `←`/`→` restano al browser: nessun `preventDefault`, o si
     // porterebbe via lo scorrimento della pagina a chi sta solo guardando un modo.
     const frecciaLibera = await ev(`(() => { const e = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }); document.body.dispatchEvent(e); return e.defaultPrevented; })()`);
+    const conAnimazione = riassunto(await ev(INTERVALLI));
 
     await tasto(" ");
     await pausa(200);
     const ferma = await fermo();
     const badgeFerma = await ev(BADGE);
+    const senzaAnimazione = riassunto(await ev(INTERVALLI));
 
     // R2: nove modi su 42 del MURO 1 hanno la forma nulla sui nodi del modello. Si mostrano lo
     // stesso, il badge dice perché, e nel disegno non compare un `NaN`.
@@ -222,7 +233,7 @@ const COPIONI = {
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { voci, senzaModo, siMuove: a !== b, frecciaLibera, ferma, badge, badgeFerma,
              badgeNulla, nan, riparte, fermaDopoCambio, badgeRidotto, fermaRidotto,
-             fermaRidottoDopoSpazio, messaggio };
+             fermaRidottoDopoSpazio, fotogramma: { conAnimazione, senzaAnimazione }, messaggio };
   },
 
   // Pushover sul MURO 1: il caso «pushover», la curva nella striscia, `←`/`→` sui passi, il clic
@@ -245,8 +256,20 @@ const COPIONI = {
     const stati = await ev(`document.querySelectorAll("#piano svg circle.stato").length`);
     const legenda = await ev(`document.querySelector("#piano .risultati-legenda").hidden`);
     const sovrapposte = await ev(SOVRAPPOSTE);
+    // A e B: a 1280 px la colonna del piano è ~430 px, e badge e legenda ne uscivano a sinistra —
+    // tagliati proprio dove il testo comincia («er · passo…»). Stessa storia per il numero del
+    // taglio massimo nella curva, che stava nei 28 px a sinistra dell'asse e usciva «2 kN» da
+    // «72,12 kN»: un numero diverso, e plausibile. L'oracolo è il rettangolo vero del browser.
+    const dentro = await ev(`(() => {
+      const sta = (sel, contenitore) => { const p = document.querySelector(contenitore).getBoundingClientRect();
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return r.left >= p.left - 0.5 && r.right <= p.right + 0.5; };
+      return { badge: sta("#piano .risultati-badge", "#piano"),
+               legenda: sta("#piano .risultati-legenda", "#piano"),
+               taglio: sta("#srotolato svg text:nth-of-type(3)", "#srotolato") };
+    })()`);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { badge1, badge2, badge3, cerchi, stati, legenda, sovrapposte, messaggio };
+    return { badge1, badge2, badge3, cerchi, stati, legenda, dentro, sovrapposte, messaggio };
   },
 };
 

@@ -36,5 +36,10 @@ export function creaAnimazione({ suFotogramma, orologio = () => performance.now(
     },
     ferma() { if (!attiva) return; attiva = false; pausa = orologio(); },
     inCorso: () => attiva,
+    // La fase da disegnare quando non è il ciclo a chiederla. Ferma: quella dell'istante in cui
+    // si è fermata — ridisegnare a 1 faceva saltare la forma al massimo a ogni Spazio, e al
+    // riavvio tornava indietro, che è esattamente ciò che la contabilità di `pausa` esiste per
+    // evitare. Mai avviata: 1, la forma al massimo (D2a, il caso del moto ridotto).
+    fattore: () => (pausa !== null ? fase(pausa - t0) : attiva ? fase(orologio() - t0) : 1),
   };
 }

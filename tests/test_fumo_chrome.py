@@ -20,9 +20,10 @@ import pytest
 RADICE = Path(__file__).resolve().parent.parent
 FUMO = RADICE / "tests" / "fumo" / "fumo.mjs"
 FIXTURE = RADICE / "tests" / "fixture"
-# Il MURO 1 del caso studio: la modale con 42 modi e la pushover con 120 passi. Non sta in
-# `tests/fixture` perché è il modello della tesi, non un banco scritto apposta per i test.
-CASO_STUDIO = RADICE / "docs" / "caso-studio"
+# Il MURO 1 — la modale con 42 modi, la pushover con 120 passi — vive in `tests/fixture` come
+# copia **congelata** di `docs/caso-studio/muro_1*.nova.json`, e non si legge di là: quei file li
+# rigenera chi lavora al caso studio, e i numeri asseriti qui sotto (31,85 Hz, 120 passi)
+# cadrebbero per una ragione che non è la loro.
 CANDIDATI_CHROME = (
     shutil.which("google-chrome"), shutil.which("chromium"), shutil.which("chromium-browser"),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -56,17 +57,44 @@ def _termina(proc: subprocess.Popen, secondi: float = 5.0) -> None:
         proc.wait(timeout=secondi)
     except subprocess.TimeoutExpired:
         proc.kill()
+    # La pipe dello `stderr` (che dalla 14a c'è, per dire perché Chrome non è partito) va chiusa a
+    # mano: il garbage collector che se ne accorge dopo la fa uscire come `ResourceWarning`, e
+    # `-W error` la trasforma in un fallimento di un test che con Chrome non c'entra niente.
+    if proc.stderr is not None:
+        proc.stderr.close()
 
 
-def _attendi_http(url: str, secondi: float = 15.0) -> None:
+def _attendi_http(url: str, secondi: float = 15.0, proc: subprocess.Popen | None = None) -> None:
+    """Aspetta che `url` risponda.
+
+    Con `proc`: se quel processo muore prima, si smette subito invece di aspettare i quindici
+    secondi interi — un Chrome che non parte non parte, e il suo `stderr` dice perché.
+    """
     fine = time.monotonic() + secondi
     while time.monotonic() < fine:
         try:
             urllib.request.urlopen(url, timeout=1).read()
             return
         except Exception:
+            if proc is not None and proc.poll() is not None:
+                break
             time.sleep(0.2)
-    raise RuntimeError(f"{url} non risponde")
+    raise RuntimeError(f"{url} non risponde{_perche(proc)}")
+
+
+def _perche(proc: subprocess.Popen | None) -> str:
+    if proc is None or proc.poll() is None:
+        return ""
+    testo = (proc.stderr.read() if proc.stderr else "") or ""
+    return f" (uscito con {proc.returncode}: {testo.strip()[-400:] or 'nessun messaggio'})"
+
+
+def _chrome_headless(chrome: str, cdp: int, profilo: Path) -> subprocess.Popen:
+    return subprocess.Popen([
+        chrome, "--headless=new", f"--remote-debugging-port={cdp}",
+        f"--user-data-dir={profilo}", "--no-first-run", "--no-default-browser-check",
+        "--window-size=1280,800", "about:blank",
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
 
 
 @pytest.fixture
@@ -85,13 +113,18 @@ def chrome_e_server(tmp_path):
     filo = threading.Thread(target=server.run, daemon=True)
     filo.start()
     _attendi_http(f"http://127.0.0.1:{porta}/api/salute")
-    proc = subprocess.Popen([
-        chrome, "--headless=new", f"--remote-debugging-port={cdp}",
-        f"--user-data-dir={tmp_path / 'profilo'}", "--no-first-run", "--no-default-browser-check",
-        "--window-size=1280,800", "about:blank",
-    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Misurato l'11/09: due avvii su sette muoiono con «`/json/version` non risponde», senza
+    # lasciare processi in giro e prima che node parta. Un rilancio con un profilo pulito basta —
+    # e se cade anche il secondo, il messaggio porta lo `stderr` di Chrome invece della sola
+    # porta muta. Un tentativo solo, non un ciclo: due fallimenti di fila non sono più rumore.
+    proc = _chrome_headless(chrome, cdp, tmp_path / "profilo")
     try:
-        _attendi_http(f"http://127.0.0.1:{cdp}/json/version")
+        try:
+            _attendi_http(f"http://127.0.0.1:{cdp}/json/version", proc=proc)
+        except RuntimeError:
+            _termina(proc)
+            proc = _chrome_headless(chrome, cdp, tmp_path / "profilo-2")
+            _attendi_http(f"http://127.0.0.1:{cdp}/json/version", proc=proc)
         yield porta, cdp
     finally:
         _termina(proc)
@@ -212,7 +245,7 @@ def test_la_verifica_del_modello_non_butta_i_risultati_in_vista(chrome_e_server,
 def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_opensees):
     """Il modo 2 del MURO 1 (31,85 Hz, ux 46 %) si muove da solo, e Spazio lo ferma."""
     porta, cdp = chrome_e_server
-    r = copione("modale", porta, cdp, fixture=str(CASO_STUDIO / "muro_1.nova.json"))
+    r = copione("modale", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"))
     assert r["ok"], r
     assert r["errori"] == [], r["errori"]
     t = r["trovato"]
@@ -240,21 +273,35 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     assert t["fermaRidotto"] is True, "col moto ridotto la deformata si muove lo stesso"
     assert t["fermaRidottoDopoSpazio"] is True, "col moto ridotto Spazio fa ripartire l'animazione"
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
+    # R5 diceva «nessun tetto di fps» su una misura nel DOM finto, che è un pavimento. Questo è il
+    # browser vero: se il ridisegno sforasse il budget di un fotogramma, gli intervalli con
+    # l'animazione in corso si allungherebbero. La soglia è larga apposta — serve a prendere una
+    # regressione da ordine di grandezza, non a misurare il vsync di questa macchina.
+    with_, senza = t["fotogramma"]["conAnimazione"], t["fotogramma"]["senzaAnimazione"]
+    assert with_["media"] < 50, f"fotogrammi lenti con l'animazione: {with_} contro {senza}"
 
 
 def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, binario_opensees):
     """120 passi: si parte dall'ultimo, `←←→` porta al 119, il clic sulla striscia al primo."""
     porta, cdp = chrome_e_server
-    r = copione("pushover", porta, cdp, fixture=str(CASO_STUDIO / "muro_1_pushover.nova.json"))
+    r = copione("pushover", porta, cdp, fixture=str(FIXTURE / "muro_1_pushover.nova.json"))
     assert r["ok"], r
     assert r["errori"] == [], r["errori"]
     t = r["trovato"]
-    assert "passo 120/120" in t["badge1"], t["badge1"]
+    assert "120/120" in t["badge1"], t["badge1"]
     assert t["cerchi"] == 120, f"un cerchio per passo nella striscia: {t['cerchi']}"
-    assert "passo 119/120" in t["badge2"], t["badge2"]
-    assert "passo 1/120" in t["badge3"], t["badge3"]
+    assert "119/120" in t["badge2"], t["badge2"]
+    assert "1/120" in t["badge3"], t["badge3"]
+    # C: la scala è **una per corsa**, non una per passo. Con `scalaAuto` sul passo corrente
+    # usciva ×10 al passo 30 e ×2 al 120: scorrendo lo scrubber la deformata respirava invece di
+    # crescere, e confrontare due passi — che è tutto il senso dello scrubber — diceva il falso.
+    scale = {b.split(" · ")[-1] for b in (t["badge1"], t["badge2"], t["badge3"])}
+    assert len(scale) == 1, f"la scala cambia da un passo all'altro: {scale}"
     assert t["stati"] > 0, "nessun simbolo dello stato delle sezioni sulla deformata"
     assert t["legenda"] is False, "i simboli ci sono e la legenda no"
+    # A e B: niente esce dal proprio riquadro a 1280 px. Il badge accorciato, la legenda che va a
+    # capo, il taglio massimo scritto dentro il grafico — tre tagli visti a mano dal controller.
+    assert t["dentro"] == {"badge": True, "legenda": True, "taglio": True}, t["dentro"]
     assert t["sovrapposte"] == [], f"etichette sovrapposte: {t['sovrapposte']}"
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
 
@@ -274,6 +321,23 @@ def test_node_assente_salta_col_motivo(monkeypatch, tmp_path):
     gen = chrome_e_server.__wrapped__(tmp_path)
     with pytest.raises(pytest.skip.Exception, match="node non è installato"):
         next(gen)
+
+
+def test_attendi_http_smette_subito_se_il_processo_e_morto_e_dice_perche():
+    """Il fix di E: un Chrome che non parte non si aspetta quindici secondi, e lo `stderr` si legge."""
+    proc = subprocess.Popen(["python3", "-c", "import sys; sys.stderr.write('niente porta\\n'); sys.exit(3)"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    proc.wait(timeout=5)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        porta_chiusa = s.getsockname()[1]
+    t0 = time.monotonic()
+    try:
+        with pytest.raises(RuntimeError, match=r"uscito con 3: niente porta"):
+            _attendi_http(f"http://127.0.0.1:{porta_chiusa}/json/version", secondi=15, proc=proc)
+        assert time.monotonic() - t0 < 5, "non ha aspettato i quindici secondi del tetto"
+    finally:
+        _termina(proc)
 
 
 def test_attendi_http_timeout_alza_runtimeerror_con_url():

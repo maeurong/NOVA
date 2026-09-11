@@ -466,9 +466,16 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // sotto il testo senza che nessun test se ne accorga.
     if (!badge.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(badge.textContent, s, 8), x1: viewport.x1,
                                        y0: viewport.y0 + 22 * s, y1: viewport.y0 + 36 * s });
-    // La legenda sta sotto il badge, stessa colonna a destra: `top: 38px`, una riga alta 14.
-    if (!legenda.hidden) ostacoli.push({ x0: viewport.x1 - larghezzaMono(legenda.textContent, s, 8), x1: viewport.x1,
-                                         y0: viewport.y0 + 38 * s, y1: viewport.y0 + 52 * s });
+    // La legenda sta sotto il badge, stessa colonna a destra: `top: 38px`. Da quando va a capo
+    // (`stile.css`) non è più alta una riga, e quante ne prenda lo sa solo il browser — quindi
+    // l'altezza si **misura**; 28 px (due righe) è il ripiego per il DOM finto dei test, che
+    // `offsetHeight` non ce l'ha. La larghezza non supera il `max-width` di là: 8 px per lato.
+    if (!legenda.hidden) {
+      const alta = (legenda.offsetHeight || 28) * s;
+      const larga = Math.min(larghezzaMono(legenda.textContent, s, 8), (larghezzaPx - 16) * s);
+      ostacoli.push({ x0: viewport.x1 - larga, x1: viewport.x1,
+                      y0: viewport.y0 + 38 * s, y1: viewport.y0 + 38 * s + alta });
+    }
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + 20 * s,
                                         x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8), 0.45 * larghezzaPx * s) });
 

@@ -93,11 +93,14 @@ body {
                           white-space: nowrap; }
 #piano .risultati-badge.stantia { color: var(--rosso); }
 /* La legenda dello stato delle sezioni (14a, R15): sotto il badge, stessa colonna a destra.
-   `nowrap` perché è una riga sola di simboli e parole, e spezzarla in due le farebbe perdere
-   l'accoppiamento simbolo→stato. Inchiostro, mai rosso: il rosso è uno solo. */
+   **Va a capo**: a 1280 px la colonna del piano è larga ~430 px e la riga intera ne vuole il
+   doppio, quindi con `nowrap` usciva a sinistra e veniva tagliata proprio sul primo canale —
+   restava «contorno sottile elastica · …», cioè il solo acciaio. Allineata a destra come il
+   badge, così le righe spezzate restano nella sua colonna. Inchiostro, mai rosso: il rosso è
+   uno solo. L'altezza che ne esce la **misura** `piano.js` (`offsetHeight`) per l'ostacolo. */
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
                             font: 11px var(--mono); color: var(--inchiostro); pointer-events: none;
-                            white-space: nowrap; }
+                            white-space: normal; max-width: calc(100% - 16px); text-align: right; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 e 22 di `top`, 8 di `left`/`right`, 11 di riga, 14 di
    altezza di riga — li ricopia `piano.js` (`larghezzaTesto` e i due `ostacoli.push`) per farne

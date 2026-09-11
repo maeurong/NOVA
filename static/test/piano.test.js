@@ -1124,14 +1124,36 @@ test("piano: con un modo o un passo non si scrive l'etichetta della freccia (R5)
   assert.equal(tutti(strato(svg()), "polygon").length, 0, "nessun diagramma da una forma modale");
 });
 
-test("piano: la legenda entra fra gli ostacoli, cioè nessuna etichetta le finisce sotto", () => {
-  const { contenitore, piano, svg } = nuovoPiano();
+// D: la prova di prima girava su **zero** `<text>` — con `tipo: "pushover"` l'etichetta della
+// freccia non si scrive affatto (R5), quindi il `for` non asseriva niente e l'ostacolo poteva
+// sparire senza che nessuno se ne accorgesse. Qui il caso è statico (`tipo: "caso"`, che
+// l'etichetta ce l'ha) **con** gli stati delle sezioni, che è la corsa a fibre vera: la legenda
+// c'è e l'etichetta pure. Telaio 4:3 come per il badge, così il viewport coincide col `viewBox`.
+test("piano: la legenda è un ostacolo, e l'etichetta della freccia non le finisce sotto", () => {
+  const contenitore = contenitoreFinto();
+  const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   const E = { calcestruzzo: "elastica", acciaio: "elastica" };
-  piano.disegna(traveR, { risultati: { vista: "deformata", caso: "pushover", perCaso: Z1R, scala: 100,
-                                       auto: true, stantia: false, stati: { 1: [E, E, E, E, E] },
-                                       tipo: "pushover", badge: { passo: { k: 0, n: 1, u: 1, V: 2 } } } });
-  assert.equal(legendaDi(contenitore).hidden, false);
-  // La legenda sta in px fuori dal `viewBox`, come il badge: l'ostacolo è il suo rettangolo, e
-  // nessun `<text>` dello strato ci cade dentro (stessa prova del badge, R6 della 13).
-  for (const t of tutti(strato(svg()), "text")) assert.ok(Number(t.getAttribute("y")) > 0);
+  // Il nodo 3 è lo spigolo in alto a destra: abbassato di 50 mm, la freccia massima cade
+  // **dentro** la fascia della legenda, che è il caso che l'ostacolo esiste per risolvere.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, 0, 0],
+                                   3: [0, 0, -50, 0, 0, 0], 4: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+  piano.disegna(telaio43, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1,
+                                         auto: true, stantia: false, tipo: "caso",
+                                         stati: { 1: [E, E, E, E, E] }, badge: {} } });
+  const legenda = legendaDi(contenitore);
+  assert.equal(legenda.hidden, false);
+  // Il box della legenda come lo calcola `piano.js`, con gli stessi numeri del test del badge:
+  // `top: 38px`, alta `offsetHeight || 28` (il DOM finto non ce l'ha → due righe), e larga al
+  // massimo quanto il `max-width` di `stile.css` — la riga intera ne vorrebbe il doppio.
+  const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
+  const x1 = cx + 800 * s / 2, bordo = cy - 600 * s / 2;
+  const larga = Math.min(legenda.textContent.length * 6.6 + 8, 800 - 16) * s;
+  const scatola = { x0: x1 - larga, y0: bordo + 38 * s, x1, y1: bordo + (38 + 28) * s };
+  assert.deepEqual([scatola.x0, scatola.y0, scatola.x1, scatola.y1].map((v) => Math.round(v * 10) / 10),
+                   [-761.6, -248.8, 8960, 98.4], "38 px sotto il bordo, due righe, larga quanto il `max-width`");
+  const testi = tutti(strato(contenitore._figli[0]), "text");
+  assert.ok(testi.length >= 1, "l'etichetta della freccia si scrive: il test non è vuoto");
+  for (const t of testi) {
+    assert.ok(!siSovrappongono(boxTesto(t, s), scatola), `«${t.textContent}» finisce sotto la legenda`);
+  }
 });
