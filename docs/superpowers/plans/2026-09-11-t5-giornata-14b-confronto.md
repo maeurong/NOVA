@@ -16,6 +16,323 @@
 
 **Ramo:** `feat/interfaccia-14b-confronto` da `main` `d2e8864`, worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-14b` (venv pronto, `nova ok 3.12.13`). PR verso `main`; merge solo con via libera dell'autore.
 
+## Annotazione dell'architect (11/09/2026)
+
+Worktree `/Users/mario/GitHub/NOVA-wt/interfaccia-14b`, ramo `feat/interfaccia-14b-confronto`,
+HEAD **`7766f99`** (questo piano). Punto di partenza rimisurato qui, non ricordato:
+`env -C …/static node --test` → **819 pass, 0 fail** (588 ms). Il MURO 1 è stato **corso davvero**
+(`nova.sidecar`, OpenSees 3.8.0 in `~/.local/bin/OpenSees`, cartella `/tmp/misura14b/nova`) e la
+tabella è stata composta con `nova.confronto.confronta(telaio, None, leggi_csv(abaqus_esempio.csv),
+mappa)`: i numeri qui sotto vengono da lì.
+
+**Le tre cose che contano stanno in 0 e in R1-R2, e cambiano gli oracoli del fumo.** Il piano dice
+«19 righe» e «almeno una nota, perché la massa del MURO 1 esce non confrontabile: C1 è una
+combinazione». **Nessuna delle due regge.** Sul MURO 1 col solo telaio la tabella ha **23 righe**,
+la massa esce con il suo valore (**0,7694 t**, `ragione: null`), e le note sono **due** — tutte e
+due `bias_atteso`, nessuna `ragione`. Motivo misurato: `run.casi` del MURO 1 è
+`["C1", "C2", "C3", "Z1"]`, **quattro** e non tre — `Z1` c'è, `_riga_massa` trova l'azione di solo
+peso proprio e la ragione «è una combinazione» non scatta mai.
+
+### 0. Le premesse verificate lanciando il codice
+
+**La risposta vera del confronto sul MURO 1, col solo telaio più `tests/fixture/abaqus_esempio.csv`.**
+Mappa come la compila il form del piano (un caso per ogni caso corso, valore = il caso stesso,
+`nodi_sommita: [3, 4]`), poi `C1 → GRAVITA` come fa il copione del fumo:
+
+| misura | valore misurato |
+|---|---|
+| `run.casi` | `["C1", "C2", "C3", "Z1"]` — **4**, non 3 |
+| righe della tabella | **23** = 1 massa + 4 casi × 4 grandezze + f1-f3 + 3 massa partecipante |
+| `taglio_base` | **assente**: nessun passo mappato si chiama `SPINTA_ORIZZONTALE` (`nova/confronto.py:_PASSO_SPINTA`) |
+| righe con `ragione` | **0** |
+| note distinte (`noteDellaTabella`) | **2**, tutte e due `bias_atteso`: «massa: zapatas e tamponatura fuori dal telaio» e «tetraedri lineari più rigidi → … → telaio più deformabile» |
+| righe attenuate (entrambe le classi `non_confrontabile`) | **21** su 23 |
+| `testoConteggio` | «23 righe · 21 non confrontabili · verifica del codice, non validazione» |
+| `conAbaqus` | **true** → **9 colonne** |
+| righe appaiate col CSV | **2**: `reazione_z C1` (telaio 7545,44 N ↔ Abaqus 4250,1 → scarto 77,5 %, `lontano`) e `u_sommita_z C1` (−0,00208 ↔ −0,42 → 99,5 %, `lontano`) |
+| `provenienza.commit_nova` | `7766f99`; `run_id_solido`, `sha256_deck_solido`, `versione_calculix` = `null` |
+
+Con la **mappa vuota** (`{}`) le righe sono **7** e f1-f3 escono `telaio: null` con la ragione
+«nessun modo del telaio con asse x dominante sui nodi di sommità»: senza `nodi_sommita` i modi non
+si appaiano. Con i **soli** `nodi_sommita` e nessun caso: **7 righe**, tutte con un valore, nessuna
+ragione. È l'ingresso degenere «`run.casi = []`» del piano, e si comporta come scritto — la
+tabella ha massa + modi + massa partecipante e non solleva.
+
+**`_valore_abaqus` non rende una ragione quando il CSV non ha la riga** (`nova/confronto.py:183-185`:
+`riga is None` → `return None, None`). La ragione esce **solo** per unità discordi. Quindi un CSV
+che non appaia niente è **muto**: da qui R7.
+
+**Il pannello e la larghezza della tabella.** La colonna della griglia è
+`minmax(220px, 20rem)` — e sta a **`stile.css:24`**, non `:22` (`:22` è `height: 100vh`; lo dicono
+anche il piano e il brief, corretto qui). Tutti e due gli estremi sono definiti: la traccia non
+può superare 320 px **qualunque** sia il contenuto. In più `#pannello` (`stile.css:53`) ha
+`overflow: auto`, e la dimensione minima automatica di un grid item vale il contenuto **solo se**
+l'`overflow` calcolato su quell'asse è `visible` (CSS Box Sizing 3 §4.1, «automatic minimum size»;
+CSS Grid 1 §6.6): qui è `auto`, quindi `min-width` risolve a **0**. Due guardie indipendenti, e
+bastano. Larghezza utile dentro il pannello: 320 − 8 − 8 di padding − 1 di bordo ≈ **303 px**.
+Stima della tabella a font 11 px, avanzamento mono ≈ 0,6 em = 6,6 px/carattere, `padding: 2px 6px`
+= 12 px per cella, celle più lunghe misurate sul MURO 1 (`massa_partecipante_x` 20 caratteri,
+`non confrontabile` 17, intestazioni `scarto Abaqus` 13):
+
+- **9 colonne ≈ 835 px** → 2,8 volte lo spazio: senza `overflow-x` la pagina scorrerebbe.
+- **6 colonne ≈ 490 px** → 1,6 volte: scorre anche la tabella senza Abaqus.
+
+`#confronto-scorri { overflow-x: auto; max-width: 100% }` dentro un `<section>` di blocco basta.
+L'oracolo `documentElement.scrollWidth <= window.innerWidth` del fumo è il controllo vero.
+
+**`navigator.clipboard` su loopback.** W3C *Secure Contexts* §3.1 «Is origin potentially
+trustworthy?»: l'origine è affidabile se l'host corrisponde a `127.0.0.0/8` o `::1/128`, **oppure**
+se l'host è `localhost` o finisce per `.localhost`. Quindi **sì a tutti e due**, `127.0.0.1` e
+`localhost`. Il fumo gira su `http://127.0.0.1:${porta}/` (`tests/fumo/fumo.mjs:6`, riletta): «copia»
+funziona lì. Il ramo «appunti assenti» resta coperto dal test di Task 2 con `appunti: null`.
+
+**Il 400 del confronto passa da `messaggioErrore`.** Verificato lungo tutta la catena:
+`nova/server.py:319-325` `_o_400` fa `raise HTTPException(400, detail=fin)` con `fin` dizionario;
+`:455-458` `_http` rende `JSONResponse(status_code, content=exc.detail)` **appiattito**, non
+annidato sotto `detail`; `static/file.js:15` legge `dati.motivo`. Nessun `JSONResponse` diverso sul
+percorso del confronto. ✅ Il piano ha ragione. In più: `ConfrontoReq` (`nova/server.py:229-235`) è
+`extra="forbid"` — il corpo deve essere **esattamente** `{telaio, solido, abaqus, mappa_casi}`, come
+il piano lo scrive; una chiave in più uscirebbe 422.
+
+### 1. I puntamenti che non combaciano
+
+Corretti qui, non nel corpo del piano. Nessuno cambia *cosa* fare.
+
+| citato | vero |
+|---|---|
+| `stile.css:22` = le colonne della griglia | **`:24`** (`:22` è `height: 100vh`) |
+| `app.js:72` = `let motoRidotto = false;` | **`:70`** |
+| `app.js:296-303` = `suApertura` | `suApertura` apre a **`:265`**; `:296-303` sta dentro `suImportazione` (che apre a `:291`). Le coppie `corsa.azzera(); risultati = null;` a **`:269-270`** e **`:294-295`** sono giuste |
+| `app.js:776-812` = `ridisegna` | `ridisegna` apre a **`:755`**; `esito.disegna(…)` a `:810` è giusta |
+| `app.js:36` = `selezione = {tipo, id}` | `:36` è `let selezione = null;` — la sostanza (una selezione sola) regge |
+| `corsa.js:192-199` = `disegnaUltima` | la funzione apre a **`:191`** (`:192-193` è il commento sul solido che non invecchia) |
+| `test/corsa.test.js:163-183` = `radiceCorsa()` | `:163` è lo stub di `globalThis.document`; `radiceCorsa` viene dopo |
+| `docs/caso-studio/confronto.json` = **19 righe** | **20 righe**, 6 con `ragione`, 2 `bias_atteso` distinti. Prima riga `massa` 0,7694 ↔ 0,5551 → 38,62 % `lontano` (la prova a mano del Task 4 regge alla lettera) |
+| `docs/ricerca/index.md:19` = ricerca 06; `:20` = 07; `:26` = 13 | **`:18`** = 06, **`:19`** = 07, **`:25`** = 13 — tutte e tre spostate di uno |
+| `07-ux-modellatore.md:100` = «WCAG 1.4.1» | la riga cita **WCAG 1.4.11** (contrasto non testuale ≥ 3:1). Il criterio giusto per «il colore non è il solo canale» è **1.4.1 Uso del colore**: citare 1.4.1 nel commento CSS e non spacciarlo per la riga 100 |
+
+**Combaciano**, aperte una per una qui e da non rileggere: `nova/server.py:367-383`, `:319-325`,
+`:455-458`, `:189-190`, `:229-235`; `nova/sidecar.py:179-213`; `nova/confronto.py:7-8`, `:25`,
+`:64`, `:68`, `:74-95`, `:98-105`, `:180-190`, `:214-243`, `:266-270`, `:294-301`, `:440-451`,
+`:453-490`, `:470`, `:596-605`; `nova/corsa.py:23`; `nova/ccx.py:44`; `corsa.js:53`, `:81`, `:113`,
+`:124`, `:263-264`, `:279-303`; `file.js:15`, `:24-39`; `numeri.js:155`, `:182`, `:195`;
+`app.js:25`, `:177`, `:312-334`, `:337`, `:810`; `index.html:16-20`, `:74-76`, `:91`, `:109`,
+`:110` (l'innesto fra `:109` e `:110` è esatto); `stile.css:12`, `:53`, `:117`, `:241`, `:307-311`,
+`:381`, `:388-392`, `:400`; `fumo.mjs:6`, `:27`, `:47`; `test_fumo_chrome.py:22`, `:135`;
+`06-dominio-analisi-verifiche-formati.md:110`, `:175`, `:178`; `13-solido-calculix.md:657`.
+
+E due cose che il piano **non** dice e che valgono: `static/recenti.js` non tocca `localStorage`
+all'import (il deposito arriva come argomento), e `corsa.js` importa già `file.js` — quindi
+`confronto.js` può importare `./corsa.js` e `./file.js` dentro `node --test` senza DOM. Verificato
+leggendo le teste dei due moduli, non dedotto.
+
+### 2. I rischi, con il ruling
+
+**R1 — la cella «— t» quando il telaio manca. Il piano ha torto: l'unità va solo col numero.**
+`td(\`${r.telaio} ${r.unita}\`)` stampa «— Hz» su ogni riga senza valore del telaio, e sul MURO 1
+con mappa vuota sono tre righe su sette. Ruling: `td(r.telaio === "—" ? "—" : \`${r.telaio} ${r.unita}\`)`.
+Una riga senza valore del telaio è `non_confrontabile` su quel lato comunque, e l'unità piena sta
+nel CSV. *Costo se sbaglio*: una riga con telaio nullo ma solido pieno perde l'unità a schermo.
+
+**R2 — il `<sup>` con gli apici Unicode. Toglilo: cifre normali dentro il `<sup>`.** Il piano
+codifica il numero della nota **due volte** — l'elemento `<sup>` *e* i glifi `¹ ² ³`. Gli screen
+reader trattano U+00B9/B2/B3 in modo incoerente (VoiceOver legge «²» come "squared", NVDA spesso lo
+salta): la ridondanza peggiora, non aiuta. Ruling: cancella `APICI` e `apice`; `sup.textContent =
+note.join(" ")` e `sup.setAttribute("aria-label", \`nota ${note.join(", ")}\`)`. Il `<ol>` in fondo
+già numera da 1 e i due numeri combaciano. Il test cambia: `celle[5].textContent === "lontano 1"`.
+*Costo se sbaglio*: una nota a due cifre («10») si legge come numero e non come apice — accettabile,
+il `<sup>` porta la semantica.
+
+**R3 — `ultimoTelaio` che resta una corsa senza cartella.** Com'è scritto, `disegna` **svuota** il
+campo (`percorsoRisultati` → `""`) e butta via un percorso ancora buono. Ruling: sovrascrivi solo
+con un valore non vuoto —
+`const p = percorsoRisultati(telaio, "telaio"); if (!toccato.telaio && p !== "") campoTelaio.value = p;`
+e lo stesso per il solido. `azzera()` continua a svuotare a mano. Una condizione, non
+un'astrazione. *Costo se sbaglio*: dopo una corsa fallita il campo mostra il percorso di quella
+buona di prima — e il server dirà «illeggibile» se non c'è. Più economico che far ridigitare.
+
+**R4 — `specchiaJson` a ogni `input`.** `JSON.stringify` di un oggetto da ≤ 10 chiavi, microsecondi.
+Nessun `debounce`. Ruling: **lascia**. *Costo se sbaglio*: nessuno misurabile.
+
+**R5 — la tabella a 9 colonne e il pannello.** Misurato in 0: due guardie indipendenti (traccia
+`minmax` a estremi definiti; `min-width` risolto a 0 per l'`overflow: auto` di `#pannello`). Ruling:
+il CSS del piano basta così. *Costo se sbaglio*: lo prende il fumo con `scrollWidth <= innerWidth`.
+
+**R6 — `conAbaqus` che decide le colonne per tabella.** Sul MURO 1 misurato: 2 righe appaiate su
+23, cioè **9 colonne con 21 righe di «—»**. Ruling: **lascia** il commutatore com'è. Nascondere le
+colonne di un CSV che l'utente ha chiesto sarebbe un fallimento silenzioso; le 21 «non
+confrontabili» del conteggio dicono già quanto è appaiato. Il caso davvero muto — **zero** righe
+appaiate, che fa cadere `conAbaqus` a false e riporta a 6 colonne senza una parola — lo copre R7.
+
+**R7 — il `<caption>` fisso «telaio ↔ solido ↔ Abaqus» mente, e copre anche il CSV muto.** Ruling:
+una pura in più, la più corta che regge:
+
+```js
+export function testoDidascalia(tabella, { abaqusChiesto = false } = {}) {
+  if (conAbaqus(tabella)) return "telaio ↔ solido ↔ Abaqus";
+  return abaqusChiesto
+    ? "telaio ↔ solido · il CSV Abaqus non ha righe appaiate ai casi"
+    : "telaio ↔ solido";
+}
+```
+
+`creaConfronto` la chiama con `abaqusChiesto: campoAbaqus.value.trim() !== ""` e scrive
+`didascaliaEl.textContent`. Due rami, un test. *Costo se sbaglio*: una riga di didascalia in più da
+mantenere. Costo di **non** farlo: l'utente incolla un CSV con i casi sbagliati, vede sei colonne e
+crede che il CSV non l'abbia proprio dato.
+
+**R8 — il fumo che dipende dal formato di `conciso` («4 250»).** Ruling: **tienilo**. Misurato:
+`conciso(4250.1)` = `"4 250"` (U+202F fra le migliaia; sopra cento zero decimali). Non è fragilità,
+è l'unico oracolo che prova che il valore Abaqus finisce nella **colonna giusta** — `children[4]` e
+la stringa insieme. `conciso` ha già i suoi test in `numeri.test.js`: se cambia, cade lì per primo.
+
+**R9 — `nodiInSommita` con tolleranza 1 mm su un telaio a due piani.** Prende solo l'ultimo piano,
+ed è quel che serve: `_media_sommita` (`nova/confronto.py:294-301`) media sui nodi che gli dai, e il
+`SET_SOMMITA` del solido è la faccia superiore. Ruling: **lascia**. Il campo è modificabile e la
+precompilazione è un default, non un vincolo.
+
+**R10 — lo stile dei campi è incompleto, e si vede a occhio.** `#confronto label` prende solo
+`margin-top` dal piano, ma `display: block; font-size: 11px; color: var(--testo-tenue)` sta in
+`stile.css:295` su `#file label, #corsa label, #risultati-controlli > label` — `#confronto` non c'è.
+Idem per i campi: `width: 100%; font-family: var(--mono); background: var(--pannello); border` sta a
+`:296` sulla lista `#file-percorso, #comando-campo, #corsa-inp, …`, e l'`outline` di fuoco a `:300`.
+Senza questo i quattro campi escono nudi. Ruling, ed è la regola R12 che il file già si è data a
+`:381` («un selettore solo»): **estendi i tre selettori esistenti** con
+`#confronto label` (`:295`), `#confronto input[type="text"], #confronto-json` (`:296`),
+`#confronto input[type="text"]:focus-visible, #confronto-json:focus-visible` (`:300`); poi togli dal
+blocco in coda il `width: 100%` di `#confronto-json` e i `:focus-visible` duplicati. `#confronto
+label.riga` resta `display: flex` — specificità più alta e più avanti nel file.
+
+**R11 — `#confronto-vuoto`.** La classe `.vuoto` (`:241`) porta `padding: var(--passo)` e
+`max-width: 24rem`, che in 303 px non hanno senso: è esattamente il motivo per cui `#corsa-vuoto`
+esiste a `:400`. Ruling: `#confronto-vuoto` entra in quel selettore, non in una regola nuova.
+
+### 3. Le domande aperte (nessun ruling: contraddirebbero C1-C4 o D7a)
+
+1. Col solo telaio **21 righe su 23 sono attenuate**: la scheda è quasi tutta grigia. Vale la pena
+   mostrarla senza né solido né CSV, o «confronta» dovrebbe pretendere un secondo lato? (C1a dice
+   opzionali tutti e due.)
+2. `Z1` compare nel form come caso mappabile, ma un passo solido «Z1» non esiste: la riga si mappa a
+   sé stessa e non produce niente. Precompilare **vuoto** il passo per i casi `Z<n>`? (C2c: il form
+   è minimo, un valore per caso.)
+3. Ogni clic su «confronta» genera un `run_id` e una cartella nuova sotto `corse/`: dieci confronti,
+   dieci cartelle, nessuna pulizia. Sta sotto `nova/` → fuori dalla 14b per C4a.
+4. `#messaggio` è **condiviso**: `suErrore(null)` del confronto cancella un errore della corsa
+   ancora a schermo. Una riga di stato per sezione cambierebbe la veste di tutto il pannello.
+
+### 4. Chi esegue, con quale modello, in quale ordine
+
+**Tutto in sequenza. Task 1 e Task 2 non vanno in parallelo**: scrivono lo **stesso file**,
+`static/confronto.js` (Task 1 lo crea, Task 2 gli appende `creaConfronto`), e Task 2 importa le
+pure di Task 1 — due agenti sullo stesso file producono un conflitto certo su un vantaggio nullo.
+Task 3 dipende dall'export `creaConfronto` di Task 2. Il markup e il CSS di Task 2 toccano file
+disgiunti (`index.html`, `stile.css`) ma restano nel Task 2: staccarli vorrebbe dire un agente che
+scrive gli id e un altro che li legge, senza guadagno di tempo reale.
+
+| Task | Subagente | Modello | Parallelo? | Skill-gate | Riferimento |
+|---|---|---|---|---|---|
+| 1 — le pure | `frontend-engineer` | `sonnet` | **no**, apre `confronto.js` | **sì** | `docs/ricerca/07-ux-modellatore.md:105` |
+| 2 — `creaConfronto`, markup, stile | `frontend-engineer` | **`opus`** | **no**, stesso `confronto.js` + dipende da 1 | **sì** | `docs/ricerca/07-ux-modellatore.md:100` |
+| 3 — `app.js` e il fumo | `frontend-engineer` | `sonnet` | **no**, dipende da 2 | **sì** | `docs/ricerca/06-dominio-analisi-verifiche-formati.md:175` |
+| 4 — prova a mano, review, Esito | controller (non un subagente) | — | la review a cinque **sì**, in parallelo | n/a | `docs/ricerca/06-dominio-analisi-verifiche-formati.md:110` |
+
+**Perché `opus` solo sul Task 2**: è l'unico che deve *decidere* mentre scrive — R2 (togliere gli
+apici e rifare il test), R7 (una pura nuova con il suo test), R10 e R11 (tre selettori esistenti da
+estendere invece di tre regole nuove), più 300 righe di factory con DOM e nove test asincroni. Task
+1 e Task 3 sono trascrizione disciplinata di codice già scritto qui, con correzioni elencate una per
+una: `sonnet` con questa annecatura in mano basta.
+
+**Quale skill per il `frontend-engineer`**: `impeccable` su tutti e tre, ed è vincolante sul Task 2
+— markup della tabella (`<caption>`, `<th scope>`, `<ol>` delle note), stile, doppio canale, copia
+d'interfaccia. Sul Task 1 il gate è soddisfatto dalla stessa skill sulla copia delle uscite in
+parole (`PAROLA_CLASSE`, `testoConteggio`, i messaggi d'errore); sul Task 3 sugli oracoli del fumo
+che guardano la pagina resa.
+
+### 5. I test dei Task 2 e 3, letti col DOM finto in mano
+
+Il DOM finto del piano regge: `dispatch` rende la promessa dei listener (il `await` sul clic
+funziona), il getter di `textContent` somma i figli (quindi «lontano ¹» viene dal `<sup>`),
+`querySelectorAll("input")` guarda i nipoti e le righe caso sono `label > input` (funziona),
+`createElement(nome)` porta il tag (`corsa.test.js:163` lo butta via, la copia nuova no: giusto).
+Cinque correzioni, tutte misurate:
+
+1. **Task 1, `righeDaMostrare`: `assert.equal(r[4].scartoAbaqus, "2,2 %")` cade.** Misurato:
+   `stampaNumero(2.15, {decimali: 1})` = **`"2,1"`** — `toFixed` su un double che sta appena **sotto**
+   2,15. Correzione minima: nella fixture `scarto_abaqus_pct: 2.15` → **`2.24`**, l'attesa resta
+   «2,2 %».
+2. **Task 1, `conciso` su tutti i valori della fixture** — verificati uno per uno lanciando
+   `numeri.js`: `0,7694` ✅, `0` ✅ (lo zero è un valore), `7 545` ✅ (con U+202F), `4 250` ✅,
+   `-0,0021`, `31,85`. `versioneBreve` rende `"3.8.0"`, `"2.22"` e **`null`** su `null` — quindi
+   `nd(versioneBreve(...))` → «n/d» ✅, il test di `testoProvenienza` passa com'è.
+3. **Task 2, la cella della classe con la nota**: con R2 l'attesa diventa
+   `assert.equal(celle[5].textContent, "lontano 1")`, e resta
+   `celle[5]._figli.at(-1)?.nome === "sup"`.
+4. **Task 2, la didascalia (R7)**: aggiungi in coda al test «senza Abaqus le colonne sono sei»
+   `assert.equal(el("didascalia").textContent, "telaio ↔ solido")`, e un caso nuovo con
+   `#confronto-abaqus` pieno e una risposta senza righe appaiate →
+   «telaio ↔ solido · il CSV Abaqus non ha righe appaiate ai casi».
+5. **`el("abaqus").dispatch("input")` nel test 3 è un no-op**: `creaConfronto` non registra nessun
+   listener su `campoAbaqus` (e non gli serve: non c'è `toccato.abaqus`). Non è un errore, non
+   toglierlo — con R7 quel campo entra in `testoDidascalia` e il `dispatch` torna a servire.
+
+**E il fumo, dove il piano sbaglia tre oracoli su quattro** (i numeri sono quelli di 0):
+
+- `t["casi"] == ["C1→C1", "C2→C2", "C3→C3"]` → **`["C1→C1", "C2→C2", "C3→C3", "Z1→Z1"]`**.
+- `t["righe"] >= 1` è troppo largo → **`t["righe"] == 23`**, e nel commento la scomposizione
+  1 + 4×4 + 3 + 3. Se un giorno `run.casi` cambia, si vuole vederlo qui.
+- `t["note"] >= 1` con la motivazione «la massa ha una ragione (C1 è una combinazione)» → la
+  motivazione è **falsa**: `Z1` è nella corsa e la massa esce con il suo valore. Diventa
+  **`t["note"] == 2`**, «due `bias_atteso` distinti — massa e tetraedri; nessuna `ragione`».
+- `t["colonne"] == 9` ✅ misurato, e `t["abaqusC1"] == "4 250"` ✅ (riga `reazione_z`/`C1`,
+  `children[4]`). `t["stato"]` sarà «23 righe · 21 non confrontabili · verifica del codice, non
+  validazione»: l'asserzione su `endswith` regge.
+- Aggiungi un oracolo per R7: `const didascalia = await ev(\`document.getElementById("confronto-didascalia").textContent\`)`
+  e `assert t["didascalia"] == "telaio ↔ solido ↔ Abaqus"`. Costa una riga e prova che il CSV è
+  entrato davvero.
+
+### 6. La coerenza delle firme fra i task
+
+Controllate a mano, contratto ↔ test ↔ codice: `percorsoRisultati`, `nodiInSommita`, `casiCorsi`,
+`mappaDalForm`, `leggiMappaJson`, `conAbaqus`, `noteDellaTabella`, `righeDaMostrare`,
+`testoConteggio`, `testoProvenienza`, `creaConfronto(radice, {suErrore, appunti}) → {disegna, azzera}`,
+`disegna({modello, telaio, solido})`. **Combaciano tutte.** Con R7 entra `testoDidascalia(tabella,
+{abaqusChiesto})`: va aggiunta al «Contratto dei moduli», all'`import` in cima al test e alla lista
+di Task 1 — oppure scritta in Task 2 insieme a chi la usa. Preferisci **Task 1**: è pura, e Task 1
+è il task che le pure le testa.
+
+Due conferme sulla cucitura, lette in sessione: `suEsito` riceve l'oggetto `lavoro` intero
+(`corsa.js:263-265`, `{run_id, secondi, fin, fasi, modello, solido, cartella}`), quindi
+`esito.solido`, `esito.cartella` e `esito.fin.risultati.run.casi` esistono tutti e tre; e `suEsito`
+chiama già `ridisegna()` su tutti e due i rami (`app.js:320-331`), quindi `confronto.disegna` parte
+da sé dopo ogni corsa — niente da aggiungere.
+
+### 7. Contratto degli ingressi, per task
+
+Quelli già scritti sotto ogni task restano validi e sono stati controllati contro il codice. Si
+aggiungono, misurati:
+
+**Task 1** — `casiCorsi` su una corsa vera del MURO 1 → **`["C1","C2","C3","Z1"]`**, quattro voci:
+`mappaDalForm` ne fa quattro chiavi, non tre. · `nodiInSommita` su un modello con un nodo senza `z`
+→ `Math.max` dà `NaN` e il filtro rende `[]`: accettabile, **non** solleva (nessun modello di NOVA
+arriva così, `modello.py` pretende x/y/z).
+
+**Task 2** — CSV chiesto e **nessuna** riga appaiata → `conAbaqus` falso, 6 colonne, e la didascalia
+lo **dice** (R7), non tace. · `tabella.righe = []` → «nessuna riga · <avvertenza>», `<thead>` con la
+sola intestazione, note nascoste, didascalia «telaio ↔ solido».
+
+**Task 3** — `run.casi` a **quattro** voci: le righe caso → passo sono quattro e il fumo le conta
+tutte e quattro.
+
+**Task 4** — nessun ingresso esterno (task del controller).
+
+### 8. Nota di metodo
+
+Questo piano cita la ricerca e **la cita giusta** sul contenuto (06:110, 06:175, 06:178, 13:657
+dicono esattamente quel che il piano gli fa dire; 07:105 regge il principio data-ink, l'applicazione
+«bias e ragioni in nota» è una decisione del piano, non della fonte). È il contrario di quanto
+misurato su NOVA l'08/09/2026, quando nove ricerche esistevano e un piano solo le nominava una
+volta. Solo i numeri di riga dell'`index.md` sono spostati di uno — vedi §1.
+
 ## Global Constraints
 
 - **Lingua italiana** in interfaccia, commenti, commit; identificatori invariati. Chiavi della tabella alla lettera: `righe[k] = {grandezza, caso, unita, telaio, solido, abaqus, scarto_solido_pct, scarto_abaqus_pct, classe_solido, classe_abaqus, bias_atteso, ragione}` (`nova/confronto.py:74-88`), `classe ∈ {concorde, vicino, lontano, non_confrontabile}` (`:98-105`), `provenienza = {commit_nova, run_id_telaio, hash_modello, run_id_solido, sha256_deck_solido, versione_opensees, versione_calculix, data}` (`:440-451`), `avvertenza` (`:25`). Chiavi speciali di `mappa_casi`: `nodi_sommita`, `gravita`, `spinta`, `assi` (`:68`, `:453-461`).
