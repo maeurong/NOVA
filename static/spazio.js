@@ -328,7 +328,19 @@ async function costruisci(contenitore) {
     orbita.phi = girata.phi;
     rendi();
   });
-  window.addEventListener("resize", () => { ridimensiona(); rendi(); });
+  const rimisura = () => { ridimensiona(); rendi(); };
+  window.addEventListener("resize", rimisura);
+  // Come per il piano (`app.js`): il riquadro cambia anche **dentro** la griglia, senza `resize`.
+  // Entrando in aula la striscia dei risultati si allarga e `#spazio` si accorcia, ma `ridimensiona`
+  // era già passato sulla griglia di prima: la tela restava alta com'era — misurati 745 px dentro un
+  // riquadro di 592 a 1280×800, e `#spazio { overflow: hidden }` ne tagliava via un quarto in
+  // silenzio — e con lei restava vecchio `camera.aspect`. La sonda dello spessore legge la scala
+  // vera e proietta con quella camera: 7,68 px di diametro contro i 6 voluti, cioè esattamente
+  // 745/592. Il difetto si **vede** solo al primo `rendi` dopo il cambio, che è un'orbita.
+  //
+  // Nessun ciclo: `setSize(w, h, false)` non scrive lo stile della tela, e il riquadro osservato è
+  // `#spazio`, che la tela non può allargare (`min-height: 0`, `overflow: hidden`).
+  new ResizeObserver(rimisura).observe(contenitore);
 
   function disegna(m, { selezione = null, deformata = null } = {}) {
     scena.remove(disegnato);
