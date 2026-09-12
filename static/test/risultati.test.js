@@ -849,3 +849,36 @@ test("testoScalaColori: «spostamento |u|» per esteso, «max» sull'estremo, e 
   assert.deepEqual(testoScalaColori({ uMax: undefined, tipo: "caso" }),
                    { min: "0 mm", max: "max 0 mm", titolo: "spostamento |u|" });
 });
+
+test("testoScalaColori: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, Task 3)", () => {
+  // Stesso tetto della legenda degli stati, e stesso conto: in aula la striscia rende a 32 px
+  // (`stile.css:520` batte per specificità il `font-size: var(--etichetta, 11px)` di `stile.css:125`),
+  // 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una riga ne
+  // tiene 38. I caratteri non sono solo quelli scritti: la rampa è larga 6 em, cioè **dieci**
+  // caratteri del mono, e i tre `gap` da 0,4 em ne valgono **due** — la stessa somma che `piano.js`
+  // usa per l'ostacolo. Misurato in Chrome il 13/09: col testo intero la striscia va a capo su
+  // 89 px e si posa sui due piedi del telaio; su una riga scende a ~32.
+  const riga = ({ titolo, min, max }) => titolo.length + min.length + max.length + 10 + 2;
+  for (const tipo of ["pushover", "caso", "modo"]) {
+    const t = testoScalaColori({ uMax: 64.34, tipo, compatta: true });
+    assert.ok(riga(t) <= 38,
+              `«${t.titolo} ${t.min} ▮ ${t.max}» occupa ${riga(t)} caratteri: a 32 px non sta in una riga`);
+  }
+  // Quel che si perde è la parola «spostamento», che «|u|» ridice in tre caratteri. L'unità resta:
+  // un numero senza millimetri non si legge, e accorciare non vuol dire smettere di dire di che
+  // grandezza si parla — «max» resta per lo stesso motivo di C3 (il badge dice l'altro numero).
+  assert.deepEqual(testoScalaColori({ uMax: 64.34, tipo: "pushover", compatta: true }),
+                   { min: "0 mm", max: "max 64,34 mm", titolo: "|u|" });
+  // Tutti gli spostamenti nulli: la legenda parla lo stesso, e nessuno divide per zero.
+  assert.deepEqual(testoScalaColori({ uMax: 0, tipo: "pushover", compatta: true }),
+                   { min: "0 mm", max: "max 0 mm", titolo: "|u|" });
+  // Il modo perde la coda che spiega gli estremi: 0 e 1 stanno scritti ai due capi della rampa,
+  // e ridirlo a parole è il terzo modo di dire la stessa cosa.
+  assert.deepEqual(testoScalaColori({ uMax: 0.8, tipo: "modo", compatta: true }),
+                   { min: "0", max: "1", titolo: "forma del modo" });
+  // Alla scrivania il testo intero resta, parola per parola: il compatto è una perdita accettata
+  // per l'aula, non un miglioramento da estendere a tutti.
+  assert.equal(testoScalaColori({ uMax: 64.34, tipo: "pushover" }).titolo, "spostamento |u|");
+  assert.ok(riga(testoScalaColori({ uMax: 64.34, tipo: "pushover" })) > 38,
+            "il testo intero non va accorciato di riflesso: a 32 px non ci sta, ed è perché non ci sta che l'aula ne ha uno suo");
+});

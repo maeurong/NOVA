@@ -380,6 +380,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
     const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + avanzamentoMono(misure.carattere));
     const carattere = misure.carattere;
+    // In aula, e il segnale è il corpo: le misure arrivano dalle variabili CSS e `body[data-presentazione]`
+    // porta `--etichetta` a 46. È il solo segnale che il piano ha, e ora lo chiedono in due — la
+    // legenda degli stati e quella dei colori. Alla scrivania `carattere` vale 11 come in
+    // `MISURE_BASE`, e i due testi restano quelli di ieri parola per parola.
+    const inAula = carattere > MISURE_BASE.carattere;
     // `vistaRis` e non `vista`: `vista` è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
     const attivo = vistaRis ? risultati : null;
@@ -409,7 +414,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // porta `--etichetta` a 46. Alla scrivania `carattere` vale 11 come in `MISURE_BASE`, e il testo
     // resta quello di ieri parola per parola. Attenzione: `--etichetta` dice 46, ma la **striscia**
     // rende a 32 (`stile.css:520`) — il tetto dei caratteri si conta su quelli, non su questi.
-    legenda.textContent = testoLegendaStati(carattere > MISURE_BASE.carattere);
+    legenda.textContent = testoLegendaStati(inAula);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
     // si scrivono più giù, che vogliono `raccolto.uMax`; qui basta sapere se si vede, perché è alta
@@ -586,7 +591,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // I numeri della legenda dei colori arrivano **adesso**: `raccolto.uMax` è la stessa scala con
     // cui lo strato ha colorato i tratti, e prima dell'inquadratura non esisteva ancora. L'altezza
     // della striscia non dipende da loro (una riga sola), quindi la fascia era già quella giusta.
-    const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo });
+    // `compatta` in aula come per la legenda degli stati: a 1280×657 il testo intero va a capo su
+    // 89 px e si posa sui due piedi del telaio, e i nomi dei nodi non passano da `disponi` — nessun
+    // ostacolo li sposta, la sola leva è il testo più corto (15b, Task 3).
+    const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo, compatta: inAula });
     titoloColori.textContent = estremi.titolo;
     minColori.textContent = estremi.min;
     maxColori.textContent = estremi.max;

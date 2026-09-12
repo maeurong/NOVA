@@ -709,8 +709,22 @@ export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
  *  dice «u 60 mm» (lo spostamento del **nodo di controllo**) mentre qui c'è «64,34 mm» (il massimo
  *  di |u| su tutto il telaio): due numeri della stessa grandezza, e niente diceva quale fosse quale.
  *  Un modo non ha millimetri, e il suo titolo dice già cosa valgono 0 e 1: lì «max» sarebbe un terzo
- *  modo di dire la stessa cosa. */
-export function testoScalaColori({ uMax, tipo }) {
-  if (tipo === "modo") return { min: "0", max: "1", titolo: "forma del modo · 0 fermo, 1 massimo" };
-  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`, titolo: "spostamento |u|" };
+ *  modo di dire la stessa cosa.
+ *
+ *  `compatta`: il testo dell'aula (15b, Task 3), gemello di `testoLegendaStati` e con lo stesso
+ *  tetto — **38 caratteri, non 27**. In aula la striscia rende a **32 px**, non a 46: `stile.css:520`
+ *  (`body[data-presentazione] #piano :is(…, .risultati-colori)`, specificità (1,2,1)) batte il
+ *  `font-size: var(--etichetta, 11px)` del blocco a `stile.css:125` (1,1,0), e i 46 px sono le
+ *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
+ *  nei 751 px utili di un piano a 1280×657 una riga ne tiene 38. Della riga fanno parte anche la
+ *  rampa (6 em, cioè dieci caratteri del mono) e i tre `gap` da 0,4 em (due caratteri): col titolo
+ *  intero la somma fa 43, la striscia va a capo su 89 px e si posa su «piede sx», «piede dx» e i loro
+ *  cerchi — che non passano da `disponi`, e che nessun ostacolo può spostare. Con «|u|» la somma fa
+ *  31, la striscia torna alta una riga e i piedi restano scoperti. Si perde la parola «spostamento»,
+ *  che il simbolo ridice in tre caratteri; le unità no, quelle restano su entrambi gli estremi.
+ *  Alla scrivania, dove i 43 caratteri ci stanno, il testo resta intero. */
+export function testoScalaColori({ uMax, tipo, compatta = false }) {
+  if (tipo === "modo") return { min: "0", max: "1", titolo: compatta ? "forma del modo" : "forma del modo · 0 fermo, 1 massimo" };
+  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`,
+           titolo: compatta ? "|u|" : "spostamento |u|" };
 }

@@ -1733,7 +1733,7 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
   // a 793-931 px dal bordo sinistro, dentro la banda alta 97 px del fondo. Una L con la colonna a
   // **sinistra**: il nodo 2 è l'estremo libero in basso a destra e sopra di lui non passa niente,
   // quindi un posto dove ripiegare ci sarebbe — il punto è che con la stima giusta non serve.
-  const w = 1280, h = 657;
+  const w = 1280, h = 500;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).stile = { fontSize: "32px" };   // il corpo reso della striscia, come in Chrome
   coloriDi(contenitore).offsetHeight = 89;             // l'altezza vera: a 32 px va a capo tre volte
@@ -1761,7 +1761,32 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
   // presa: con `corpoStriscia = carattere` quel posto risulta occupato, `disponi` la manda altrove o
   // la lascia cadere, e una delle due righe qui muore. Senza questa, `0 === 0` passava col difetto.
   assert.ok(siSovrappongono(box, scatola(46)),
-            "la scena non prova più niente: l'etichetta non cade nella striscia contesa fra 32 e 46 px");
+            `la scena non prova più niente: l'etichetta sta a ${((box.x0 - sinistra) / s).toFixed(0)}-${((box.x1 - sinistra) / s).toFixed(0)} px `
+            + `e a ${((box.y0 - fondo) / s).toFixed(0)}-${((box.y1 - fondo) / s).toFixed(0)} px dal fondo, mentre la striscia contesa va da `
+            + `${((scatola(32).x1 - sinistra) / s).toFixed(0)} a ${((scatola(46).x1 - sinistra) / s).toFixed(0)} px (${caratteri} caratteri)`);
+});
+
+test("15b: in aula il piano chiede il testo compatto **anche** alla legenda dei colori", () => {
+  // Il patto, non l'unità: `testoScalaColori` sa accorciare, ma a chiederlo dev'essere **il piano**,
+  // con lo stesso segnale della legenda degli stati (`carattere > MISURE_BASE.carattere`, il solo
+  // che il piano ha). Con `compatta: false` cablato al posto della scelta, questa riga muore.
+  // Il conto dei caratteri è quello dell'ostacolo in `piano.js`: testo + dieci per la rampa (6 em)
+  // + due per i tre `gap` da 0,4 em.
+  const w = 1280, h = 657;
+  const caratteri = (contenitore) => {
+    const [titolo, min, max] = testiColori(contenitore);
+    return titolo.length + min.length + max.length + 10 + 2;
+  };
+  const aula = pianoCon(PRESENTAZIONE, w, h);
+  aula.piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.equal(coloriDi(aula.contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
+  assert.ok(caratteri(aula.contenitore) <= 38,
+            `in aula la legenda dei colori occupa ${caratteri(aula.contenitore)} caratteri: a 32 px non sta in una riga, e a capo si posa sui piedi del telaio`);
+  // Alla scrivania le parole intere, com'erano: 11 px, e i 43 caratteri ci stanno.
+  const scrivania = pianoCon(undefined, w, h);
+  scrivania.piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.deepEqual(testiColori(scrivania.contenitore), ["spostamento |u|", "0 mm", "max 0 mm"],
+                   "alla scrivania la legenda dei colori non si accorcia");
 });
 
 test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in basso non costa un pixel di disegno", () => {
