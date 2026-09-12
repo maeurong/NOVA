@@ -1701,6 +1701,11 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   contenitoreTitolo(contenitore).offsetHeight = 38;
   badgeDi(contenitore).offsetHeight = 108;
   legendaDi(contenitore).offsetHeight = 38;
+  // E la piastra dei colori **48**, la stessa misura resa che gli altri test di questo blocco
+  // iniettano (47,59 px in Chrome, una riga sola dal Task 3). Serve da quando la banda in fondo si
+  // riserva: senza, il DOM finto cade sul ripiego a due righe (98 px), la banda gonfia a 129 e la
+  // regola di sicurezza toglie di mezzo la legenda — su un riquadro dove in Chrome ci sta comoda.
+  coloriDi(contenitore).offsetHeight = 48;
   // Nessun corpo iniettato: qui si misurano **altezze**, non larghezze, e la fascia non dipende dal
   // corpo reso delle strisce. Il badge a 32 px che stava qui non era una misura ma un numero di
   // comodo — in Chrome il badge rende a 46, perché `.risultati-badge` nella regola dei 32 non c'è.
@@ -1712,9 +1717,20 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   // sopravvive a una fascia gonfiata del 30 %, ed è proprio il difetto che il task chiude. La fascia
   // si rilegge esatta dal `viewBox`, che qui è alto `h · s`: di lì `s`, e dal riquadro utile la
   // fascia. Il margine di 1 px assorbe l'arrotondamento, non un errore di conto.
-  const s = altezzaDelRiquadro(svg()) / h;
-  const fascia = h - estensione(MURO).altezza / s;
-  assert.ok(Math.abs(fascia - 215) <= 1, `la fascia vale ${fascia.toFixed(1)} px, non 215`);
+  // Le due bande si leggono **separate**, ognuna al suo numero: sommate direbbero 294 e un errore
+  // che ne sposta 30 dall'una all'altra passerebbe. I due bordi del modello si rileggono dal
+  // `viewBox`, che qui è alto `h · s`.
+  // `inPixel().y()` vuole una **y dell'SVG**, non una `z` del modello: `z` si specchia una volta
+  // sola, dentro `piano.js`, e qui si rifà il giro con i numeri del `viewBox`.
+  const [, vz0, , valta] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const schermoY = (z) => 2 * vz0 + valta - z;
+  const { y } = inPixel(svg(), w, h);
+  const e = estensione(MURO);
+  const alta = y(schermoY(e.z0 + e.altezza)), fondo = h - y(schermoY(e.z0));
+  assert.ok(Math.abs(alta - 215) <= 1, `la fascia alta vale ${alta.toFixed(1)} px, non 215`);
+  // E la banda in fondo, che dal giro di fix esiste: 48 px di piastra, gli 8 del `bottom` e mezzo
+  // corpo di stacco. È lo spazio che la piastra opaca **non** deve prendersi dal disegno.
+  assert.ok(Math.abs(fondo - 79) <= 1, `la banda in fondo vale ${fondo.toFixed(1)} px, non 79`);
   const cima = Math.min(...yDeiNodi(svg(), w, h));
   assert.ok(cima >= 215, `il nodo più alto sta a ${cima.toFixed(1)} px, non sotto la fascia`);
   // La compattazione la deve chiedere **il piano**, non solo saperla fare `testoLegendaStati`: con
@@ -1872,28 +1888,37 @@ test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in bas
   // 1280×280 in aula, titolo nascosto: la fascia varrebbe 193 (22 + 108 + 2 → 132, + 38 + 2 → 172,
   // − 2 + 23) e al telaio ne resterebbero 87, sotto i 100 del minimo — W4 la rifiuta, com'è giusto.
   // Le altezze sono quelle rese in Chrome: badge 108, legenda degli stati 38 su una riga, legenda
-  // dei colori **48**, che dal Task 3 è una riga sola (47,59 px resi). La legenda dei colori sta **dentro**
-  // il riquadro, posata sul disegno, ed è qui che si vede il punto della 15b: lì non ruba altezza a
-  // nessuno. L'oracolo è la stessa scena senza di lei — la deformata stantia la nasconde e non tocca
-  // le altre due strisce — e dev'essere la stessa inquadratura, al millimetro. Non le si chiede di
-  // stare lontana dalle etichette: su un riquadro così basso la banda in fondo è tutto ciò che c'è,
-  // e schivarla non è possibile né utile.
+  // dei colori **48**, che dal Task 3 è una riga sola (47,59 px resi). Al telaio non resta abbastanza
+  // né per la fascia alta né per la banda in fondo: 280 − 193 − 79 = 8 px.
+  //
+  // **Il contratto è cambiato nel giro di fix.** Finora questo test diceva che la legenda dei colori
+  // «non costa un pixel di disegno»: stava dentro il riquadro, posata sul disegno, e l'inquadratura
+  // era la stessa con lei e senza. Ma la piastra è **opaca**, e quel che le finisce sotto non si
+  // affolla — sparisce: a 1920×1080 in aula cancellava «piede sx» per 18 px. Se il posto per la sua
+  // banda non c'è, a togliersi di mezzo dev'essere **lei**, non un nome di nodo. Qui è il caso
+  // limite di quella regola: niente fascia, niente banda, e nessuna legenda.
   const w = 1280, h = 280;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).offsetHeight = 108;
   legendaDi(contenitore).offsetHeight = 38;
   coloriDi(contenitore).offsetHeight = 48;
   piano.disegna(MURO, { risultati: PUSHOVER() });
-  assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
+  assert.equal(legendaDi(contenitore).hidden, false, "la legenda degli stati si vede: il test non è vuoto");
+  assert.equal(coloriDi(contenitore).hidden, true,
+               "la banda in fondo non ci sta: la legenda dei colori si toglie di mezzo invece di cancellare un nome");
   assert.ok(!coloriDi(contenitore).style.top, "in colonna non scende: la posa `stile.css`, in basso");
   assert.equal(altezzaDelRiquadro(svg()), estensione(MURO).altezza,
                "il telaio che resterebbe è sotto il minimo: la fascia non si riserva");
-  const conLegenda = svg().getAttribute("viewBox");
+  const senzaBanda = svg().getAttribute("viewBox");
+  // E la stessa scena con la deformata stantia, che la legenda dei colori la nasconde per conto suo:
+  // l'inquadratura dev'essere identica, cioè quella di un riquadro dove in fondo non si riserva
+  // niente. È l'oracolo di prima, letto dall'altro capo — la legenda che sparisce non muove il
+  // disegno, perché qui non aveva ottenuto la sua banda.
   piano.disegna(MURO, { risultati: PUSHOVER({ stantia: true }) });
   assert.equal(coloriDi(contenitore).hidden, true, "la deformata stantia nasconde la legenda dei colori");
   assert.equal(legendaDi(contenitore).hidden, false, "la legenda degli stati resta: cambia una striscia sola");
-  assert.equal(svg().getAttribute("viewBox"), conLegenda,
-               "con la legenda dei colori e senza, la stessa inquadratura: in basso non entra nella fascia");
+  assert.equal(svg().getAttribute("viewBox"), senzaBanda,
+               "senza la banda, la legenda che sparisce non sposta di un millimetro l'inquadratura");
 });
 
 test("piano: con tutte le sezioni elastiche la legenda degli stati tace, e non è un ostacolo (C7b)", () => {
@@ -1922,6 +1947,89 @@ test("piano: riquadro degenere (39×10 px, zoom 200 %) → nessuna fascia, il di
   assert.equal(badgeDi(contenitore).hidden, false, "la striscia si vede: il test non è vuoto");
   assert.equal(altezzaDelRiquadro(svg()), estensione(MURO).altezza,
                "su un riquadro degenere la fascia non si riserva: il riquadro resta quello del modello");
+});
+
+// --- 15b, giro di fix: la banda bassa della legenda dei colori --------------------------------
+// La piastra è **opaca** (`stile.css`, `.risultati-colori`): quel che le finisce sotto non si
+// affolla, **sparisce**. Misurato in Chrome a 1920×1080 in aula sulla pushover del MURO 1, e solo
+// **dopo un ridisegno vero**: «piede sx» a [160,503 → 382,557] e la piastra a [8,539 → 627,586],
+// cioè 18 px di sovrapposizione verticale e 222 orizzontale, più il cerchio del nodo. Il fumo la
+// misurava nello stato a scala stantia — il difetto del riquadro che non si rimisura nascondeva
+// questo. Ruling: la legenda in basso è un ostacolo per il disegno quanto le strisce in alto, e
+// l'inquadratura le riserva una banda in fondo con la stessa regola di sicurezza (W4).
+
+// La banda in fondo al riquadro, in coordinate del `viewBox`: la piastra sta a `bottom: 8px` ed è
+// alta quanto misura. A tutta larghezza e non larga quanto il suo testo — quel che il fix promette
+// è che sotto quella quota **non si disegni**, non che si scansi di lato.
+const bandaColori = (contenitore, svg, w, h) => {
+  const [x0, z0, larga, alta] = svg.getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(larga / w, alta / h);
+  const cx = x0 + larga / 2, cy = z0 + alta / 2;
+  const fondo = cy + h * s / 2;
+  return { x0: cx - w * s / 2, x1: cx + w * s / 2,
+           y0: fondo - (8 + coloriDi(contenitore).offsetHeight) * s, y1: fondo, s };
+};
+
+test("15b: la piastra della legenda dei colori ha la sua banda in fondo, e nessun nome di nodo ci finisce sotto", () => {
+  // Il riquadro misurato a 1920×1080 in aula con la striscia della pushover accesa: piano 1152×594.
+  // Le altezze sono quelle **rese in Chrome**: badge su due righe 108, legenda degli stati 38,
+  // piastra dei colori 48 (una riga, dopo il testo compatto del Task 3). Di lì la fascia alta vale
+  // 193 px e la banda bassa 79 — 48 di piastra, gli 8 px del `bottom` e mezzo corpo di stacco,
+  // come la fascia alta. Al telaio restano 322 px su 594, tre volte `TELAIO_MINIMO`.
+  const w = 1152, h = 594;
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  badgeDi(contenitore).offsetHeight = 108;
+  legendaDi(contenitore).offsetHeight = 38;
+  coloriDi(contenitore).offsetHeight = 48;
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  // Il test non è vuoto: la piastra si vede, ed è lei l'ostacolo.
+  assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
+  const banda = bandaColori(contenitore, svg(), w, h);
+  const nomi = nomiDeiNodi(svg());
+  assert.equal(nomi.length, 4, "i quattro nomi del MURO 1 si scrivono");
+  for (const t of nomi) {
+    const b = boxCorpo(t, banda.s, 46);
+    assert.ok(!siSovrappongono(b, banda),
+      `«${t.textContent}» finisce sotto la piastra opaca: sparisce. Il suo box sta a `
+      + `${((b.y0 - banda.y0) / banda.s).toFixed(1)}…${((b.y1 - banda.y0) / banda.s).toFixed(1)} px `
+      + `dentro una banda alta ${((banda.y1 - banda.y0) / banda.s).toFixed(1)} px`);
+  }
+  // E nemmeno i cerchi: il fumo li conta insieme ai nomi (`STRISCE_ADDOSSO`), e un cerchio coperto
+  // è un nodo che non c'è più.
+  for (const c of cerchiDeiNodi(svg())) {
+    const r = Number(c.getAttribute("r")), cy = Number(c.getAttribute("cy")), cx = Number(c.getAttribute("cx"));
+    assert.ok(!siSovrappongono({ x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r }, banda),
+              `un cerchio di nodo finisce sotto la piastra opaca`);
+  }
+});
+
+test("15b: sotto `TELAIO_MINIMO` la banda bassa non si riserva, e a sparire è la legenda — non il nome del nodo", () => {
+  // La stessa regola di sicurezza della fascia alta (W4), sul **telaio che resta**: fascia 193 più
+  // banda 79 fa 272, quindi la soglia cade a 272 + 100 = **372 px** di riquadro. Meglio una legenda
+  // assente che un nome di nodo cancellato: la piastra è opaca, e coprire non è gratis.
+  const w = 1152;
+  const conAltezza = (h) => {
+    const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+    badgeDi(contenitore).offsetHeight = 108;
+    legendaDi(contenitore).offsetHeight = 38;
+    coloriDi(contenitore).offsetHeight = 48;
+    piano.disegna(MURO, { risultati: PUSHOVER() });
+    return { contenitore, svg: svg() };
+  };
+  // 380 − 272 = 108 px di telaio: sopra il minimo, la banda si riserva e la legenda resta.
+  const largo = conAltezza(380);
+  assert.equal(coloriDi(largo.contenitore).hidden, false, "a 380 px la legenda ci sta: 108 px di telaio");
+  const banda = bandaColori(largo.contenitore, largo.svg, w, 380);
+  for (const t of nomiDeiNodi(largo.svg)) {
+    assert.ok(!siSovrappongono(boxCorpo(t, banda.s, 46), banda), `«${t.textContent}» sotto la piastra a 380 px`);
+  }
+  // 360 − 272 = 88 px: sotto il minimo. Non si riserva niente, e la legenda si toglie di mezzo.
+  const stretto = conAltezza(360);
+  assert.equal(coloriDi(stretto.contenitore).hidden, true,
+               "a 360 px la banda non ci sta: a sparire deve essere la legenda, non un nome di nodo");
+  // E il disegno resta quello di sempre: la fascia **alta** non se ne va con lei (360 − 193 = 167).
+  assert.ok(altezzaDelRiquadro(stretto.svg) > estensione(MURO).altezza,
+            "la fascia alta si riserva ancora: la banda bassa che cade non se la porta dietro");
 });
 
 test("piano: senza `getComputedStyle` e senza `offsetHeight` l'inquadratura non porta `NaN` (DOM finto)", () => {
