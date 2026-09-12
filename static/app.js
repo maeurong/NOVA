@@ -879,6 +879,11 @@ function alternaPresentazione(accesa = !presentazione()) {
 }
 bottonePannelli.addEventListener("click", () => {
   scriviBottonePannelli(document.body.toggleAttribute("data-pannelli"));
+  // Come `alternaPresentazione`: cambia un attributo del `body` senza scatenare un `resize`. Oggi
+  // nessun selettore `[data-pannelli]` ridefinisce le variabili di `misure.js`, ma un domani un
+  // `body[data-presentazione][data-pannelli] { --etichetta: 32px }` (piano più stretto) lascerebbe
+  // il disegno alle misure di prima senza che questo lo invalidi.
+  dimenticaMisure();
   ridisegna();
 });
 

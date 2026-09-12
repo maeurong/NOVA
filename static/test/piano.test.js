@@ -140,10 +140,14 @@ globalThis.document = {
 
 // `stile`: le variabili CSS che `getComputedStyle` renderebbe per il contenitore (15a). Assente =
 // nessuna variabile, e il piano cade sui ripieghi di `MISURE_BASE`, cioè sui numeri d'oggi.
-const contenitoreFinto = (stile) => ({
-  clientWidth: 800, clientHeight: 600, _figli: [], stile,
-  replaceChildren(...figli) { this._figli = figli; },
-});
+// Le misure ora si leggono una volta per cambio di layout (15b, Task 6): un contenitore finto
+// nuovo è un layout nuovo, e senza dimenticare la cache qui — l'unico punto per cui passano tutti
+// e 34 i test del file, non solo i 20 che passano da `pianoCon` — un test scritto in fondo al file
+// erediterebbe le misure del test prima di lui e passerebbe in verde dicendo il falso.
+const contenitoreFinto = (stile) => {
+  dimenticaMisure();
+  return { clientWidth: 800, clientHeight: 600, _figli: [], stile, replaceChildren(...figli) { this._figli = figli; } };
+};
 globalThis.getComputedStyle = (e) => e.stile;
 
 // Tutti i discendenti con quel nome di tag, a qualunque profondità: il disegno annida
@@ -1199,10 +1203,6 @@ const pianoCon = (stile, w = 800, h = 600) => {
   const contenitore = contenitoreFinto(stile);
   contenitore.clientWidth = w;
   contenitore.clientHeight = h;
-  // Le misure ora si leggono una volta per cambio di layout (15b, Task 6): un piano fresco è un
-  // layout nuovo, e senza dimenticare la cache un test successivo erediterebbe le misure di quello
-  // prima (46 px di presentazione che restano incollati a un `pianoCon(undefined)`).
-  dimenticaMisure();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   return { contenitore, piano, svg: () => contenitore._figli[0] };
 };

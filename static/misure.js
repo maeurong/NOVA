@@ -19,22 +19,24 @@ export function leggiMisure(stile) {
   return misure;
 }
 
-// Cache globale (R14): le sette variabili si definiscono in due punti soli, `:root` e
-// `body[data-presentazione]`, e nessun elemento le ridefinisce — non serve una chiave per
-// elemento. `elemento` sceglie solo su cosa chiamare `getComputedStyle` (piano e spazio hanno
-// ciascuno il proprio riquadro in chiusura); non è una chiave di cache, e due chiamanti diversi
-// nello stesso giro condividono lo stesso risultato. `dimenticaMisure()` la svuota dove il layout
-// cambia davvero: `resize` e i due attributi del `body` che lo alterano senza scatenarlo (app.js).
 let misureInCache = null;
-export function misureDi(elemento) {
+/** Le misure d'oggi, lette una volta e ricordate finché non si `dimenticaMisure()`: cache
+ *  **globale** (R14) — le sette variabili si definiscono solo in `:root`/`body[data-presentazione]`,
+ *  nessun elemento le ridefinisce, quindi non serve una chiave per elemento. `sorgenteStile` è
+ *  **solo** l'elemento su cui chiamare `getComputedStyle` la prima volta (i mock di `piano.test.js`
+ *  lo richiedono, legato al contenitore); a cache piena è ignorato in silenzio — chiamarla con un
+ *  elemento diverso da un giro all'altro non forza una rilettura, serve `dimenticaMisure()`. */
+export function misureDi(sorgenteStile) {
   if (misureInCache) return misureInCache;
-  const stile = globalThis.getComputedStyle?.(elemento ?? globalThis.document?.body);
+  const stile = globalThis.getComputedStyle?.(sorgenteStile ?? globalThis.document?.body);
   // Senza `getComputedStyle` (DOM finto dei test) i numeri d'oggi, ma non si cachano: altrimenti
   // il primo test a girare senza `getComputedStyle` avvelenerebbe la cache per tutti i successivi.
   if (!stile) return { ...MISURE_BASE };
   misureInCache = leggiMisure(stile);
   return misureInCache;
 }
+/** Svuota la cache di `misureDi`: da chiamare dove il layout cambia davvero — `resize`, e i due
+ *  attributi del `body` (`data-presentazione`/`data-pannelli`) che lo alterano senza scatenarlo. */
 export function dimenticaMisure() { misureInCache = null; }
 
 // ponytail: 0,6 em è l'avanzamento dei mono di sistema (SF Mono, Menlo); una stima, non una misura —
