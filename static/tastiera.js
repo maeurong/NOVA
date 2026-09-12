@@ -47,6 +47,9 @@ export const TASTI = [
   { codice: "carico",       tasto: "Q",  etichetta: "carico",       aiuto: "su un nodo «Fx 20000», su un'asta «q» in N/mm", contesto: "selezione", esempio: "-12,5", campo: "carico su", tipi: ["nodo", "asta"] },
   { codice: "combinazione", tasto: "K",  etichetta: "combinazione", aiuto: "nome; tipo (facoltativo)", contesto: "salvo-ghost", esempio: "SLU; fondamentale", campo: "combinazione" },
   { codice: "palette",      tasto: "⌘K", etichetta: "comandi",      aiuto: "cerca un comando, anche col valore", contesto: "salvo-ghost", modificatore: "comando" },
+  // La 15a: lo schermo per l'aula (story 62). Contesto `salvo-ghost`: dietro un'estrusione aperta
+  // `P` è una lettera del gesto, non un cambio di layout.
+  { codice: "presentazione", tasto: "P", etichetta: "presentazione", aiuto: "lo schermo per l'aula; P o Esc per uscire", contesto: "salvo-ghost" },
   { codice: "elimina",   tasto: "⌫",     etichetta: "elimina",   aiuto: null,              contesto: "selezione" },
   { codice: "conferma",  tasto: "Invio", etichetta: "conferma",  aiuto: null,              contesto: "ghost" },
   { codice: "annulla",   tasto: "Esc",   etichetta: "annulla",   aiuto: null,              contesto: "ghost" },
@@ -75,7 +78,7 @@ const SENZA_MODIFICATORE = new Map([
   ["s", "sezione"], ["c", "materiale"], ["d", "danno"],
   // `z` nudo e `⌘Z`, `k` nudo e `⌘K`: due mappe, il modificatore le separa prima del `get`
   // (`voceDaEvento`).
-  ["z", "azione"], ["q", "carico"], ["k", "combinazione"],
+  ["z", "azione"], ["q", "carico"], ["k", "combinazione"], ["p", "presentazione"],
   // Le cifre della vista dei risultati: `0`-`4` nude. Da `5` a `9` non c'è niente, e la cifra
   // resta al browser. Col comando pure: `⌘1` è la scheda 1, non nostra (`CON_COMANDO`).
   ["0", "vista"], ["1", "vista"], ["2", "vista"], ["3", "vista"], ["4", "vista"],
@@ -135,6 +138,9 @@ export function daControllo(evento) {
   const tipo = String(elemento.type ?? "").toLowerCase();
   const testuale = !bottone && !NON_TESTUALI.has(tipo);
   const tasto = String(evento.key).toLowerCase();
+  // Un `select` si tiene le lettere (la ricerca per lettera nel menu) ma non Esc: scelto il caso col
+  // mouse il fuoco resta sul menu, e da lì Esc deve uscire dalla presentazione (15a).
+  if (tag === "select" && tasto === "escape") return false;
   return testuale || ATTIVANO.has(tasto) || (!bottone && CON_FRECCE.has(tipo) && NAVIGANO.has(tasto));
 }
 

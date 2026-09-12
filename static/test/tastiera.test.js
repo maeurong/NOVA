@@ -53,7 +53,7 @@ test("un tasto mappato si riconosce dall'evento", () => {
 });
 
 test("un tasto non mappato torna null", () => {
-  assert.equal(voceDaEvento({ key: "p", metaKey: false, ctrlKey: false, altKey: false }), null);
+  assert.equal(voceDaEvento({ key: "w", metaKey: false, ctrlKey: false, altKey: false }), null);
 });
 
 test("un contesto sconosciuto dà le voci di sempre, non un'eccezione", () => {
@@ -276,6 +276,20 @@ test("daControllo: i bottoni dell'area file non si tengono i comandi", () => {
     assert.equal(daControllo(eventoDa("button", { key })), false, key);
   }
   assert.equal(daControllo(eventoDa("button", { key: "s", comando: true })), false);
+});
+
+// 15a: un `select` si tiene le lettere (la ricerca per lettera nel menu) ma non `Esc`. In aula, scelto
+// il caso col mouse, il fuoco resta sul menu del caso: se il menu si tenesse `Esc`, la presentazione
+// non si chiuderebbe più da tastiera.
+const menuDelCaso = (key) => ({ key, metaKey: false, ctrlKey: false, altKey: false,
+  target: { closest: () => ({ tagName: "SELECT", type: "select-one", getAttribute: () => null }) } });
+
+test("daControllo: sul menu del caso Esc passa — esce dalla presentazione", () => {
+  assert.equal(daControllo(menuDelCaso("Escape")), false);
+});
+
+test("daControllo: sul menu del caso le lettere restano sue — P cerca nel menu, non cambia layout", () => {
+  assert.equal(daControllo(menuDelCaso("p")), true);
 });
 
 // --- 11c/A: le voci dell'albero e della Storia sono `<li tabindex=0 role="button">` ---
@@ -569,4 +583,12 @@ test("tastiera: le frecce su un bottone passano — una voce dell'albero non ci 
   }
   // E il campo di testo come sempre: la freccia muove il cursore nel testo.
   assert.equal(daControllo(evento("ArrowLeft", { tagName: "INPUT", type: "text", getAttribute: () => null })), true);
+});
+
+test("P alterna la presentazione, nudo; ⌘P resta al browser (stampa)", () => {
+  assert.equal(voceDaEvento({ key: "p", metaKey: false, ctrlKey: false, altKey: false }).codice, "presentazione");
+  assert.equal(voceDaEvento({ key: "P", metaKey: false, ctrlKey: false, altKey: false }).codice, "presentazione");
+  assert.equal(voceDaEvento({ key: "p", metaKey: true, ctrlKey: false, altKey: false }), null);
+  assert.ok(vociDellaBarra("sempre").some((v) => v.codice === "presentazione"));
+  assert.ok(!vociDellaBarra("ghost").some((v) => v.codice === "presentazione"), "col ghost aperto la barra non la promette");
 });

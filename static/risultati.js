@@ -226,11 +226,14 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
         const r = q0.x_rel + s * (q1.x_rel - q0.x_rel);
         const x = i.x + e1.x * (r * L + scala * u) + e2.x * scala * w;
         const z = i.z + e1.z * (r * L + scala * u) + e2.z * scala * w;
-        const y = i.y + r * (j.y - i.y) + scala * ((1 - s) * q0.u[1] + s * q1.u[1]);
+        const uy = (1 - s) * q0.u[1] + s * q1.u[1];
+        const y = i.y + r * (j.y - i.y) + scala * uy;
         // `r` **dentro** il punto, non in un array parallelo: due liste da tenere allineate a mano
         // sono un allineamento che prima o poi salta. `spazio.js` legge `x`, `y`, `z` e ignora il
         // resto; il piano scrive `points` da `x`/`y`.
-        punti.push({ x, y, z, r });
+        // |u| **senza scala**: la scala e il fattore dell'animazione spostano il disegno, non il
+        // valore — la legenda dei colori resta ferma mentre il modo respira (15a).
+        punti.push({ x, y, z, r, u: Math.hypot(u, w, uy) });
       }
     }
     fuori.push({ id: a.id, punti });
@@ -342,7 +345,13 @@ export function testoValore(vista, v) {
 // scritto «a sinistra di i→j» si legge sul disegno senza contare i nodi.
 const LEGENDA = { M: "kN·m · lato teso", V: "kN · + verso i→j, a sinistra di i→j",
                   N: "kN · + trazione, a sinistra di i→j" };
-export function testoBadge({ vista, caso, scala, auto, stantia = false, ruotate = 0,
+/** Il badge, coi separatori attaccati a quel che li precede da uno spazio insecabile (C7a): la riga
+ *  si spezza **dopo** il `·`, mai prima, e la scala scende intera invece di aprire la seconda riga
+ *  con «· ×2 (auto)» — misurato a 1920 in presentazione. Un passaggio solo qui, invece di sedici
+ *  `·` da ricordarsi uno per uno dentro `badgeGrezzo`. */
+export const testoBadge = (campi) => badgeGrezzo(campi).replaceAll(" · ", "\u00a0· ");
+
+function badgeGrezzo({ vista, caso, scala, auto, stantia = false, ruotate = 0,
                              modo = null, passo = null, caduta = null, fermo = false, motivoFermo = null }) {
   if (!vista) return "";
   const testa = stantia ? "stantia · " : "";
@@ -636,6 +645,13 @@ const MOTIVI = { non_convergenza: "non convergenza", passi_max: "tetto dei passi
 // Un motivo vuoto o assente non è «nessun motivo»: la caduta c'è, e la riga non può tacere.
 export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(motivo) : "motivo sconosciuto");
 
+/** La legenda degli stati serve solo se **almeno un simbolo non è quello dell'elastica** (C7b): con
+ *  tutte le sezioni elastiche i simboli sono tutti uguali e la riga che spiega i due canali è gergo
+ *  — in aula, 114 px su tre righe, con «rotta» da sola sull'ultima. Uno stato senza simbolo
+ *  (`simboloStato` rende `null`) non è uno stato diverso: il disegno lo salta, e la legenda pure. */
+export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
+  .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
+
 export const testoLegendaStati = () =>
   "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
@@ -646,4 +662,37 @@ export function righeModo(modo, id) {
   // «adimensionale» scritto, non sottinteso: le righe accanto nell'ispettore sono spostamenti in
   // mm, e tre numeri di ordine uno senza unità si leggono come millimetri di una struttura ferma.
   return [[`forma modale (modo ${modo.n}, adimensionale)`, `ux ${conciso(u[0])} · uy ${conciso(u[1])} · uz ${conciso(u[2])}`]];
+}
+
+/** Viridis (matplotlib, van der Walt e Smith): percettiva, monotona in luminanza — si legge anche in
+ *  bianco e nero (story 63, `docs/ricerca/07-ux-modellatore.md:154`). Dieci tappe, interpolate in RGB. */
+export const VIRIDIS = ["#440154", "#482878", "#3e4989", "#31688e", "#26828e",
+                        "#1f9e89", "#35b779", "#6ece58", "#b5de2b", "#fde725"];
+
+export function viridis(t) {
+  const x = Number.isFinite(t) ? Math.min(1, Math.max(0, t)) : 0;
+  const pos = x * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(pos)), f = pos - i;
+  const a = parseInt(VIRIDIS[i].slice(1), 16), b = parseInt(VIRIDIS[i + 1].slice(1), 16);
+  const canale = (sh) => Math.round(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f);
+  return `#${[16, 8, 0].map((sh) => canale(sh).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function massimoSpostamento(deformate) {
+  let max = 0;
+  for (const d of deformate ?? []) for (const p of d?.punti ?? []) if (Number.isFinite(p?.u) && p.u > max) max = p.u;
+  return max;
+}
+
+export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
+
+/** Gli estremi della rampa viridis. C2 — «|u|» da solo è gergo da vicino e illeggibile da 8 m: la
+ *  grandezza si scrive per nome. C3 — «max» davanti al numero perché il badge, due righe sopra,
+ *  dice «u 60 mm» (lo spostamento del **nodo di controllo**) mentre qui c'è «64,34 mm» (il massimo
+ *  di |u| su tutto il telaio): due numeri della stessa grandezza, e niente diceva quale fosse quale.
+ *  Un modo non ha millimetri, e il suo titolo dice già cosa valgono 0 e 1: lì «max» sarebbe un terzo
+ *  modo di dire la stessa cosa. */
+export function testoScalaColori({ uMax, tipo }) {
+  if (tipo === "modo") return { min: "0", max: "1", titolo: "forma del modo · 0 fermo, 1 massimo" };
+  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`, titolo: "spostamento |u|" };
 }

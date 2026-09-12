@@ -139,6 +139,14 @@ def copione(nome: str, porta: int, cdp: int, **extra) -> dict:
     return json.loads(esito.stdout.strip().splitlines()[-1])
 
 
+def senza_insecabili(t: str) -> str:
+    """C7a — `testoBadge` attacca ogni `·` a quel che lo precede con uno spazio insecabile, così il
+    badge va a capo **dopo** il separatore e la scala scende intera. Qui conta cosa il badge dice,
+    non dove si spezza: il testo si legge normalizzato, e l'insecabile ha il suo test in
+    `static/test/risultati.test.js`."""
+    return t.replace("\u00a0", " ")
+
+
 def test_la_pagina_si_apre_e_un_nodo_si_posa_da_tastiera(chrome_e_server):
     porta, cdp = chrome_e_server
     r = copione("pagina", porta, cdp)
@@ -157,7 +165,7 @@ def test_trave_appoggiata_il_momento_in_mezzeria_e_sull_etichetta(chrome_e_serve
     assert r["errori"] == [], r["errori"]
     assert r["trovato"]["ultima"].startswith("corsa")
     assert "45 kN·m" in r["trovato"]["etichette"], r["trovato"]
-    assert r["trovato"]["badge"] == "M · Z1 · kN·m · lato teso"
+    assert senza_insecabili(r["trovato"]["badge"]) == "M · Z1 · kN·m · lato teso"
     for larghezza, coppie in r["trovato"]["sovrapposte"].items():
         assert coppie == [], f"etichette sovrapposte a {larghezza}: {coppie}"
 
@@ -263,9 +271,9 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     # Senza la pushover scelta la freccia resta al browser: è lo scorrimento della pagina.
     assert t["frecciaLibera"] is False, "`→` senza pushover non deve essere intercettata"
     assert t["ferma"] is True, "dopo Spazio la deformata si muove ancora"
-    assert t["badge"].startswith("modo 2 · 31,85 Hz"), t["badge"]
+    assert senza_insecabili(t["badge"]).startswith("modo 2 · 31,85 Hz"), t["badge"]
     assert "(auto)" in t["badge"], f"la scala va dichiarata sempre (P3): {t['badge']!r}"
-    assert t["badgeFerma"].endswith(" · ferma"), t["badgeFerma"]
+    assert senza_insecabili(t["badgeFerma"]).endswith(" · ferma"), t["badgeFerma"]
     # Il badge sta dentro `#piano` a 1280 px, anche quello lungo del modo a forma nulla.
     assert t["badgeDentro"] is True, f"badge tagliato: {t['badge']!r}"
     assert t["badgeNullaDentro"] is True, f"badge del modo a forma nulla tagliato: {t['badgeNulla']!r}"
@@ -280,7 +288,7 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     assert t["fermaDopoCambio"] is True, "il caso statico non ha fermato l'animazione del modo"
     # R13/D2a: con `prefers-reduced-motion: reduce` niente moto, e il badge ne dice il motivo —
     # un'animazione che non parte senza spiegazione si legge come rotta.
-    assert t["badgeRidotto"].endswith(" · ferma (preferenza di sistema)"), t["badgeRidotto"]
+    assert senza_insecabili(t["badgeRidotto"]).endswith(" · ferma (preferenza di sistema)"), t["badgeRidotto"]
     assert t["fermaRidotto"] is True, "col moto ridotto la deformata si muove lo stesso"
     assert t["fermaRidottoDopoSpazio"] is True, "col moto ridotto Spazio fa ripartire l'animazione"
     assert t["messaggio"] == "", f"nessun errore da mostrare: {t['messaggio']!r}"
@@ -303,13 +311,22 @@ def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, b
     assert t["cerchi"] == 120, f"un cerchio per passo nella striscia: {t['cerchi']}"
     assert "119/120" in t["badge2"], t["badge2"]
     assert "1/120" in t["badge3"], t["badge3"]
+    # 15a: |u|max della legenda è fisso sul passo di riferimento della corsa, come la scala: al passo 1
+    # la deformata è tutta viola e la legenda non respira.
+    assert t["colori1"] and "mm" in t["colori1"], t["colori1"]
+    assert t["colori3"] == t["colori1"], f"|u|max cambia col passo: {t['colori1']!r} → {t['colori3']!r}"
     # C: la scala è **una per corsa**, non una per passo. Con `scalaAuto` sul passo corrente
     # usciva ×10 al passo 30 e ×2 al 120: scorrendo lo scrubber la deformata respirava invece di
     # crescere, e confrontare due passi — che è tutto il senso dello scrubber — diceva il falso.
-    scale = {b.split(" · ")[-1] for b in (t["badge1"], t["badge2"], t["badge3"])}
+    scale = {senza_insecabili(b).split(" · ")[-1] for b in (t["badge1"], t["badge2"], t["badge3"])}
     assert len(scale) == 1, f"la scala cambia da un passo all'altro: {scale}"
     assert t["stati"] > 0, "nessun simbolo dello stato delle sezioni sulla deformata"
-    assert t["legenda"] is False, "i simboli ci sono e la legenda no"
+    # C7b — la legenda degli stati parla solo se almeno un simbolo non è quello dell'elastica:
+    # all'ultimo passo (120/120, dopo la caduta) il danno c'è e la riga si vede; al primo il telaio è
+    # ancora sano, i simboli sono tutti uguali e quella riga sarebbe gergo — in aula, 114 px su tre
+    # righe con «rotta» da sola sull'ultima.
+    assert t["legendaUltimo"] is False, "all'ultimo passo le sezioni non sono tutte elastiche: la legenda deve parlare"
+    assert t["legendaPasso1"] is True, "al primo passo i simboli sono tutti uguali: la legenda non ha niente da spiegare"
     # A e B: niente esce dal proprio riquadro a 1280 px. Il badge accorciato, la legenda che va a
     # capo, il taglio massimo scritto dentro il grafico — tre tagli visti a mano dal controller.
     assert t["dentro"] == {"badge": True, "legenda": True, "taglio": True}, t["dentro"]
@@ -351,6 +368,125 @@ def test_muro_1_la_scheda_confronto_mostra_la_tabella_con_la_massa_prima(chrome_
     assert t["scorrePagina"] is False, "la pagina non deve scorrere in orizzontale"
     assert t["dentro"] is True, "il riquadro della tabella sta nel pannello"
     assert t["rossi"] == 0, "nessun rosso nella scheda: non è un pass/fail"
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario_opensees, tmp_path):
+    """P sul MURO 1 a 1920×1080: etichette ≥ 46 px, aste ≥ 6 px, nodi ≥ 14 px, striscia ≥ 32 px
+    (story 62); niente si sovrappone; la deformata in viridis con la legenda; in scala di grigi la
+    scala resta a parole, il nodo scelto più grosso, la deformata col bordo (story 63); Esc esce."""
+    porta, cdp = chrome_e_server
+    schermo = tmp_path / "presentazione-grigi.png"
+    r = copione("presentazione", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"), screenshot=str(schermo))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["bottoneFuori"] == "none", "«pannelli» si vede fuori dalla presentazione"
+    # Tolleranza di un centesimo: il CTM rende 46,0000003 o 45,9999997 secondo il riquadro.
+    assert t["misure"]["etichette"] >= 45.99, t["misure"]
+    assert t["misure"]["aste"] >= 5.99, t["misure"]
+    assert t["misure"]["nodi"] >= 13.99, t["misure"]
+    assert t["misure"]["striscia"] >= 32, t["misure"]
+    assert all(t["nascosti"]), t["nascosti"]
+    assert t["strisciaSotto"] is True
+    assert 1.3 <= t["proporzione"] <= 1.7, t["proporzione"]
+    assert t["sovrapposte"] == [], t["sovrapposte"]
+    assert t["scorre"] is False
+    assert t["colori"] >= 2, "la deformata non si colora con lo spostamento"
+    assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
+    assert "×" in t["bn"]["badge"], t["bn"]["badge"]
+    assert max(t["bn"]["raggi"]) > min(t["bn"]["raggi"]), "il nodo scelto non è più grosso: in B/N resta solo il colore"
+    assert t["bn"]["bordo"] >= 1
+    assert schermo.stat().st_size > 10_000, "lo screenshot in scala di grigi non è stato scritto"
+    # E1 — R1 rendeva `altezzaStriscia` e `piano` senza che nessun assert li leggesse: col CSS del
+    # brief (striscia alta 489 px) il test sarebbe restato verde. Misurati 112 e 944 in statica a
+    # 1920: la striscia dei controlli resta una striscia, e il piano si prende il resto.
+    assert t["altezzaStriscia"] <= 130, t["altezzaStriscia"]
+    assert t["piano"][1] >= 900, t["piano"]
+    assert t["uscito"] is True
+    # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
+    assert t["legendaModo"] and "forma del modo" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
+    assert t["menu"] == {"pTiene": True, "escEsce": True}, t["menu"]
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
+    """Senza corsa, a 1920×1080: P nel campo del percorso scrive, P senza corsa accende con lo stato
+    vuoto a 32 px, P sul bottone «pannelli» alterna, «apri» e il resize restano nell'aula, Esc col
+    campo aperto chiude il campo prima di uscire, il ghost dell'estrusione si tiene P, i pannelli
+    aperti non rimostrano stati vuoti né Storia, e uscire li richiude."""
+    porta, cdp = chrome_e_server
+    r = copione("presentazioneBordi", porta, cdp, fixture=str(FIXTURE / "trave_appoggiata.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["bottoneFuori"] == "none", "«pannelli» si vede fuori dalla presentazione"
+    assert t["campo"] == {"valore": "p", "acceso": False}, t["campo"]
+    assert t["senzaCorsa"]["acceso"] is True, t["senzaCorsa"]
+    assert t["senzaCorsa"]["visibile"] is True and t["senzaCorsa"]["vuoto"] >= 32, t["senzaCorsa"]
+    assert t["senzaCorsa"]["bottone"] != "none", t["senzaCorsa"]
+    # E1 — senza corsa la striscia porta il solo stato vuoto di «Risultati»: misurata 102 px.
+    assert t["senzaCorsa"]["altezza"] <= 120, t["senzaCorsa"]
+    assert t["pSulBottone"] is True, "P col fuoco su «pannelli» non esce dalla presentazione"
+    assert t["aperto"]["acceso"] is True, t["aperto"]
+    # Un decimo di tolleranza, e il motivo è misurato: `piano.js` calcola i millimetri per pixel su
+    # `clientWidth`/`clientHeight`, che sono **arrotondati**, mentre il browser rende sul riquadro
+    # vero. Qui il piano è 1151 × 383,52 e `clientHeight` dice 384: le due direzioni sono a un
+    # capello l'una dall'altra (6,4639 contro 6,4665 mm/px), l'arrotondamento decide quale comanda,
+    # e il corpo reso esce 45,982 invece di 46. La grandezza dichiarata resta 46 px (`--etichetta`) e
+    # la soglia della ricerca è 45 (`docs/ricerca/07-ux-modellatore.md:133`): due centesimi non
+    # spostano niente in aula. La radice — `s` su numeri arrotondati e il CTM su quelli veri — è un
+    # debito della 15b, non una cosa da sistemare in un giro di fix.
+    assert t["aperto"]["etichette"] is not None and t["aperto"]["etichette"] >= 45.9, t["aperto"]
+    assert t["ridimensionato"] is not None and t["ridimensionato"] >= 45.9, t["ridimensionato"]
+    assert t["primoEsc"] == {"campoAperto": True, "acceso": True, "campoChiuso": True}, t["primoEsc"]
+    assert t["secondoEsc"] is True, "il secondo Esc non esce dalla presentazione"
+    assert t["ghost"] == {"acceso": False, "campoAperto": True}, t["ghost"]
+    assert t["pannelli"] == {"colonna": True, "dati": True, "vuotoNascosto": True, "storiaNascosta": True,
+                             "premuto": "true", "scorre": False}, t["pannelli"]
+    # E4 — il click su «pannelli» ridisegna **da sé**: misurato prima di premere G, che ridisegnava
+    # comunque e mascherava un `ridisegna()` perso. Il piano cambia larghezza, e con lui `s` e le
+    # etichette rese.
+    rid = t["ridisegnoAlClick"]
+    assert rid["prima"]["piano"] != rid["dopo"]["piano"], rid
+    assert rid["prima"]["etichette"] != rid["dopo"]["etichette"], rid
+    # E4 — il titolo della Storia, non solo la sua `ul`: la regola è `h2:has(+ #storia-elenco)`.
+    assert t["titoloStoriaNascosto"] is True, t["titoloStoriaNascosto"]
+    assert t["uscitoConPannelli"] == {"acceso": False, "pannelli": False, "premuto": "false"}, t["uscitoConPannelli"]
+    assert t["rientro"] == {"acceso": True, "colonna": True}, t["rientro"]
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server, binario_opensees):
+    """Il fix A della 15a: la pushover del MURO 1 a 1920×1080 in presentazione è il caso peggiore —
+    badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori. Nessun nome di
+    nodo e nessun cerchio deve finire sotto una striscia, e nessuna striscia deve sforare il fondo
+    del piano. Misurato prima del fix: telaio da 248, strisce fino a 308, e «sommità sx», «sommità
+    dx» più i due nodi in cima sotto la legenda degli stati — con `sovrapposte` vuoto, perché
+    confronta i `<text>` dell'SVG fra loro e i nomi dei nodi non ci passano."""
+    porta, cdp = chrome_e_server
+    r = copione("presentazionePushover", porta, cdp, fixture=str(FIXTURE / "muro_1_pushover.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    # N5 — la corsa gira **dentro** la presentazione: prima il copione correva e poi entrava in aula,
+    # quindi le regole `:has()` che riportano `#corsa-attesa` fra le viste (E5) non le guardava
+    # nessuno, e cancellarle lasciava il fumo tutto verde. `offsetParent` nullo = una regola la
+    # nasconde; le fasi scritte dicono che non è un riquadro vuoto rimasto in pagina.
+    assert t["accesaPrimaDellaCorsa"] is True, "P prima di ⌘⏎: la corsa deve girare in presentazione"
+    assert t["attesaInAula"]["fasi"] > 0, t["attesaInAula"]
+    assert t["attesaInAula"]["corpo"] >= 32, f"le fasi della corsa in aula sotto i 32 px: {t['attesaInAula']}"
+    # C1 — la striscia dell'M srotolato non ha misure d'aula (curva e riga «Seleziona un'asta…»
+    # restano a 11 px): in presentazione si toglie di mezzo, e il piano si prende la sua riga.
+    assert t["srotolatoInAula"] is False, "l'M srotolato resta a 11 px: in aula non ci va"
+    s = t["strisce"]
+    # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero.
+    assert set(s["visibili"]) >= {"badge", "stati", "colori"}, s["visibili"]
+    assert s["addosso"] == [], s["addosso"]
+    assert s["sforano"] == [], s["sforano"]
+    assert t["sovrapposte"] == [], t["sovrapposte"]
+    assert t["scorre"] is False
+    assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
     assert t["messaggio"] == "", t["messaggio"]
 
 

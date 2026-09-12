@@ -5,9 +5,12 @@
 // Se three.js o WebGL non ci sono, questo modulo si dichiara assente e il piano SVG regge
 // da solo: una pagina bianca sarebbe il modo peggiore di dirlo.
 //
-// `calcolaAspect` e `dimensioniSicure` sono pure, senza THREE: `node --test` non ha WebGL
+// Le funzioni esportate prima di `creaSpazio` sono pure, senza THREE: `node --test` non ha WebGL
 // (`tests/test_js.py` guarda solo funzioni vere, non il DOM), quindi sono l'unico punto da
 // cui gli ingressi degeneri di questo modulo si provano fuori dal browser.
+
+import { leggiMisure } from "./misure.js";
+import { coloreSpostamento } from "./risultati.js";
 
 // Stessi valori di `piano.js` (`INCHIOSTRO`, `ROSSO`): non importabili da lì, quel modulo
 // non li esporta e non è nello scope di questo task toccarlo.
@@ -40,6 +43,48 @@ export function calcolaInquadratura(nodi, distanzaMinima = DISTANZA_MINIMA) {
     centro: { x: centrale(xs), y: centrale(ys), z: centrale(zs) },
     distanza: Math.max(distanzaMinima, diagonale * 1.8),
   };
+}
+
+/** Millimetri di mondo per pixel CSS a `distanza` dalla camera, con `fov` verticale in gradi e il
+ *  riquadro alto `altezza` px. Riquadro non ancora misurato o distanza non finita → 0: i cilindri
+ *  escono a spessore nullo fino al primo `rendi` misurato, mai `NaN` o `Infinity` nella scala. */
+export function pixelInMondo(distanza, fov, altezza) {
+  const k = (2 * distanza * Math.tan((fov * Math.PI) / 360)) / altezza;
+  return Number.isFinite(k) ? k : 0;
+}
+
+/** I tratti di una polilinea, `a`/`b` come `{x, y, z}` puri (la conversione in `Vector3` sta in
+ *  `disegna`), colorati sulla media di |u| dei due capi. Due punti coincidenti o non finiti non
+ *  hanno direzione: saltati, o `setFromUnitVectors` riceverebbe un vettore nullo. */
+export function tratti(punti, uMax) {
+  const fuori = [];
+  for (let k = 1; k < punti.length; k++) {
+    const p = punti[k - 1], q = punti[k];
+    if (!(Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z) > 0)) continue;
+    fuori.push({ a: { x: p.x, y: p.y, z: p.z }, b: { x: q.x, y: q.y, z: q.z }, colore: coloreSpostamento((p.u + q.u) / 2, uMax) });
+  }
+  return fuori;
+}
+
+/** Tutti i tratti della deformata. Stantia → `colore: null`, cioè rossi: un colore di viridis su
+ *  numeri che non corrispondono più al modello direbbe un valore falso. */
+export function trattiDellaDeformata(deformata) {
+  if (!deformata) return [];
+  // N6: il massimo arriva da `app.js` e basta. Il ripiego di qui e quello di `piano.js` davano lo
+  // stesso numero del calcolo di `risultatiInVista` solo finché `u` non porta la scala: tre padroni
+  // dello stesso valore, destinati a divergere in silenzio al primo che gliela desse.
+  const fuori = (deformata.aste ?? []).flatMap((d) => tratti(d.punti ?? [], deformata.uMax));
+  return deformata.stantia ? fuori.map((t) => ({ ...t, colore: null })) : fuori;
+}
+
+/** Raggio in mondo di un cilindro che deve uscire `tratto` px di diametro. Misurato sull'estremo
+ *  più lontano dall'occhio: la prospettiva ingrossa il capo vicino, e il lontano non scende mai
+ *  sotto il voluto. */
+export function raggioCilindro(occhio, estremi, fov, altezza, tratto) {
+  // ponytail: distanza euclidea, non profondità lungo l'asse della camera: è più grande, quindi il
+  // tratto esce appena più spesso del voluto e mai più sottile.
+  const lontano = Math.max(...estremi.map((p) => Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z)));
+  return (pixelInMondo(lontano, fov, altezza) * tratto) / 2;
 }
 
 /** Non rigetta **mai**: un guasto qui torna uno spazio che si dichiara assente, e il piano
@@ -76,12 +121,27 @@ async function costruisci(contenitore) {
   const camera = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
   contenitore.replaceChildren(renderer.domElement);
 
-  const inchiostro = new THREE.LineBasicMaterial({ color: INCHIOSTRO });
-  const rosso = new THREE.LineBasicMaterial({ color: ROSSO });
-  // L'ombra dell'indeformata sotto la deformata: stessa opacità dello 0,3 del piano SVG.
-  const inchiostroTenue = new THREE.LineBasicMaterial({ color: INCHIOSTRO, transparent: true, opacity: 0.3 });
-  const puntoInchiostro = new THREE.PointsMaterial({ color: INCHIOSTRO, size: 6, sizeAttenuation: false });
-  const puntoRosso = new THREE.PointsMaterial({ color: ROSSO, size: 10, sizeAttenuation: false });
+  // Le linee WebGL non si ispessiscono (`linewidth` ignorato quasi ovunque): aste e deformata sono
+  // cilindri, tutti sulla **stessa** geometria — alta 1 e di raggio 1 sull'asse y — che `rendi`
+  // scala al tratto voluto in pixel. Condivisa: la pulizia di `disegna` non la butta. Senza tappi
+  // (`openEnded`): i tappi del bordo, facce posteriori anche loro, tagliano di traverso il colorato
+  // del tratto dopo, e con tratti corti la deformata esce a trattini neri (visto in Chrome).
+  const cilindro = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+  const asseY = new THREE.Vector3(0, 1, 0);
+  const inchiostro = new THREE.MeshBasicMaterial({ color: INCHIOSTRO });
+  const rosso = new THREE.MeshBasicMaterial({ color: ROSSO });
+  // L'ombra dell'indeformata sotto la deformata: l'opacità la dicono le misure, riscritta a ogni `disegna`.
+  const inchiostroTenue = new THREE.MeshBasicMaterial({ color: INCHIOSTRO, transparent: true, opacity: 0.3 });
+  // Il bordo della deformata: le sole facce posteriori di un cilindro più grosso e coassiale. Il
+  // colorato al centro le copre, ai lati restano scure. Con `renderOrder` e le facce anteriori il
+  // depth test scarta il colorato, che sta dentro: un tubo tutto nero (misurato in r185).
+  const bordo = new THREE.MeshBasicMaterial({ color: INCHIOSTRO, side: THREE.BackSide });
+  // I materiali di viridis, uno per colore, **mai** svuotati: il tetto sono i colori che `viridis` può
+  // rendere (648 misurati), e buttarli a ogni `disegna` costa 3× il fotogramma e fa ricompilare il
+  // programma WebGL.
+  const viridisDi = new Map();
+  const puntoInchiostro = new THREE.PointsMaterial({ color: INCHIOSTRO, size: 10, sizeAttenuation: false });
+  const puntoRosso = new THREE.PointsMaterial({ color: ROSSO, size: 16, sizeAttenuation: false });
   let disegnato = new THREE.Group();
   scena.add(disegnato);
 
@@ -114,6 +174,13 @@ async function costruisci(contenitore) {
     );
     camera.up.set(0, 0, 1);
     camera.lookAt(centro);
+    // `near` segue la distanza: fisso a 1 mm, fra il colorato e la parete dietro del bordo restavano
+    // pochi passi di profondità, e da lontano la deformata usciva a chiazze nere.
+    const near = distanza / 100;
+    if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
+    for (const o of disegnato.children) if (o.userData.tratto) {
+      o.scale.x = o.scale.z = raggioCilindro(camera.position, o.userData.estremi, camera.fov, contenitore.clientHeight, o.userData.tratto);
+    }
     renderer.render(scena, camera);
   }
 
@@ -139,8 +206,25 @@ async function costruisci(contenitore) {
 
   function disegna(m, { selezione = null, deformata = null } = {}) {
     scena.remove(disegnato);
-    disegnato.traverse((o) => { o.geometry?.dispose(); });
+    disegnato.traverse((o) => { if (o.geometry !== cilindro) o.geometry?.dispose(); });
     disegnato = new THREE.Group();
+
+    // Come in `piano.js`: senza `getComputedStyle` (i test) `leggiMisure` cade sui numeri d'oggi.
+    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    inchiostroTenue.opacity = misure.ombra;
+    puntoInchiostro.size = 2 * misure.raggioNodo;
+    puntoRosso.size = 2 * misure.raggioNodo * 1.6;
+    // Lo spessore vero lo scrive `rendi`, che conosce camera e riquadro: qui solo gli estremi e il tratto.
+    const cilindroFra = (a, b, materiale, tratto) => {
+      const o = new THREE.Mesh(cilindro, materiale);
+      o.position.addVectors(a, b).multiplyScalar(0.5);
+      const direzione = new THREE.Vector3().subVectors(b, a);
+      o.scale.y = direzione.length();
+      o.quaternion.setFromUnitVectors(asseY, direzione.normalize());
+      o.userData = { tratto, estremi: [a, b] };
+      disegnato.add(o);
+    };
+    const v = (p) => new THREE.Vector3(p.x, p.y, p.z);
 
     const punti = (nodi, materiale) => {
       if (nodi.length === 0) return null;
@@ -149,10 +233,9 @@ async function costruisci(contenitore) {
     };
     const scelto = (tipo, id) => selezione?.tipo === tipo && selezione.id === id;
 
-    // `linewidth` di `LineBasicMaterial` non è onorato da WebGL nella maggior parte dei
-    // browser: un'asta selezionata non può ispessirsi. Il secondo canale sono i suoi due
-    // nodi d'estremo, disegnati come i punti rossi già usati per il nodo selezionato — dice
-    // anche *quale* asta, non solo che una è scelta.
+    // Il secondo canale dell'asta scelta, oltre al tratto più spesso: i suoi due nodi d'estremo,
+    // disegnati come i punti rossi del nodo selezionato — dice anche *quale* asta, non solo che
+    // una è scelta.
     const astaScelta = selezione?.tipo === "asta" ? m.aste.find((a) => a.id === selezione.id) : null;
     const estremiAstaScelta = astaScelta ? new Set([astaScelta.nodo_i, astaScelta.nodo_j]) : null;
 
@@ -160,16 +243,19 @@ async function costruisci(contenitore) {
       const i = m.nodi.find((n) => n.id === a.nodo_i);
       const j = m.nodi.find((n) => n.id === a.nodo_j);
       if (!i || !j) continue;
-      const g = new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(i.x, i.y, i.z), new THREE.Vector3(j.x, j.y, j.z),
-      ]);
-      const ombra = deformata && !scelto("asta", a.id);
-      disegnato.add(new THREE.Line(g, scelto("asta", a.id) ? rosso : (ombra ? inchiostroTenue : inchiostro)));
+      if (!(Math.hypot(j.x - i.x, j.y - i.y, j.z - i.z) > 0)) continue;   // due nodi coincidenti: nessuna direzione
+      if (scelto("asta", a.id)) cilindroFra(v(i), v(j), rosso, misure.trattoScelta);
+      else cilindroFra(v(i), v(j), deformata ? inchiostroTenue : inchiostro, misure.trattoAsta);
     }
-    // La deformata (giornata 13): la stessa `puntiDeformata` del piano, stessa scala; rossa se stantia.
-    for (const d of deformata?.aste ?? []) {
-      const g = new THREE.BufferGeometry().setFromPoints(d.punti.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
-      disegnato.add(new THREE.Line(g, deformata.stantia ? rosso : inchiostro));
+    // La deformata: la stessa `puntiDeformata` del piano, stessa scala. Un cilindro per tratto nel
+    // colore del suo |u| sopra il bordo in inchiostro, che la stacca dal fondo chiaro anche dove
+    // viridis arriva al giallo; rossa e senza bordo se stantia.
+    for (const t of trattiDellaDeformata(deformata)) {
+      const a = v(t.a), b = v(t.b);
+      if (t.colore === null) { cilindroFra(a, b, rosso, misure.trattoDeformata); continue; }
+      cilindroFra(a, b, bordo, misure.trattoDeformata + 2 * misure.bordoDeformata);
+      if (!viridisDi.has(t.colore)) viridisDi.set(t.colore, new THREE.MeshBasicMaterial({ color: t.colore }));
+      cilindroFra(a, b, viridisDi.get(t.colore), misure.trattoDeformata);
     }
     const evidenziato = (n) => scelto("nodo", n.id) || (estremiAstaScelta?.has(n.id) ?? false);
     const normali = m.nodi.filter((n) => !evidenziato(n));

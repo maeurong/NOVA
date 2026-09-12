@@ -7,6 +7,9 @@
 <link rel="stylesheet" href="/static/stile.css">
 </head>
 <body>
+<!-- «pannelli» (15a): nel modo presentazione riporta albero e ispettore senza uscire dall'aula. Primo
+     nel DOM, quindi la prima fermata di ⇥; fuori dalla presentazione lo nasconde `stile.css`. -->
+<button id="riapri-pannelli" type="button" aria-pressed="false">pannelli · Esc esce</button>
 <div id="colonna">
   <section id="file" aria-label="file del modello">
     <h2>File</h2>
@@ -90,7 +93,10 @@
        contraddice, accanto al numero (`docs/ricerca/07-ux-modellatore.md:101`). -->
   <h2 class="staccato">Risultati</h2>
   <section id="risultati" aria-label="risultati">
-    <p class="vuoto" id="risultati-vuoto">Nessuna corsa da mostrare. Dopo <kbd aria-label="comando invio">⌘⏎</kbd> scegli il caso, un modo o la pushover dal menu; <kbd>1</kbd> deformata, <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> M, V, N, <kbd>0</kbd> nessuna; <kbd aria-label="spazio">Spazio</kbd> ferma l'animazione del modo, <kbd aria-label="frecce">← →</kbd> scorrono i passi col fuoco fuori dal menu.</p>
+    <!-- C4 — senza corsa la striscia dell'aula portava il tutorial da tastiera intero, a 32 px su
+         tutta la larghezza. La coda sta in uno `<span class="aiuto">` che la presentazione nasconde:
+         in aula si legge cosa fare adesso, alla scrivania i tasti restano sott'occhio. -->
+    <p class="vuoto" id="risultati-vuoto">Nessuna corsa da mostrare. Dopo <kbd aria-label="comando invio">⌘⏎</kbd> scegli il caso, un modo o la pushover dal menu. <span class="aiuto"><kbd>1</kbd> deformata, <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> M, V, N, <kbd>0</kbd> nessuna; <kbd aria-label="spazio">Spazio</kbd> ferma l'animazione del modo, <kbd aria-label="frecce">← →</kbd> scorrono i passi col fuoco fuori dal menu.</span></p>
     <div id="risultati-controlli" hidden>
       <label for="risultati-caso">caso</label>
       <select id="risultati-caso"></select>

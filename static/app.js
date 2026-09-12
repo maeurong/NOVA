@@ -25,7 +25,7 @@ import { creaCorsa, stantia } from "./corsa.js";
 import { creaEsito, creaSrotolato } from "./esito.js";
 import { creaConfronto } from "./confronto.js";
 import { VISTE, scalaAuto, puntiDeformata, vociDelCaso, casoScelto, scalaModo,
-         curvaPushover, passoDiRiferimento, tipoDelCaso } from "./risultati.js";
+         curvaPushover, passoDiRiferimento, tipoDelCaso, massimoSpostamento } from "./risultati.js";
 import { creaAnimazione, movimentoRidotto } from "./animazione.js";
 import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
          esitoComando, esitoLunghezza, ghostDelComando, serveUnNodo, AVVISO_SECONDO_NODO } from "./modo.js";
@@ -79,13 +79,17 @@ let ultimoTelaio = null, ultimoSolido = null;
 // è tutto il senso dello scrubber — diceva il falso. La cache sta su `passi` **e** sul modello:
 // `scalaAuto` misura anche `latoMaggiore(m)`, e un modello modificato con la stessa corsa in mano
 // (una corsa stantia) darebbe una scala vecchia per un disegno nuovo.
-let scalaCache = { passi: null, m: null, scala: 1 };
-function scalaDellaPushover(m, passi) {
+// 15a: |u|max della legenda dei colori sta nella stessa cache, per la stessa ragione — fisso sul passo di
+// riferimento, così al passo 1 la deformata è tutta viola e la legenda non respira.
+let scalaCache = { passi: null, m: null, scala: 1, uMax: 0 };
+function pushoverDiRiferimento(m, passi) {
   if (scalaCache.passi !== passi || scalaCache.m !== m) {
     const k = passoDiRiferimento(passi);
-    scalaCache = { passi, m, scala: k === null ? 1 : scalaAuto(m, { spostamenti: passi[k].spostamenti ?? {} }) };
+    const perCaso = { spostamenti: k === null ? {} : (passi[k].spostamenti ?? {}) };
+    scalaCache = { passi, m, scala: k === null ? 1 : scalaAuto(m, perCaso),
+                   uMax: massimoSpostamento(puntiDeformata(m, perCaso, 1)) };
   }
-  return scalaCache.scala;
+  return scalaCache;
 }
 
 /** Lo stato dei risultati tradotto in **vista**, cioè in quel che piano, spazio e striscia
@@ -107,9 +111,19 @@ function risultatiInVista(m, fattore = 1) {
   // R1: un modo si misura con `scalaModo`, che guarda le **tre** componenti della forma —
   // `scalaAuto` ignora la `y`, e venti modi su 42 del MURO 1 uscirebbero «×1 (auto)».
   const scalaDeformata = () => (scelto.tipo === "modo" ? scalaModo(m, scelto.modo)
-    : scelto.tipo === "pushover" ? scalaDellaPushover(m, risultati.lavoro?.fin?.risultati?.passi)
+    : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).scala
     : scalaAuto(m, scelto.perCaso));
   const scala = auto ? (risultati.vista === "deformata" ? scalaDeformata() : 1) : risultati.scalaMano;
+  // |u|max dei colori, calcolato **qui per tutti** (N6): la pushover dal passo di riferimento, dove
+  // la scala dev'essere quella fissa della corsa — altrimenti al passo 1 la deformata sarebbe tutta
+  // viola e la legenda respirerebbe (E3) — caso e modo dal massimo delle loro deformate. Il ruling
+  // E3 del giro prima lasciava il conto ai ripieghi di `piano.js` e `spazio.js`: tre padroni dello
+  // stesso numero, che coincidono solo finché `u` non porta la scala. Misurato 0,011-0,034 ms a
+  // chiamata: un padrone solo vale più di quel risparmio. La scala passata è 1 e non cambia niente:
+  // `u` è in mm del modello, senza scala del disegno (`risultati.js`, `puntiDeformata`).
+  const uMax = risultati.vista !== "deformata" ? null
+    : scelto.tipo === "pushover" ? pushoverDiRiferimento(m, risultati.lavoro?.fin?.risultati?.passi).uMax
+    : massimoSpostamento(puntiDeformata(m, scelto.perCaso, 1));
   const curva = scelto.tipo === "pushover"
     ? curvaPushover(risultati.lavoro?.fin?.risultati?.passi, scelto.caduta) : null;
   // Un oggetto solo per il badge e per la striscia: due copie dello stesso passo divergerebbero
@@ -121,7 +135,7 @@ function risultatiInVista(m, fattore = 1) {
         V: (Number(scelto.passo?.taglio_base) || 0) / 1e3 } : null;
   return { vista: risultati.vista, caso: risultati.caso, perCaso: scelto.perCaso, scala, auto,
            stantia: stantia(risultati.lavoro, m), fattore,
-           tipo: scelto.tipo, stati: scelto.stati ?? null, curva, passo,
+           tipo: scelto.tipo, stati: scelto.stati ?? null, curva, passo, uMax,
            badge: { modo: scelto.modo ?? null, passo, caduta: curva?.caduta ?? null,
                     // Fermo perché l'utente ha premuto Spazio, o perché il sistema chiede meno
                     // movimento: la seconda l'utente non l'ha fatta, e senza il motivo il badge
@@ -745,7 +759,7 @@ const fattoreCorrente = () =>
  *  volta perché `ridisegna` e il fotogramma la chiedano identica — due espressioni in due punti
  *  divergono al primo argomento aggiunto, e il 3D resterebbe fermo mentre il piano respira. */
 const deformataInVista = (m, inVista) => (inVista?.vista === "deformata"
-  ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala * inVista.fattore), stantia: inVista.stantia }
+  ? { aste: puntiDeformata(m, inVista.perCaso, inVista.scala * inVista.fattore), stantia: inVista.stantia, uMax: inVista.uMax }
   : null);
 
 /** Il piano e la striscia: i due che si misurano in pixel del proprio riquadro, e i soli che il
@@ -839,6 +853,30 @@ window.addEventListener("resize", () => {
   requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia), fattoreCorrente()); });
 });
 
+// Il modo presentazione (story 62): un attributo sul `body`; layout e misure del disegno li cambia
+// `stile.css`. Cambiare la griglia non scatena `resize`, quindi dopo ogni cambio `ridisegna()`: piano e
+// spazio rileggono le variabili e il proprio riquadro.
+const bottonePannelli = $("riapri-pannelli");
+const presentazione = () => document.body.hasAttribute("data-presentazione");
+/** Lo stato del bottone scritto **a parole**, non solo in `aria-pressed`: premuto, a 8 m cambiava
+ *  soltanto un attributo che nessuno vede (C6). E l'uscita dall'aula sta scritta lì sopra, perché
+ *  a schermo quello è l'unico bottone e nessuno diceva come si torna indietro (C5). */
+const scriviBottonePannelli = (aperti) => {
+  bottonePannelli.setAttribute("aria-pressed", String(aperti));
+  bottonePannelli.textContent = `${aperti ? "chiudi pannelli" : "pannelli"} · Esc esce`;
+};
+function alternaPresentazione(accesa = !presentazione()) {
+  document.body.toggleAttribute("data-presentazione", accesa);
+  // Si entra e si esce coi pannelli ritratti: aperti in un giro non restano aperti al giro dopo.
+  document.body.removeAttribute("data-pannelli");
+  scriviBottonePannelli(false);
+  ridisegna();
+}
+bottonePannelli.addEventListener("click", () => {
+  scriviBottonePannelli(document.body.toggleAttribute("data-pannelli"));
+  ridisegna();
+});
+
 function disegnaBarra() {
   const contesto = contestoBarra(modo, selezione, comando);
   // Il tipo della selezione, non solo il contesto: `D` esiste sulla sola asta, e una barra
@@ -918,7 +956,15 @@ function eseguiVoce(voce, valore = null) {
 // I rami escono con `return`: la coda di `eseguiVoce` deve girare dopo il dispatch intero, non
 // dopo il primo ramo che ha risposto — da qui le due funzioni invece di una.
 function dispatchVoce(voce, valore = null) {
-  if (voce.codice === "annulla") { modo = null; chiudiComando(); dì(null); ridisegna(); return; }
+  // Esc chiude il gesto aperto, e solo senza gesto esce dalla presentazione: col campo di comando aperto
+  // il primo Esc chiude il campo, il secondo esce. La selezione non è un gesto: `G` poi Esc esce.
+  if (voce.codice === "annulla") {
+    const gesto = Boolean(modo || comando);
+    modo = null; chiudiComando(); dì(null);
+    if (!gesto && presentazione()) { alternaPresentazione(false); return; }
+    ridisegna();
+    return;
+  }
 
   // Disfa e rifai funzionano anche con un modo aperto, come annulla: un ghost o un'asta
   // appesi a un nodo appena disfatto si chiudono da soli in `ridisegna` (`modoValido`).
@@ -969,6 +1015,10 @@ function dispatchVoce(voce, valore = null) {
   // per tasti e bottoni.
   if (voce.codice === "corri") { corsa.corri(); return; }
   if (voce.codice === "verifica") { corsa.verifica(); return; }
+
+  // P sotto la guardia del campo (mentre si scrive è una lettera) e sopra quella del modo, come la
+  // vista: cambiare schermo non è un secondo gesto sul disegno, e in modo asta alterna (R11).
+  if (voce.codice === "presentazione") { alternaPresentazione(); return; }
 
   // La vista dei risultati sta con corri e verifica, sotto la guardia del campo: una cifra
   // mentre si scrivono delle coordinate è parte del numero, non un cambio di vista. Sopra la
