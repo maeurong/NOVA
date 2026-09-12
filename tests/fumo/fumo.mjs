@@ -55,6 +55,23 @@ const vaiAlPasso = async (frazione) => {
   return true;
 };
 
+// Un trascinamento **vero** sul canvas del 3D, dal suo centro. `spazio.js` orbita su `pointerdown`
+// sul canvas e `pointermove`/`pointerup` sulla finestra, e CDP li genera dai propri eventi di
+// mouse. Serve al fix round 1: la sonda dello spessore leggeva le matrici della camera del giro
+// prima, e quel difetto si vede **solo** dopo un'orbita — nessun copione ne faceva una, e il fumo
+// restava verde su una sonda che sbagliava del 57 %.
+const trascinaSpazio = async (dx, dy) => {
+  const b = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return null;
+    const r = c.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  if (!b) return false;
+  const [x, y] = b;
+  await cmd("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+  await cmd("Input.dispatchMouseEvent", { type: "mouseMoved", x: x + dx, y: y + dy, button: "left", buttons: 1 });
+  await cmd("Input.dispatchMouseEvent", { type: "mouseReleased", x: x + dx, y: y + dy, button: "left", buttons: 0, clickCount: 1 });
+  await pausa(200);
+  return true;
+};
+
 // Se un elemento in pixel sta dentro il suo riquadro, misurato col rettangolo vero del browser.
 // A 1280 px la colonna del piano è ~430 px: il badge della pushover e quello di un modo a forma
 // nulla ne uscivano a sinistra, tagliati proprio dove il testo comincia («er · passo…»), e il
@@ -194,8 +211,12 @@ const INTERVALLI = `new Promise((ok) => { const t = []; const g = () => { t.push
 // (misurati 18,16 ms di media contro 16,70 di mediana, e 16,66 alla seconda lettura), cioè banda e
 // non valore. La mediana non se ne accorge, ed è il numero su cui l'issue #87 fissa le sue soglie.
 const riassunto = (v) => {
-  const ordinati = [...v].sort((a, b) => a - b);
-  return { mediana: Math.round(ordinati[Math.floor(ordinati.length / 2)] * 100) / 100,
+  const ordinati = [...v].sort((a, b) => a - b), n = ordinati.length;
+  // La mediana **vera**, media dei due centrali: il campione è di trenta, e `ordinati[n >> 1]` da
+  // solo dà la mediana superiore. Il bias sarebbe verso l'alto, quindi cautelativo rispetto alla
+  // soglia, ma #87 pubblica questo numero chiamandolo mediana — e allora che lo sia davvero.
+  const mediana = (ordinati[(n - 1) >> 1] + ordinati[n >> 1]) / 2;
+  return { mediana: Math.round(mediana * 100) / 100,
            media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
            massimo: Math.round(Math.max(...v) * 100) / 100 };
 };
@@ -495,6 +516,9 @@ const COPIONI = {
       striscia: await ev(`parseFloat(getComputedStyle(document.getElementById("risultati-caso")).fontSize)`),
       tratto3d: await ev(TRATTO_3D),
       spazioAssente: await ev(SPAZIO_ASSENTE),
+      // Lo **stesso** spessore dopo un'orbita: un'asta è spessa 6 px da qualunque angolo la si
+      // guardi. Con la sonda chiamata prima del render questo numero usciva 9,48 e ci restava.
+      tratto3dDopoOrbita: (await trascinaSpazio(200, 60)) ? await ev(TRATTO_3D) : null,
     };
     const nascosti = await ev(`["colonna", "barra", "storia-elenco"].map((id) => getComputedStyle(document.getElementById(id)).display === "none" || document.getElementById(id).offsetParent === null)`);
     const strisciaSotto = await ev(`document.getElementById("pannello").getBoundingClientRect().top >= document.getElementById("viste").getBoundingClientRect().bottom - 1`);

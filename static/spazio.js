@@ -139,8 +139,10 @@ async function costruisci(contenitore) {
   // del tratto dopo, e con tratti corti la deformata esce a trattini neri (visto in Chrome).
   const cilindro = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
   const asseY = new THREE.Vector3(0, 1, 0);
-  // Gli appoggi della sonda dello spessore, allocati una volta: `rendi` gira a ogni fotogramma e
-  // tre `Vector3` nuovi per giro sarebbero spazzatura che il raccoglitore paga dentro il budget.
+  // Gli appoggi della sonda dello spessore, tenuti qui fuori per non rifarli a ogni giro.
+  // ponytail: nessuna misura dietro, ed è innocua — nello stesso fotogramma `disegna` costruisce
+  // 68 mesh e qualche centinaio di vettori, e #87 dice che il giro intero non si vede dentro i
+  // 16,7 ms: tre oggetti stanno due ordini di grandezza sotto il rumore.
   const destra = new THREE.Vector3(), centroNDC = new THREE.Vector3(), bordoNDC = new THREE.Vector3();
   const inchiostro = new THREE.MeshBasicMaterial({ color: INCHIOSTRO });
   const rosso = new THREE.MeshBasicMaterial({ color: ROSSO });
@@ -195,8 +197,14 @@ async function costruisci(contenitore) {
     const figli = disegnato.children;
     const scale = scaleDeiTratti(figli, { posizione: camera.position, fov: camera.fov }, contenitore.clientHeight);
     for (let k = 0; k < figli.length; k++) if (scale[k] !== null) figli[k].scale.x = figli[k].scale.z = scale[k];
-    sonda(figli);
     renderer.render(scena, camera);
+    // La sonda **dopo** il render, non prima (fix round 1). Legge `matrixWorld` e
+    // `matrixWorldInverse` della camera, e chi le aggiorna è il render: `lookAt` in r185 aggiorna
+    // la matrice e **poi** scrive il quaternione, quindi prima del render la camera porta la
+    // posizione nuova e ancora l'orientamento vecchio. Dopo un trascinamento di 200×60 px il
+    // diametro usciva 9,48 px invece di 6,03, e ci restava. Il fumo non se ne accorgeva perché
+    // nessun copione trascinava: ora `presentazione` trascina, e quel numero è asserito.
+    sonda(figli);
   }
 
   /** La sonda dello spessore (#85): sul canvas, il diametro **reso** in pixel del primo cilindro e
@@ -206,7 +214,13 @@ async function costruisci(contenitore) {
    *  ricalcolasse la formula proverebbe sé stessa. Misurata dall'architect il 13/09 sul canvas di
    *  `#spazio`: 0,332 µs a scrittura, cioè 0,0003 ms per fotogramma, invisibili nei 16,7 ms del
    *  vsync (#87). Nessun cilindro in scena → le due voci **spariscono**: un fotogramma con meno
-   *  aste non deve lasciare in giro il numero di quello di prima. */
+   *  aste non deve lasciare in giro il numero di quello di prima.
+   *
+   *  Misura il **primo** cilindro della scena, che oggi è un'asta perché `disegna` cicla le aste
+   *  prima della deformata. Tre condizioni implicite, e non stanno scritte altrove: quell'ordine,
+   *  nessun'asta selezionata (che porterebbe `--asta-tratto-scelta`) e almeno un'asta nel modello.
+   *  Rompendone una la sonda misura un altro cilindro e il numero resta vero, ma non è più quello
+   *  dell'asta d'aula — per questo il fumo non dà la colpa al CSS quando `trattoVoluto` non è 6. */
   function sonda(figli) {
     const dati = renderer.domElement.dataset;
     const o = figli.find((f) => f.userData.tratto);
