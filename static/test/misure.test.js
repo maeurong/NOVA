@@ -7,7 +7,7 @@ const stile = (valori) => ({ getPropertyValue: (nome) => valori[nome] ?? "" });
 test("leggiMisure: senza variabili le misure d'oggi — fuori dalla presentazione niente cambia", () => {
   assert.deepEqual(leggiMisure(stile({})), MISURE_BASE);
   assert.deepEqual(leggiMisure(null), MISURE_BASE);
-  assert.deepEqual(MISURE_BASE, { raggioNodo: 5, trattoAsta: 2, trattoScelta: 3, trattoDeformata: 2, bordoDeformata: 2, carattere: 11, ombra: 0.3, srotolatoAlto: 96 });
+  assert.deepEqual(MISURE_BASE, { raggioNodo: 5, trattoAsta: 2, trattoScelta: 3, trattoDeformata: 2, bordoDeformata: 2, carattere: 11, ombra: 0.3, srotolatoAlto: 96, curvaAlta: 96 });
 });
 
 test("leggiMisure: le variabili della presentazione, con le unità e gli spazi del CSS", () => {

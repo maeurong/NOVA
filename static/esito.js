@@ -216,9 +216,16 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     // (discesa misurata in Chrome il 13/09). Con `M = 14` fisso uscirebbe dall'SVG; `14·c/11` vale
     // 58,5 a 46, sopra i 52,5 che il contenimento chiede. `ML` scala per la stessa ragione: a
     // sinistra dell'asse ci sta lo zero, che a 46 px è largo 28 px.
-    const { carattere, srotolatoAlto } = misure();
+    //
+    // E l'altezza è **sua**, `--curva-alta`, non quella dello srotolato: i due riquadri hanno
+    // mestieri diversi. Lo srotolato è un diagramma di servizio e a 160 px sta comodo; la curva in
+    // pushover è *il* diagramma che si legge, e i suoi numeri stanno **dentro** l'area utile, che
+    // vale `H − 2M`. A 160 l'area utile è 43 px, più bassa dei 46 px del testo che ci va: il taglio
+    // massimo finiva addosso ai valori del passo. Nessuna collocazione diversa lo risolve — il
+    // riquadro è più corto di una riga — quindi la leva è l'altezza (fix round 1 della 15b).
+    const { carattere, curvaAlta } = misure();
     const sc = (n) => scalato(n, carattere);
-    const W = contenitore.clientWidth || 200, H = srotolatoAlto, M = sc(14), ML = sc(28);
+    const W = contenitore.clientWidth || 200, H = curvaAlta, M = sc(14), ML = sc(28);
     const larghezza = Math.max(0, W - M - ML), altezza = Math.max(0, H - 2 * M);
     // Una corsa che si ferma al primo passo ha `uMax` e `vMax` a zero: il rapporto non si fa,
     // il punto sta nell'origine. Senza questa guardia uscirebbe `cx="NaN"` e nessun cerchio.

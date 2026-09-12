@@ -392,8 +392,13 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     # che stava mezzo decimillesimo dal lato buono della soglia. La grandezza dichiarata resta 46 px
     # (`--etichetta`) e la soglia della ricerca è 45 (`docs/ricerca/07-ux-modellatore.md:133`).
     assert t["misure"]["etichette"] >= 45.9, t["misure"]
-    assert t["misure"]["aste"] >= 5.99, t["misure"]
-    assert t["misure"]["nodi"] >= 13.99, t["misure"]
+    # Le due gemelle, allargate per la **stessa** ragione e prima che cadano: misurate 5,998674 e
+    # 13,996906 contro soglie di 5,99 e 13,99, cioè 7-9 millesimi di pixel di margine su numeri che
+    # un arrotondamento di `clientWidth` sposta di suo. Un test che cade fra due settimane per un
+    # millesimo di pixel manda a caccia di un difetto che non esiste. Le grandezze dichiarate
+    # restano 6 px (`--asta-tratto`) e 14 (`--nodo-raggio` × 2).
+    assert t["misure"]["aste"] >= 5.9, t["misure"]
+    assert t["misure"]["nodi"] >= 13.9, t["misure"]
     assert t["misure"]["striscia"] >= 32, t["misure"]
     assert all(t["nascosti"]), t["nascosti"]
     assert t["strisciaSotto"] is True
@@ -499,20 +504,31 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     assert t["attesaInAula"]["fasi"] > 0, t["attesaInAula"]
     assert t["attesaInAula"]["corpo"] >= 32, f"le fasi della corsa in aula sotto i 32 px: {t['attesaInAula']}"
     # 15b — la striscia torna in aula con misure sue (C1 chiuso). A 1920×1080 ci sta, e ci si legge:
-    # l'SVG alto `--srotolato-alto`, i suoi numeri a `--etichetta`, il titolo a 32 px come le altre
-    # strisce del piano. Misurato: scatola 247, SVG 160, cinque testi a 46, titolo 32.
+    # i suoi numeri a `--etichetta`, il titolo a 32 px come le altre strisce del piano. Qui il caso
+    # è la **pushover**, quindi l'SVG è la curva e vale `--curva-alta`, non `--srotolato-alto`: i due
+    # riquadri hanno altezze diverse dal fix round 1. Misurato: scatola 327, SVG 240, cinque testi a
+    # 46, titolo 32. (I 160 dello srotolato non passano di qui: senza un'asta scelta l'SVG non c'è
+    # affatto, e a provarli sono i test a unità di `esito.test.js`.)
     assert t["srotolatoInAula"] is True, "a 1920×1080 la striscia in aula ci sta: deve vedersi"
     s = t["srotolato"]
-    assert s is not None and s["svg"] == 160, f"l'SVG non è alto `--srotolato-alto`: {s}"
+    assert s is not None, "la striscia non si vede: non c'è niente da misurare"
     assert s["quantiTesti"] > 0, f"nessun testo nella curva: il test sarebbe vuoto — {s}"
     assert s["corpo"] >= 46, f"i numeri della curva sotto i 46 px, illeggibili da 8 m: {s}"
     assert s["titolo"] >= 32, f"la riga che dice cosa si sta guardando sotto i 32 px: {s}"
     # R9 — la ragione dei 160 px è il **contenimento**: a 96 il numero del picco di sopra esce dal
     # riquadro di 12 px. Qui si misura sul reso, non sulla geometria dedotta.
     assert s["fuori"] == [], f"testi fuori dal proprio SVG: {s['fuori']}"
+    # Fix round 1 — e non si posano uno sull'altro. È il controllo che mancava: `fuori` guarda se un
+    # testo esce dall'SVG, `SOVRAPPOSTE` confronta i testi di #piano fra loro, e quelli della
+    # striscia non passano né per l'uno né per l'altro. Con la curva a 160 px qui cadevano «60 mm»
+    # e «V 70,93 kN», misurati addosso; a 240 l'area utile vale 123 px e non si toccano.
+    assert s["addosso"] == [], f"due testi della striscia si sovrappongono: {s['addosso']}"
+    assert s["svg"] == 240, f"la curva non legge `--curva-alta`: {s}"
     # E il telaio deve reggere lo stesso: accendere la striscia gli ruba proprio l'altezza che i
-    # Task 2 e 3 gli hanno appena restituito. Misurati piano 674, fascia 192, banda 482.
-    assert s["scatola"] <= 260, f"la striscia costa più di quanto il budget preveda: {s}"
+    # Task 2 e 3 gli hanno appena restituito. Misurati, con la curva a 240: scatola 327, piano 594,
+    # fascia 192, banda **402** — quattro volte `TELAIO_MINIMO`. Il tetto sulla scatola tiene conto
+    # del titolo su due righe (76 px) più padding e bordo: 240 + 87 = 327.
+    assert s["scatola"] <= 340, f"la striscia costa più di quanto il budget preveda: {s}"
     assert t["telaio"]["piano"] - t["telaio"]["fascia"] >= 100, t["telaio"]
     s = t["strisce"]
     # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero.

@@ -17,8 +17,10 @@
      `misure.js` li legge; cambiare un numero qui cambia il disegno, e nessun'altra copia resta indietro. */
   --nodo-raggio: 5px; --asta-tratto: 2px; --asta-tratto-scelta: 3px;
   --deformata-tratto: 2px; --deformata-bordo: 2px; --etichetta: 11px; --ombra-opacita: 0.3;
-  /* L'altezza dell'SVG della striscia sotto il piano, che `esito.js` legge come le altre (15b). */
-  --srotolato-alto: 96px;
+  /* Le altezze dei due SVG della striscia sotto il piano, che `esito.js` legge come le altre (15b).
+     Due e non una: lo srotolato è un diagramma di servizio, la curva della pushover è *il* diagramma
+     che si legge, e i suoi numeri stanno dentro l'area utile. Alla scrivania valgono lo stesso. */
+  --srotolato-alto: 96px; --curva-alta: 96px;
 }
 
 * { box-sizing: border-box; }
@@ -530,6 +532,18 @@ body[data-presentazione] {
      a 46 px di corpo, misurati), e sopra i 160 il piano perde altezza senza che il diagramma ne
      guadagni. A 160 l'ampiezza del diagramma vale 66 px. Il perché del 288 scartato: piano R8. */
   --srotolato-alto: 160px;
+  /* Fix round 1 — la curva ha un'altezza sua, e più alta: i suoi numeri stanno **dentro** l'area
+     utile `H − 2M`, che a 160 valeva 43 px contro i 46 del testo — «60 mm» finiva addosso a
+     «V 70,93 kN». Misurato a 1920×1080 sulla pushover vera del MURO 1, sette passi per altezza:
+     a 240 l'area utile vale **123 px** (2,7 righe di testo, 77 px di margine sui 46) e all'ultimo
+     passo nessun testo tocca un altro. Al telaio restano **402 px** di banda, quattro volte
+     `TELAIO_MINIMO`. Non è il primo valore che basta (a 180 l'area è già 63): è quello che lascia
+     margine, come la soglia dei 899 non sta al pareggio degli 833.
+     Resta aperto, e non si chiude con l'altezza: ai passi bassi il taglio massimo — che sta fisso
+     in alto a sinistra DENTRO il grafico — tocca le etichette del passo, che lì passano alte. Si
+     separano solo verso i 500 px, dove però la striscia si prende più di metà del piano. La leva
+     vera è spostare quel numero fuori dall'area, non alzare ancora. */
+  --curva-alta: 240px;
   grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto;
   grid-template-areas: "viste" "striscia" "messaggio" "comando"; font-size: 32px;
 }

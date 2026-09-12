@@ -123,7 +123,19 @@ const SROTOLATO = `(() => {
            corpo: testi.length ? Math.min(...testi.map((e) => parseFloat(getComputedStyle(e).fontSize))) : null,
            fuori: testi.map((e) => { const b = e.getBoundingClientRect();
              const q = Math.max(r.top - b.top, b.bottom - r.bottom);
-             return q > 0.5 ? [e.textContent, Math.round(q)] : null; }).filter(Boolean) };
+             return q > 0.5 ? [e.textContent, Math.round(q)] : null; }).filter(Boolean),
+           // I testi della striscia **fra loro**, come STRISCE_ADDOSSO fa per le strisce del
+           // piano: SOVRAPPOSTE confronta i testi di #piano e questi non ci passano, ed è per
+           // questo che «60 mm» addosso a «V 70,93 kN» non l'ha visto nessuno fino al fix
+           // round 1. Mezzo pixel di tolleranza: i bordi che combaciano non sono addosso.
+           // (Niente apici inversi qui dentro: è una template literal, li chiuderebbero.)
+           addosso: (() => { const q = testi.map((e) => [e.textContent, e.getBoundingClientRect()]), fuori = [];
+             for (let i = 0; i < q.length; i++) for (let j = i + 1; j < q.length; j++) {
+               const a = q[i][1], b = q[j][1];
+               if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5)
+                 fuori.push([q[i][0], q[j][0]]);
+             }
+             return fuori; })() };
 })()`;
 
 // Il contrasto **reso** del testo della legenda dei colori sulla sua piastra: i colori li compone il

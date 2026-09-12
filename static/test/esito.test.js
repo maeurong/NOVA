@@ -577,7 +577,7 @@ function conVariabili(variabili, azione) {
   }
 }
 
-const AULA = { "--srotolato-alto": "160px", "--etichetta": "46px" };
+const AULA = { "--srotolato-alto": "160px", "--curva-alta": "240px", "--etichetta": "46px" };
 const TRAVE = { nodi: [{ id: 1, x: 0, z: 0 }, { id: 2, x: 6000, z: 0 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
 const STAZIONI = { sollecitazioni: { 1: [{ x_rel: 0, My: 0 }, { x_rel: 0.5, My: 45e6 }, { x_rel: 1, My: -12e6 }] } };
 
@@ -632,14 +632,14 @@ const curvaCon = (variabili) => conVariabili(variabili, () => {
 // margine deve tenerci dentro anche la sua discesa, e `M = carattere` non basta.
 test("creaSrotolato con la pushover in aula: l'etichetta sotto l'asse resta dentro l'SVG; con `M = carattere` uscirebbe", () => {
   const sotto = (c) => tutti(c._figli[1], "text")
-    .map((t) => Number(t.getAttribute("y"))).filter((y) => y > 160 / 2);
+    .map((t) => Number(t.getAttribute("y"))).filter((y) => y > 240 / 2);
   const aula = sotto(curvaCon(AULA));
   assert.ok(aula.length > 0, "il test non è vuoto: sotto l'asse un'etichetta c'è");
-  for (const y of aula) assert.ok(y + DISCESA_46 <= 160, `esce di sotto di ${y + DISCESA_46 - 160} px`);
+  for (const y of aula) assert.ok(y + DISCESA_46 <= 240, `esce di sotto di ${y + DISCESA_46 - 240} px`);
   // Con `M = carattere` (il margine che il piano dava per unico) la stessa etichetta sta a
   // `H − 46 + 10·c/11` e con la sua discesa esce: è la misura che separa i due margini.
-  const M = 46, yStretto = 160 - M + (10 * 46) / 11;
-  assert.ok(yStretto + DISCESA_46 > 160, "con M = carattere l'etichetta uscirebbe: il margine della curva è più largo");
+  const M = 46, yStretto = 240 - M + (10 * 46) / 11;
+  assert.ok(yStretto + DISCESA_46 > 240, "con M = carattere l'etichetta uscirebbe: il margine della curva è più largo");
 });
 
 // «variabile CSS assente o 0 → ripiego ai numeri d'oggi, disegno identico al pixel»: non «quasi
@@ -664,7 +664,7 @@ test("creaSrotolato in aula: una curva a un passo solo (uMax = vMax = 0) disegna
     return c;
   });
   const svg = contenitore._figli[1];
-  assert.equal(svg.getAttribute("height"), "160");
+  assert.equal(svg.getAttribute("height"), "240");
   const cerchi = tutti(svg, "circle").filter((c) => c.getAttribute("class") === "passo");
   assert.equal(cerchi.length, 1);
   // L'origine: `ML` e `H − M`, coi margini dell'aula — non `NaN`, e non i numeri di 11 px.
@@ -672,4 +672,15 @@ test("creaSrotolato in aula: una curva a un passo solo (uMax = vMax = 0) disegna
   for (const e of tutti(svg, "line").concat(tutti(svg, "text"), tutti(svg, "rect"), cerchi)) {
     for (const [k, v] of Object.entries(e._attrs)) assert.ok(!String(v).includes("NaN"), `NaN in ${k}=${v}`);
   }
+});
+
+// Fix round 1 — la curva ha un'altezza sua. Lo srotolato è un diagramma di servizio; la curva in
+// pushover è *il* diagramma che si legge, e i suoi numeri stanno **dentro** l'area utile `H − 2M`.
+test("creaSrotolato: la curva legge `--curva-alta`, non l'altezza dello srotolato", () => {
+  const curva = curvaCon({ ...AULA, "--curva-alta": "280px" });
+  assert.equal(curva._figli[1].getAttribute("height"), "280");
+  // Lo srotolato non la segue: due variabili, due riquadri, due mestieri.
+  assert.equal(svgDi(srotolatoCon({ ...AULA, "--curva-alta": "280px" })).getAttribute("height"), "160");
+  // E fuori dall'aula la curva resta quella d'oggi, al pixel.
+  assert.equal(curvaCon(null)._figli[1].getAttribute("height"), "96");
 });
