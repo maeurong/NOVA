@@ -32,6 +32,7 @@ import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
 import { alternaIncastro, descrizione } from "./vincoli.js";
 import { stampaNumero, leggiEspressione, millimetri } from "./numeri.js";
 import { daRisposta, propostaPerNodo, proposteAperte, etichettaStoria } from "./rilievo.js";
+import { dimenticaMisure } from "./misure.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -848,6 +849,7 @@ function ridisegna() {
 // Una volta per frame: `resize` arriva a raffica durante il trascinamento del bordo.
 let ridisegnoInCoda = false;
 window.addEventListener("resize", () => {
+  dimenticaMisure();
   if (ridisegnoInCoda) return;
   ridisegnoInCoda = true;
   requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia), fattoreCorrente()); });
@@ -870,6 +872,9 @@ function alternaPresentazione(accesa = !presentazione()) {
   // Si entra e si esce coi pannelli ritratti: aperti in un giro non restano aperti al giro dopo.
   document.body.removeAttribute("data-pannelli");
   scriviBottonePannelli(false);
+  // Cambia `data-presentazione`/`data-pannelli` senza scatenare un `resize` (15b, Task 6): senza
+  // dimenticare la cache, piano e spazio ridisegnerebbero con le misure di prima.
+  dimenticaMisure();
   ridisegna();
 }
 bottonePannelli.addEventListener("click", () => {

@@ -19,6 +19,24 @@ export function leggiMisure(stile) {
   return misure;
 }
 
+// Cache globale (R14): le sette variabili si definiscono in due punti soli, `:root` e
+// `body[data-presentazione]`, e nessun elemento le ridefinisce — non serve una chiave per
+// elemento. `elemento` sceglie solo su cosa chiamare `getComputedStyle` (piano e spazio hanno
+// ciascuno il proprio riquadro in chiusura); non è una chiave di cache, e due chiamanti diversi
+// nello stesso giro condividono lo stesso risultato. `dimenticaMisure()` la svuota dove il layout
+// cambia davvero: `resize` e i due attributi del `body` che lo alterano senza scatenarlo (app.js).
+let misureInCache = null;
+export function misureDi(elemento) {
+  if (misureInCache) return misureInCache;
+  const stile = globalThis.getComputedStyle?.(elemento ?? globalThis.document?.body);
+  // Senza `getComputedStyle` (DOM finto dei test) i numeri d'oggi, ma non si cachano: altrimenti
+  // il primo test a girare senza `getComputedStyle` avvelenerebbe la cache per tutti i successivi.
+  if (!stile) return { ...MISURE_BASE };
+  misureInCache = leggiMisure(stile);
+  return misureInCache;
+}
+export function dimenticaMisure() { misureInCache = null; }
+
 // ponytail: 0,6 em è l'avanzamento dei mono di sistema (SF Mono, Menlo); una stima, non una misura —
 // `getComputedTextLength` vorrebbe disegnare, misurare e ridisegnare a ogni giro.
 export const avanzamentoMono = (carattere) => 0.6 * carattere;

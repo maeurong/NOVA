@@ -9,7 +9,7 @@
 // (`tests/test_js.py` guarda solo funzioni vere, non il DOM), quindi sono l'unico punto da
 // cui gli ingressi degeneri di questo modulo si provano fuori dal browser.
 
-import { leggiMisure } from "./misure.js";
+import { misureDi } from "./misure.js";
 import { coloreSpostamento } from "./risultati.js";
 
 // Stessi valori di `piano.js` (`INCHIOSTRO`, `ROSSO`): non importabili da lì, quel modulo
@@ -209,8 +209,9 @@ async function costruisci(contenitore) {
     disegnato.traverse((o) => { if (o.geometry !== cilindro) o.geometry?.dispose(); });
     disegnato = new THREE.Group();
 
-    // Come in `piano.js`: senza `getComputedStyle` (i test) `leggiMisure` cade sui numeri d'oggi.
-    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    // Una volta per cambio di layout, non a ogni fotogramma dell'animazione (`misure.js`). Come in
+    // `piano.js`: senza `getComputedStyle` (i test) cade sui numeri d'oggi.
+    const misure = misureDi(contenitore);
     inchiostroTenue.opacity = misure.ombra;
     puntoInchiostro.size = 2 * misure.raggioNodo;
     puntoRosso.size = 2 * misure.raggioNodo * 1.6;

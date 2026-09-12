@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MISURE_BASE, leggiMisure, avanzamentoMono } from "../misure.js";
+import { MISURE_BASE, VARIABILI, leggiMisure, avanzamentoMono, misureDi, dimenticaMisure } from "../misure.js";
 
 const stile = (valori) => ({ getPropertyValue: (nome) => valori[nome] ?? "" });
 
@@ -32,4 +32,55 @@ test("leggiMisure: un valore non finito, zero o negativo non entra", () => {
 test("avanzamentoMono: 0,6 em — i 6,6 px a 11 px d'oggi, 27,6 a 46", () => {
   assert.equal(avanzamentoMono(11), 6.6);
   assert.ok(Math.abs(avanzamentoMono(46) - 27.6) < 1e-9);
+});
+
+test("misureDi: legge una volta sola finché non si dimentica", () => {
+  dimenticaMisure();
+  let letture = 0;
+  const stile = { getPropertyValue: (n) => { letture++; return n === "--etichetta" ? "46px" : ""; } };
+  globalThis.getComputedStyle = () => stile;
+  const a = misureDi({}), b = misureDi({});
+  assert.equal(a.carattere, 46);
+  assert.equal(a, b, "stesso oggetto: nessuna seconda lettura, piano e spazio condividono la cache");
+  dimenticaMisure();
+  misureDi({});
+  assert.ok(letture > Object.keys(VARIABILI).length, "dopo dimenticaMisure rilegge");
+  dimenticaMisure();
+  delete globalThis.getComputedStyle;
+});
+
+test("misureDi: senza getComputedStyle torna al ripiego e non avvelena la cache", () => {
+  dimenticaMisure();
+  delete globalThis.getComputedStyle;
+  assert.deepEqual(misureDi(), MISURE_BASE, "DOM finto dei test: nessun getComputedStyle, i numeri d'oggi");
+  let letture = 0;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => { letture++; return n === "--etichetta" ? "46px" : ""; } });
+  assert.equal(misureDi().carattere, 46, "arrivato getComputedStyle, non resta bloccata sul ripiego cachato per errore");
+  assert.ok(letture > 0);
+  dimenticaMisure();
+  delete globalThis.getComputedStyle;
+});
+
+test("misureDi: dopo dimenticaMisure, una variabile CSS tolta a caldo torna al ripiego e non resta stantia", () => {
+  dimenticaMisure();
+  globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => (n === "--etichetta" ? "46px" : "") });
+  assert.equal(misureDi().carattere, 46, "in presentazione");
+  dimenticaMisure();
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  assert.equal(misureDi().carattere, 11, "la variabile è sparita: il ripiego, non il 46 di prima");
+  dimenticaMisure();
+  delete globalThis.getComputedStyle;
+});
+
+test("dimenticaMisure: due volte di fila non solleva e non causa una seconda rilettura", () => {
+  dimenticaMisure();
+  let letture = 0;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => { letture++; return n === "--etichetta" ? "46px" : ""; } });
+  assert.doesNotThrow(() => { dimenticaMisure(); dimenticaMisure(); });
+  misureDi();
+  const dopoLaPrima = letture;
+  misureDi();
+  assert.equal(letture, dopoLaPrima, "dimenticare due volte è dimenticare una volta: la cache tiene alla seconda chiamata");
+  dimenticaMisure();
+  delete globalThis.getComputedStyle;
 });

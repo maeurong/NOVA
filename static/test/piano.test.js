@@ -5,6 +5,7 @@ import { modelloVuoto } from "../modello.js";
 import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
 import { siSovrappongono } from "../etichette.js";
 import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS, testoLegendaStati } from "../risultati.js";
+import { dimenticaMisure } from "../misure.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -1198,6 +1199,10 @@ const pianoCon = (stile, w = 800, h = 600) => {
   const contenitore = contenitoreFinto(stile);
   contenitore.clientWidth = w;
   contenitore.clientHeight = h;
+  // Le misure ora si leggono una volta per cambio di layout (15b, Task 6): un piano fresco è un
+  // layout nuovo, e senza dimenticare la cache un test successivo erediterebbe le misure di quello
+  // prima (46 px di presentazione che restano incollati a un `pianoCon(undefined)`).
+  dimenticaMisure();
   const piano = creaPiano(contenitore, { suSelezione: () => {}, suSfondo: () => {} });
   return { contenitore, piano, svg: () => contenitore._figli[0] };
 };

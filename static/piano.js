@@ -13,7 +13,7 @@ import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, tes
          asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, legendaStatiServe, VIRIDIS,
          coloreSpostamento, testoScalaColori } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
-import { leggiMisure, avanzamentoMono, MISURE_BASE } from "./misure.js";
+import { misureDi, avanzamentoMono, MISURE_BASE } from "./misure.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -375,9 +375,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
   function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
-    // Le misure a ogni disegno, dalle variabili CSS del riquadro, che la presentazione ridefinisce per
-    // l'aula. Senza `getComputedStyle` (i test) o senza variabili: i numeri d'oggi (`misure.js`).
-    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    // Le misure a ogni disegno, dalle variabili CSS, lette una volta per cambio di layout e non a
+    // ogni fotogramma (`misure.js`). Senza `getComputedStyle` (i test) o senza variabili: i numeri
+    // d'oggi.
+    const misure = misureDi(contenitore);
     const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + avanzamentoMono(misure.carattere));
     const carattere = misure.carattere;
     // In aula, e il segnale è il corpo: le misure arrivano dalle variabili CSS e `body[data-presentazione]`
