@@ -219,7 +219,7 @@ const contrastoDi = (sel) => `(() => {
     .map((e) => { const st = getComputedStyle(e), bg = fondoDi(e), t = sopra(canali(st.color), bg);
       const [chiaro, scuro] = [L(t), L(bg)].sort((x, y) => y - x);
       return { testo: e.textContent.slice(0, 12), px: parseFloat(st.fontSize),
-               rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 100) / 100,
+               rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 1000) / 1000,
                reso: t.map(Math.round).join(","), fondo: bg.join(",") }; });
 })()`;
 
@@ -231,6 +231,10 @@ const TELA_3D = `(() => {
   const s = document.getElementById("spazio"), c = s.querySelector("canvas"), p = s.querySelector("p.vuoto");
   return { sezione: s.getAttribute("aria-label"), tela: Boolean(c), vuoto: p ? p.textContent : null,
            nome: c ? c.getAttribute("aria-label") : null, ruolo: c ? c.getAttribute("role") : null,
+           // Il ruolo group da solo si legge «gruppo»: la parola che dice cosa e' questo
+           // riquadro sta qui, e senza leggerla l'assert sul ruolo proverebbe meta' della cosa.
+           // (Niente apici inversi in questo commento: e' dentro una template literal.)
+           roledescription: c ? c.getAttribute("aria-roledescription") : null,
            tabindex: c ? c.getAttribute("tabindex") : null,
            prendeIlFuoco: c ? (c.focus(), document.activeElement === c) : null }; })()`;
 
@@ -241,13 +245,34 @@ const TELA_3D = `(() => {
 const CORPO_MINIMO_PANNELLI = `(() => {
   const f = [];
   for (const e of document.querySelectorAll("#colonna *, #pannello *")) {
-    if (e.offsetParent === null || e.children.length || !e.textContent.trim() || e.closest("svg")) continue;
+    if (e.offsetParent === null || e.closest("svg")) continue;
+    // Il testo **proprio**, non textContent: un elemento con figli ha comunque una frase sua —
+    // «Nessun nodo. Premi …» sta fra un kbd e l'altro — e saltarlo lasciava fuori dal minimo
+    // proprio le righe degli stati vuoti. (Niente apici inversi: siamo in una template literal.)
+    const proprio = [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
+    if (!proprio) continue;
     f.push([Math.round(parseFloat(getComputedStyle(e).fontSize) * 10) / 10,
-            e.tagName + (e.id ? "#" + e.id : ""), e.textContent.trim().slice(0, 20)]);
+            e.tagName + (e.id ? "#" + e.id : ""), proprio.slice(0, 20)]);
   }
   f.sort((a, b) => a[0] - b[0]);
   return { minimo: f.length ? f[0][0] : null, quanti: f.length, piuPiccoli: f.slice(0, 4) };
 })()`;
+
+// I testi **dentro** gli `svg` del pannello — il disegno della sezione (`sezione.js:120`) e la
+// curva del legame (`legame.js:64-67`) — che `CORPO_MINIMO_PANNELLI` salta per costruzione e che
+// quindi nessuna delle sue misure puo' vedere. Portano `font-size` come **attributo di
+// presentazione**, che una regola CSS batte: senza l'esclusione `:not(svg, svg *)` la regola dei
+// 32 px dell'aula li porterebbe a 32 unita' del `viewBox` — 32 millimetri di disegno, non 32
+// pixel. L'oracolo e' `computato === attributo`: e' esattamente quello che l'esclusione promette,
+// e cade appena qualcuno la toglie. `reso` sta accanto per leggere il numero in pixel di schermo
+// col metodo di sempre, attributo per `getScreenCTM().a`.
+const CORPI_SVG_PANNELLI = `[...document.querySelectorAll("#pannello svg text")].map((e) => {
+  const attributo = parseFloat(e.getAttribute("font-size"));
+  const ctm = e.getScreenCTM();
+  return { testo: e.textContent.slice(0, 14), attributo,
+           computato: parseFloat(getComputedStyle(e).fontSize),
+           reso: ctm ? Math.round(attributo * ctm.a * 100) / 100 : null };
+})`;
 
 // Lo scorrimento orizzontale dei blocchi del pannello (WCAG 1.4.10, «nessuno scorrimento in
 // orizzontale»). `fuori` serve solo al messaggio di fallimento, e lascia fuori i `<input>`: un
@@ -877,6 +902,10 @@ const COPIONI = {
     await tasto("n");
     await pausa(200);
     t.comando = await ev(contrastoDi("#comando label, #comando .aiuto"));
+    // E lo stesso tenue sull'**altro** fondo, che e' l'altra meta' della decisione: `--testo-tenue`
+    // e' stato alzato alla radice invece che nei tre selettori, quindi il numero su `--fondo` va
+    // asserito qui e non dedotto. I `<kbd>` di sopra stanno tutti sul pannello.
+    t.tenueSuFondo = await ev(contrastoDi("#pannello h2, #albero li.gruppo"));
     await tasto("Escape");
     await pausa(150);
 
@@ -932,9 +961,12 @@ const COPIONI = {
     await pausa(200);
 
     // L'aula, e i pannelli riaperti col bottone — che e' il gesto vero, non un attributo scritto a
-    // mano sul `body`.
-    await tasto("g");
-    await pausa(200);
+    // mano sul `body`. La selezione e' una **sezione** e non un nodo: il disegno della sezione e'
+    // l'unico `svg` che il pannello porti, e con un nodo selezionato ne aveva zero — l'esclusione
+    // `:not(svg, svg *)` sarebbe restata scritta e mai provata.
+    await ev(`(() => { const v = document.querySelector('#albero-elenco li[data-tipo="sezione"]');
+      if (!v) return false; v.click(); return true; })()`);
+    await pausa(300);
     await tasto("p");
     await pausa(300);
     t.accesa = await ev(ACCESA);
@@ -944,6 +976,7 @@ const COPIONI = {
 
     // R2 — il corpo piu' piccolo di albero e ispettore, in aula coi pannelli.
     t.corpo = await ev(CORPO_MINIMO_PANNELLI);
+    t.corpiSvg = await ev(CORPI_SVG_PANNELLI);
 
     // R3 — e lo scorrimento, col percorso del solutore dettato dal copione (vedi `PERCORSO_LUNGO`).
     await ev(`(() => { document.getElementById("corsa-solutore").textContent = ${JSON.stringify(PERCORSO_LUNGO)}; return true; })()`);
@@ -951,6 +984,59 @@ const COPIONI = {
     t.scorrimento = await ev(SCORRE_ORIZZONTALE);
     t.scorrePagina = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     t.solutore = await ev(`document.getElementById("corsa-solutore").textContent`);
+    t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return t;
+  },
+
+  // A (fix round 1) — la freccia sulla tela, **con la pushover scelta**. Qui e solo qui `←`/`→`
+  // hanno due padroni: `app.js:932` le prende per scorrere i passi quando il caso e' una pushover
+  // e nessun ghost e' aperto, e `spazio.js` le prende per girare la vista. Senza
+  // `stopPropagation` un solo tasto farebbe tutte e due le cose, che e' il difetto che il
+  // commento dichiara chiuso — e nessun copione lo vedeva, perche' tutti caricano la modale.
+  //
+  // Tre misure insieme, e la terza e' quella che impedisce al test di essere vuoto: la vista deve
+  // girare, il passo **non** si deve muovere, e col fuoco **fuori** dalla tela la stessa freccia
+  // deve invece scorrere il passo. Senza l'ultima, un ramo dello scrubber rotto o un caso non
+  // scelto darebbero «il passo non si muove» per la ragione sbagliata.
+  async aulaPushover3D() {
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    const t = {};
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await scegliCaso("pushover");
+    await pausa(400);
+    await tasto("p");
+    await pausa(300);
+    t.accesa = await ev(ACCESA);
+    t.badgePrima = await ev(BADGE);
+
+    // Il fuoco sulla tela, e quattro frecce: una sola gira theta di 0,12 rad e il diametro reso
+    // potrebbe restare uguale ai centesimi — il test cadrebbe per l'aritmetica invece che per il
+    // difetto. Quattro sono 0,48 rad, e sono anche quattro passi rubati se `stopPropagation` non
+    // c'e', cioe' un badge diverso in modo inequivocabile.
+    //
+    // **Sinistra e non destra**: la pushover si apre all'ultimo passo (misurato: 120/120) e
+    // `app.js` clampa con `Math.min(s.quanti - 1, …)`, quindi da li' la freccia destra non ha dove
+    // andare e il badge resterebbe uguale **anche** con il tasto rubato. Il primo giro di questo
+    // copione e' caduto proprio li', sulla controprova qui sotto.
+    t.telaAFuoco = await ev(`(() => { const c = document.querySelector("#spazio canvas");
+      if (!c) return false; c.focus(); return document.activeElement === c; })()`);
+    t.trattoPrima = await ev(TRATTO_3D);
+    for (let k = 0; k < 4; k++) await tasto("ArrowLeft");
+    await pausa(300);
+    t.trattoDopo = await ev(TRATTO_3D);
+    t.badgeDopo = await ev(BADGE);
+
+    // La controprova: fuori dalla tela quella stessa freccia **deve** scorrere il passo. Se non lo
+    // fa, il «badge invariato» di sopra non dimostra niente.
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+    await tasto("ArrowLeft");
+    await pausa(300);
+    t.badgeFuoriDallaTela = await ev(BADGE);
     t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return t;
   },

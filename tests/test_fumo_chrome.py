@@ -716,6 +716,14 @@ def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_s
     assert len(t["comando"]) == 2, t["comando"]
     for k in t["kbdVuoti"] + t["comando"]:
         assert k["rapporto"] >= 4.5, k
+    # I sedici di sopra stanno **tutti** sul pannello. `--testo-tenue` e' stato alzato alla radice,
+    # quindi l'altro fondo va misurato e non dedotto: sono i due soli fondi della pagina, e la
+    # decisione vale solo se regge su entrambi. Il fondo dichiarato accanto al rapporto impedisce
+    # a questo blocco di ripescare per sbaglio gli stessi elementi di sopra.
+    assert len(t["tenueSuFondo"]) >= 2, t["tenueSuFondo"]
+    for k in t["tenueSuFondo"]:
+        assert k["fondo"] == "220,218,213", f"non e' il fondo della pagina: {k}"
+        assert k["rapporto"] >= 4.5, k
 
     # R7
     assert t["viste"] == "viste", t["viste"]
@@ -737,8 +745,13 @@ def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_s
     assert tela["sezione"] == "vista spaziale", tela
     assert tela["tela"] is True, f"nessuna tela (WebGL assente?): R5 non si prova qui, {tela}"
     assert tela["tabindex"] == "0", tela
-    assert tela["ruolo"] == "img", tela
-    assert tela["nome"] and "spaziale" in tela["nome"], tela
+    # `group` e non `img`: un ruolo statico dentro il giro di ⇥ dice all'assistive technology
+    # «immagine» e all'utente «operabile», e le due cose si contraddicono. Il nome del riquadro lo
+    # porta `aria-roledescription`.
+    assert tela["ruolo"] == "group", tela
+    assert tela["roledescription"] == "vista spaziale", tela
+    # Per intero e non per sottostringa: «spaziale» passava anche se il nome si accorciava.
+    assert tela["nome"] == "vista spaziale del modello", tela
     assert tela["prendeIlFuoco"] is True, tela
     assert t["telaAFuoco"] is True, "la tela non tiene il fuoco: da tastiera non ci si arriva"
 
@@ -758,6 +771,15 @@ def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_s
     assert t["accesa"] is True and t["pannelli"] is True, t
     assert t["corpo"]["quanti"] >= 20, t["corpo"]
     assert t["corpo"]["minimo"] >= 32, t["corpo"]
+    # ...e l'altra meta': i testi **dentro** l'svg del disegno della sezione, che la sonda di sopra
+    # salta per costruzione. Portano `font-size` come attributo di presentazione, che una regola
+    # CSS batte: senza `:not(svg, svg *)` passerebbero a 32 unita' del `viewBox`, cioe' 32 mm di
+    # disegno. Il conteggio prima dell'uguaglianza — con un **nodo** selezionato gli svg sarebbero
+    # zero e il ciclo girerebbe a vuoto.
+    assert len(t["corpiSvg"]) >= 1, "nessun svg nel pannello: l'esclusione non si prova qui"
+    for e in t["corpiSvg"]:
+        assert e["computato"] == e["attributo"], f"il CSS ha battuto l'attributo di presentazione: {e}"
+        assert e["attributo"] < 32, e
 
     # R3 — col percorso del solutore dettato dal copione, così il difetto è raggiungibile dovunque
     # giri il fumo e non solo dove OpenSees sta sotto una cartella lunga.
@@ -766,6 +788,45 @@ def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_s
         assert b is not None, t["scorrimento"]
         assert b["scrollWidth"] <= b["clientWidth"] + 0.5, b
     assert t["scorrePagina"] is False
+    assert t["messaggio"] == "", t["messaggio"]
+
+
+def test_aula_pushover_la_freccia_sulla_tela_gira_il_3d_e_non_scorre_il_passo(
+        chrome_e_server, binario_opensees):
+    """`stopPropagation` di `spazio.js`, provato dove il difetto puo' esistere davvero.
+
+    Il listener delle frecce sta **sulla tela**: un `keydown` dentro un campo di testo non ci passa
+    mai, perche' la tela non e' antenato dell'input. Quindi quella riga non serve a difendere chi
+    scrive — a difenderlo e' la posizione del listener. Serve invece qui: con la pushover scelta,
+    `app.js:932` prende `←`/`→` per scorrere i passi, e col fuoco sulla tela un solo tasto farebbe
+    due gesti — girare la vista **e** cambiare passo.
+
+    Tre misure, e la terza e' quella che impedisce al test di essere vuoto: la vista gira, il
+    badge del passo non si muove, e col fuoco **fuori** dalla tela la stessa freccia il passo lo
+    scorre. Senza l'ultima, «il passo non si muove» sarebbe vero anche con lo scrubber rotto.
+    """
+    porta, cdp = chrome_e_server
+    r = copione("aulaPushover3D", porta, cdp, fixture=str(FIXTURE / "muro_1_pushover.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+
+    assert t["accesa"] is True, "P prima delle frecce: la misura e' in aula"
+    assert t["telaAFuoco"] is True, "la tela non tiene il fuoco: qui non si prova niente"
+    assert "pushover" in t["badgePrima"], t["badgePrima"]
+
+    # La vista gira: la sonda dello spessore e' l'unica finestra sulla tela WebGL.
+    assert t["trattoPrima"] is not None and t["trattoDopo"] is not None, t
+    assert t["trattoPrima"]["reso"] != t["trattoDopo"]["reso"], \
+        f"le frecce non girano la vista in aula: {t['trattoPrima']} {t['trattoDopo']}"
+
+    # ...e il passo no. Questo e' l'assert che `stopPropagation` fa vivere.
+    assert t["badgeDopo"] == t["badgePrima"], \
+        f"la freccia sulla tela ha scorso anche il passo: {t['badgePrima']} -> {t['badgeDopo']}"
+
+    # La controprova: fuori dalla tela lo scrubber e' vivo davvero.
+    assert t["badgeFuoriDallaTela"] != t["badgePrima"], \
+        f"col fuoco fuori dalla tela il passo non scorre: lo scrubber non e' vivo, {t['badgeFuoriDallaTela']}"
     assert t["messaggio"] == "", t["messaggio"]
 
 
