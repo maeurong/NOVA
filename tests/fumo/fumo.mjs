@@ -89,6 +89,40 @@ const STRISCE_ADDOSSO = `(() => {
            piano: piano ? Math.round(piano.b - piano.t) : null };
 })()`;
 
+// Il telaio e la fascia delle strisce alte, in pixel del piano: `cima` è dove comincia il disegno,
+// `fascia` dove finisce l'ultima striscia in colonna (titolo, badge, stati — quella dei colori sta in
+// basso e non entra nella fascia, 15b). `alto` è quanto disegno resta, che `TELAIO_MINIMO` = 100 px
+// non lascia scendere sotto.
+const TELAIO_E_FASCIA = `(() => {
+  const p = document.getElementById("piano").getBoundingClientRect();
+  const c = [...document.querySelectorAll("#piano svg g[data-tipo=nodo] circle")].map((e) => e.getBoundingClientRect());
+  const alte = ["carichi-titolo", "risultati-badge", "risultati-legenda"]
+    .map((k) => document.querySelector("#piano ." + k))
+    .filter((e) => e && !e.hidden && e.offsetParent !== null)
+    .map((e) => e.getBoundingClientRect().bottom - p.top);
+  return { cima: c.length ? Math.round(Math.min(...c.map((x) => x.top)) - p.top) : null,
+           alto: c.length ? Math.round(Math.max(...c.map((x) => x.bottom)) - Math.min(...c.map((x) => x.top))) : null,
+           fascia: alte.length ? Math.round(Math.max(...alte)) : 0,
+           piano: Math.round(p.height) };
+})()`;
+
+// Il contrasto **reso** del testo della legenda dei colori sulla sua piastra: i colori li compone il
+// browser, non li deduce il CSS. `alfa` sta accanto al rapporto perché una piastra trasparente
+// lascerebbe il testo sul disegno — viridis o ombra dell'indeformata — e il rapporto misurato contro
+// un fondo che non copre non direbbe più niente (`docs/ricerca/07-ux-modellatore.md:100`).
+const CONTRASTO_COLORI = `(() => {
+  const e = document.querySelector("#piano .risultati-colori");
+  if (!e || e.hidden) return null;
+  const st = getComputedStyle(e);
+  const canali = (c) => (c.match(/[0-9.]+/g) ?? []).map(Number);
+  const L = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const sfondo = canali(st.backgroundColor);
+  const [chiaro, scuro] = [L(canali(st.color)), L(sfondo)].sort((x, y) => y - x);
+  return { rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 100) / 100,
+           alfa: sfondo.length > 3 ? sfondo[3] : 1, sfondo: st.backgroundColor, testo: st.color };
+})()`;
+
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
 // domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
@@ -475,6 +509,46 @@ const COPIONI = {
     const legendaColori = await ev(COLORI);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, strisce, sovrapposte, scorre, legendaColori, messaggio };
+  },
+
+  // Il collaudo della 15b, a **1280×657** in aula: il riquadro basso dove le strisce costano di più.
+  // Il fumo di prima girava solo a 1920×1080, e lì il difetto non si vede — a 1280 la legenda dei
+  // colori, scesa in basso a sinistra (15b), andava a capo su 89 px e si posava su «piede sx»,
+  // «piede dx» e i loro cerchi. Nomi e cerchi dei nodi non passano da `disponi`: nessun ostacolo li
+  // sposta, e la leva è il testo più corto.
+  async aula1280() {
+    // `P` **prima** di ⌘⏎, come in `presentazionePushover` (N5): la corsa deve girare in aula.
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("p");
+    await pausa(300);
+    const accesa = await ev(ACCESA);
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri, con l'aula già accesa
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await scegliCaso("pushover");
+    await pausa(700);
+    const strisce = await ev(STRISCE_ADDOSSO);
+    const telaio = await ev(TELAIO_E_FASCIA);
+    const contrasto = await ev(CONTRASTO_COLORI);
+    const legendaColori = await ev(COLORI);
+    const altaColori = await ev(`document.querySelector("#piano .risultati-colori").getBoundingClientRect().height`);
+    const sovrapposte = await ev(SOVRAPPOSTE);
+    const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    // Il riquadro strettissimo, sempre in aula: 640×400 a dpr 2, lo zoom 200 % delle giornate 11c-12.
+    // La piastra è opaca, quindi qui la domanda non è se il testo si legge ma se **copre il disegno**:
+    // quanto del piano si prende, e quanti nodi restano visibili sotto di lei.
+    await viewport(640, 400, 2);
+    await pausa(400);
+    const stretto = { colori: await ev(`(() => { const l = document.querySelector("#piano .risultati-colori");
+      if (!l || l.hidden || l.offsetParent === null) return null;
+      const p = document.getElementById("piano").getBoundingClientRect(), b = l.getBoundingClientRect();
+      return { alta: Math.round(b.height), larga: Math.round(b.width), piano: [Math.round(p.width), Math.round(p.height)] }; })()`),
+      strisce: await ev(STRISCE_ADDOSSO) };
+    return { accesa, strisce, telaio, contrasto, legendaColori, altaColori, sovrapposte, scorre, stretto, messaggio };
   },
 
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost

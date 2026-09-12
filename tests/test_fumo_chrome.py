@@ -490,6 +490,66 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     assert t["messaggio"] == "", t["messaggio"]
 
 
+def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(chrome_e_server, binario_opensees):
+    """Il collaudo della 15b a **1280×657**, il riquadro che il fumo non guardava.
+
+    Il copione d'oggi gira solo a 1920×1080, ed è per questo che nessuno ha visto il difetto: a 1280
+    in aula la legenda dei colori, scesa in basso (15b), andava a capo su 89 px e si posava su
+    «piede sx», «piede dx» e i loro cerchi. `SOVRAPPOSTE` non basta a vederlo — confronta i `<text>`
+    dell'SVG fra loro, e i nomi dei nodi non passano da `disponi`: serve `STRISCE_ADDOSSO`, che
+    misura i rettangoli veri. Qui si chiede anche il contrasto **reso** del testo sulla piastra di
+    `--fondo`, che è l'oracolo della piastra: un `rect` nel DOM non c'è (`.risultati-colori` è un
+    `div`, `piano.js:144`), e l'unica cosa che si può provare è il colore composto in pagina.
+    """
+    porta, cdp = chrome_e_server
+    r = copione("aula1280", porta, cdp, fixture=str(FIXTURE / "muro_1_pushover.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    assert t["accesa"] is True, "P prima di ⌘⏎: la corsa deve girare in presentazione"
+    s = t["strisce"]
+    # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero, a questa larghezza.
+    assert set(s["visibili"]) >= {"badge", "stati", "colori"}, s["visibili"]
+    assert s["addosso"] == [], s["addosso"]
+    assert s["sforano"] == [], s["sforano"]
+    assert t["sovrapposte"] == [], t["sovrapposte"]
+    # La fascia **si riserva**: il telaio comincia sotto l'ultima striscia in colonna, e quel che
+    # resta di disegno sta sopra `TELAIO_MINIMO` (100 px, `piano.js:36`). Senza la fascia il telaio
+    # partirebbe da zero e i nomi in cima finirebbero sotto il badge.
+    tel = t["telaio"]
+    assert tel["cima"] >= tel["fascia"] - 0.5, tel
+    # `TELAIO_MINIMO` si misura come lo misura W4: sul **riquadro che resta** sotto la fascia, non
+    # sull'altezza resa dei cerchi — il MURO 1 è largo e basso, e a 1280 il suo telaio rende 54 px
+    # di alto dentro una banda di 211. Quel che il criterio promette è la banda, non il disegno.
+    assert tel["piano"] - tel["fascia"] >= 100, tel
+    assert tel["alto"] > 0, "nessun nodo disegnato: il telaio non c'è"
+    # La legenda dei colori su **una** riga: è la leva che toglie i piedi da sotto di lei. A 32 px
+    # una riga è alta ~38 px; le 89 misurate col testo intero erano tre righe.
+    assert t["altaColori"] <= 50, t["altaColori"]
+    # In aula il testo è quello compatto — «|u|», non «spostamento |u|» — e i millimetri restano.
+    assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
+    assert "spostamento" not in t["legendaColori"], t["legendaColori"]
+    # La piastra: fondo **opaco** (il testo sta sopra il disegno, `07-ux-modellatore.md:100`) e
+    # contrasto reso ≥ 4,5:1 su di lui. È l'asserzione dell'alfa a morire se la riga sparisce dal
+    # CSS: senza piastra il `backgroundColor` reso è `rgba(0, 0, 0, 0)`, e il rapporto continuerebbe
+    # a dire 13,19 contro un fondo che non copre niente.
+    c = t["contrasto"]
+    assert c is not None, "la legenda dei colori non si vede: il contrasto non si misura"
+    assert c["alfa"] == 1, f"la piastra non è opaca: {c}"
+    assert c["rapporto"] >= 4.5, c
+    assert t["scorre"] is False, "la pagina non deve scorrere in orizzontale"
+    # Il riquadro strettissimo, 640×400 a dpr 2 (lo zoom 200 %): misurato, il piano scende a 518×99 px
+    # e la legenda dei colori è alta 98 e larga 501 — con una piastra opaca non affolla il disegno, lo
+    # **cancella**. Là si toglie di mezzo (`stile.css`, `@media (max-height: 480px)`), e nessun nome e
+    # nessun cerchio le finisce più sotto. Quelli che restano addosso al badge e al titolo sono il
+    # difetto della griglia a quella misura, che è un'altra issue della 15b.
+    st = t["stretto"]
+    assert st["colori"] is None, f"a 640×400 la piastra copre il disegno invece di lasciarlo vedere: {st}"
+    addosso = [c for c in st["strisce"]["addosso"] if c[1] == "colori"]
+    assert addosso == [], addosso
+    assert t["messaggio"] == "", t["messaggio"]
+
+
 def test_chrome_assente_salta_col_motivo(monkeypatch, tmp_path):
     monkeypatch.setattr("test_fumo_chrome._chrome", lambda: None)
     gen = chrome_e_server.__wrapped__(tmp_path)
