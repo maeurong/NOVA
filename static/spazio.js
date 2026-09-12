@@ -150,14 +150,20 @@ async function costruisci(contenitore) {
   contenitore.replaceChildren(renderer.domElement);
   // R5 della critique 15b — un `<canvas>` nudo e' un buco muto: nessun ruolo, nessun nome
   // accessibile, e fuori dal giro di ⇥ (WCAG 1.1.1 e 2.1.1). Il detector non lo vede nemmeno
-  // (`docs/ricerca/07-ux-modellatore.md:123`), quindi questi tre attributi sono l'unica cosa che
-  // dice a una tecnologia assistiva che qui c'e' un disegno, e cosa disegna. Il nome nomina anche
-  // il gesto perche' su una tela non c'e' nient'altro da leggere che lo dica: niente etichetta,
-  // niente testo, niente contenuto. `role="img"` e non `application`: qui si guarda e basta, i
-  // gesti di disegno stanno nel piano SVG.
-  renderer.domElement.setAttribute("role", "img");
-  renderer.domElement.setAttribute("aria-label",
-    "vista spaziale del modello, in sola lettura: le frecce la girano");
+  // (`docs/ricerca/07-ux-modellatore.md:123`), quindi questi attributi sono l'unica cosa che dica
+  // a una tecnologia assistiva che qui c'e' un disegno e cosa disegna.
+  //
+  // `group` e non `img` (fix round 1): `img` e' un ruolo **statico**, e metterlo nel giro di ⇥
+  // dice all'assistive technology «immagine» e all'utente «operabile» — due cose che si
+  // contraddicono. `aria-roledescription` rimette la parola giusta al posto di «gruppo». E non
+  // `application`: li' l'AT cede tutta la tastiera alla pagina, e qui la tastiera ha quattro
+  // tasti soli.
+  //
+  // Il nome dice **cosa c'e'**, non come si usa: l'istruzione sui tasti stava dentro il nome e
+  // un'AT la rileggeva a ogni fuoco.
+  renderer.domElement.setAttribute("role", "group");
+  renderer.domElement.setAttribute("aria-roledescription", "vista spaziale");
+  renderer.domElement.setAttribute("aria-label", "vista spaziale del modello");
   renderer.domElement.tabIndex = 0;
 
   // Le linee WebGL non si ispessiscono (`linewidth` ignorato quasi ovunque): aste e deformata sono

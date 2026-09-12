@@ -468,7 +468,9 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 /* 15b, R3 — stessa ricetta, stesso difetto: la riga del solutore porta il percorso del binario, e
    un percorso non ha spazi dove spezzarsi. In aula coi pannelli misurava **617 px in 463**, e
    `#corsa` non scorre per conto suo: quei 617 salivano a `#pannello`, che ne dichiarava 625 su
-   479. Un `font-size` qui no — questa riga in aula deve crescere come le altre (R2). */
+   479. Solo `overflow-wrap`, nient'altro: in aula questa riga i 32 px li eredita gia' dal `body`,
+   e la regola dei pannelli (in fondo al foglio) non la tocca — un `font-size` qui sarebbe un
+   secondo padrone dello stesso numero. */
 #corsa-solutore { overflow-wrap: anywhere; }
 #corsa-fasi { margin: var(--passo) 0 0; padding-left: 1.2em; font-size: 11px; }
 #corsa-fasi .corrente { font-weight: 700; }

@@ -172,6 +172,15 @@ test("orbitaDaTasto: phi resta nella banda del trascinamento, i poli non si attr
   assert.equal(orbitaDaTasto({ theta: 0, phi: 1.5 }, "ArrowDown", 100).phi, 0.05);
 });
 
+test("orbitaDaTasto: il passo di default e' quello dichiarato, non uno qualunque", () => {
+  // I tre test qui sopra passano il passo a mano, quindi `PASSO_ORBITA` non lo guardava nessuno:
+  // un passo dieci volte piu' piccolo li lasciava tutti verdi e in pagina la freccia non avrebbe
+  // mosso niente di visibile. Il numero e' 0,12 rad — lo stesso ordine di grandezza dei 0,006 rad
+  // per pixel del trascinamento, cioe' venti pixel di mouse per pressione.
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 1 }, "ArrowLeft").theta, 0.12);
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 1 }, "ArrowRight").theta, -0.12);
+});
+
 test("orbitaDaTasto: un tasto che non e' una freccia torna null, e non lo ruba a nessuno", () => {
   // E' la guardia dell'ingresso degenere: il `keydown` della tela ferma il tasto **solo** quando
   // questa ha qualcosa da renderne. `null` vuol dire che P resta la presentazione, Esc resta Esc,
