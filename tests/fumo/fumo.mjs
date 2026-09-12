@@ -101,6 +101,20 @@ const TRATTO_3D = `(() => { const c = document.querySelector("#spazio canvas");
   return { reso: parseFloat(c.dataset.trattoReso), voluto: parseFloat(c.dataset.trattoVoluto) }; })()`;
 const SPAZIO_ASSENTE = `!!document.querySelector("#spazio p.vuoto")`;
 
+// I **pixel** della tela WebGL, come li vede chi guarda. È l'oracolo di «la vista si è mossa»:
+// finché lo era il diametro della sonda, quel numero cambiava con la camera solo perché il conto
+// dello spessore portava dentro l'inquadratura stantia — cioè il test si reggeva su un difetto, e
+// chiuso quello sarebbe morto anche senza che la tastiera smettesse di girare il 3D. Lo scatto è
+// ritagliato sulla sola tela: il resto della pagina cambia per conto suo e direbbe il falso.
+const telaDipinta = async () => {
+  const b = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return null;
+    const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+  if (!b) return null;
+  const { data } = await cmd("Page.captureScreenshot",
+    { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: b[3], scale: 1 } });
+  return data;
+};
+
 // I riquadri delle strisce di testo sopra il piano contro i nomi e i cerchi dei nodi (15a, fix A).
 // `SOVRAPPOSTE` qui sopra non serve: confronta i `<text>` dell'SVG **fra loro**, e i nomi dei nodi
 // non passano da `disponi` — il telaio finiva sotto la legenda degli stati con il fumo tutto verde.
@@ -147,6 +161,21 @@ const TELAIO_E_FASCIA = `(() => {
            fascia: alte.length ? Math.round(Math.max(...alte)) : 0,
            piano: Math.round(p.height) };
 })()`;
+
+// Il riquadro del piano come lo misura `piano.js` (`clientWidth`/`clientHeight`), più la striscia
+// sotto di lui: entrando in aula lo srotolato compare e gli ruba altezza **dentro** la griglia,
+// senza che nessun `resize` scatti.
+const RIQUADRO_PIANO = `(() => { const p = document.getElementById("piano"), s = document.getElementById("srotolato");
+  return { piano: [p.clientWidth, p.clientHeight], srotolato: Boolean(s && !s.hidden && s.offsetParent !== null) }; })()`;
+
+// Quante volte il piano si è **ridisegnato** davvero: `disegna` chiude con `svg.replaceChildren`,
+// cioè una mutazione `childList` per giro. È l'unico modo di dire «un ridisegno per cambio di
+// riquadro» invece di «il disegno alla fine è giusto» — un ciclo di osservazioni che si rincorrono
+// finisce col disegno giusto anche lui, e conterebbe a centinaia.
+const CONTA_RIDISEGNI = `(() => { window.__ridisegni = 0;
+  new MutationObserver((m) => { window.__ridisegni += m.length; })
+    .observe(document.querySelector("#piano svg"), { childList: true });
+  return true; })()`;
 
 // La striscia sotto il piano (15b): se si vede, quanto costa e con quali misure rese. `null` quando
 // una regola la nasconde — che sotto i 900 px di finestra in aula è quel che deve succedere.
@@ -666,6 +695,65 @@ const COPIONI = {
              colori, legendaColori, contrasto, bn, uscito, legendaModo, menu, messaggio };
   },
 
+  // **L'ordine di gesti che nessun copione provava**: prima si entra in aula, poi si corre. Entrando,
+  // la striscia dell'M srotolato compare e ruba 49 px al piano (1025 → 919): il riquadro cambia
+  // **dentro** la griglia, `resize` sta sulla finestra e non scatta, e il disegno resta alla scala
+  // del riquadro di prima. Misurato a 1920×1080 sul MURO 1: corpo reso **41,23 px** invece di 45,99,
+  // cioè sotto i 45 che la proiezione in aula chiede (`docs/ricerca/07-ux-modellatore.md:133`).
+  // Il fumo non lo vedeva perché `presentazione` corre **prima** di premere `P`.
+  async aulaPrimaDellaCorsa() {
+    await apri(url, arg.cdp, { larghezza: arg.larghezza, altezza: arg.altezza });
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("p");
+    await pausa(400);
+    // Ingresso degenere: in aula **senza** aver corso. Nessun risultato, nessuna striscia dei
+    // risultati e nessun M srotolato — il riquadro è ancora quello pieno, e il disegno ci sta dentro.
+    const senzaCorsa = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri, con l'aula già accesa
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await pausa(500);
+    const subito = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    // Lo stesso riquadro stantio, visto dal 3D: `ridimensiona` ha misurato prima che la griglia si
+    // rifacesse, quindi la tela resta grande com'era e `camera.aspect` con lei. La sonda dello
+    // spessore legge la scala vera e proietta con la camera sbagliata: il diametro esce moltiplicato
+    // per l'altezza stantia su quella vera. Misurato a 1280×800 — tela 745 px in un riquadro di 592
+    // — **7,68 px** contro i 6 voluti, e a 1920×1080 6,47. L'orbita da tastiera non è la causa: è il
+    // gesto che chiede un `rendi` nuovo e mostra il numero. Le quattro frecce sono il gesto della
+    // critique R5, e la tela va messa a fuoco o il `keydown` non arriva al suo listener.
+    const tela = { spazio: await ev(`(() => { const s = document.getElementById("spazio"), c = s.querySelector("canvas");
+      return c ? [c.clientWidth, c.clientHeight, s.clientWidth, s.clientHeight] : null; })()`),
+      assente: await ev(SPAZIO_ASSENTE), fermo: await ev(TRATTO_3D) };
+    tela.fuoco = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return false;
+      c.focus(); return document.activeElement === c; })()`);
+    if (tela.fuoco) for (let k = 0; k < 4; k++) await tasto("ArrowLeft");
+    await pausa(250);
+    tela.dopoFrecce = await ev(TRATTO_3D);
+    // Il ridisegno che il difetto nascondeva: un `resize` da un pixel e ritorno. Prima del fix i due
+    // numeri erano 41,23 e 45,99; dopo devono essere lo stesso numero, perché il ridisegno è già
+    // avvenuto da sé quando il riquadro è cambiato.
+    await viewport(1921, 1080, 1);
+    await pausa(200);
+    await viewport(1920, 1080, 1);
+    await pausa(350);
+    const dopoResize = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    // Ingresso degenere: il riquadro che cambia **due volte di fila**, senza toccare la finestra —
+    // i pannelli si riaprono e si richiudono. Un ridisegno per cambio, e nessun ciclo di
+    // osservazioni che si rincorrono.
+    await ev(CONTA_RIDISEGNI);
+    for (let k = 0; k < 2; k++) {
+      await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+      await pausa(200);
+    }
+    await pausa(700);
+    const dueCambi = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)),
+                       ridisegni: await ev(`window.__ridisegni`) };
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { senzaCorsa, subito, dopoResize, dueCambi, tela, messaggio };
+  },
+
   // Il telaio sotto le strisce (15a, fix A): la pushover del MURO 1 a 1920×1080 in presentazione è il
   // caso peggiore — badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori —
   // e lì «sommità sx», «sommità dx» e i due nodi in cima finivano sotto la legenda degli stati.
@@ -934,29 +1022,34 @@ const COPIONI = {
     await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
     await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
 
-    // R5, la parte che conta: da tastiera il 3D si **muove**. L'oracolo e' la sonda dello spessore
-    // (#85), che porta il diametro reso del primo cilindro proiettato con la camera vera: cambia
-    // con la camera, ed e' l'unica finestra sulla tela WebGL che il DOM sappia leggere. Dieci
-    // frecce e non una: un giro di 1,2 rad sposta il capo lontano dell'asta di sicuro, mentre una
-    // pressione sola potrebbe lasciare il diametro uguale ai centesimi e far cadere il test per una
-    // ragione che non e' la sua.
+    // R5, la parte che conta: da tastiera il 3D si **muove**. L'oracolo sono i **pixel** della tela,
+    // non più il diametro della sonda: quel numero cambiava con la camera perché il conto dello
+    // spessore si portava dentro il riquadro misurato stantio, cioè il test viveva sul difetto che
+    // questo giro chiude — riparato lui, un'asta è spessa uguale da qualunque angolo la si guardi, e
+    // l'assert sarebbe morto senza che la tastiera avesse smesso di girare niente. Dieci frecce e
+    // non una: 1,2 rad si vedono di sicuro, una pressione sola potrebbe non muovere abbastanza
+    // pixel e far cadere il test per una ragione che non è la sua.
     await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return false; c.focus(); return true; })()`);
     t.telaAFuoco = await ev(`document.activeElement === document.querySelector("#spazio canvas")`);
     const primaDelleFrecce = await ev(TRATTO_3D);
+    const dipintaPrima = await telaDipinta();
     for (let k = 0; k < 10; k++) await tasto("ArrowRight");
     await pausa(200);
-    t.orbita = { prima: primaDelleFrecce, dopo: await ev(TRATTO_3D) };
+    t.orbita = { prima: primaDelleFrecce, dopo: await ev(TRATTO_3D),
+                 dipinta: dipintaPrima === null ? null : (await telaDipinta()) !== dipintaPrima };
 
     // L'ingresso degenere: col campo di comando aperto il fuoco e' nel campo, non sulla tela, e la
     // freccia muove il cursore nel testo. La vista **non** si deve spostare.
     await tasto("n");
     await pausa(200);
     const primaNelCampo = await ev(TRATTO_3D);
+    const dipintaNelCampo = await telaDipinta();
     await tasto("ArrowLeft");
     await tasto("ArrowLeft");
     await pausa(200);
     t.conIlCampoAperto = { fuoco: await ev(`document.activeElement.id`),
-                           prima: primaNelCampo, dopo: await ev(TRATTO_3D) };
+                           prima: primaNelCampo, dopo: await ev(TRATTO_3D),
+                           dipinta: dipintaNelCampo === null ? null : (await telaDipinta()) !== dipintaNelCampo };
     await tasto("Escape");
     await pausa(200);
 

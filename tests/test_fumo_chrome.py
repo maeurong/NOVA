@@ -530,6 +530,75 @@ def test_presentazione_regge_i_bordi_senza_corsa(chrome_e_server):
     assert t["messaggio"] == "", t["messaggio"]
 
 
+@pytest.mark.parametrize("larghezza,altezza", [(1920, 1080), (1280, 800)])
+def test_entrando_in_aula_prima_di_correre_il_disegno_non_resta_alla_scala_di_prima(
+        chrome_e_server, binario_opensees, larghezza, altezza):
+    """`P` **e poi** ⌘⏎, l'ordine che nessun copione provava.
+
+    Entrando in aula prima di correre, il riquadro del piano cambia **dopo** che il disegno c'è già:
+    a 1920×1080 compare la striscia dell'M srotolato e gli ruba 49 px (1025 → 919), a 1280×800 è la
+    striscia dei risultati in fondo (745 → 592). Il riquadro cambia **dentro** la griglia, `resize`
+    sta sulla finestra e non scatta, e il disegno resta alla scala di prima. Misurato sul MURO 1
+    prima del fix: corpo reso **41,23 px** (attributo 201,996) invece di 45,99 a 1920, cioè sotto i
+    45 px che la proiezione in aula chiede (`docs/ricerca/07-ux-modellatore.md:133`). Con `P`
+    **dopo** ⌘⏎ — l'ordine di `presentazione` — il numero è 45,99 da subito, ed è per questo che i
+    26 copioni non lo vedevano.
+
+    Le due misure non sono la stessa cosa a due larghezze: a 1920 il riquadro stantio si vede sul
+    **corpo** delle etichette, a 1280 sullo **spessore dei cilindri** del 3D (7,68 px contro 6),
+    perché lì la tela resta alta 745 in un riquadro di 592 e la sonda proietta con la camera di
+    prima. Stessa radice, due sintomi, e nessuno dei due si vede all'altra misura.
+    """
+    porta, cdp = chrome_e_server
+    r = copione("aulaPrimaDellaCorsa", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"),
+                larghezza=larghezza, altezza=altezza)
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+    # Il test non è vuoto: il riquadro deve cambiare davvero fra i due momenti. Senza questa riga
+    # l'assert sul corpo passerebbe anche su una pagina dove non succede niente.
+    assert t["senzaCorsa"]["piano"][1] > t["subito"]["piano"][1], (
+        f"il piano non ha ceduto altezza a niente: {t['senzaCorsa']['piano']} → {t['subito']['piano']}")
+    # Ingresso degenere: in aula **senza** aver corso. Il riquadro cambia (compare il bottone
+    # «pannelli», spariscono le colonne) e il disegno deve restare leggibile lo stesso.
+    assert t["senzaCorsa"]["etichette"] >= 45.9, t["senzaCorsa"]
+    # Il difetto: qui uscivano 41,23 px.
+    assert t["subito"]["etichette"] >= 45.9, (
+        f"il disegno è rimasto alla scala del riquadro di prima: {t['subito']} contro {t['dopoResize']}")
+    # E non perché un ridisegno arriverà più tardi: il numero di **adesso** è già quello che un
+    # `resize` produrrebbe. Un decimo di tolleranza come gli altri assert di questo file, e per la
+    # stessa ragione — `clientWidth` arrotondato contro il riquadro vero.
+    assert abs(t["subito"]["etichette"] - t["dopoResize"]["etichette"]) <= 0.1, (
+        f"il resize ha cambiato il disegno: c'era un ridisegno in debito — {t['subito']} → {t['dopoResize']}")
+    # Ingresso degenere: due cambi di riquadro di fila, senza toccare la finestra.
+    assert t["dueCambi"]["etichette"] >= 45.9, t["dueCambi"]
+    # Un ridisegno per cambio, non un ciclo che si rincorre. Il tetto è largo — due click ne
+    # producono qualcuno in più fra `ridisegna()` e l'osservazione del riquadro — ma un ciclo
+    # infinito conta a centinaia, non a unità.
+    assert 1 <= t["dueCambi"]["ridisegni"] <= 12, (
+        f"ridisegni contati fra i due click: {t['dueCambi']['ridisegni']}")
+    # Lo stesso riquadro stantio, visto dal 3D. `tela.spazio` è `[tela, tela, riquadro, riquadro]`:
+    # la tela non deve restare più alta del riquadro che la contiene, o `#spazio { overflow: hidden }`
+    # ne taglia via un pezzo **e** `camera.aspect` resta quello di prima.
+    tela = t["tela"]
+    assert tela["dopoFrecce"] is not None or tela["assente"], \
+        "la sonda dello spessore manca e il 3D non si dichiara assente: il rilievo è muto, non verde"
+    if tela["dopoFrecce"] is not None:
+        assert tela["fuoco"] is True, "la tela non prende il fuoco: le frecce non sono arrivate a lei (R5)"
+        assert tela["spazio"][1] <= tela["spazio"][3] + 1, (
+            f"la tela è più alta del suo riquadro: {tela['spazio']} — `ridimensiona` ha misurato una griglia vecchia")
+        assert tela["dopoFrecce"]["voluto"] == 6, \
+            f"il primo cilindro della scena non porta i 6 px d'aula di `--asta-tratto`: {tela['dopoFrecce']}"
+        # La stessa banda del copione `presentazione`, e per la stessa ragione: `raggioCilindro`
+        # misura sul capo lontano con la distanza euclidea, quindi il reso sta appena sopra il voluto
+        # (1,8 % misurato) e mai sotto. Il 26 % di scarto di qui non è quella tolleranza: è il
+        # rapporto fra l'altezza stantia della tela e quella vera (745/592 a 1280×800).
+        assert 5.9 <= tela["dopoFrecce"]["reso"] <= 7.5, (
+            f"dopo quattro frecce lo spessore reso non è quello voluto: {tela['dopoFrecce']}, "
+            f"tela e riquadro {tela['spazio']}")
+    assert t["messaggio"] == "", t["messaggio"]
+
+
 def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server, binario_opensees):
     """Il fix A della 15a: la pushover del MURO 1 a 1920×1080 in presentazione è il caso peggiore —
     badge su due righe, legenda degli stati a tutta larghezza, legenda dei colori. Nessun nome di
@@ -765,12 +834,22 @@ def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_s
     # WebGL: un `aria-label` e un `tabindex` senza rotazione sarebbero un 2.1.1 ancora aperto.
     o = t["orbita"]
     assert o["prima"] is not None and o["dopo"] is not None, o
-    assert o["prima"]["reso"] != o["dopo"]["reso"], f"le frecce non girano la vista: {o}"
+    # L'oracolo sono i **pixel** della tela. Finché era «il diametro della sonda cambia», il test
+    # viveva sul difetto del riquadro misurato stantio: riparato quello, un'asta è spessa uguale da
+    # qualunque angolo — che è il punto — e l'assert sarebbe caduto senza che la tastiera avesse
+    # smesso di girare il 3D.
+    assert o["dipinta"] is True, f"le frecce non girano la vista: la tela è dipinta uguale, {o}"
+    # E lo spessore, che ora è una grandezza ferma, resta quello voluto **anche dopo** il giro:
+    # è la stessa banda del copione `presentazione`, in rapporto invece che in pixel.
+    assert o["dopo"]["voluto"] <= o["dopo"]["reso"] <= o["dopo"]["voluto"] * 1.25, (
+        f"dopo dieci frecce lo spessore reso non è più quello voluto: {o['dopo']}")
 
     # L'ingresso degenere: la freccia dentro un campo è di chi scrive, non della tela.
     c = t["conIlCampoAperto"]
     assert c["fuoco"] == "comando-campo", c
-    assert c["prima"]["reso"] == c["dopo"]["reso"], f"le frecce hanno mosso il 3D da dentro un campo: {c}"
+    # Stesso oracolo dell'altro verso, e per la stessa ragione: con lo spessore fermo per costruzione
+    # un confronto fra due diametri uguali sarebbe verde anche con la vista che gira.
+    assert c["dipinta"] is False, f"le frecce hanno mosso il 3D da dentro un campo: {c}"
 
     # R2 — `quanti` prima del minimo, per la stessa ragione dei quattordici `<kbd>`: un selettore
     # che non pesca niente darebbe `minimo: None` e non un fallimento.
