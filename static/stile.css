@@ -118,13 +118,35 @@ body {
    `flex-wrap` perché a spezzare le righe è il contenitore flex, non `white-space` da solo: senza,
    i figli si strizzerebbero dentro il `max-width` invece di scendere. La rampa è in `em`: segue il
    corpo, e a 32 px un'altezza fissa di 10 sarebbe un filo; `flex: none` la tiene larga 6 em anche
-   quando si va a capo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
+   quando si va a capo. `[hidden]` va ridetto: `display: flex` batte la regola del browser.
+   **La piastra** (15b, Task 3) è di `--fondo` e il suo mestiere è **coprire il disegno che le passa
+   sotto**, non scurire la rampa: quaggiù la legenda sta sopra le aste, e un testo sopra un viewport
+   va su lastra opaca, non nudo (`docs/ricerca/07-ux-modellatore.md:100`). Di `--fondo` e non
+   d'inchiostro perché l'inchiostro **ribalta** il difetto invece di toglierlo: misurato, il giallo di
+   punta passa da 1,11:1 a 14,59 ma il viola di coda crolla da 10,91 a 1,21 e il bordo della rampa da
+   13,19 a 1,00 — sparisce proprio lo `stroke` d'inchiostro che stacca il giallo dal fondo
+   (`piano.js`, la rampa bordata). Opaca: `--fondo` senza alfa, perché una piastra translucida
+   lascerebbe il viridis sotto il testo e il contrasto misurato non direbbe più niente. Coprire non è
+   gratis — quel che finisce sotto la piastra **sparisce**, e un nome di nodo che sparisce è peggio di
+   uno affollato: per questo prima il testo si accorcia in aula (`testoScalaColori`) e solo quel poco
+   che resta viene coperto. */
 #piano .risultati-colori { position: absolute; left: 8px; bottom: 8px; margin: 0;
                            display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center;
                            white-space: normal; max-width: calc(100% - 16px); text-align: left;
                            font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; font-variant-numeric: tabular-nums;
-                           color: var(--inchiostro); pointer-events: none; }
+                           color: var(--inchiostro); pointer-events: none;
+                           background: var(--fondo); padding: 0.15em 0.35em; border-radius: 3px; }
 #piano .risultati-colori[hidden] { display: none; }
+/* Il riquadro strettissimo (15b, Task 3): a 640×400 con dpr 2 — lo zoom 200 % delle giornate 11c-12 —
+   il piano scende a **518×99 px** e la legenda dei colori è alta 98 e larga 501. Finché il fondo era
+   trasparente si posava sul disegno; con la piastra opaca lo **cancella**, e un telaio cancellato è
+   peggio di un telaio affollato. Qui si toglie di mezzo: la scala dei colori è una chiave di lettura,
+   e una chiave che copre ciò che deve spiegare non serve a nessuno. La scala della deformata resta
+   dichiarata lo stesso — quella è il badge (`×n`), che non si tocca. 480 px di finestra e non
+   un'altezza del piano, perché a `#piano` manca un `container-type` e metterglielo per una riga
+   sarebbe un meccanismo nuovo in tutto il foglio; a 1280×657 (l'aula) e a 1920×1080 non scatta.
+   Il difetto che resta laggiù è la griglia, non lei: piano 518×99 con le strisce alte quanto lui. */
+@media (max-height: 480px) { #piano .risultati-colori { display: none; } }
 #piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; flex: none; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 di `top`, 8 di `left`/`right`, 0,6 em per carattere del corpo
