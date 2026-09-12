@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { creaEsito, creaSrotolato } from "../esito.js";
-import { avanzamentoMono } from "../misure.js";
+import { avanzamentoMono, dimenticaMisure } from "../misure.js";
 
 // Il DOM finto è quello di `corsa.test.js:127-160` e di `piano.test.js:117-133`, copiato invece
 // che importato: un test che importa dall'altro li lega, e il giorno che uno dei due cambia
@@ -573,8 +573,13 @@ test("creaSrotolato: il riquadro dice a voce quel che porta davvero", () => {
 function conVariabili(variabili, azione) {
   const prima = globalThis.getComputedStyle;
   if (variabili) globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => variabili[n] ?? "" });
+  // `esito.js` ora legge da `misureDi`, con cache **globale** per modulo (15b, Task 6): senza
+  // dimenticarla qui — all'entrata e all'uscita — uno scenario erediterebbe le misure di quello
+  // prima nello stesso file (`srotolatoCon(AULA)` dopo `srotolatoCon(null)`, riga 594 e giù).
+  dimenticaMisure();
   try { return azione(); } finally {
     if (prima === undefined) delete globalThis.getComputedStyle; else globalThis.getComputedStyle = prima;
+    dimenticaMisure();
   }
 }
 

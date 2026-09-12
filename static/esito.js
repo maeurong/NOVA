@@ -4,7 +4,7 @@
 
 import { vociDelCaso, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
 import { conciso, leggiEspressione } from "./numeri.js";
-import { leggiMisure, MISURE_BASE } from "./misure.js";
+import { misureDi, MISURE_BASE } from "./misure.js";
 import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -110,11 +110,11 @@ const UNITA_STRISCIA = { M: "kN·m", V: "kN", N: "kN" };
 export function creaSrotolato(contenitore, { suPasso = null } = {}) {
   const el = (nome, attributi = {}) => { const e = document.createElementNS(NS, nome); for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v); return e; };
   const titolo = () => { const p = document.createElement("p"); p.className = "titolo"; return p; };
-  // 15b: le misure dell'aula dalle variabili CSS, come fanno `piano.js` e `spazio.js` — l'altezza
-  // della striscia (`--srotolato-alto`) e il corpo dei testi (`--etichetta`). Senza
-  // `getComputedStyle` (il DOM finto dei test) `leggiMisure` cade sui numeri d'oggi, e fuori dalla
-  // presentazione il disegno resta identico al pixel.
-  const misure = () => leggiMisure(globalThis.getComputedStyle?.(contenitore));
+  // Le misure dell'aula dalle variabili CSS, come fanno `piano.js` e `spazio.js` — l'altezza della
+  // striscia (`--srotolato-alto`) e il corpo dei testi (`--etichetta`), lette una volta per cambio
+  // di layout (15b, Task 6) e non a ogni disegno: la stessa cache di `misureDi`, o questa finestra
+  // potrebbe mostrare due misure diverse — la striscia fresca, piano e spazio in cache.
+  const misure = () => misureDi(contenitore);
   // Gli scostamenti dei testi sono scritti per un corpo di 11: a un corpo diverso valgono
   // `n · carattere / 11`, o in aula il numero resterebbe posato dove stava a 11 px.
   const scalato = (n, carattere) => (n * carattere) / 11;
