@@ -145,10 +145,17 @@ body {
    dichiarata lo stesso — quella è il badge (`×n`), che non si tocca. 480 px di finestra e non
    un'altezza del piano, perché a `#piano` manca un `container-type` e metterglielo per una riga
    sarebbe un meccanismo nuovo in tutto il foglio; a 1280×657 (l'aula) e a 1920×1080 non scatta.
-   Il difetto che resta laggiù è la griglia, non lei: piano 518×99 con le strisce alte quanto lui. */
-@media (max-height: 480px) { #piano .risultati-colori { display: none; } }
+   **Solo in presentazione**: fuori dall'aula la legenda è alta 16 px, e a 1400×470 — finestra bassa,
+   piano alto 233 — ci sta comodissima; senza l'aggancio la regola la faceva sparire anche là, che è
+   molto più largo del caso misurato. Il difetto che resta laggiù è la griglia, non lei: piano 518×99
+   con le strisce alte quanto lui. */
+@media (max-height: 480px) { body[data-presentazione] #piano .risultati-colori { display: none; } }
 #piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; flex: none; }
-/* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
+/* Il `padding` della piastra qui sopra è l'unico di questi numeri che `piano.js` **non** ricopia:
+   0,35 em per lato fanno ~22 px in aula, e la stima dell'ostacolo della legenda dei colori se ne sta
+   senza, di proposito (il perché sta là, accanto alla stima). Se un giorno un'etichetta finisce sotto
+   la piastra in aula, quello è il numero.
+   Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 di `top`, 8 di `left`/`right`, 0,6 em per carattere del corpo
    `--etichetta` — li ricopia `piano.js` (`larghezzaMono` e gli `ostacoli.push`) per farne gli ostacoli
    delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in silenzio. I `top`
