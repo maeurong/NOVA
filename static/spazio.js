@@ -19,6 +19,23 @@ const ROSSO = 0xb8321e;
 
 const DISTANZA_MINIMA = 4000; // mm: un modello con un nodo solo non detta una distanza
 
+// Un passo di orbita per pressione: 0,12 rad, cioe' ventisei tasti per un giro intero. Lo stesso
+// ordine di grandezza del trascinamento, che gira 0,006 rad per pixel di mouse.
+const PASSO_ORBITA = 0.12;
+
+/** L'orbita dopo una freccia, o `null` se il tasto non e' una freccia — e allora il `keydown` della
+ *  tela lo lascia andare a chi lo aspetta: `P` alla presentazione, `Esc` all'uscita, una lettera al
+ *  campo che la sta scrivendo. Il verso e' quello del trascinamento (`pointermove`: theta meno dx,
+ *  phi meno dy): lo stesso gesto su due periferiche, un modello mentale solo. `phi` resta nella
+ *  banda del trascinamento, 0,05 … pi meno 0,05 — oltre il polo `lookAt` con `up` sull'asse z
+ *  ribalta l'inquadratura di scatto. Non muta l'orbita in ingresso: ad applicarla e' chi rende. */
+export function orbitaDaTasto({ theta, phi }, tasto, passo = PASSO_ORBITA) {
+  const dTheta = tasto === "ArrowLeft" ? passo : tasto === "ArrowRight" ? -passo : 0;
+  const dPhi = tasto === "ArrowUp" ? passo : tasto === "ArrowDown" ? -passo : 0;
+  if (dTheta === 0 && dPhi === 0) return null;
+  return { theta: theta + dTheta, phi: Math.min(Math.PI - 0.05, Math.max(0.05, phi + dPhi)) };
+}
+
 /** Larghezza e altezza mai sotto 1px: un contenitore 0×0 (layout non ancora misurato) non
  *  deve produrre un `aspect` a 0 o `Infinity`. */
 export function dimensioniSicure(larghezza, altezza) {
@@ -131,6 +148,17 @@ async function costruisci(contenitore) {
   scena.background = new THREE.Color(0xdcdad5);
   const camera = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
   contenitore.replaceChildren(renderer.domElement);
+  // R5 della critique 15b — un `<canvas>` nudo e' un buco muto: nessun ruolo, nessun nome
+  // accessibile, e fuori dal giro di ⇥ (WCAG 1.1.1 e 2.1.1). Il detector non lo vede nemmeno
+  // (`docs/ricerca/07-ux-modellatore.md:123`), quindi questi tre attributi sono l'unica cosa che
+  // dice a una tecnologia assistiva che qui c'e' un disegno, e cosa disegna. Il nome nomina anche
+  // il gesto perche' su una tela non c'e' nient'altro da leggere che lo dica: niente etichetta,
+  // niente testo, niente contenuto. `role="img"` e non `application`: qui si guarda e basta, i
+  // gesti di disegno stanno nel piano SVG.
+  renderer.domElement.setAttribute("role", "img");
+  renderer.domElement.setAttribute("aria-label",
+    "vista spaziale del modello, in sola lettura: le frecce la girano");
+  renderer.domElement.tabIndex = 0;
 
   // Le linee WebGL non si ispessiscono (`linewidth` ignorato quasi ovunque): aste e deformata sono
   // cilindri, tutti sulla **stessa** geometria — alta 1 e di raggio 1 sull'asse y — che `rendi`
@@ -256,6 +284,24 @@ async function costruisci(contenitore) {
     orbita.distanza = Math.max(DISTANZA_MINIMA / 8, orbita.distanza * (e.deltaY > 0 ? 1.1 : 0.9));
     rendi();
   }, { passive: false });
+  // Da tastiera (R5): le frecce girano la vista, e nient'altro la tocca. Sulla **tela** e non
+  // sulla finestra, cosi' il tasto arriva qui solo quando il fuoco e' qui — chi sta scrivendo nel
+  // campo di comando si tiene le sue frecce, che li' muovono il cursore, e l'ingresso degenere si
+  // chiude per costruzione invece che con una guardia da ricordare.
+  // `stopPropagation` perche' il `keydown` globale sta su `window` (`app.js:912`) e la sua guardia
+  // cerca `input, button, select, textarea, [role="button"]`: una tela non e' nessuno di quelli, e
+  // senza questa riga `←`/`→` scorrerebbero **anche** i passi della pushover mentre girano la
+  // vista — due gesti su un tasto solo. Un tasto che non e' una freccia non viene fermato:
+  // `orbitaDaTasto` torna `null`, e `P` resta la presentazione anche col fuoco quaggiu'.
+  renderer.domElement.addEventListener("keydown", (e) => {
+    const girata = orbitaDaTasto(orbita, e.key);
+    if (!girata) return;
+    e.preventDefault();
+    e.stopPropagation();
+    orbita.theta = girata.theta;
+    orbita.phi = girata.phi;
+    rendi();
+  });
   window.addEventListener("resize", () => { ridimensiona(); rendi(); });
 
   function disegna(m, { selezione = null, deformata = null } = {}) {

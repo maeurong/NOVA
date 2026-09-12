@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dimensioniSicure, calcolaAspect, calcolaInquadratura, creaSpazio, pixelInMondo, tratti,
-         trattiDellaDeformata, raggioCilindro, scaleDeiTratti } from "../spazio.js";
+         trattiDellaDeformata, raggioCilindro, scaleDeiTratti, orbitaDaTasto } from "../spazio.js";
 import { coloreSpostamento, massimoSpostamento, VIRIDIS } from "../risultati.js";
 
 test("contenitore di dimensione 0: nessun NaN nell'aspect della camera", () => {
@@ -142,4 +142,40 @@ test("scaleDeiTratti: niente aste, oggetti senza tratto, riquadro non misurato, 
   // Nessuno stato fra due giri: un passo della pushover con aste diverse non lascia raggi stantii.
   assert.equal(scaleDeiTratti([asta, asta], camera, 500).length, 2);
   assert.equal(scaleDeiTratti([asta], camera, 500).length, 1);
+});
+
+// R5 della critique 15b: orbita e zoom stavano solo su `pointer` e `wheel`, e da tastiera il 3D non
+// si toccava (WCAG 2.1.1). Il conto sta qui, fuori da `creaSpazio`, per la ragione scritta in testa
+// al modulo: senza WebGL il ciclo di `rendi` non gira, e una rotazione provata solo in browser
+// sarebbe un numero che nessun test rilegge.
+
+test("orbitaDaTasto: le frecce girano nel verso del trascinamento, e non toccano l'orbita di prima", () => {
+  // Il verso e' quello del mouse (`pointermove`: theta -= dx, phi -= dy), non l'opposto: sono lo
+  // stesso gesto su due periferiche, e due versi diversi sarebbero due modelli mentali.
+  // Il passo qui e' 0,25 e non quello vero: e' esatto in binario, e l'uguaglianza misura la
+  // rotazione invece dell'aritmetica in virgola mobile.
+  const o = { theta: 1, phi: 1.5 };
+  assert.deepEqual(orbitaDaTasto(o, "ArrowRight", 0.25), { theta: 0.75, phi: 1.5 });
+  assert.deepEqual(orbitaDaTasto(o, "ArrowLeft", 0.25), { theta: 1.25, phi: 1.5 });
+  assert.deepEqual(orbitaDaTasto(o, "ArrowDown", 0.25), { theta: 1, phi: 1.25 });
+  assert.deepEqual(orbitaDaTasto(o, "ArrowUp", 0.25), { theta: 1, phi: 1.75 });
+  assert.deepEqual(o, { theta: 1, phi: 1.5 }, "l'orbita in ingresso non si muta: chi la applica e' `rendi`");
+});
+
+test("orbitaDaTasto: phi resta nella banda del trascinamento, i poli non si attraversano", () => {
+  // Gli stessi due estremi di `pointermove` (0,05 e pi meno 0,05), non altri: oltre il polo la
+  // camera si capovolge, e `lookAt` con `up` sull'asse z darebbe un'inquadratura che si ribalta.
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 0.1 }, "ArrowDown", 1).phi, 0.05);
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 3.1 }, "ArrowUp", 1).phi, Math.PI - 0.05);
+  // E un passo enorme non salta la banda: una pressione sola non porta mai fuori.
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 1.5 }, "ArrowUp", 100).phi, Math.PI - 0.05);
+  assert.equal(orbitaDaTasto({ theta: 0, phi: 1.5 }, "ArrowDown", 100).phi, 0.05);
+});
+
+test("orbitaDaTasto: un tasto che non e' una freccia torna null, e non lo ruba a nessuno", () => {
+  // E' la guardia dell'ingresso degenere: il `keydown` della tela ferma il tasto **solo** quando
+  // questa ha qualcosa da renderne. `null` vuol dire che P resta la presentazione, Esc resta Esc,
+  // e una lettera scritta in un campo resta di chi la scrive.
+  for (const k of ["p", "n", " ", "Enter", "Escape", "ArrowUpLeft", "arrowright", "", undefined, null])
+    assert.equal(orbitaDaTasto({ theta: 0, phi: 1 }, k), null, `il tasto ${JSON.stringify(k)} non e' una freccia`);
 });
