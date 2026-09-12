@@ -1719,10 +1719,49 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   scrivania.piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
   assert.equal(legendaDi(scrivania.contenitore).textContent, testoLegendaStati(),
                "alla scrivania la legenda non si accorcia");
-  // Niente etichette perse: chi non trova posto non si sposta, esce `nascosta` e **non si scrive
-  // affatto** (`etichette.js:100-102`). In aula se ne devono scrivere quante alla scrivania.
-  assert.equal(tutti(strato(svg()), "text").length, tutti(strato(scrivania.svg()), "text").length,
-               "in aula si scrivono meno etichette che alla scrivania: una è sparita in silenzio");
+});
+
+test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non su `--etichetta`", () => {
+  // In aula la striscia rende a 32 px (`stile.css:520`) mentre `--etichetta` dice 46: stimare le
+  // larghezze a 46 gonfia l'ostacolo di 1,44 volte. Con la legenda dei colori in basso la differenza
+  // non è estetica — un'etichetta che non trova posto **non si sposta**: esce `nascosta` e non si
+  // scrive affatto (`etichette.js:100-102`), e un numero che sparisce in silenzio è peggio di uno
+  // affollato.
+  //
+  // La scena è costruita perché la freccia cada **nella striscia contesa**: a 1280 l'ostacolo vero è
+  // largo 757 px, quello stimato a 46 ne vorrebbe 1 084, e l'etichetta si posa fra i due — misurata
+  // a 793-931 px dal bordo sinistro, dentro la banda alta 97 px del fondo. Una L con la colonna a
+  // **sinistra**: il nodo 2 è l'estremo libero in basso a destra e sopra di lui non passa niente,
+  // quindi un posto dove ripiegare ci sarebbe — il punto è che con la stima giusta non serve.
+  const w = 1280, h = 657;
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  badgeDi(contenitore).stile = { fontSize: "32px" };   // il corpo reso della striscia, come in Chrome
+  coloriDi(contenitore).offsetHeight = 89;             // l'altezza vera: a 32 px va a capo tre volte
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 8000, z: 0 }, { x: 0, z: 6000 }]) mo = creaNodo(mo, p);
+  const elle = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 1, nodo_j: 3 }] };
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -50, 0, 0, 0],
+                                   3: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+  piano.disegna(elle, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1, auto: true,
+                                     stantia: false, tipo: "caso", badge: {} } });
+  const [vx0, vz0, vlarga, valta] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(vlarga / w, valta / h);
+  const cx = vx0 + vlarga / 2, cy = vz0 + valta / 2;
+  const sinistra = cx - w * s / 2, fondo = cy + h * s / 2;
+  const [ti, mi, ma] = testiColori(contenitore);
+  const caratteri = `${ti}${mi}${"x".repeat(10)}${ma}`.length;
+  // L'ostacolo com'è e come lo si stimava prima: stessa formula di `piano.js`, corpo diverso.
+  const scatola = (corpo) => ({ x0: sinistra, y0: fondo - (8 + 89) * s, y1: fondo,
+                                x1: sinistra + Math.min(caratteri * 0.6 * corpo + 8 + 3 * 0.4 * corpo, w - 16) * s });
+  const freccia = tutti(strato(svg()), "text").find((t) => t.textContent === "50 mm");
+  assert.ok(freccia, "la freccia dello spostamento massimo non si scrive: l'etichetta è sparita");
+  const box = boxCorpo(freccia, s, 46);
+  assert.ok(!siSovrappongono(box, scatola(32)), "l'etichetta finisce sotto la legenda dei colori");
+  // **Il lato che discrimina.** L'etichetta sta dentro la striscia che la stima a 46 si sarebbe
+  // presa: con `corpoStriscia = carattere` quel posto risulta occupato, `disponi` la manda altrove o
+  // la lascia cadere, e una delle due righe qui muore. Senza questa, `0 === 0` passava col difetto.
+  assert.ok(siSovrappongono(box, scatola(46)),
+            "la scena non prova più niente: l'etichetta non cade nella striscia contesa fra 32 e 46 px");
 });
 
 test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in basso non costa un pixel di disegno", () => {
