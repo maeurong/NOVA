@@ -135,13 +135,13 @@
       "origine": {
         "sorgente": "utente",
         "riferimento": "muro_1.pdf",
-        "nota": "interasse dall'alzado (2262); la pianta dice 2000, da confermare con Mario"
+        "nota": "pianta: pilastri centrati sulle zapatas, asse a 350, interasse 2000; l'alzado (2262) e' incoerente con la pianta e non e' seguito (decisione 06/09/2026)"
       }
     },
     {
       "id": 2,
       "nome": "piede dx",
-      "x": 2262,
+      "x": 2000,
       "y": 0,
       "z": 0,
       "vincolo": {
@@ -155,7 +155,7 @@
       "origine": {
         "sorgente": "utente",
         "riferimento": "muro_1.pdf",
-        "nota": "interasse dall'alzado (2262); la pianta dice 2000, da confermare con Mario"
+        "nota": "pianta: pilastri centrati sulle zapatas, asse a 350, interasse 2000; l'alzado (2262) e' incoerente con la pianta e non e' seguito (decisione 06/09/2026)"
       }
     },
     {
@@ -168,7 +168,7 @@
     {
       "id": 4,
       "nome": "sommità dx",
-      "x": 2262,
+      "x": 2000,
       "y": 0,
       "z": 1607.5
     }
@@ -242,7 +242,7 @@
           "tipo": "distribuito",
           "asta": 4,
           "direzione": "z",
-          "q": -0.5305039787798409
+          "q": -0.6
         }
       ]
     }

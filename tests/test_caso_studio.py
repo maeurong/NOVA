@@ -73,8 +73,8 @@ def _massa_a_mano(m) -> float:
     membri = [
         (172, 172, 1607.5, [(2, 12.0), (2, 12.0)]),  # columna sx: inf 2Ø12 + sup 2Ø12
         (172, 172, 1607.5, [(2, 12.0), (2, 12.0)]),  # columna dx
-        (140, 175, 2262.0, [(2, 10.0), (2, 8.0)]),   # viga superior: sup 2Ø10 + inf 2Ø8
-        (250, 250, 2262.0, [(3, 16.0), (3, 16.0)]),  # viga inferior: inf 3Ø16 + sup 3Ø16
+        (140, 175, 2000.0, [(2, 10.0), (2, 8.0)]),   # viga superior: sup 2Ø10 + inf 2Ø8
+        (250, 250, 2000.0, [(3, 16.0), (3, 16.0)]),  # viga inferior: inf 3Ø16 + sup 3Ø16
     ]
     totale = 0.0
     for b, h, L, barre in membri:
@@ -231,9 +231,10 @@ def spinta_muro_1(tmp_path_factory, binario_opensees):
 
 
 def test_pushover_muro_1(spinta_muro_1):
-    """Misurato il 05/09/2026, OpenSees 3.8.0, ≈ 2 s: 120 passi da 0,5 mm fino a 60,000 mm,
-    **nessuna caduta**, taglio alla base massimo 72 115,2 N al passo 109 (54,5 mm) e 70 932,9 N
-    all'ultimo. Scala di algoritmi ai passi 18, 36, 89, 113 (`KrylovNewton`).
+    """Misurato il 07/09/2026 a interasse 2000 (era 2262), OpenSees 3.8.0: 120 passi da 0,5 mm
+    fino a 60,000 mm, **nessuna caduta**, taglio alla base massimo 71 853,0 N al passo 110
+    (55,0 mm) e 70 156,4 N all'ultimo. Scala di algoritmi ai passi 17, 22, 88, 101
+    (`KrylovNewton`).
 
     Gli oracoli sono proprietà, non i numeri: la spinta arriva in fondo senza cadere,
     l'equilibrio `taglio_base = −Σ reazioni` tiene a ogni passo, il massimo **non** è
@@ -266,7 +267,7 @@ def test_pushover_muro_1(spinta_muro_1):
 
     tagli = [p["taglio_base"] for p in passi]
     assert tagli.index(max(tagli)) < len(tagli) - 1  # il ramo calante c'è
-    assert max(tagli) == pytest.approx(72115.2, rel=1e-3)
+    assert max(tagli) == pytest.approx(71852.9686565, rel=1e-3)
 
     # il meccanismo: piedi dei pilastri (aste 2 e 3, stazione 0) e i due estremi della trave
     # superiore (asta 4, stazioni 0 e 16), e nessun'altra stazione
@@ -413,10 +414,11 @@ def test_confronto_sul_deck_vero(chiedi, tmp_path, binario_opensees, binario_ccx
     assert tabella.righe[0].grandezza == "massa"
     scarto_massa = tabella.righe[0].scarto_solido_pct
     assert scarto_massa is not None
-    # Misurato il 05/09/2026: 38,6 % (denominatore = massa del solido, il riferimento).
-    # Atteso, non un difetto: la trave di fondazione e la trave superiore stanno
-    # sull'interasse nel telaio, zapatas e tamponatura fuori dal solido.
-    assert 37.6 < scarto_massa < 39.6, scarto_massa
+    # Rimisurato il 07/09/2026 a interasse 2000 (era 38,6 % a 2262): 27,79 % (denominatore =
+    # massa del solido, il riferimento). Sceso perché il telaio è più corto — atteso, non un
+    # difetto: la trave di fondazione e la trave superiore stanno sull'interasse nel telaio,
+    # zapatas e tamponatura fuori dal solido, che non si muove con l'interasse.
+    assert 26.8 < scarto_massa < 28.8, scarto_massa
 
     per_grandezza = {r.grandezza: r for r in tabella.righe if r.grandezza in ("f1", "f2", "f3")}
     for etichetta in ("f1", "f2", "f3"):
