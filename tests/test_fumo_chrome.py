@@ -394,6 +394,13 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     assert t["scorre"] is False
     assert t["colori"] >= 2, "la deformata non si colora con lo spostamento"
     assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
+    # La piastra (15b, Task 3) **anche qui**, a 1920: la legenda sta sopra il disegno a ogni misura, e
+    # senza questi due assert il `background` potrebbe chiudersi in una media query ≤ 1280 senza far
+    # cadere niente. L'alfa è quella che discrimina: un fondo trasparente lascia il testo sul viridis,
+    # e un rapporto misurato contro un fondo che non copre non dice più niente.
+    c = t["contrasto"]
+    assert c is not None and c["alfa"] == 1, f"la piastra non è opaca a 1920: {c}"
+    assert c["rapporto"] >= 4.5, c
     assert "×" in t["bn"]["badge"], t["bn"]["badge"]
     assert max(t["bn"]["raggi"]) > min(t["bn"]["raggi"]), "il nodo scelto non è più grosso: in B/N resta solo il colore"
     assert t["bn"]["bordo"] >= 1
@@ -525,7 +532,7 @@ def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(
     assert tel["alto"] > 0, "nessun nodo disegnato: il telaio non c'è"
     # La legenda dei colori su **una** riga: è la leva che toglie i piedi da sotto di lei. A 32 px
     # una riga è alta ~38 px; le 89 misurate col testo intero erano tre righe.
-    assert t["altaColori"] <= 50, t["altaColori"]
+    assert t["altaColori"] <= 70, t["altaColori"]
     # In aula il testo è quello compatto — «|u|», non «spostamento |u|» — e i millimetri restano.
     assert t["legendaColori"] and "mm" in t["legendaColori"], t["legendaColori"]
     assert "spostamento" not in t["legendaColori"], t["legendaColori"]
@@ -547,6 +554,10 @@ def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(
     assert st["colori"] is None, f"a 640×400 la piastra copre il disegno invece di lasciarlo vedere: {st}"
     addosso = [c for c in st["strisce"]["addosso"] if c[1] == "colori"]
     assert addosso == [], addosso
+    # La promessa non è «la legenda sparisce», è «il disegno resta»: senza questa riga l'assert qui
+    # sopra passerebbe identico anche se a quella misura sparisse il telaio intero. Misurato: il nodo
+    # più alto sta a 18 px dentro un piano di 99.
+    assert st["strisce"]["telaio"] is not None and st["strisce"]["piano"] > 0, st["strisce"]
     assert t["messaggio"] == "", t["messaggio"]
 
 

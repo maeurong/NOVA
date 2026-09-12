@@ -435,6 +435,9 @@ const COPIONI = {
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const colori = await ev(`new Set([...document.querySelectorAll("#piano svg line.deformata")].map((l) => l.getAttribute("stroke"))).size`);
     const legendaColori = await ev(COLORI);
+    // La piastra anche qui, a 1920: la legenda sta sopra il disegno a ogni misura, non solo a 1280,
+    // e senza quest'asserzione il fondo opaco potrebbe chiudersi in una media query stretta.
+    const contrasto = await ev(CONTRASTO_COLORI);
     // Bianco e nero: il colore spento, i canali che restano. Il badge dice la scala a parole; il nodo
     // scelto è più grosso (non solo rosso); la deformata ha il bordo in inchiostro.
     await ev(`(() => { document.documentElement.style.filter = "grayscale(1)"; return true; })()`);
@@ -473,7 +476,7 @@ const COPIONI = {
 
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, proporzione, sovrapposte, scorre,
-             colori, legendaColori, bn, uscito, legendaModo, menu, messaggio };
+             colori, legendaColori, contrasto, bn, uscito, legendaModo, menu, messaggio };
   },
 
   // Il telaio sotto le strisce (15a, fix A): la pushover del MURO 1 a 1920×1080 in presentazione è il
