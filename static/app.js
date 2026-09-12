@@ -32,6 +32,7 @@ import { ghostDisegnabile, esitoScelta, contestoBarra, ruotaGhost, modoValido,
 import { alternaIncastro, descrizione } from "./vincoli.js";
 import { stampaNumero, leggiEspressione, millimetri } from "./numeri.js";
 import { daRisposta, propostaPerNodo, proposteAperte, etichettaStoria } from "./rilievo.js";
+import { dimenticaMisure } from "./misure.js";
 
 let cronologia = nuovaCronologia(modelloVuoto());
 let selezione = null;
@@ -847,11 +848,30 @@ function ridisegna() {
 // giro, ributta via le geometrie e ricalcola `puntiDeformata` per ogni asta.
 // Una volta per frame: `resize` arriva a raffica durante il trascinamento del bordo.
 let ridisegnoInCoda = false;
-window.addEventListener("resize", () => {
+const rimisuraIlPiano = () => {
+  dimenticaMisure();
   if (ridisegnoInCoda) return;
   ridisegnoInCoda = true;
   requestAnimationFrame(() => { ridisegnoInCoda = false; disegnaPiano(corrente(cronologia), fattoreCorrente()); });
-});
+};
+window.addEventListener("resize", rimisuraIlPiano);
+// Ma il riquadro del piano cambia anche **dentro** la griglia, senza che la finestra si muova:
+// entrando in aula compare la striscia dell'M srotolato (1025 → 919 px a 1920×1080), una corsa fa
+// crescere la striscia dei risultati (745 → 592 a 1280×800), i pannelli si riaprono. `resize` sta
+// sulla finestra e non scatta: il disegno restava alla scala del riquadro **di prima**, e nessun
+// evento lo ridisegnava. Misurato premendo `P` **prima** di ⌘⏎ — l'ordine che nessun copione
+// provava: corpo reso 41,23 px invece di 45,99 a 1920 e 36,57 a 1280, sotto i 45 px che la
+// proiezione in aula chiede (`docs/ricerca/07-ux-modellatore.md:133`).
+//
+// Osservare il riquadro copre anche i `ridisegna()` scritti a mano dopo `data-presentazione` e
+// `data-pannelli`: quelli partono **prima** che il browser abbia rifatto la griglia, quindi
+// misurano ancora quella di prima. Restano dove sono — rifanno albero, ispettore e 3D, che dal
+// riquadro del piano non dipendono.
+//
+// Un ridisegno per cambio e nessun ciclo: il `requestAnimationFrame` qui sopra unisce le notifiche
+// dello stesso fotogramma, e quel che il ridisegno cambia **dentro** `#piano` non ne tocca il
+// riquadro (`#piano svg { width: 100%; height: 100% }`).
+new ResizeObserver(rimisuraIlPiano).observe($("piano"));
 
 // Il modo presentazione (story 62): un attributo sul `body`; layout e misure del disegno li cambia
 // `stile.css`. Cambiare la griglia non scatena `resize`, quindi dopo ogni cambio `ridisegna()`: piano e
@@ -870,10 +890,18 @@ function alternaPresentazione(accesa = !presentazione()) {
   // Si entra e si esce coi pannelli ritratti: aperti in un giro non restano aperti al giro dopo.
   document.body.removeAttribute("data-pannelli");
   scriviBottonePannelli(false);
+  // Cambia `data-presentazione`/`data-pannelli` senza scatenare un `resize` (15b, Task 6): senza
+  // dimenticare la cache, piano e spazio ridisegnerebbero con le misure di prima.
+  dimenticaMisure();
   ridisegna();
 }
 bottonePannelli.addEventListener("click", () => {
   scriviBottonePannelli(document.body.toggleAttribute("data-pannelli"));
+  // Come `alternaPresentazione`: cambia un attributo del `body` senza scatenare un `resize`. Oggi
+  // nessun selettore `[data-pannelli]` ridefinisce le variabili di `misure.js`, ma un domani un
+  // `body[data-presentazione][data-pannelli] { --etichetta: 32px }` (piano più stretto) lascerebbe
+  // il disegno alle misure di prima senza che questo lo invalidi.
+  dimenticaMisure();
   ridisegna();
 });
 

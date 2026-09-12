@@ -39,7 +39,7 @@
   </nav>
 </div>
 
-<main id="viste">
+<main id="viste" aria-label="viste">
   <section id="piano" aria-label="piano di lavoro"></section>
   <!-- L'M srotolato dell'asta selezionata (story 39): sotto il piano, nella sua colonna. Senza
        risultati non c'è; senza un'asta selezionata dice il gesto. -->
@@ -47,7 +47,7 @@
   <!-- L'attesa dichiarata, non una percentuale inventata (P5): three.js sono 2 MB dal disco,
        e finché non arrivano questo riquadro sarebbe un buco muto. `creaSpazio` sostituisce
        il paragrafo col canvas, o con la riga che dice perché la vista non c'è. -->
-  <section id="spazio" aria-label="spazio">
+  <section id="spazio" aria-label="vista spaziale">
     <p class="vuoto">Vista spaziale in caricamento. Il piano di lavoro è già pronto: i tasti rispondono.</p>
   </section>
 </main>
@@ -82,7 +82,8 @@
       <p id="corsa-secondi" class="numero"></p>
     </div>
     <!-- Niente `hidden`: una live region nascosta e poi mostrata non viene annunciata da tutte
-         le AT. Vuota resta resa ad altezza zero, come `#palette-stato` (`stile.css:305`). -->
+         le AT. Vuota resta resa ad altezza zero, come `#palette-stato` (la sua regola in
+         `stile.css`). -->
     <p id="corsa-ultima" class="numero" aria-live="polite"></p>
     <details id="corsa-registro" hidden><summary>registro del solutore</summary><pre id="corsa-coda"></pre></details>
     <p class="vuoto" id="corsa-vuoto">Premi <kbd aria-label="comando invio">⌘⏎</kbd> per lanciare tutte le analisi del modello, <kbd aria-label="maiuscolo comando invio">⇧⌘⏎</kbd> per il solo Check Model.</p>

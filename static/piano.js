@@ -13,7 +13,7 @@ import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, tes
          asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, legendaStatiServe, VIRIDIS,
          coloreSpostamento, testoScalaColori } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
-import { leggiMisure, avanzamentoMono } from "./misure.js";
+import { misureDi, avanzamentoMono, MISURE_BASE } from "./misure.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -172,7 +172,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
    *  telaio deve cadere **sotto** di loro: a 1920×1080 in presentazione la pushover scriveva fino a
    *  308 px e il telaio partiva da 248, quindi i due nodi in cima e i loro nomi finivano sotto la
    *  legenda degli stati. Con `fascia = 0` il riquadro è quello di sempre, al millimetro. */
-  function inquadra(m, ghost, extraMm = 0, fascia = 0) {
+  function inquadra(m, ghost, extraMm = 0, fascia = 0, bassa = 0) {
     const e = estensione(m, ghost, extraMm);
     const { w, h } = pixelDelRiquadro();
     // **W4** — un criterio solo, e sul **telaio che resta**: o la fascia ci sta lasciando sotto di sé
@@ -185,7 +185,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // Sui riquadri degeneri il risultato non cambia: misurato a zoom 200 % (640×400 con dpr 2, il
     // caso del fumo) la griglia lascia a `#viste` 80 px di larghezza e al piano un riquadro di 39×10
     // px, mentre le strisce ne occupano 115 — undici volte il disegno, e nessuna fascia si riserva.
-    const utile = fascia > 0 && h - fascia >= TELAIO_MINIMO ? h - fascia : h;
+    //
+    // `bassa` è la banda in fondo, e vale per lei la stessa regola: la piastra della legenda dei
+    // colori è **opaca**, quindi quel che le finisce sotto non si affolla, sparisce. È un ostacolo
+    // per il disegno quanto le strisce in alto. Chi chiama decide se chiederla — e se il telaio che
+    // resta non regge, a sparire è la legenda, non un nome di nodo.
+    const riserva = fascia + bassa;
+    const utile = riserva > 0 && h - riserva >= TELAIO_MINIMO ? h - riserva : h;
     if (utile >= h) {
       vista = e;
     } else {
@@ -195,7 +201,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       // strisce stanno **sopra** il disegno, non fuori da lui.
       const s = Math.max(e.larghezza / w, e.altezza / utile);
       const cx = e.x0 + e.larghezza / 2, cz = e.z0 + e.altezza / 2;
-      vista = { x0: cx - w * s / 2, z0: cz - utile * s / 2, larghezza: w * s, altezza: h * s };
+      // `+ bassa`: l'aria in più va sopra **e** sotto, ognuna quanto la sua banda. Con `bassa = 0`
+      // il conto è quello di ieri al millimetro — tutta sopra.
+      vista = { x0: cx - w * s / 2, z0: cz - (utile / 2 + bassa) * s, larghezza: w * s, altezza: h * s };
     }
     svg.setAttribute("viewBox", `${vista.x0} ${vista.z0} ${vista.larghezza} ${vista.altezza}`);
     svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -375,11 +383,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
   // `azioneInVista` e non `azione`: è l'oggetto azione, non un identificatore, e in tutto il
   // resto del programma un `azione` nudo è un id (`comando.azione`, `carico.azione`).
   function disegna(m, { selezione = null, ghost = null, azioneInVista = null, proposte = [], risultati = null } = {}) {
-    // Le misure a ogni disegno, dalle variabili CSS del riquadro, che la presentazione ridefinisce per
-    // l'aula. Senza `getComputedStyle` (i test) o senza variabili: i numeri d'oggi (`misure.js`).
-    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    // Le misure a ogni disegno, dalle variabili CSS, lette una volta per cambio di layout e non a
+    // ogni fotogramma (`misure.js`). Senza `getComputedStyle` (i test) o senza variabili: i numeri
+    // d'oggi.
+    const misure = misureDi(contenitore);
     const offset = Math.max(OFFSET_ETICHETTA, misure.raggioNodo + avanzamentoMono(misure.carattere));
     const carattere = misure.carattere;
+    // In aula, e il segnale è il corpo: le misure arrivano dalle variabili CSS e `body[data-presentazione]`
+    // porta `--etichetta` a 46. È il solo segnale che il piano ha, e ora lo chiedono in due — la
+    // legenda degli stati e quella dei colori. Alla scrivania `carattere` vale 11 come in
+    // `MISURE_BASE`, e i due testi restano quelli di ieri parola per parola.
+    // Attenzione: `--etichetta` dice 46, ma le strisce che `body[data-presentazione] #piano
+    // :is(.carichi-titolo, .risultati-legenda, .risultati-colori)` elenca rendono a **32** — il
+    // tetto dei caratteri (`TETTO_COMPATTO`) si conta su quelli, non su questi.
+    const inAula = carattere > MISURE_BASE.carattere;
     // `vistaRis` e non `vista`: `vista` è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
     const attivo = vistaRis ? risultati : null;
@@ -404,7 +421,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // La legenda parla solo quando i simboli ci sono **e dicono cose diverse**: in vista M non c'è
     // niente da decifrare, e con tutte le sezioni elastiche i simboli sono tutti uguali — la riga
     // resterebbe gergo, e in aula costa 114 px su tre righe con «rotta» da sola sull'ultima (C7b).
-    legenda.textContent = testoLegendaStati();
+    legenda.textContent = testoLegendaStati(inAula);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
     // si scrivono più giù, che vogliono `raccolto.uMax`; qui basta sapere se si vede, perché è alta
@@ -416,7 +433,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const scendi = (e, top, alta) => { e.style.top = `${top}px`; return e.hidden ? top : top + alta + 2; };
     const altaBadge = () => badge.offsetHeight || carattere + 3;
     const altaLegenda = () => legenda.offsetHeight || 2 * (carattere + 3);
-    const altaColori = () => colori.offsetHeight || carattere + 3;
     // **W1** — `offsetHeight` di un elemento nascosto è 0, e il ripiego scattava lo stesso: in aula
     // 51 px di fascia riservati a una striscia che non c'è, su ogni piano senza azione in vista.
     // Col titolo nascosto si tiene il distacco d'oggi — 16 px, che a 11 px fanno il `top: 22` di
@@ -424,12 +440,29 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // una striscia che non esiste, e fuori il disegno resta identico al pixel.
     const topBadge = 6 + (titolo.hidden ? 16 : Math.max(16, titolo.offsetHeight || carattere + 5));
     const topLegenda = scendi(badge, topBadge, altaBadge());
-    const topColori = scendi(legenda, topLegenda, altaLegenda());
-    const fine = scendi(colori, topColori, altaColori());
-    // Il fondo dell'ultima striscia visibile più mezzo corpo d'aria. Nessuna visibile (vista
-    // «niente», nessuna azione) → 0, e l'inquadratura resta identica a oggi.
-    const nessunaStriscia = titolo.hidden && badge.hidden && legenda.hidden && colori.hidden;
+    const fine = scendi(legenda, topLegenda, altaLegenda());
+    // La legenda dei colori è uscita dalla colonna (15b): sta in basso a sinistra, dove non ruba
+    // altezza al disegno, e la sua quota la dà `stile.css`. Resta un ostacolo per le etichette —
+    // alla sua quota, non a questa. Toglierla dal conto è il grosso del guadagno solo in apparenza:
+    // vale 38 px su 346, mentre la legenda degli stati ne vale 152 (R1), ed è lei ad accorciarsi.
+    // Nel conto di `nessunaStriscia` non manca niente: la legenda dei colori si vede solo con la
+    // deformata, e con la deformata il badge si vede sempre.
+    const nessunaStriscia = titolo.hidden && badge.hidden && legenda.hidden;
     const fascia = nessunaStriscia ? 0 : Math.max(0, fine - 2) + carattere / 2;
+    // La banda in fondo, per la piastra della legenda dei colori. Restare un ostacolo per le
+    // etichette non bastava: i nomi dei nodi non passano da `disponi`, e la piastra è **opaca** —
+    // li cancella invece di affollarli. Misurato in Chrome a 1920×1080 in aula sulla pushover, e
+    // solo dopo un ridisegno vero: «piede sx» a [160,503 → 382,557] contro la piastra a
+    // [8,539 → 627,586], 18 px di sovrapposizione. Gli 8 px sono il `bottom` di `stile.css`, il
+    // mezzo corpo è lo stacco, come in cima.
+    //
+    // `offsetHeight === 0` vuol dire che una regola CSS la **spegne** (il riquadro strettissimo):
+    // allora non c'è niente da riservare. Il ripiego serve al solo DOM finto dei test.
+    const altaColori = colori.hidden || colori.offsetHeight === 0 ? 0 : (colori.offsetHeight || 2 * (carattere + 3));
+    const bandaColori = altaColori ? altaColori + 8 + carattere / 2 : 0;
+    // La banda si **chiede** qui e si **decide** più giù, quando i versi dei nomi si sanno: prima si
+    // inquadra senza, e solo se qualcosa finisce davvero sotto la quota della piastra si rifà con lei.
+    let bassa = 0;
 
     inquadra(m, ghost, 0, fascia);
     let s = millimetriPerPixel();
@@ -468,10 +501,44 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
       Math.max(OFFSET_ETICHETTA, offset * Math.abs(versi.get(n.id).x)) + 4, misure.carattere)));
     // `W > 2·P`: oltre metà del riquadro l'etichetta non ci sta comunque, e allargare peggiora e
     // basta. ponytail: lì si taglia, e il rimedio vero sarebbe posare anche i nomi con `disponi`.
+    let extra = 0;
     if (larghezzaMono(nomePiuLungo, 1, 0, misure.carattere) > MARGINE / (1 + 2 * MARGINE) * W && W > 2 * P) {
       const m0 = L0 * MARGINE / (1 + 2 * MARGINE);
-      inquadra(m, ghost, (P * L0 - W * m0) / (W - 2 * P), fascia);
+      extra = (P * L0 - W * m0) / (W - 2 * P);
+      inquadra(m, ghost, extra, fascia);
       s = millimetriPerPixel();
+    }
+
+    // **La banda in fondo si riserva solo se serve**, e si decide **qui**: dopo l'allargamento per i
+    // nomi, che è ciò che detta la scala vera. Deciderla prima vuol dire misurare un'inquadratura
+    // che poi non esiste più — misurato a 1280×657 in aula sulla pushover, dove l'allargamento porta
+    // `s` da 38 a 59 mm/px: la banda scattava su un disegno che a quella scala non tocca niente, e
+    // pagarla portava il telaio da 62 a 37 px di alto con «piede sx» addosso a «sommità sx». Un
+    // difetto nuovo al posto di quello vecchio.
+    if (bandaColori) {
+      const altaPx = pixelDelRiquadro().h;
+      // Il bordo basso del **viewport**, non del `viewBox`: con `meet` il secondo sta dentro il primo.
+      const fondo = vista.z0 + vista.altezza / 2 + altaPx * s / 2;
+      // Quanto scende il disegno sotto ogni nodo: il suo nome, se il verso lo manda in giù; il suo
+      // cerchio, altrimenti — il nome sta di sopra, e non è lui il punto più basso. Sono le due cose
+      // che la piastra non deve cancellare, ed è **esattamente** ciò che il fumo confronta con le
+      // strisce (`STRISCE_ADDOSSO`: `text` e `circle` dei nodi). Il triangolo del vincolo resta
+      // fuori dal conto di proposito: è un segno del disegno tecnico, non un valore.
+      const sotto = (n) => (versi.get(n.id).z < -0.3
+        ? offset * s + Math.max(3, 0.25 * carattere) * s
+        : misure.raggioNodo * s);
+      // La quota è quella della **piastra vera** — il suo `bottom: 8px` più la sua altezza — non
+      // quella della banda che si riserverebbe: la banda porta dentro anche mezzo corpo di stacco,
+      // e misurare la soglia su di lei fa scattare la riserva dove non c'è niente da coprire.
+      const tocca = m.nodi.some((n) => schermo(n).y + sotto(n) > fondo - (8 + altaColori) * s);
+      // E se serve ma non ci sta, **W4 anche in basso**: a togliersi di mezzo è la legenda, non il
+      // nome di un nodo. Una legenda assente si nota; un nome cancellato da una piastra opaca no.
+      if (tocca && altaPx - fascia - bandaColori >= TELAIO_MINIMO) bassa = bandaColori;
+      else if (tocca) colori.hidden = true;
+      // `extra` è quello dell'allargamento: rifare l'inquadratura senza perderebbe i nomi lunghi.
+      // La coppia banda/allargamento non ha un punto fisso esatto — l'allargamento è già una stima —
+      // e un secondo giro basta: misurato, a 1920×1080 il telaio resta 207 px di alto.
+      if (bassa) { inquadra(m, ghost, extra, fascia, bassa); s = millimetriPerPixel(); }
     }
     const gruppo = el("g");
 
@@ -579,7 +646,10 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // I numeri della legenda dei colori arrivano **adesso**: `raccolto.uMax` è la stessa scala con
     // cui lo strato ha colorato i tratti, e prima dell'inquadratura non esisteva ancora. L'altezza
     // della striscia non dipende da loro (una riga sola), quindi la fascia era già quella giusta.
-    const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo });
+    // `compatta` in aula come per la legenda degli stati: a 1280×657 il testo intero va a capo su
+    // 89 px e si posa sui due piedi del telaio, e i nomi dei nodi non passano da `disponi` — nessun
+    // ostacolo li sposta, la sola leva è il testo più corto (15b, Task 3).
+    const estremi = testoScalaColori({ uMax: raccolto.uMax, tipo: attivo?.tipo, compatta: inAula });
     titoloColori.textContent = estremi.titolo;
     minColori.textContent = estremi.min;
     maxColori.textContent = estremi.max;
@@ -594,27 +664,55 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
     const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
                        x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
-    // I numeri vengono da `stile.css`: `left`/`right: 8px` più 0,6 em per carattere del corpo
-    // `--etichetta` fanno la larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il
-    // badge sta su una riga sua e non si tronca — la scala non può mancare. Se là cambiano, qui le
-    // etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
+    // I numeri vengono da `stile.css`: `left`/`right: 8px` più 0,6 em per carattere fanno la
+    // larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta su una riga
+    // sua e non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a
+    // passare sotto il testo senza che nessun test se ne accorga.
     // I `top` li ha già scritti il conto della fascia, qui sopra: questi sono i soli ostacoli.
-    const dentro = (testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, carattere), (larghezzaPx - 16) * s);
+    //
+    // Il corpo è quello reso **da ogni striscia**, letto su di lei e non sul vicino. In aula
+    // `body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori)`
+    // porta a 32 px le tre strisce che elenca; il badge in quell'elenco **non c'è**, e resta a
+    // `--etichetta`, cioè 46 (`#piano .risultati-badge`). Un corpo solo, preso dal badge, stimava a
+    // 46 anche le altre tre e gonfiava le loro larghezze di 1,44 volte: l'ostacolo della legenda dei
+    // colori copriva tutta la banda bassa, e un'etichetta che non trova posto non si sposta — esce
+    // `nascosta` e **non si scrive affatto** (`etichette.js:100-102`). Un numero che sparisce in
+    // silenzio è peggio di un numero affollato.
+    // Senza `getComputedStyle` (il DOM finto dei test) si ricade su `carattere`, com'era.
+    const corpoDi = (e) => parseFloat(globalThis.getComputedStyle?.(e)?.fontSize) || carattere;
+    const dentro = (e, testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, corpoDi(e)), (larghezzaPx - 16) * s);
     const ostacoloStriscia = (e, top, alta, testo, extra) => {
       if (e.hidden) return;
-      ostacoli.push({ x0: viewport.x1 - dentro(testo, extra), x1: viewport.x1,
+      ostacoli.push({ x0: viewport.x1 - dentro(e, testo, extra), x1: viewport.x1,
                       y0: viewport.y0 + top * s, y1: viewport.y0 + (top + alta) * s });
     };
     ostacoloStriscia(badge, topBadge, altaBadge(), badge.textContent);
     ostacoloStriscia(legenda, topLegenda, altaLegenda(), legenda.textContent);
+    // La legenda dei colori non scende più in colonna (15b): sta in basso a sinistra, e il suo
+    // rettangolo si costruisce di lì — `left: 8px` e `bottom: 8px` di `stile.css`, con gli 8 px del
+    // fondo dentro l'ostacolo, che è la lettura pessimista. Va a capo (`flex-wrap`), quindi il
+    // ripiego del DOM finto sono **due** righe e non una.
+    // Il `padding` della piastra (0,35 em per lato: ~22 px in aula, 7,7 alla scrivania) **non** entra
+    // in questa stima. È un debito dichiarato, non una svista: gli 8 px di margine lo coprono a 11 px
+    // e non a 32, e gonfiare l'ostacolo fa **sparire** le etichette invece di spostarle
+    // (`etichette.js:100-102`) — il fumo misura i rettangoli veri, e a 1280 e a 1920 non c'è niente
+    // addosso. Se un giorno un'etichetta finisce sotto la piastra in aula, 22 è il numero da sommare.
     // La rampa è larga 6 em, cioè dieci caratteri del mono. I tre `gap` di `.risultati-colori` sono
     // in `em` (`stile.css`, fix B: a 32 px sei pixel fissi non reggevano e «|u|» si incollava a
     // «0 mm»), quindi la stima li segue invece di contarli come tre spazi da 0,6 em: 0,4 em l'uno.
-    ostacoloStriscia(colori, topColori, altaColori(),
-                     `${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * carattere);
+    // `offsetHeight === 0` vuol dire che una regola CSS la **spegne** (il riquadro strettissimo,
+    // `stile.css`): allora di ostacolo non ce n'è. Il ripiego serve al solo DOM finto dei test, dove
+    // `offsetHeight` non esiste affatto; senza la distinzione quel ripiego — 98 px in aula — sarebbe
+    // un ostacolo fantasma alto quanto tutto il piano a 640×400, dove il piano è alto 99.
+    if (!colori.hidden && colori.offsetHeight !== 0) {
+      const alta = colori.offsetHeight || 2 * (carattere + 3);
+      const larga = dentro(colori, `${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * corpoDi(colori));
+      ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + larga,
+                      y0: viewport.y1 - (8 + alta) * s, y1: viewport.y1 });
+    }
     // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
-                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, carattere), 0.45 * larghezzaPx * s) });
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, corpoDi(titolo)), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro

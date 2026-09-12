@@ -40,6 +40,38 @@ const scegliCaso = (valore) => ev(`(() => { const s = document.getElementById("r
 
 const BADGE = `document.querySelector("#piano .risultati-badge").textContent`;
 
+// Un clic **vero** sul bersaglio della striscia, a una frazione della sua larghezza: `suPasso`
+// sceglie il punto più vicino all'ascissa, quindi così si arriva a un passo qualunque senza premere
+// 120 frecce. Serve al fix round 2: il difetto della collocazione si vede solo ai passi bassi.
+const vaiAlPasso = async (frazione) => {
+  const b = await ev(`(() => { const r = document.querySelector("#srotolato rect.passi");
+    if (!r) return null; const q = r.getBoundingClientRect(); return [q.left, q.top, q.width, q.height]; })()`);
+  if (!b) return false;
+  const x = Math.round(b[0] + frazione * b[2]), y = Math.round(b[1] + b[3] / 2);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await cmd("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+  }
+  await pausa(420);
+  return true;
+};
+
+// Un trascinamento **vero** sul canvas del 3D, dal suo centro. `spazio.js` orbita su `pointerdown`
+// sul canvas e `pointermove`/`pointerup` sulla finestra, e CDP li genera dai propri eventi di
+// mouse. Serve al fix round 1: la sonda dello spessore leggeva le matrici della camera del giro
+// prima, e quel difetto si vede **solo** dopo un'orbita — nessun copione ne faceva una, e il fumo
+// restava verde su una sonda che sbagliava del 57 %.
+const trascinaSpazio = async (dx, dy) => {
+  const b = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return null;
+    const r = c.getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  if (!b) return false;
+  const [x, y] = b;
+  await cmd("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 });
+  await cmd("Input.dispatchMouseEvent", { type: "mouseMoved", x: x + dx, y: y + dy, button: "left", buttons: 1 });
+  await cmd("Input.dispatchMouseEvent", { type: "mouseReleased", x: x + dx, y: y + dy, button: "left", buttons: 0, clickCount: 1 });
+  await pausa(200);
+  return true;
+};
+
 // Se un elemento in pixel sta dentro il suo riquadro, misurato col rettangolo vero del browser.
 // A 1280 px la colonna del piano è ~430 px: il badge della pushover e quello di un modo a forma
 // nulla ne uscivano a sinistra, tagliati proprio dove il testo comincia («er · passo…»), e il
@@ -58,6 +90,30 @@ const reso = (sel, attr, fattore = 1) => ev(`(() => { const v = [...document.que
 const ETICHETTE_NODI = ["#piano svg g[data-tipo=nodo] text", "font-size"];
 const ACCESA = `document.body.hasAttribute("data-presentazione")`;
 const COLORI = `(() => { const l = document.querySelector("#piano .risultati-colori"); return l && !l.hidden ? l.textContent : null; })()`;
+
+// Lo spessore dei cilindri del 3D (#85). `spazio.js` scrive sul canvas il diametro **reso** in px
+// dell'asta e quello voluto da `--asta-tratto`: è l'unica finestra sulla tela WebGL, che nessuno
+// strumento che guarda il DOM sa leggere (`docs/ricerca/07-ux-modellatore.md:123`). `null` se la
+// sonda non c'è — senza WebGL `creaSpazio` si dichiara assente e non c'è niente da misurare;
+// `SPAZIO_ASSENTE` dice quale dei due casi è, così un `null` non passa per silenzio.
+const TRATTO_3D = `(() => { const c = document.querySelector("#spazio canvas");
+  if (!c || c.dataset.trattoReso === undefined) return null;
+  return { reso: parseFloat(c.dataset.trattoReso), voluto: parseFloat(c.dataset.trattoVoluto) }; })()`;
+const SPAZIO_ASSENTE = `!!document.querySelector("#spazio p.vuoto")`;
+
+// I **pixel** della tela WebGL, come li vede chi guarda. È l'oracolo di «la vista si è mossa»:
+// finché lo era il diametro della sonda, quel numero cambiava con la camera solo perché il conto
+// dello spessore portava dentro l'inquadratura stantia — cioè il test si reggeva su un difetto, e
+// chiuso quello sarebbe morto anche senza che la tastiera smettesse di girare il 3D. Lo scatto è
+// ritagliato sulla sola tela: il resto della pagina cambia per conto suo e direbbe il falso.
+const telaDipinta = async () => {
+  const b = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return null;
+    const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+  if (!b) return null;
+  const { data } = await cmd("Page.captureScreenshot",
+    { format: "png", clip: { x: b[0], y: b[1], width: b[2], height: b[3], scale: 1 } });
+  return data;
+};
 
 // I riquadri delle strisce di testo sopra il piano contro i nomi e i cerchi dei nodi (15a, fix A).
 // `SOVRAPPOSTE` qui sopra non serve: confronta i `<text>` dell'SVG **fra loro**, e i nomi dei nodi
@@ -89,14 +145,200 @@ const STRISCE_ADDOSSO = `(() => {
            piano: piano ? Math.round(piano.b - piano.t) : null };
 })()`;
 
+// Il telaio e la fascia delle strisce alte, in pixel del piano: `cima` è dove comincia il disegno,
+// `fascia` dove finisce l'ultima striscia in colonna (titolo, badge, stati — quella dei colori sta in
+// basso e non entra nella fascia, 15b). `alto` è quanto disegno resta, che `TELAIO_MINIMO` = 100 px
+// non lascia scendere sotto.
+const TELAIO_E_FASCIA = `(() => {
+  const p = document.getElementById("piano").getBoundingClientRect();
+  const c = [...document.querySelectorAll("#piano svg g[data-tipo=nodo] circle")].map((e) => e.getBoundingClientRect());
+  const alte = ["carichi-titolo", "risultati-badge", "risultati-legenda"]
+    .map((k) => document.querySelector("#piano ." + k))
+    .filter((e) => e && !e.hidden && e.offsetParent !== null)
+    .map((e) => e.getBoundingClientRect().bottom - p.top);
+  return { cima: c.length ? Math.round(Math.min(...c.map((x) => x.top)) - p.top) : null,
+           alto: c.length ? Math.round(Math.max(...c.map((x) => x.bottom)) - Math.min(...c.map((x) => x.top))) : null,
+           fascia: alte.length ? Math.round(Math.max(...alte)) : 0,
+           piano: Math.round(p.height) };
+})()`;
+
+// Il riquadro del piano come lo misura `piano.js` (`clientWidth`/`clientHeight`), più la striscia
+// sotto di lui: entrando in aula lo srotolato compare e gli ruba altezza **dentro** la griglia,
+// senza che nessun `resize` scatti.
+const RIQUADRO_PIANO = `(() => { const p = document.getElementById("piano"), s = document.getElementById("srotolato");
+  return { piano: [p.clientWidth, p.clientHeight], srotolato: Boolean(s && !s.hidden && s.offsetParent !== null) }; })()`;
+
+// Quante volte il piano si è **ridisegnato** davvero: `disegna` chiude con `svg.replaceChildren`,
+// cioè una mutazione `childList` per giro. È l'unico modo di dire «un ridisegno per cambio di
+// riquadro» invece di «il disegno alla fine è giusto» — un ciclo di osservazioni che si rincorrono
+// finisce col disegno giusto anche lui, e conterebbe a centinaia.
+const CONTA_RIDISEGNI = `(() => { window.__ridisegni = 0;
+  new MutationObserver((m) => { window.__ridisegni += m.length; })
+    .observe(document.querySelector("#piano svg"), { childList: true });
+  return true; })()`;
+
+// La striscia sotto il piano (15b): se si vede, quanto costa e con quali misure rese. `null` quando
+// una regola la nasconde — che sotto i 900 px di finestra in aula è quel che deve succedere.
+// `fuori` è il contenimento **reso** dei testi dentro il proprio SVG: la ragione dei 160 px di
+// `--srotolato-alto` è che a 96 il numero del picco di sopra esce dal riquadro.
+const SROTOLATO = `(() => {
+  const s = document.getElementById("srotolato");
+  if (!s || s.hidden || s.offsetParent === null) return null;
+  const svg = s.querySelector("svg"), t = s.querySelector(".titolo");
+  const testi = [...s.querySelectorAll("svg text")];
+  const r = svg ? svg.getBoundingClientRect() : null;
+  return { scatola: Math.round(s.getBoundingClientRect().height),
+           svg: svg ? Math.round(r.height) : null,
+           titolo: t ? Math.round(parseFloat(getComputedStyle(t).fontSize)) : null,
+           quantiTesti: testi.length,
+           corpo: testi.length ? Math.min(...testi.map((e) => parseFloat(getComputedStyle(e).fontSize))) : null,
+           // Contenimento su **tutte e quattro** le componenti, non solo in verticale: il difetto
+           // storico che aveva messo il taglio massimo dentro il grafico era orizzontale —
+           // «72,12 kN» tagliato a «2 kN», cioè un numero diverso e plausibile. Il controllo
+           // orizzontale esisteva (staDentro) ma girava solo nel copione della scrivania.
+           fuori: testi.map((e) => { const b = e.getBoundingClientRect();
+             const q = Math.max(r.top - b.top, b.bottom - r.bottom, r.left - b.left, b.right - r.right);
+             return q > 0.5 ? [e.textContent, Math.round(q)] : null; }).filter(Boolean),
+           // I testi della striscia **fra loro**, come STRISCE_ADDOSSO fa per le strisce del
+           // piano: SOVRAPPOSTE confronta i testi di #piano e questi non ci passano, ed è per
+           // questo che «60 mm» addosso a «V 70,93 kN» non l'ha visto nessuno fino al fix
+           // round 1. Mezzo pixel di tolleranza: i bordi che combaciano non sono addosso.
+           // (Niente apici inversi qui dentro: è una template literal, li chiuderebbero.)
+           addosso: (() => { const q = testi.map((e) => [e.textContent, e.getBoundingClientRect()]), fuori = [];
+             for (let i = 0; i < q.length; i++) for (let j = i + 1; j < q.length; j++) {
+               const a = q[i][1], b = q[j][1];
+               if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5)
+                 fuori.push([q[i][0], q[j][0]]);
+             }
+             return fuori; })() };
+})()`;
+
+// Il contrasto **reso** del testo della legenda dei colori sulla sua piastra: i colori li compone il
+// browser, non li deduce il CSS. `alfa` sta accanto al rapporto perché una piastra trasparente
+// lascerebbe il testo sul disegno — viridis o ombra dell'indeformata — e il rapporto misurato contro
+// un fondo che non copre non direbbe più niente (`docs/ricerca/07-ux-modellatore.md:100`).
+const CONTRASTO_COLORI = `(() => {
+  const e = document.querySelector("#piano .risultati-colori");
+  if (!e || e.hidden) return null;
+  const st = getComputedStyle(e);
+  const canali = (c) => (c.match(/[0-9.]+/g) ?? []).map(Number);
+  const L = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const sfondo = canali(st.backgroundColor);
+  const [chiaro, scuro] = [L(canali(st.color)), L(sfondo)].sort((x, y) => y - x);
+  return { rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 100) / 100,
+           alfa: sfondo.length > 3 ? sfondo[3] : 1, sfondo: st.backgroundColor, testo: st.color };
+})()`;
+
+// Il contrasto **composto** di un testo qualunque, non solo della legenda: `--testo-tenue` porta
+// un alfa (`stile.css:12`), e il fondo va cercato risalendo gli antenati finche'
+// uno non e' opaco — un `<kbd>` porta il proprio `background` addosso, e sta su `--pannello` anche
+// quando il blocco attorno e' di `--fondo`. Il valore dichiarato nel CSS non dice niente da solo:
+// il colore che si legge lo compone il browser (`docs/ricerca/07-ux-modellatore.md:100`).
+const contrastoDi = (sel) => `(() => {
+  const canali = (c) => (c.match(/[0-9.]+/g) ?? []).map(Number);
+  const L = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const fondoDi = (e) => { for (let n = e; n; n = n.parentElement) {
+      const c = canali(getComputedStyle(n).backgroundColor);
+      if (c.length < 4 || c[3] > 0.99) return c.slice(0, 3); } return [255, 255, 255]; };
+  const sopra = (fg, bg) => fg.slice(0, 3).map((c, i) => c * (fg[3] ?? 1) + bg[i] * (1 - (fg[3] ?? 1)));
+  return [...document.querySelectorAll(${JSON.stringify(sel)})]
+    .filter((e) => e.offsetParent !== null)
+    .map((e) => { const st = getComputedStyle(e), bg = fondoDi(e), t = sopra(canali(st.color), bg);
+      const [chiaro, scuro] = [L(t), L(bg)].sort((x, y) => y - x);
+      return { testo: e.textContent.slice(0, 12), px: parseFloat(st.fontSize),
+               rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 1000) / 1000,
+               reso: t.map(Math.round).join(","), fondo: bg.join(",") }; });
+})()`;
+
+// La tela del 3D come la vedono una tecnologia assistiva e il tasto di tabulazione (R5): senza
+// nome, ruolo e `tabindex` un `<canvas>` e' un buco muto e irraggiungibile (WCAG 1.1.1 e 2.1.1), e
+// il detector non sa nemmeno che c'e' (`docs/ricerca/07-ux-modellatore.md:123`). `vuoto` dice
+// l'altro caso — niente WebGL — dove a descrivere il riquadro deve essere quella riga li'.
+const TELA_3D = `(() => {
+  const s = document.getElementById("spazio"), c = s.querySelector("canvas"), p = s.querySelector("p.vuoto");
+  return { sezione: s.getAttribute("aria-label"), tela: Boolean(c), vuoto: p ? p.textContent : null,
+           nome: c ? c.getAttribute("aria-label") : null, ruolo: c ? c.getAttribute("role") : null,
+           // Il ruolo group da solo si legge «gruppo»: la parola che dice cosa e' questo
+           // riquadro sta qui, e senza leggerla l'assert sul ruolo proverebbe meta' della cosa.
+           // (Niente apici inversi in questo commento: e' dentro una template literal.)
+           roledescription: c ? c.getAttribute("aria-roledescription") : null,
+           tabindex: c ? c.getAttribute("tabindex") : null,
+           prendeIlFuoco: c ? (c.focus(), document.activeElement === c) : null }; })()`;
+
+// Il corpo **reso** piu' piccolo fra i testi visibili di albero e ispettore. In aula coi pannelli
+// riaperti la story ne chiede almeno 32 px (`PRODUCT.md:96-101`) e la regola d'oggi alzava il solo
+// `#risultati`. Gli `svg` restano fuori: dentro un `viewBox` il corpo e' in unita' del disegno e
+// non in pixel — lo stesso numero senza significato che la critique ha scartato invece di riportare.
+const CORPO_MINIMO_PANNELLI = `(() => {
+  const f = [];
+  for (const e of document.querySelectorAll("#colonna *, #pannello *")) {
+    if (e.offsetParent === null || e.closest("svg")) continue;
+    // Il testo **proprio**, non textContent: un elemento con figli ha comunque una frase sua —
+    // «Nessun nodo. Premi …» sta fra un kbd e l'altro — e saltarlo lasciava fuori dal minimo
+    // proprio le righe degli stati vuoti. (Niente apici inversi: siamo in una template literal.)
+    const proprio = [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("").trim();
+    if (!proprio) continue;
+    f.push([Math.round(parseFloat(getComputedStyle(e).fontSize) * 10) / 10,
+            e.tagName + (e.id ? "#" + e.id : ""), proprio.slice(0, 20)]);
+  }
+  f.sort((a, b) => a[0] - b[0]);
+  return { minimo: f.length ? f[0][0] : null, quanti: f.length, piuPiccoli: f.slice(0, 4) };
+})()`;
+
+// I testi **dentro** gli `svg` del pannello — il disegno della sezione (`sezione.js:120`) e la
+// curva del legame (`legame.js:64-67`) — che `CORPO_MINIMO_PANNELLI` salta per costruzione e che
+// quindi nessuna delle sue misure puo' vedere. Portano `font-size` come **attributo di
+// presentazione**, che una regola CSS batte: senza l'esclusione `:not(svg, svg *)` la regola dei
+// 32 px dell'aula li porterebbe a 32 unita' del `viewBox` — 32 millimetri di disegno, non 32
+// pixel. L'oracolo e' `computato === attributo`: e' esattamente quello che l'esclusione promette,
+// e cade appena qualcuno la toglie. `reso` sta accanto per leggere il numero in pixel di schermo
+// col metodo di sempre, attributo per `getScreenCTM().a`.
+const CORPI_SVG_PANNELLI = `[...document.querySelectorAll("#pannello svg text")].map((e) => {
+  const attributo = parseFloat(e.getAttribute("font-size"));
+  const ctm = e.getScreenCTM();
+  return { testo: e.textContent.slice(0, 14), attributo,
+           computato: parseFloat(getComputedStyle(e).fontSize),
+           reso: ctm ? Math.round(attributo * ctm.a * 100) / 100 : null };
+})`;
+
+// Lo scorrimento orizzontale dei blocchi del pannello (WCAG 1.4.10, «nessuno scorrimento in
+// orizzontale»). `fuori` serve solo al messaggio di fallimento, e lascia fuori i `<input>`: un
+// campo di testo scorre il **proprio** contenuto per mestiere, e il suo riquadro resta dentro.
+const SCORRE_ORIZZONTALE = `["#pannello", "#corsa", "#albero"].map((sel) => {
+  const e = document.querySelector(sel);
+  if (!e) return null;
+  return { sel, scrollWidth: e.scrollWidth, clientWidth: e.clientWidth,
+           fuori: [...e.querySelectorAll("*")]
+             .filter((x) => x.offsetParent !== null && x.tagName !== "INPUT" && x.scrollWidth > x.clientWidth + 0.5)
+             .map((x) => [x.tagName + (x.id ? "#" + x.id : ""), x.scrollWidth, x.clientWidth]).slice(0, 6) };
+})`;
+
+// Il percorso del solutore lo scrive la macchina che corre (`corsa.js:118`): su una con
+// `/usr/bin/OpenSees` il difetto di R3 non si presenterebbe, e il test sarebbe verde per il motivo
+// sbagliato. Qui il testo lo detta il copione — stessa forma, lunghezza dichiarata.
+const PERCORSO_LUNGO = "OpenSees 3.8.0 \u00b7 /Users/qualcuno/.local/bin/OpenSees";
+
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
 // domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
 // Si legge due volte — animazione che gira e animazione ferma — perché è la differenza fra le due
 // a dire quanto costa il nostro giro, non il valore assoluto (che il vsync tiene fermo comunque).
 const INTERVALLI = `new Promise((ok) => { const t = []; const g = () => { t.push(performance.now()); if (t.length < 31) requestAnimationFrame(g); else ok(t.slice(1).map((v, i) => v - t[i])); }; requestAnimationFrame(g); })`;
-const riassunto = (v) => ({ media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
-                            massimo: Math.round(Math.max(...v) * 100) / 100 });
+// La **mediana** accanto alla media: il primo fotogramma dopo un cambio di stato è quello di avvio
+// (misurati 18,16 ms di media contro 16,70 di mediana, e 16,66 alla seconda lettura), cioè banda e
+// non valore. La mediana non se ne accorge, ed è il numero su cui l'issue #87 fissa le sue soglie.
+const riassunto = (v) => {
+  const ordinati = [...v].sort((a, b) => a - b), n = ordinati.length;
+  // La mediana **vera**, media dei due centrali: il campione è di trenta, e `ordinati[n >> 1]` da
+  // solo dà la mediana superiore. Il bias sarebbe verso l'alto, quindi cautelativo rispetto alla
+  // soglia, ma #87 pubblica questo numero chiamandolo mediana — e allora che lo sia davvero.
+  const mediana = (ordinati[(n - 1) >> 1] + ordinati[n >> 1]) / 2;
+  return { mediana: Math.round(mediana * 100) / 100,
+           media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
+           massimo: Math.round(Math.max(...v) * 100) / 100 };
+};
 
 const COPIONI = {
   // La pagina si apre, la tastiera risponde dal primo secondo, un nodo si posa da tastiera.
@@ -391,16 +633,27 @@ const COPIONI = {
       aste: await reso("#piano svg line[data-tipo=asta]", "stroke-width"),
       nodi: await reso("#piano svg g[data-tipo=nodo] circle", "r", 2),
       striscia: await ev(`parseFloat(getComputedStyle(document.getElementById("risultati-caso")).fontSize)`),
+      tratto3d: await ev(TRATTO_3D),
+      spazioAssente: await ev(SPAZIO_ASSENTE),
+      // Lo **stesso** spessore dopo un'orbita: un'asta è spessa 6 px da qualunque angolo la si
+      // guardi. Con la sonda chiamata prima del render questo numero usciva 9,48 e ci restava.
+      tratto3dDopoOrbita: (await trascinaSpazio(200, 60)) ? await ev(TRATTO_3D) : null,
     };
     const nascosti = await ev(`["colonna", "barra", "storia-elenco"].map((id) => getComputedStyle(document.getElementById(id)).display === "none" || document.getElementById(id).offsetParent === null)`);
     const strisciaSotto = await ev(`document.getElementById("pannello").getBoundingClientRect().top >= document.getElementById("viste").getBoundingClientRect().bottom - 1`);
     const altezzaStriscia = await ev(`document.getElementById("pannello").getBoundingClientRect().height`);
     const piano = await ev(`[document.getElementById("piano").clientWidth, document.getElementById("piano").clientHeight]`);
+    // 15b — senza un'asta scelta la striscia porta la sola riga «Seleziona un'asta…», e **quella**
+    // in aula non può restare a 11 px: è il testo che dice cosa fare adesso.
+    const srotolato = await ev(SROTOLATO);
     const proporzione = await ev(`document.getElementById("piano").clientWidth / document.getElementById("spazio").clientWidth`);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const colori = await ev(`new Set([...document.querySelectorAll("#piano svg line.deformata")].map((l) => l.getAttribute("stroke"))).size`);
     const legendaColori = await ev(COLORI);
+    // La piastra anche qui, a 1920: la legenda sta sopra il disegno a ogni misura, non solo a 1280,
+    // e senza quest'asserzione il fondo opaco potrebbe chiudersi in una media query stretta.
+    const contrasto = await ev(CONTRASTO_COLORI);
     // Bianco e nero: il colore spento, i canali che restano. Il badge dice la scala a parole; il nodo
     // scelto è più grosso (non solo rosso); la deformata ha il bordo in inchiostro.
     await ev(`(() => { document.documentElement.style.filter = "grayscale(1)"; return true; })()`);
@@ -438,8 +691,67 @@ const COPIONI = {
     menu.escEsce = await ev(`!${ACCESA}`);
 
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, proporzione, sovrapposte, scorre,
-             colori, legendaColori, bn, uscito, legendaModo, menu, messaggio };
+    return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, srotolato, proporzione, sovrapposte, scorre,
+             colori, legendaColori, contrasto, bn, uscito, legendaModo, menu, messaggio };
+  },
+
+  // **L'ordine di gesti che nessun copione provava**: prima si entra in aula, poi si corre. Entrando,
+  // la striscia dell'M srotolato compare e ruba 49 px al piano (1025 → 919): il riquadro cambia
+  // **dentro** la griglia, `resize` sta sulla finestra e non scatta, e il disegno resta alla scala
+  // del riquadro di prima. Misurato a 1920×1080 sul MURO 1: corpo reso **41,23 px** invece di 45,99,
+  // cioè sotto i 45 che la proiezione in aula chiede (`docs/ricerca/07-ux-modellatore.md:133`).
+  // Il fumo non lo vedeva perché `presentazione` corre **prima** di premere `P`.
+  async aulaPrimaDellaCorsa() {
+    await apri(url, arg.cdp, { larghezza: arg.larghezza, altezza: arg.altezza });
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("p");
+    await pausa(400);
+    // Ingresso degenere: in aula **senza** aver corso. Nessun risultato, nessuna striscia dei
+    // risultati e nessun M srotolato — il riquadro è ancora quello pieno, e il disegno ci sta dentro.
+    const senzaCorsa = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri, con l'aula già accesa
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await pausa(500);
+    const subito = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    // Lo stesso riquadro stantio, visto dal 3D: `ridimensiona` ha misurato prima che la griglia si
+    // rifacesse, quindi la tela resta grande com'era e `camera.aspect` con lei. La sonda dello
+    // spessore legge la scala vera e proietta con la camera sbagliata: il diametro esce moltiplicato
+    // per l'altezza stantia su quella vera. Misurato a 1280×800 — tela 745 px in un riquadro di 592
+    // — **7,68 px** contro i 6 voluti, e a 1920×1080 6,47. L'orbita da tastiera non è la causa: è il
+    // gesto che chiede un `rendi` nuovo e mostra il numero. Le quattro frecce sono il gesto della
+    // critique R5, e la tela va messa a fuoco o il `keydown` non arriva al suo listener.
+    const tela = { spazio: await ev(`(() => { const s = document.getElementById("spazio"), c = s.querySelector("canvas");
+      return c ? [c.clientWidth, c.clientHeight, s.clientWidth, s.clientHeight] : null; })()`),
+      assente: await ev(SPAZIO_ASSENTE), fermo: await ev(TRATTO_3D) };
+    tela.fuoco = await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return false;
+      c.focus(); return document.activeElement === c; })()`);
+    if (tela.fuoco) for (let k = 0; k < 4; k++) await tasto("ArrowLeft");
+    await pausa(250);
+    tela.dopoFrecce = await ev(TRATTO_3D);
+    // Il ridisegno che il difetto nascondeva: un `resize` da un pixel e ritorno. Prima del fix i due
+    // numeri erano 41,23 e 45,99; dopo devono essere lo stesso numero, perché il ridisegno è già
+    // avvenuto da sé quando il riquadro è cambiato.
+    await viewport(1921, 1080, 1);
+    await pausa(200);
+    await viewport(1920, 1080, 1);
+    await pausa(350);
+    const dopoResize = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)) };
+    // Ingresso degenere: il riquadro che cambia **due volte di fila**, senza toccare la finestra —
+    // i pannelli si riaprono e si richiudono. Un ridisegno per cambio, e nessun ciclo di
+    // osservazioni che si rincorrono.
+    await ev(CONTA_RIDISEGNI);
+    for (let k = 0; k < 2; k++) {
+      await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+      await pausa(200);
+    }
+    await pausa(700);
+    const dueCambi = { etichette: await reso(...ETICHETTE_NODI), ...(await ev(RIQUADRO_PIANO)),
+                       ridisegni: await ev(`window.__ridisegni`) };
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return { senzaCorsa, subito, dopoResize, dueCambi, tela, messaggio };
   },
 
   // Il telaio sotto le strisce (15a, fix A): la pushover del MURO 1 a 1920×1080 in presentazione è il
@@ -469,12 +781,82 @@ const COPIONI = {
     await scegliCaso("pushover");
     await pausa(700);
     const srotolatoInAula = await ev(`document.getElementById("srotolato").offsetParent !== null`);
+    // 15b — la striscia torna in aula con misure sue, e il telaio deve reggere lo stesso: qui si
+    // leggono tutte e due le cose, perché accenderla ruba al piano proprio l'altezza che i Task 2
+    // e 3 gli hanno appena restituito.
+    const srotolato = await ev(SROTOLATO);
+    const telaio = await ev(TELAIO_E_FASCIA);
     const strisce = await ev(STRISCE_ADDOSSO);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const legendaColori = await ev(COLORI);
+    // Fix round 2 — i **tre passi**, in coda a tutto il resto per non spostare le misure qui sopra.
+    // Il difetto della collocazione si vede solo ai passi bassi, dove il taglio è già alto e lo
+    // spostamento ancora piccolo: guardare il solo ultimo passo è la ragione per cui è sopravvissuto
+    // a due giri. `passo` sta accanto ai rettangoli perché il test possa dire che i tre sono diversi
+    // davvero — tre misure sullo stesso passo non proverebbero niente.
+    const srotolatoAiPassi = [];
+    for (const frazione of [0, 0.5, 0.98]) {
+      // `preso` viaggia col resto: `vaiAlPasso` sa dire che il clic non è partito, e senza questo
+      // il test parlerebbe di «tre passi uguali» invece che del bersaglio che non c'era.
+      const preso = await vaiAlPasso(frazione);
+      srotolatoAiPassi.push({ frazione, preso, passo: await ev(BADGE), ...(await ev(SROTOLATO)) });
+    }
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, strisce, sovrapposte, scorre, legendaColori, messaggio };
+    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, srotolato, srotolatoAiPassi, telaio, strisce, sovrapposte, scorre, legendaColori, messaggio };
+  },
+
+  // Il collaudo della 15b, a **1280×657** in aula: il riquadro basso dove le strisce costano di più.
+  // Il fumo di prima girava solo a 1920×1080, e lì il difetto non si vede — a 1280 la legenda dei
+  // colori, scesa in basso a sinistra (15b), andava a capo su 89 px e si posava su «piede sx»,
+  // «piede dx» e i loro cerchi. Nomi e cerchi dei nodi non passano da `disponi`: nessun ostacolo li
+  // sposta, e la leva è il testo più corto.
+  async aula1280() {
+    // `P` **prima** di ⌘⏎, come in `presentazionePushover` (N5): la corsa deve girare in aula.
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("p");
+    await pausa(300);
+    const accesa = await ev(ACCESA);
+    await tasto("Enter", { meta: true });   // ⌘⏎: corri, con l'aula già accesa
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await scegliCaso("pushover");
+    await pausa(700);
+    const strisce = await ev(STRISCE_ADDOSSO);
+    const telaio = await ev(TELAIO_E_FASCIA);
+    // 15b — a questo riquadro la striscia non ci sta a nessuna altezza utile: `null` è la promessa.
+    const srotolato = await ev(SROTOLATO);
+    const srotolatoInAula = await ev(`document.getElementById("srotolato").offsetParent !== null`);
+    const contrasto = await ev(CONTRASTO_COLORI);
+    const legendaColori = await ev(COLORI);
+    const altaColori = await ev(`document.querySelector("#piano .risultati-colori").getBoundingClientRect().height`);
+    const sovrapposte = await ev(SOVRAPPOSTE);
+    const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    // Fix round 3 — la finestra **stretta e alta**, che la regola d'altezza non copre: 1000 px di
+    // altezza passano la soglia dei 899, ma a 1120 di larghezza la colonna del piano è 671 px e i
+    // tre numeri della banda sotto l'asse si toccherebbero (il patto si rompe sotto i 673, misurato
+    // chiamando `creaSrotolato` vero). A nasconderla qui è la soglia di **larghezza**: senza questo
+    // blocco quella riga di CSS si potrebbe cancellare senza far cadere niente.
+    await viewport(1120, 1000);
+    await pausa(500);
+    const strettoAlto = { srotolato: await ev(SROTOLATO),
+                          visibile: await ev(`document.getElementById("srotolato").offsetParent !== null`),
+                          piano: await ev(`document.getElementById("piano").clientWidth`) };
+    // Il riquadro strettissimo, sempre in aula: 640×400 a dpr 2, lo zoom 200 % delle giornate 11c-12.
+    // La piastra è opaca, quindi qui la domanda non è se il testo si legge ma se **copre il disegno**:
+    // quanto del piano si prende, e quanti nodi restano visibili sotto di lei.
+    await viewport(640, 400, 2);
+    await pausa(400);
+    const stretto = { colori: await ev(`(() => { const l = document.querySelector("#piano .risultati-colori");
+      if (!l || l.hidden || l.offsetParent === null) return null;
+      const p = document.getElementById("piano").getBoundingClientRect(), b = l.getBoundingClientRect();
+      return { alta: Math.round(b.height), larga: Math.round(b.width), piano: [Math.round(p.width), Math.round(p.height)] }; })()`),
+      strisce: await ev(STRISCE_ADDOSSO) };
+    return { accesa, strisce, telaio, srotolato, srotolatoInAula, contrasto, legendaColori, altaColori, sovrapposte, scorre, strettoAlto, stretto, messaggio };
   },
 
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost
@@ -588,6 +970,166 @@ const COPIONI = {
     await pausa(200);
     t.rientro = { acceso: await acceso(), colonna: await ev(nascosto("colonna")) };
     await tasto("p");
+    t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return t;
+  },
+
+  // L'aula **coi pannelli riaperti** a 1280x657: il riquadro che nessun copione guardava. Quello
+  // della 15a li apre a 1920x1080 e chiede cosa si vede, non quanto e' grande ne' se scorre. Qui
+  // stanno i quattro rilievi `Important` della critique 15b che nessun altro task copriva — il
+  // contrasto degli stati vuoti (1), i corpi in aula coi pannelli (2), lo scorrimento orizzontale
+  // (3), la tela del 3D da tastiera (5) — piu' i due minori da una riga (7 e 8).
+  async aulaPannelli() {
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    const t = {};
+
+    // R1 — gli stati vuoti, **senza nessuna corsa**: i `<kbd>` si portano `--pannello` addosso come
+    // fondo, e li' `--testo-tenue` non arrivava a 4,5:1. Alla scrivania, che e' dove la critique
+    // l'ha misurato: il difetto non e' dell'aula.
+    t.kbdVuoti = await ev(contrastoDi(".vuoto kbd"));
+    await tasto("n");
+    await pausa(200);
+    t.comando = await ev(contrastoDi("#comando label, #comando .aiuto"));
+    // E lo stesso tenue sull'**altro** fondo, che e' l'altra meta' della decisione: `--testo-tenue`
+    // e' stato alzato alla radice invece che nei tre selettori, quindi il numero su `--fondo` va
+    // asserito qui e non dedotto. I `<kbd>` di sopra stanno tutti sul pannello.
+    t.tenueSuFondo = await ev(contrastoDi("#pannello h2, #albero li.gruppo"));
+    await tasto("Escape");
+    await pausa(150);
+
+    // R7 — l'unico landmark senza nome accessibile su dieci.
+    t.viste = await ev(`document.getElementById("viste").getAttribute("aria-label")`);
+
+    // R8 — l'unica fermata di tabulazione con l'anello del browser invece del rosso della pagina.
+    // Un solo tasto, dal campo dei nodi: `.focus()` non basta, Chrome da' `:focus-visible` a una
+    // **casella** solo dopo un tasto vero (misurato il 12/09: col solo `focus()` torna `false`,
+    // mentre sul campo di testo accanto torna `true`).
+    await ev(`(() => { document.getElementById("confronto-nodi").focus(); return true; })()`);
+    await tasto("Tab");
+    await pausa(150);
+    t.anello = await ev(`(() => { const a = document.activeElement, st = getComputedStyle(a);
+      return { id: a.id, visibile: a.matches(":focus-visible"), colore: st.outlineColor,
+               spessore: parseFloat(st.outlineWidth), stile: st.outlineStyle }; })()`);
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+
+    // R5 — nome, ruolo e `tabindex` sulla tela, prima ancora di girarla.
+    t.tela = await ev(TELA_3D);
+
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+
+    // R5, la parte che conta: da tastiera il 3D si **muove**. L'oracolo sono i **pixel** della tela,
+    // non più il diametro della sonda: quel numero cambiava con la camera perché il conto dello
+    // spessore si portava dentro il riquadro misurato stantio, cioè il test viveva sul difetto che
+    // questo giro chiude — riparato lui, un'asta è spessa uguale da qualunque angolo la si guardi, e
+    // l'assert sarebbe morto senza che la tastiera avesse smesso di girare niente. Dieci frecce e
+    // non una: 1,2 rad si vedono di sicuro, una pressione sola potrebbe non muovere abbastanza
+    // pixel e far cadere il test per una ragione che non è la sua.
+    await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return false; c.focus(); return true; })()`);
+    t.telaAFuoco = await ev(`document.activeElement === document.querySelector("#spazio canvas")`);
+    const primaDelleFrecce = await ev(TRATTO_3D);
+    const dipintaPrima = await telaDipinta();
+    for (let k = 0; k < 10; k++) await tasto("ArrowRight");
+    await pausa(200);
+    t.orbita = { prima: primaDelleFrecce, dopo: await ev(TRATTO_3D),
+                 dipinta: dipintaPrima === null ? null : (await telaDipinta()) !== dipintaPrima };
+
+    // L'ingresso degenere: col campo di comando aperto il fuoco e' nel campo, non sulla tela, e la
+    // freccia muove il cursore nel testo. La vista **non** si deve spostare.
+    await tasto("n");
+    await pausa(200);
+    const primaNelCampo = await ev(TRATTO_3D);
+    const dipintaNelCampo = await telaDipinta();
+    await tasto("ArrowLeft");
+    await tasto("ArrowLeft");
+    await pausa(200);
+    t.conIlCampoAperto = { fuoco: await ev(`document.activeElement.id`),
+                           prima: primaNelCampo, dopo: await ev(TRATTO_3D),
+                           dipinta: dipintaNelCampo === null ? null : (await telaDipinta()) !== dipintaNelCampo };
+    await tasto("Escape");
+    await pausa(200);
+
+    // L'aula, e i pannelli riaperti col bottone — che e' il gesto vero, non un attributo scritto a
+    // mano sul `body`. La selezione e' una **sezione** e non un nodo: il disegno della sezione e'
+    // l'unico `svg` che il pannello porti, e con un nodo selezionato ne aveva zero — l'esclusione
+    // `:not(svg, svg *)` sarebbe restata scritta e mai provata.
+    await ev(`(() => { const v = document.querySelector('#albero-elenco li[data-tipo="sezione"]');
+      if (!v) return false; v.click(); return true; })()`);
+    await pausa(300);
+    await tasto("p");
+    await pausa(300);
+    t.accesa = await ev(ACCESA);
+    await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+    await pausa(500);
+    t.pannelli = await ev(`document.body.hasAttribute("data-pannelli")`);
+
+    // R2 — il corpo piu' piccolo di albero e ispettore, in aula coi pannelli.
+    t.corpo = await ev(CORPO_MINIMO_PANNELLI);
+    t.corpiSvg = await ev(CORPI_SVG_PANNELLI);
+
+    // R3 — e lo scorrimento, col percorso del solutore dettato dal copione (vedi `PERCORSO_LUNGO`).
+    await ev(`(() => { document.getElementById("corsa-solutore").textContent = ${JSON.stringify(PERCORSO_LUNGO)}; return true; })()`);
+    await pausa(300);
+    t.scorrimento = await ev(SCORRE_ORIZZONTALE);
+    t.scorrePagina = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    t.solutore = await ev(`document.getElementById("corsa-solutore").textContent`);
+    t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return t;
+  },
+
+  // A (fix round 1) — la freccia sulla tela, **con la pushover scelta**. Qui e solo qui `←`/`→`
+  // hanno due padroni: `app.js:932` le prende per scorrere i passi quando il caso e' una pushover
+  // e nessun ghost e' aperto, e `spazio.js` le prende per girare la vista. Senza
+  // `stopPropagation` un solo tasto farebbe tutte e due le cose, che e' il difetto che il
+  // commento dichiara chiuso — e nessun copione lo vedeva, perche' tutti caricano la modale.
+  //
+  // Tre misure insieme, e la terza e' quella che impedisce al test di essere vuoto: la vista deve
+  // girare, il passo **non** si deve muovere, e col fuoco **fuori** dalla tela la stessa freccia
+  // deve invece scorrere il passo. Senza l'ultima, un ramo dello scrubber rotto o un caso non
+  // scelto darebbero «il passo non si muove» per la ragione sbagliata.
+  async aulaPushover3D() {
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    const t = {};
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+    await scegliCaso("pushover");
+    await pausa(400);
+    await tasto("p");
+    await pausa(300);
+    t.accesa = await ev(ACCESA);
+    t.badgePrima = await ev(BADGE);
+
+    // Il fuoco sulla tela, e quattro frecce: una sola gira theta di 0,12 rad e il diametro reso
+    // potrebbe restare uguale ai centesimi — il test cadrebbe per l'aritmetica invece che per il
+    // difetto. Quattro sono 0,48 rad, e sono anche quattro passi rubati se `stopPropagation` non
+    // c'e', cioe' un badge diverso in modo inequivocabile.
+    //
+    // **Sinistra e non destra**: la pushover si apre all'ultimo passo (misurato: 120/120) e
+    // `app.js` clampa con `Math.min(s.quanti - 1, …)`, quindi da li' la freccia destra non ha dove
+    // andare e il badge resterebbe uguale **anche** con il tasto rubato. Il primo giro di questo
+    // copione e' caduto proprio li', sulla controprova qui sotto.
+    t.telaAFuoco = await ev(`(() => { const c = document.querySelector("#spazio canvas");
+      if (!c) return false; c.focus(); return document.activeElement === c; })()`);
+    t.trattoPrima = await ev(TRATTO_3D);
+    for (let k = 0; k < 4; k++) await tasto("ArrowLeft");
+    await pausa(300);
+    t.trattoDopo = await ev(TRATTO_3D);
+    t.badgeDopo = await ev(BADGE);
+
+    // La controprova: fuori dalla tela quella stessa freccia **deve** scorrere il passo. Se non lo
+    // fa, il «badge invariato» di sopra non dimostra niente.
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+    await tasto("ArrowLeft");
+    await pausa(300);
+    t.badgeFuoriDallaTela = await ev(BADGE);
     t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return t;
   },

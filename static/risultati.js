@@ -221,7 +221,15 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
       // uscirebbe due volte e la polilinea avrebbe un punto doppio a ogni suddivisione.
       for (let k = t2 === 0 ? 0 : 1; k <= n; k++) {
         const s = k / n, s2 = s * s, s3 = s2 * s;
-        const w = (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
+        // `p0 === 0 && p1 === 0` non basta (#84 fix round 1): un'asta incastro-incastro vera ha
+        // anch'essa le rotazioni a zero esatto (`fix` in OpenSees, non un residuo), e finirebbe
+        // dritta con una freccia vera in mezzo. Solo `formaComeSpostamenti` (sotto) sa di essere
+        // un modo: legge il suo segnale esplicito, non deduce dai numeri. Chi non lo dichiara
+        // resta sull'Hermite di sempre — il default è il comportamento vecchio.
+        const dritta = perCaso?.modale === true;
+        const w = dritta
+          ? (1 - s) * w0 + s * w1
+          : (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
         const u = (1 - s) * a0 + s * a1;
         const r = q0.x_rel + s * (q1.x_rel - q0.x_rel);
         const x = i.x + e1.x * (r * L + scala * u) + e2.x * scala * w;
@@ -539,8 +547,12 @@ export function vociDelCaso(stato) {
 
 /** La forma modale nella stessa forma di `per_caso[caso]`, così il piano e il 3D la disegnano con
  *  il codice della deformata. Niente rotazioni: la forma è lineare fra i nodi (R4), e una rotazione
- *  inventata darebbe una curva che il solutore non ha mai calcolato. */
+ *  inventata darebbe una curva che il solutore non ha mai calcolato. `modale: true` è il segnale
+ *  esplicito che `puntiDeformata` legge per scegliere la retta (#84 fix round 1): solo chi
+ *  costruisce una forma modale sa di esserlo, non si deduce dalle rotazioni a zero, che un
+ *  incastro-incastro vero ha anche lui. */
 export const formaComeSpostamenti = (modo) => ({
+  modale: true,
   spostamenti: Object.fromEntries(Object.entries(modo?.forma ?? {})
     .map(([id, u]) => [id, [Number(u?.[0]) || 0, Number(u?.[1]) || 0, Number(u?.[2]) || 0, 0, 0, 0]])),
 });
@@ -652,8 +664,40 @@ export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(mot
 export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
   .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
 
-export const testoLegendaStati = () =>
-  "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
+/** Il tetto dei testi compatti dell'aula, in caratteri del mono — **38, non 27**. In aula le tre
+ *  strisce che `body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda,
+ *  .risultati-colori)` elenca rendono a **32 px**: quella regola, di specificità (1,2,1), batte il
+ *  `font-size: var(--etichetta, 11px)` che ognuna porta nel proprio `#piano .<classe>` (1,1,0). Il
+ *  badge in quell'elenco **non c'è** e resta a `--etichetta`, cioè 46; e 46 sono anche le etichette
+ *  dentro l'SVG, che non sono strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e nei
+ *  751 px utili di un piano a 1280×657 una riga ne tiene 38. Contato a 46 il tetto uscirebbe 27, e i
+ *  testi resterebbero amputati di undici caratteri che sulla riga ci stavano. Misurato in Chrome il
+ *  13/09: 27 caratteri resi larghi 520 px, cioè 19,26 px l'uno — stima e vero combaciano.
+ *
+ *  Della riga fa parte anche ciò che testo non è: nella legenda dei colori la rampa vale 6 em, cioè
+ *  dieci caratteri del mono, e i tre `gap` da 0,4 em ne valgono due — la stessa somma che `piano.js`
+ *  usa per l'ostacolo. Chi aggiunge un testo compatto lo misura contro questa costante: il test che
+ *  ci cicla sopra lo pinza, e il numero non torna a vivere dentro sei commenti. */
+export const TETTO_COMPATTO = 38;
+
+/** `compatta`: il testo dell'aula (15b, R18). Il testo lungo è di 119 caratteri e in aula va a
+ *  quattro righe: 152 px che il telaio paga in altezza, perché la fascia delle strisce gli toglie
+ *  riquadro. Una riga sola è il bersaglio, e il tetto è `TETTO_COMPATTO`.
+ *
+ *  **La punteggiatura è quella del testo lungo, e non è un vezzo**: `·` separa i valori di uno
+ *  stesso canale, `—` separa i due canali. `◐` e `●` sono calcestruzzo, `✕` è acciaio; col `·` sul
+ *  confine, da 8 m «rotta» si legge come un terzo stato del calcestruzzo.
+ *
+ *  Ogni simbolo mostrato porta il suo nome. È un **giudizio nostro**, non della ricerca: a 8 m un
+ *  glifo nudo non si decifra, mentre `docs/ricerca/07-ux-modellatore.md:157` parla di spessori,
+ *  scala e contrasto, non di simboli senza nome. `○` resta fuori per scelta: è la sezione **illesa**,
+ *  e la legenda si mostra solo quando almeno un simbolo non è quello dell'elastica
+ *  (`legendaStatiServe`) — chi la legge sta cercando i danneggiati. Alla scrivania il testo lungo ci
+ *  sta, e resta quello. */
+export const testoLegendaStati = (compatta = false) =>
+  compatta
+    ? "◐ fessurata · ● schiacciata — ✕ rotta"
+    : "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
 /** La forma modale del nodo nell'ispettore: adimensionale, senza unità e senza rotazioni. */
 export function righeModo(modo, id) {
@@ -690,9 +734,22 @@ export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
  *  grandezza si scrive per nome. C3 — «max» davanti al numero perché il badge, due righe sopra,
  *  dice «u 60 mm» (lo spostamento del **nodo di controllo**) mentre qui c'è «64,34 mm» (il massimo
  *  di |u| su tutto il telaio): due numeri della stessa grandezza, e niente diceva quale fosse quale.
- *  Un modo non ha millimetri, e il suo titolo dice già cosa valgono 0 e 1: lì «max» sarebbe un terzo
- *  modo di dire la stessa cosa. */
-export function testoScalaColori({ uMax, tipo }) {
-  if (tipo === "modo") return { min: "0", max: "1", titolo: "forma del modo · 0 fermo, 1 massimo" };
-  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`, titolo: "spostamento |u|" };
+ *  Un modo non ha millimetri, e lì «max» sarebbe un terzo modo di dire la stessa cosa.
+ *
+ *  `compatta`: il testo dell'aula (15b, Task 3), gemello di `testoLegendaStati` e con lo stesso
+ *  tetto, `TETTO_COMPATTO`. Col titolo intero la riga del caso fa 43 caratteri: la striscia va a
+ *  capo su 89 px e si posa su «piede sx», «piede dx» e i loro cerchi — che non passano da `disponi`,
+ *  e che nessun ostacolo può spostare. Con «|u|» la somma fa 31, la striscia torna alta una riga e i
+ *  piedi restano scoperti. Si perde la parola «spostamento», che il simbolo ridice in tre caratteri;
+ *  le unità no, quelle restano su entrambi gli estremi.
+ *
+ *  **Il modo, in aula, dice cosa valgono 0 e 1.** Sono due numeri adimensionali su uno schermo dove
+ *  il pubblico non può chiedere, e il compatto che li taceva si appoggiava a un titolo — «forma del
+ *  modo» — che nel ramo compatto non li diceva più. Il budget c'era: quel titolo ne spendeva 28 su
+ *  `TETTO_COMPATTO`, «modo · 0 fermo, 1 max» ne spende 35. Alla scrivania, dove i 43 caratteri ci
+ *  stanno, entrambi i testi restano interi. */
+export function testoScalaColori({ uMax, tipo, compatta = false }) {
+  if (tipo === "modo") return { min: "0", max: "1", titolo: compatta ? "modo · 0 fermo, 1 max" : "forma del modo · 0 fermo, 1 massimo" };
+  return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`,
+           titolo: compatta ? "|u|" : "spostamento |u|" };
 }

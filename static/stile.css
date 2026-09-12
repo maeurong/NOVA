@@ -9,7 +9,16 @@
      4.29:1 e 2.44:1 contro --fondo, sotto le soglie AA 4.5:1 / 3:1. */
   --tratto-forte: #14141488;
   --pannello: #d2cfc9;
-  --testo-tenue: #141414a0;
+  /* 15b, R1 — `a8` e non `a0`. Su `--fondo` `a0` passava; su `--pannello` rendeva **4,45:1**,
+     sotto il 4,5 di AA per il testo, e su `--pannello` ci stanno i quattordici `<kbd>` degli stati
+     vuoti — il fondo se lo portano addosso (`:301`) — più l'etichetta e l'aiuto del campo di
+     comando (`:331`, `:337`). Alzato **qui** e non nei tre selettori perché i fondi di questa
+     pagina sono due e sono entrambi chiari: più opaco il tenue, più alto il rapporto su tutti e
+     due, e la radice si chiude una volta sola invece di rincorrere il prossimo blocco che si posi
+     sul pannello. Numeri **resi** in pagina e composti, non dedotti dal CSS (Chrome arrotona i
+     canali a interi prima di comporre, e un conto a virgola mobile dà 4,87 dove la pagina dà
+     4,898): con `a8` sono 4,898:1 su `--pannello` e 5,145 su `--fondo`, misurati a 1280×657. */
+  --testo-tenue: #141414a8;
   --mono: ui-monospace, "SF Mono", "Menlo", monospace;
   --testo: -apple-system, "Helvetica Neue", system-ui, sans-serif;
   --passo: 8px;
@@ -17,6 +26,10 @@
      `misure.js` li legge; cambiare un numero qui cambia il disegno, e nessun'altra copia resta indietro. */
   --nodo-raggio: 5px; --asta-tratto: 2px; --asta-tratto-scelta: 3px;
   --deformata-tratto: 2px; --deformata-bordo: 2px; --etichetta: 11px; --ombra-opacita: 0.3;
+  /* Le altezze dei due SVG della striscia sotto il piano, che `esito.js` legge come le altre (15b).
+     Due e non una: lo srotolato è un diagramma di servizio, la curva della pushover è *il* diagramma
+     che si legge, e i suoi numeri stanno dentro l'area utile. Alla scrivania valgono lo stesso. */
+  --srotolato-alto: 96px; --curva-alta: 96px;
 }
 
 * { box-sizing: border-box; }
@@ -110,20 +123,57 @@ body {
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
                             font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none;
                             white-space: normal; max-width: calc(100% - 16px); text-align: right; text-wrap: balance; }
-/* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm», sotto l'ultima striscia
-   visibile — il `top` lo scrive `piano.js`. La rampa è in `em`: segue il corpo, e a 32 px un'altezza
-   fissa di 10 sarebbe un filo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
-#piano .risultati-colori { position: absolute; top: 38px; right: 8px; margin: 0;
-                           display: flex; gap: 0.4em; align-items: center; white-space: nowrap;
+/* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm». Dalla 15b **in basso a
+   sinistra**, fuori dalla colonna delle strisce: là entrava nella fascia che `piano.js` riserva in
+   cima, e quell'altezza la pagava il telaio. Qui è fuori dalla fascia, quindi andare a capo non
+   costa un pixel di disegno — e andare a capo serve, perché a 1280×657 in aula la riga intera è
+   larga 847 px in un riquadro di 751: con `nowrap` usciva dal piano di 88 px, tagliata (R5).
+   `flex-wrap` perché a spezzare le righe è il contenitore flex, non `white-space` da solo: senza,
+   i figli si strizzerebbero dentro il `max-width` invece di scendere. La rampa è in `em`: segue il
+   corpo, e a 32 px un'altezza fissa di 10 sarebbe un filo; `flex: none` la tiene larga 6 em anche
+   quando si va a capo. `[hidden]` va ridetto: `display: flex` batte la regola del browser.
+   **La piastra** (15b, Task 3) è di `--fondo` e il suo mestiere è **coprire il disegno che le passa
+   sotto**, non scurire la rampa: quaggiù la legenda sta sopra le aste, e un testo sopra un viewport
+   va su lastra opaca, non nudo (`docs/ricerca/07-ux-modellatore.md:132`). Di `--fondo` e non
+   d'inchiostro perché l'inchiostro **ribalta** il difetto invece di toglierlo: misurato, il giallo di
+   punta passa da 1,11:1 a 14,59 ma il viola di coda crolla da 10,91 a 1,21 e il bordo della rampa da
+   13,19 a 1,00 — sparisce proprio lo `stroke` d'inchiostro che stacca il giallo dal fondo
+   (`piano.js`, la rampa bordata). Opaca: `--fondo` senza alfa, perché una piastra translucida
+   lascerebbe il viridis sotto il testo e il contrasto misurato non direbbe più niente. Coprire non è
+   gratis — quel che finisce sotto la piastra **sparisce**, e un nome di nodo che sparisce è peggio di
+   uno affollato: per questo prima il testo si accorcia in aula (`testoScalaColori`) e solo quel poco
+   che resta viene coperto. */
+#piano .risultati-colori { position: absolute; left: 8px; bottom: 8px; margin: 0;
+                           display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center;
+                           white-space: normal; max-width: calc(100% - 16px); text-align: left;
                            font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; font-variant-numeric: tabular-nums;
-                           color: var(--inchiostro); pointer-events: none; }
+                           color: var(--inchiostro); pointer-events: none;
+                           background: var(--fondo); padding: 0.15em 0.35em; border-radius: 3px; }
 #piano .risultati-colori[hidden] { display: none; }
-#piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; }
-/* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
+/* Il riquadro strettissimo (15b, Task 3): a 640×400 con dpr 2 — lo zoom 200 % delle giornate 11c-12 —
+   il piano scende a **518×99 px** e la legenda dei colori è alta 98 e larga 501. Finché il fondo era
+   trasparente si posava sul disegno; con la piastra opaca lo **cancella**, e un telaio cancellato è
+   peggio di un telaio affollato. Qui si toglie di mezzo: la scala dei colori è una chiave di lettura,
+   e una chiave che copre ciò che deve spiegare non serve a nessuno. La scala della deformata resta
+   dichiarata lo stesso — quella è il badge (`×n`), che non si tocca. 480 px di finestra e non
+   un'altezza del piano, perché a `#piano` manca un `container-type` e metterglielo per una riga
+   sarebbe un meccanismo nuovo in tutto il foglio; a 1280×657 (l'aula) e a 1920×1080 non scatta.
+   **Solo in presentazione**: fuori dall'aula la legenda è alta 16 px, e a 1400×470 — finestra bassa,
+   piano alto 233 — ci sta comodissima; senza l'aggancio la regola la faceva sparire anche là, che è
+   molto più largo del caso misurato. Il difetto che resta laggiù è la griglia, non lei: piano 518×99
+   con le strisce alte quanto lui. */
+@media (max-height: 480px) { body[data-presentazione] #piano .risultati-colori { display: none; } }
+#piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; flex: none; }
+/* Il `padding` della piastra qui sopra è l'unico di questi numeri che `piano.js` **non** ricopia:
+   0,35 em per lato fanno ~22 px in aula, e la stima dell'ostacolo della legenda dei colori se ne sta
+   senza, di proposito (il perché sta là, accanto alla stima). Se un giorno un'etichetta finisce sotto
+   la piastra in aula, quello è il numero.
+   Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 di `top`, 8 di `left`/`right`, 0,6 em per carattere del corpo
    `--etichetta` — li ricopia `piano.js` (`larghezzaMono` e gli `ostacoli.push`) per farne gli ostacoli
    delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in silenzio. I `top`
-   del badge e delle due legende invece li scrive `piano.js`, dalle altezze misurate. */
+   del badge e della legenda degli stati invece li scrive `piano.js`, dalle altezze misurate; quella
+   dei colori un `top` non ce l'ha più (15b), la posa il `bottom: 8px` qui sopra. */
 #piano .carichi-titolo { max-width: 45%; overflow: hidden;
                          text-overflow: ellipsis; white-space: nowrap; }
 
@@ -214,7 +264,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .editor button { font: inherit; font-size: 11px; padding: 2px 8px; margin-top: 4px; border: 1px solid var(--tratto-forte);
   border-radius: 3px; background: var(--pannello); color: var(--inchiostro); }
 .editor input:focus-visible, .editor select:focus-visible, .editor button:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
-.editor input[type="checkbox"] { accent-color: var(--inchiostro); }
+/* 15b, R8 — la casella degli assi del Confronto entra qui invece di restare col blu di sistema:
+   è la terza casella della pagina e le altre due l'inchiostro ce l'hanno già. Un solo rosso, e
+   nessun altro colore estraneo (`PRODUCT.md:186-196`). */
+.editor input[type="checkbox"], #confronto input[type="checkbox"] { accent-color: var(--inchiostro); }
 .sezione-disegno { margin-top: 6px; color: var(--inchiostro); }
 .sezione-disegno svg, .curva svg { max-width: 100%; height: auto; display: block; }
 .curva dl { margin: 4px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; font-size: 11px; }
@@ -238,7 +291,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 .rendiconto ul { margin: 2px 0 0; padding-left: 1.2em; font-size: 11px; }
 
 #albero ul { margin: 0; padding: 0; list-style: none; }
-#albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; }
+/* 15b, R3 — `anywhere` come già `#corsa-ultima` (`:451`) e `.verdetto .ragione` (`:478`): un
+   nome di azione senza spazi («SPINTA_ORIZZONTALE») misura più della sua colonna e senza questa
+   riga sfonda invece di andare a capo — `#albero` 351 px di contenuto in 335, WCAG 1.4.10. */
+#albero li { padding: 2px 4px; cursor: pointer; border-radius: 2px; overflow-wrap: anywhere; }
 #albero li:hover { background: var(--pannello); }
 /* Il fuoco si deve vedere: chi naviga con ⇥ non ha altro modo di sapere dov'è (WCAG 2.4.7). */
 #albero li:focus-visible { outline: 2px solid var(--rosso); outline-offset: 1px; }
@@ -319,7 +375,11 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
                  border: 1px solid var(--tratto-forte); border-radius: 2px; padding: 4px 6px; }
 #file-percorso:focus-visible, #comando-campo:focus-visible, #corsa-inp:focus-visible,
 #risultati-scala:focus-visible, #risultati-caso:focus-visible,
-#confronto input[type="text"]:focus-visible, #confronto-json:focus-visible {
+/* 15b, R8 — e la casella nel selettore che già c'è, invece di un secondo anello: era l'unica
+   fermata su 45 con quello dello UA, `1px auto rgb(0, 95, 204)` — colore fuori dalla palette e
+   spessore sotto i 2 px di perimetro che WCAG 2.4.13 chiede (misurato a 1280×657). */
+#confronto input[type="text"]:focus-visible, #confronto input[type="checkbox"]:focus-visible,
+#confronto-json:focus-visible {
                  outline: 2px solid var(--rosso); outline-offset: 1px; }
 /* Le etichette dei radio le porta già `.vincolo-gradi label` (`:112`): il fieldset della vista
    riusa quella classe e ne cambia le sole colonne — cinque radio in `repeat(3, 1fr)` uscirebbero
@@ -380,14 +440,18 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #palette-voci li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
                    padding: 4px 8px; border-radius: 3px; font-size: 13px; }
 #palette-voci li[aria-selected="true"] { outline: 2px solid var(--rosso); outline-offset: -2px; }
-/* Inchiostro, non `--testo-tenue`: dentro il riquadro il fondo è `--pannello`, e lì
-   #141414a0 misura 4,45:1 — sotto AA per 11px (fix round 1). L'aiuto resta secondario per
-   corpo e posizione, che non sono canali di contrasto e non hanno soglia. */
+/* Inchiostro, non `--testo-tenue`: dentro il riquadro il fondo è `--pannello`, e lì il tenue di
+   allora — `#141414a0` — misurava 4,45:1, sotto AA per 11px (fix round 1). L'aiuto resta
+   secondario per corpo e posizione, che non sono canali di contrasto e non hanno soglia.
+   15b, R1 — quel 4,45 era il sintomo, e la radice è stata chiusa alla sorgente (`:12`): oggi il
+   tenue rende 4,898:1 sul pannello e questa riga non è più obbligata. Resta com'è: l'inchiostro
+   qui passa comunque, il secondario lo dicono già corpo e posizione, e cambiarla vorrebbe dire
+   rimisurare un riquadro che nessun rilievo ha segnalato. */
 #palette-voci li small { display: block; color: var(--inchiostro); font-size: 11px; }
 #palette-voci li kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 0 5px; }
 /* «non ora»: il rosso è il filetto, la parola è il canale che conta — il colore da solo non
    basterebbe comunque (WCAG 1.4.1), e il rosso come testo a 13px non regge AA (4,28:1 su
-   --fondo, `stile.css:133`). Restano i due canali, e il testo è leggibile come gli altri. */
+   --fondo, il commento sopra `.avviso`). Restano i due canali, e il testo è leggibile come gli altri. */
 #palette-voci li.non-ora { border-left: 3px solid var(--rosso); }
 /* «nessun comando»: un `<p role="status">` sotto l'elenco vuoto, non un `<li>` — un
    `listbox` possiede solo `option`. Stesso posto a schermo, un testo solo.
@@ -401,6 +465,13 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
    Il rosso resta un filetto o un punto, mai il colore del testo (4,28:1 su questo fondo, sotto
    AA a 11 px): lo stesso mestiere che fa in `.avviso` e in `#albero li.scelto`. */
 #corsa label { margin-top: var(--passo); }   /* il resto lo dà `#file label`: R12, un selettore solo */
+/* 15b, R3 — stessa ricetta, stesso difetto: la riga del solutore porta il percorso del binario, e
+   un percorso non ha spazi dove spezzarsi. In aula coi pannelli misurava **617 px in 463**, e
+   `#corsa` non scorre per conto suo: quei 617 salivano a `#pannello`, che ne dichiarava 625 su
+   479. Solo `overflow-wrap`, nient'altro: in aula questa riga i 32 px li eredita gia' dal `body`,
+   e la regola dei pannelli (in fondo al foglio) non la tocca — un `font-size` qui sarebbe un
+   secondo padrone dello stesso numero. */
+#corsa-solutore { overflow-wrap: anywhere; }
 #corsa-fasi { margin: var(--passo) 0 0; padding-left: 1.2em; font-size: 11px; }
 #corsa-fasi .corrente { font-weight: 700; }
 #corsa-secondi { margin: 2px 0 0; font-size: 11px; }
@@ -487,6 +558,22 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 body[data-presentazione] {
   --nodo-raggio: 7px; --asta-tratto: 6px; --asta-tratto-scelta: 9px;
   --deformata-tratto: 6px; --deformata-bordo: 2px; --etichetta: 46px; --ombra-opacita: 0.55;
+  /* 15b — 160 e non 288: sotto i 119 px il numero del picco di sopra esce dall'SVG (43 px d'ascesa
+     a 46 px di corpo, misurati), e sopra i 160 il piano perde altezza senza che il diagramma ne
+     guadagni. A 160 l'ampiezza del diagramma vale 66 px. Il perché del 288 scartato: piano R8. */
+  --srotolato-alto: 160px;
+  /* Fix round 1 — la curva ha un'altezza sua, e più alta: i suoi numeri stanno **dentro** l'area
+     utile `H − 2M`, che a 160 valeva 43 px contro i 46 del testo — «60 mm» finiva addosso a
+     «V 70,93 kN». Misurato a 1920×1080 sulla pushover vera del MURO 1, sette passi per altezza:
+     a 240 l'area utile vale **123 px** (2,7 righe di testo, 77 px di margine sui 46) e all'ultimo
+     passo nessun testo tocca un altro. Al telaio restano **402 px** di banda, quattro volte
+     `TELAIO_MINIMO`. Non è il primo valore che basta (a 180 l'area è già 63): è quello che lascia
+     margine, come la soglia dei 899 non sta al pareggio degli 833.
+     Resta aperto, e non si chiude con l'altezza: ai passi bassi il taglio massimo — che sta fisso
+     in alto a sinistra DENTRO il grafico — tocca le etichette del passo, che lì passano alte. Si
+     separano solo verso i 500 px, dove però la striscia si prende più di metà del piano. La leva
+     vera è spostare quel numero fuori dall'area, non alzare ancora. */
+  --curva-alta: 240px;
   grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto;
   grid-template-areas: "viste" "striscia" "messaggio" "comando"; font-size: 32px;
 }
@@ -510,11 +597,33 @@ body[data-presentazione]:not([data-pannelli]) #risultati-equilibrio { margin: 0;
 body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 22rem) 1fr minmax(220px, 30rem);
   grid-template-rows: 1fr auto auto; grid-template-areas: "albero viste pannello" "messaggio messaggio messaggio" "comando comando comando"; }
 body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
-/* C1 — la striscia dell'M srotolato non ha misure d'aula: la curva della pushover, i suoi numeri e la
-   riga «Seleziona un'asta…» restano a 11 px, illeggibili da 8 m, e si prendono la riga sotto il piano.
-   Qui si toglie di mezzo e il piano si prende l'altezza; portarla in aula con misure sue è un debito
-   della 15b (già in issue). Il piano non la misura, quindi nessun conto della fascia cambia. */
-body[data-presentazione] #srotolato { display: none; }
+/* 15b — la striscia torna in aula con misure sue, e il suo **titolo** con lei: a 11 px la riga
+   «Seleziona un'asta per il suo M srotolato.» era il testo più piccolo dello schermo, e la striscia
+   in aula esiste per essere letta da 8 m. 32 px come le altre strisce del piano (la regola qui
+   sopra) e non 46: i 46 sono le etichette **dentro** l'SVG, e un titolo a 46 va a capo tre volte
+   e rende 162 px — più alto del diagramma che presenta. */
+body[data-presentazione] #srotolato .titolo { font-size: 32px; }
+/* R8 — in aula la striscia costa `--srotolato-alto` più il suo titolo, il padding e il bordo:
+   **285 px** misurati a 1280 di larghezza (titolo su tre righe), 247 a 1920 (due). A 1280×657 il
+   riquadro del piano ne ha 403 in tutto e le strisce alte se ne riservano 192: al telaio
+   resterebbero **−74 px**, cioè nessun disegno. Non è condizionale, è obbligatoria.
+   Misurato il 13/09 a larghezza 1280 — il caso peggiore, perché lì la striscia dei controlli va a
+   capo di più e mangia il riquadro del piano: la banda torna sopra i 100 px di `TELAIO_MINIMO`
+   fra gli 800 px di finestra (69) e gli 840 (109), cioè verso gli 833. La soglia sta a 899 e non
+   al pareggio, che non è un posto dove stare: a 900 la banda vale 169. Sull'altezza della
+   **finestra** perché il CSS il riquadro del piano non lo sa. */
+/* E una soglia di **larghezza** accanto a quella d'altezza, misurata come lei. Nella banda sotto
+   l'asse stanno tre numeri: lo zero a sinistra, lo spostamento massimo a destra, il taglio massimo
+   al centro (fix round 2). Il taglio massimo e' quello che si allarga da entrambi i lati, quindi
+   sotto una certa larghezza tocca lo spostamento: misurato chiamando `creaSrotolato` vero, il patto
+   regge a **W = 673** (per 0,3 px) e si rompe a **W = 672**. La striscia e' larga quanto la colonna
+   del piano, cioe' `0,6 x finestra - 1`: 1125 px di finestra danno 674 e reggono, 1120 ne danno 671
+   e no. La soglia sta a 1279 e non al pareggio di ~1124 perche' la larghezza dei tre numeri dipende
+   dal modello — `conciso(vMax)` con una cifra in piu' costa 28 px per lato — e perche' una soglia
+   non si mette dove il conto pareggia. A 1280 la colonna e' 767, cioe' 95 px di margine sul patto.
+   Senza questa riga il difetto era raggiungibile: la regola d'altezza non copre una finestra
+   stretta e alta, che in aula ci arriva benissimo. */
+@media (max-height: 899px), (max-width: 1279px) { body[data-presentazione] #srotolato { display: none; } }
 /* C4 — la coda dei tasti negli stati vuoti: alla scrivania insegna, in aula è un muro di testo su
    una striscia che deve dire cosa fare **adesso**. */
 body[data-presentazione] .vuoto .aiuto { display: none; }
@@ -537,3 +646,14 @@ body[data-presentazione]:not([data-pannelli]) #corsa:has(#corsa-attesa:not([hidd
    11 px il pallino della lista e il suo `padding-left: 1.2em` — le fasi a 32 px dentro un elenco
    rientrato di 13. Misurato in presentazione col `hidden` dell'attesa tolto a mano. */
 body[data-presentazione]:not([data-pannelli]) #corsa-attesa :is(ol, li, p) { font-size: 32px; }
+/* 15b, R2 — coi pannelli riaperti l'aula vale anche per loro. La regola dei 32 px alzava il solo
+   `#risultati` (più `#messaggio` e `#comando`), e il bottone «pannelli» esiste proprio per far
+   vedere **l'ispettore** in aula: senza questa riga i sette `h2` restavano a 11 px e il corpo dei
+   pannelli a 13 — le misure della scrivania su uno schermo letto da 8 m, dove la story ne chiede
+   ≥ 32 (`PRODUCT.md:96-101`). Misurato a 1280×657 col bottone premuto: minimo 10 px.
+   Il discendente universale e non un elenco di tag: qui dentro **tutto** è testo da leggere, e un
+   elenco lascia fuori il prossimo tag che qualcuno aggiunge — che è esattamente come il difetto è
+   nato. Gli `svg` fuori: là il corpo è in unità del `viewBox`, e 32 diventerebbero 32 millimetri
+   di disegno invece di 32 pixel. Agganciata a `[data-pannelli]`: senza pannelli il layout resta
+   quello che i task di prima hanno misurato, e questa riga non lo sfiora. */
+body[data-presentazione][data-pannelli] :is(#colonna, #pannello) :not(svg, svg *) { font-size: 32px; }

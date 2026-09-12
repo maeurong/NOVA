@@ -3,11 +3,20 @@
 Generato il 05/09/2026, **rigenerato il 05/09/2026 dopo il fix #25** e di nuovo a fine T4
 (branch `feat/non-lineare`, `.superpowers/sdd/2026-09-06-t4-non-lineare/`): il ramo elastico del
 deck itera con `Newton` invece di `Linear`, e gli **spostamenti** del telaio cambiano. Reazioni,
-massa e frequenze **no**: quelle le porta il carico, non l'algoritmo. L'ultima passata
-(`fa3b2e3`) non muove nessun numero della tabella — muove `hash_modello`, che ora esclude i
-default (§«Che cosa è cambiato»), e rifà **tutte** le celle del documento dal JSON: quelle di
-`u_sommita_x` C2 erano rimaste alla corsa di prima del fix #25. Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json)
-(T2, Task 4), corsa `ccx` sul deck vero `lab_telaio_v2/wall_model.inp` (non versionato, 2,5 MB).
+massa e frequenze **no**: quelle le porta il carico, non l'algoritmo.
+
+Da allora il documento è stato rifatto altre volte, e **nessuna ha mosso un numero della tabella**.
+La passata `fa3b2e3` muove `hash_modello`, che ora esclude i default (§«Che cosa è cambiato»), e
+rifà **tutte** le celle dal JSON: quelle di `u_sommita_x` C2 erano rimaste alla corsa di prima del
+fix #25. Le passate del 12/09/2026 toccano le sole sei celle «ragione», e per la sola grafia: prima
+il meno tipografico e una notazione unica, poi la soglia del pavimento in forma compatta
+(`< 0,01` al posto di `< 0,01000`), perché quattro cifre significative su una soglia sono una
+precisione che la soglia non ha. **La provenienza qui sotto è quella dell'ultima passata**, non
+della prima: commit, `run_id` e data si spostano a ogni rigenerazione, mentre `hash_modello`,
+`sha256` del deck e le versioni dei solutori no — stesso modello, stesso deck, stessi binari.
+
+Corsa NOVA su [`muro_1.nova.json`](muro_1.nova.json) (T2, Task 4), corsa `ccx` sul deck vero
+`lab_telaio_v2/wall_model.inp` (non versionato, 2,5 MB).
 Tabella prodotta da `nova.confronto.confronta` e `nova.confronto.esporta`: [`confronto.json`](confronto.json),
 [`confronto.csv`](confronto.csv), [`confronto.tex`](confronto.tex) stanno nella stessa cartella —
 rigenerati da questi file, mai scritti a mano.
@@ -16,14 +25,14 @@ rigenerati da questi file, mai scritti a mano.
 
 | voce | valore |
 |---|---|
-| commit NOVA (codice che ha prodotto questi export) | `fa3b2e3` |
-| run telaio | `3fb8d0907967` |
-| run solido | `68f88432812d` |
+| commit NOVA (codice che ha prodotto questi export) | `8a20aed` |
+| run telaio | `a5163a9d232b` |
+| run solido | `afcd489ab767` |
 | hash modello telaio | `0137e564e923ec1e62688bfa9e12591acb4ae6125d3a6e1b1dfefdcfe2169bb0` |
 | sha256 deck | `c8d0565587822bc5a4a5f2f83478f0f31cff3bd093d2813d97084c8bde973126` |
 | OpenSees | Version 3.8.0 64-Bit (6e55293513192aa05c7e1205e66a5a1a1ed088c4) |
 | CalculiX | CalculiX Version 2.22, Copyright(C) 1998-2024 Guido Dhondt |
-| data corsa | 2026-09-05T17:51:19 |
+| data corsa | 2026-09-12T16:38:15 |
 | `mappa_casi` | `{"C1": "GRAVITA", "C2": "SPINTA_ORIZZONTALE", "C3": "CARICO_TOP", "nodi_sommita": [3, 4], "assi": {"x": "y", "y": "x", "z": "z"}}` |
 
 **AVVERTENZA: verifica del codice, non validazione — non è una prova di carico.**
@@ -47,19 +56,19 @@ le zapatas (700×700, 2 pezzi) né la tamponatura — è più leggero del volume
 
 | grandezza | caso | telaio | solido | scarto | classe | ragione (se non_confrontabile) |
 |---|---|---|---|---|---|---|
-| reazione_x [N] | C1 | 0 | 0,00001705 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0.01) |
+| reazione_x [N] | C1 | 0 | 0,00001705 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0,01) |
 | reazione_z [N] | C1 | 7545 | 4249 | 77,60 % | lontano | — |
-| u_sommita_x [mm] | C1 | 0 [^zero] | −0,001161 | — | non_confrontabile | il telaio vale 0 mm, sotto il pavimento (< 0.0001); il riferimento -0,001161: i due non concordano, la percentuale non è un numero utile |
+| u_sommita_x [mm] | C1 | 0 [^zero] | −0,001161 | — | non_confrontabile | il telaio vale 0 mm, sotto il pavimento (< 0,0001); il riferimento −0,001161: i due non concordano, la percentuale non è un numero utile |
 | u_sommita_z [mm] | C1 | −0,002077 | −0,02101 | 90,11 % | lontano | — |
-| reazione_x [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile |
+| reazione_x [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale −0,00001480 N, sotto il pavimento (< 0,01); il telaio −754,5: i due non concordano, la percentuale non è un numero utile |
 | reazione_z [N] | C2 | 7545 | 4249 | 77,60 % | lontano | — |
 | u_sommita_x [mm] | C2 | 0,02791 | −0,0009278 | 3108 % | lontano | — |
 | u_sommita_z [mm] | C2 | −0,002077 | −0,02122 | 90,21 % | lontano | — |
-| reazione_x [N] | C3 | 0 | −0,00001648 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0.01) |
+| reazione_x [N] | C3 | 0 | −0,00001648 | — | non_confrontabile | entrambi i valori sotto il pavimento di rumore per «N» (< 0,01) |
 | reazione_z [N] | C3 | 8745 | 5449 | 60,51 % | lontano | — |
-| u_sommita_x [mm] | C3 | 0 [^zero] | −0,001515 | — | non_confrontabile | il telaio vale 0 mm, sotto il pavimento (< 0.0001); il riferimento -0,001515: i due non concordano, la percentuale non è un numero utile |
+| u_sommita_x [mm] | C3 | 0 [^zero] | −0,001515 | — | non_confrontabile | il telaio vale 0 mm, sotto il pavimento (< 0,0001); il riferimento −0,001515: i due non concordano, la percentuale non è un numero utile |
 | u_sommita_z [mm] | C3 | −0,003021 | −0,03291 | 90,82 % | lontano | — |
-| taglio_base [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale -0,00001480 N, sotto il pavimento (< 0.01); il telaio -754,5: i due non concordano, la percentuale non è un numero utile |
+| taglio_base [N] | C2 | −754,5 | −0,00001480 | — | non_confrontabile | il riferimento vale −0,00001480 N, sotto il pavimento (< 0,01); il telaio −754,5: i due non concordano, la percentuale non è un numero utile |
 
 [^zero]: `u_sommita_x` del telaio a C1 e C3 è **zero esatto** dopo il fix #25 (prima del fix era
 rumore in virgola mobile, ≈ 5·10⁻¹⁶ mm): i due casi non hanno spinta orizzontale, il telaio è

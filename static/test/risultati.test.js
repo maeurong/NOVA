@@ -7,7 +7,8 @@ import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMass
          vociDelCaso, casoScelto, formaComeSpostamenti, stazioniDiAsta, scalaModo, ampiezzaModo,
          percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, legendaStatiServe, righeModo,
          tipoDelCaso, passoDiRiferimento, motivoInParole,
-         VIRIDIS, viridis, massimoSpostamento, coloreSpostamento, testoScalaColori } from "../risultati.js";
+         VIRIDIS, viridis, massimoSpostamento, coloreSpostamento, testoScalaColori,
+         TETTO_COMPATTO } from "../risultati.js";
 
 // C7a — `testoBadge` mette uno spazio insecabile **prima** di ogni `·`, così il badge va a capo
 // dopo il separatore e la scala scende intera invece di aprire la riga con «· ×2 (auto)». Qui gli
@@ -82,6 +83,51 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   const [e] = puntiDeformata(trave, { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [6, 8, 0, 0, 0, 0] } }, 1, 2);
   assert.deepEqual(e.punti[2], { x: 6006, y: 8, z: 0, r: 1, u: 10 });
   assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0, r: 0.5, u: 5 });
+});
+
+test("puntiDeformata: forma di un modo — fra i nodi è una retta, non una S (#84)", () => {
+  // `modale: true`, come lo dichiara `formaComeSpostamenti`: solo con quel segnale la retta è la
+  // verità. A s = 0,5 lo smoothstep del difetto vale già la stessa cosa della retta (0,000 mm di
+  // scarto misurato sul MURO 1): un test lì passerebbe anche col difetto dentro. Lo scarto vero
+  // sta ai quarti, dove lo smoothstep vale 0,15625/0,84375 invece di 0,25/0,75.
+  const perCaso = { modale: true, spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -4, 0, 0, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[2].z - -1) < 1e-9, `a s = 0,25 atteso z = -1, letto ${d.punti[2].z}`);
+  assert.ok(Math.abs(d.punti[4].z - -2) < 1e-9, "a s = 0,5 retta e smoothstep coincidono già: nessuna prova qui");
+  assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3, letto ${d.punti[6].z}`);
+});
+
+test("casoScelto → puntiDeformata: il segnale del modo arriva fino al disegno (#84)", () => {
+  // Il test qui sopra inietta `modale: true` a mano: prova la **fabbrica**, non la catena. Togliendo
+  // il campo a `formaComeSpostamenti` — l'unico punto che lo mette sulla via del disegno — quello
+  // resta verde mentre il modo torna a disegnarsi a S, cioè Hermite su rotazioni che il solutore non
+  // ha mai calcolato. Qui `perCaso` arriva da `casoScelto`, come in `app.js`.
+  const stato = { lavoro: { fin: { risultati: { modi: [{ n: 1, forma: { 1: [0, 0, 0], 2: [0, 0, -4] } }] } } } };
+  const scelto = casoScelto(stato, "modo:1");
+  assert.ok(scelto && scelto.tipo === "modo", "il modo si sceglie: il test non è vuoto");
+  const [d] = puntiDeformata(trave, scelto.perCaso, 1, 8);
+  // Ai **quarti**, non a metà: a s = 0,5 smoothstep e retta coincidono già, ed è la trappola su cui
+  // questa giornata è inciampata una volta.
+  assert.ok(Math.abs(d.punti[2].z - -1) < 1e-9, `a s = 0,25 atteso z = -1 (retta), letto ${d.punti[2].z}`);
+  assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3 (retta), letto ${d.punti[6].z}`);
+});
+
+test("puntiDeformata: una sola rotazione nulla, non modale — resta sull'Hermite", () => {
+  // p0 = 0, p1 ≠ 0, nessun `modale`: deve restare sulla cubica.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, -0.02, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[4].z - -15) < 1e-9, `a s = 0,5 atteso z = -15 (Hermite), letto ${d.punti[4].z}`);
+});
+
+test("puntiDeformata: incastro-incastro vero, rotazioni zero esatto ma non modale — curva, non retta (#84 fix round 1)", () => {
+  // Le rotazioni a zero non bastano a dire «è un modo» (fix round 1): un `fix` in OpenSees le
+  // azzera anche in una statica vera (`nova/corsa.py:328-335`, `nova/deck.py:1029`). Stesso
+  // ingresso numerico del test sopra — p0 = p1 = 0, frecce diverse — ma senza `modale: true`:
+  // deve uscire la cubica (freccia in mezzo che non coincide con la retta), non la retta.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -6, 0, 0, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[2].z - -0.9375) < 1e-9,
+    `incastro-incastro: atteso z = -0,9375 a s = 0,25 (Hermite), letto ${d.punti[2].z} — la retta darebbe -1,5`);
 });
 
 test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spostamenti fermo, lista vuota", () => {
@@ -638,8 +684,8 @@ test("R3: un modo senza massa dice «massa trascurabile», non «ux 0 %»", () =
                "modo 3 · 35,85 Hz · T 0,0279 s · ×50 (auto)");
 });
 test("formaComeSpostamenti: forma mancante o vettori corti", () => {
-  assert.deepEqual(formaComeSpostamenti(null), { spostamenti: {} });
-  assert.deepEqual(formaComeSpostamenti({}), { spostamenti: {} });
+  assert.deepEqual(formaComeSpostamenti(null), { modale: true, spostamenti: {} });
+  assert.deepEqual(formaComeSpostamenti({}), { modale: true, spostamenti: {} });
   assert.deepEqual(formaComeSpostamenti({ forma: { 7: [0.5] } }).spostamenti[7], [0.5, 0, 0, 0, 0, 0]);
   assert.deepEqual(formaComeSpostamenti({ forma: { 7: null } }).spostamenti[7], [0, 0, 0, 0, 0, 0]);
 });
@@ -723,6 +769,45 @@ test("legendaStatiServe: parla solo se un simbolo non è quello dell'elastica", 
 test("testoLegendaStati: i due canali in una riga", () => {
   const t = testoLegendaStati();
   for (const p of ["elastica", "fessurata", "schiacciata", "snervata", "rotta"]) assert.ok(t.includes(p), p);
+});
+
+test("testoLegendaStati: in aula sta in **una** riga, e il confine fra i materiali resta (15b, R18)", () => {
+  // La proprietà verificabile senza browser è il conteggio dei caratteri, contro `TETTO_COMPATTO`
+  // (il conto sta là, una volta sola).
+  const t = testoLegendaStati(true);
+  assert.ok(t.length <= TETTO_COMPATTO, `«${t}» è di ${t.length} caratteri: a 32 px non sta in una riga`);
+  // Ogni simbolo che si mostra porta il suo nome: a 8 m un glifo nudo non si decifra. `○` non c'è —
+  // è la sezione illesa, e la legenda parla solo quando qualcosa non è più elastico.
+  for (const p of ["◐ fessurata", "● schiacciata", "✕ rotta"]) assert.ok(t.includes(p), `manca «${p}»`);
+  // **Il confine fra i materiali.** Nel testo lungo `·` separa i valori di uno stesso canale e `—`
+  // separa i due canali: `◐` e `●` sono calcestruzzo, `✕` è acciaio. Col punto mediano sul confine,
+  // da 8 m «rotta» si legge come un terzo stato del calcestruzzo — il compatto teneva la stessa
+  // punteggiatura del lungo dappertutto tranne che lì.
+  assert.ok(t.includes("● schiacciata — ✕ rotta"),
+            `«${t}»: fra calcestruzzo e acciaio ci vuole il trattone del testo lungo, non il punto mediano`);
+  // Alla scrivania il testo lungo ci sta, e resta quello: il compatto è una perdita di parole
+  // accettata per l'aula, non un miglioramento da estendere a tutti.
+  assert.ok(testoLegendaStati().length > TETTO_COMPATTO, "il testo lungo non va accorciato di riflesso");
+  assert.notEqual(t, testoLegendaStati());
+});
+
+test("i testi compatti dell'aula stanno tutti sotto `TETTO_COMPATTO` (15b, fix finale)", () => {
+  // Il tetto era prosa in cinque posti e codice in nessuno. Qui è codice: ogni testo che l'aula può
+  // mostrare passa di qui, e chi ne aggiunge uno lo aggiunge a questa lista, non a un commento.
+  // La riga della legenda dei colori non è solo testo — la rampa vale dieci caratteri del mono
+  // (6 em) e i tre `gap` da 0,4 em ne valgono due: la stessa somma che `piano.js` usa per l'ostacolo.
+  const righe = [["legenda degli stati", testoLegendaStati(true).length]];
+  for (const tipo of ["pushover", "caso", "modo"]) {
+    const { titolo, min, max } = testoScalaColori({ uMax: 64.34, tipo, compatta: true });
+    righe.push([`scala dei colori (${tipo})`, titolo.length + min.length + max.length + 10 + 2]);
+  }
+  for (const [nome, quanti] of righe) {
+    assert.ok(quanti <= TETTO_COMPATTO,
+              `«${nome}» occupa ${quanti} caratteri, oltre i ${TETTO_COMPATTO} del tetto: a 32 px va a capo`);
+  }
+  // E se anche i testi interi ci stessero, il tetto non proverebbe niente: il compatto esiste perché
+  // il lungo non ci sta.
+  assert.ok(testoLegendaStati().length > TETTO_COMPATTO);
 });
 test("i casi statici di `testoBadge` non cambiano", () => {
   assert.equal(badge({ vista: "deformata", caso: "Z1", scala: 10, auto: true }), "deformata · Z1 · ×10 (auto)");
@@ -830,4 +915,36 @@ test("testoScalaColori: «spostamento |u|» per esteso, «max» sull'estremo, e 
   // Un massimo che manca non diventa «NaN mm» né «undefined mm».
   assert.deepEqual(testoScalaColori({ uMax: undefined, tipo: "caso" }),
                    { min: "0 mm", max: "max 0 mm", titolo: "spostamento |u|" });
+});
+
+test("testoScalaColori: in aula il testo compatto sta in **una** riga (15b, Task 3)", () => {
+  // Stesso tetto della legenda degli stati, `TETTO_COMPATTO`, e il conto sta là. I caratteri non
+  // sono solo quelli scritti: la rampa è larga 6 em, cioè **dieci** caratteri del mono, e i tre
+  // `gap` da 0,4 em ne valgono **due** — la stessa somma che `piano.js` usa per l'ostacolo.
+  // Misurato in Chrome il 13/09: col testo intero la striscia va a capo su 89 px e si posa sui due
+  // piedi del telaio; su una riga rende 47,59 px.
+  const riga = ({ titolo, min, max }) => titolo.length + min.length + max.length + 10 + 2;
+  for (const tipo of ["pushover", "caso", "modo"]) {
+    const t = testoScalaColori({ uMax: 64.34, tipo, compatta: true });
+    assert.ok(riga(t) <= TETTO_COMPATTO,
+              `«${t.titolo} ${t.min} ▮ ${t.max}» occupa ${riga(t)} caratteri: a 32 px non sta in una riga`);
+  }
+  // Quel che si perde è la parola «spostamento», che «|u|» ridice in tre caratteri. L'unità resta:
+  // un numero senza millimetri non si legge, e accorciare non vuol dire smettere di dire di che
+  // grandezza si parla — «max» resta per lo stesso motivo di C3 (il badge dice l'altro numero).
+  assert.deepEqual(testoScalaColori({ uMax: 64.34, tipo: "pushover", compatta: true }),
+                   { min: "0 mm", max: "max 64,34 mm", titolo: "|u|" });
+  // Tutti gli spostamenti nulli: la legenda parla lo stesso, e nessuno divide per zero.
+  assert.deepEqual(testoScalaColori({ uMax: 0, tipo: "pushover", compatta: true }),
+                   { min: "0 mm", max: "max 0 mm", titolo: "|u|" });
+  // Il modo **dice** cosa valgono 0 e 1 anche in aula: sono due numeri adimensionali, e in aula chi
+  // guarda non può chiedere. Il compatto che li taceva si appoggiava a «forma del modo», che di quei
+  // due estremi non diceva più niente. Il budget c'era: 28 caratteri su `TETTO_COMPATTO`, ora 35.
+  assert.deepEqual(testoScalaColori({ uMax: 0.8, tipo: "modo", compatta: true }),
+                   { min: "0", max: "1", titolo: "modo · 0 fermo, 1 max" });
+  // Alla scrivania il testo intero resta, parola per parola: il compatto è una perdita accettata
+  // per l'aula, non un miglioramento da estendere a tutti.
+  assert.equal(testoScalaColori({ uMax: 64.34, tipo: "pushover" }).titolo, "spostamento |u|");
+  assert.ok(riga(testoScalaColori({ uMax: 64.34, tipo: "pushover" })) > TETTO_COMPATTO,
+            "il testo intero non va accorciato di riflesso: a 32 px non ci sta, ed è perché non ci sta che l'aula ne ha uno suo");
 });

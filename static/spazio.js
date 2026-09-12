@@ -9,7 +9,7 @@
 // (`tests/test_js.py` guarda solo funzioni vere, non il DOM), quindi sono l'unico punto da
 // cui gli ingressi degeneri di questo modulo si provano fuori dal browser.
 
-import { leggiMisure } from "./misure.js";
+import { misureDi } from "./misure.js";
 import { coloreSpostamento } from "./risultati.js";
 
 // Stessi valori di `piano.js` (`INCHIOSTRO`, `ROSSO`): non importabili da lì, quel modulo
@@ -18,6 +18,23 @@ const INCHIOSTRO = 0x141414;
 const ROSSO = 0xb8321e;
 
 const DISTANZA_MINIMA = 4000; // mm: un modello con un nodo solo non detta una distanza
+
+// Un passo di orbita per pressione: 0,12 rad, cioe' ventisei tasti per un giro intero. Lo stesso
+// ordine di grandezza del trascinamento, che gira 0,006 rad per pixel di mouse.
+const PASSO_ORBITA = 0.12;
+
+/** L'orbita dopo una freccia, o `null` se il tasto non e' una freccia — e allora il `keydown` della
+ *  tela lo lascia andare a chi lo aspetta: `P` alla presentazione, `Esc` all'uscita, una lettera al
+ *  campo che la sta scrivendo. Il verso e' quello del trascinamento (`pointermove`: theta meno dx,
+ *  phi meno dy): lo stesso gesto su due periferiche, un modello mentale solo. `phi` resta nella
+ *  banda del trascinamento, 0,05 … pi meno 0,05 — oltre il polo `lookAt` con `up` sull'asse z
+ *  ribalta l'inquadratura di scatto. Non muta l'orbita in ingresso: ad applicarla e' chi rende. */
+export function orbitaDaTasto({ theta, phi }, tasto, passo = PASSO_ORBITA) {
+  const dTheta = tasto === "ArrowLeft" ? passo : tasto === "ArrowRight" ? -passo : 0;
+  const dPhi = tasto === "ArrowUp" ? passo : tasto === "ArrowDown" ? -passo : 0;
+  if (dTheta === 0 && dPhi === 0) return null;
+  return { theta: theta + dTheta, phi: Math.min(Math.PI - 0.05, Math.max(0.05, phi + dPhi)) };
+}
 
 /** Larghezza e altezza mai sotto 1px: un contenitore 0×0 (layout non ancora misurato) non
  *  deve produrre un `aspect` a 0 o `Infinity`. */
@@ -77,14 +94,48 @@ export function trattiDellaDeformata(deformata) {
   return deformata.stantia ? fuori.map((t) => ({ ...t, colore: null })) : fuori;
 }
 
+/** Il capo più lontano dall'occhio, in distanza euclidea. Pura e **condivisa apposta**:
+ *  `raggioCilindro` ci prende la misura e la sonda dello spessore ci prende il punto da proiettare.
+ *  Se scegliessero capi diversi il diametro reso uscirebbe più sottile del voluto senza che nessuno
+ *  se ne accorgesse — un'invariante che stava in un commento e in due conti paralleli, e che ora
+ *  regge per costruzione. Elenco vuoto → `null`: nessun `Math.max` su niente. */
+export function capoLontano(occhio, estremi) {
+  let scelto = null, massima = -1;
+  for (const p of estremi ?? []) {
+    const d = Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z);
+    if (d > massima) { massima = d; scelto = p; }
+  }
+  return scelto;
+}
+
+/** Il diametro in pixel da due ascisse NDC: il centro del cilindro e il suo bordo, distante un
+ *  **raggio**. x in NDC copre [-1, 1] sulla larghezza del riquadro, cioè metà larghezza per unità;
+ *  quindi lo scarto di un raggio moltiplicato per la larghezza intera è il diametro. Pura perché è
+ *  il conto della sonda, e una sonda che sbaglia manda a caccia di un difetto dei cilindri che non
+ *  esiste: è già successo (9,48 px letti contro 6,03 veri). */
+export const diametroInPixel = (centroX, bordoX, larghezza) => Math.abs(bordoX - centroX) * larghezza;
+
 /** Raggio in mondo di un cilindro che deve uscire `tratto` px di diametro. Misurato sull'estremo
  *  più lontano dall'occhio: la prospettiva ingrossa il capo vicino, e il lontano non scende mai
  *  sotto il voluto. */
 export function raggioCilindro(occhio, estremi, fov, altezza, tratto) {
   // ponytail: distanza euclidea, non profondità lungo l'asse della camera: è più grande, quindi il
   // tratto esce appena più spesso del voluto e mai più sottile.
-  const lontano = Math.max(...estremi.map((p) => Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z)));
+  const p = capoLontano(occhio, estremi);
+  if (!p) return 0;
+  const lontano = Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z);
   return (pixelInMondo(lontano, fov, altezza) * tratto) / 2;
+}
+
+/** La scala da dare a **ogni** figlio della scena perché il suo cilindro esca dello spessore voluto.
+ *  Chi non è un cilindro (i punti dei nodi) prende `null`, non uno zero: l'array resta lungo quanto i
+ *  figli, e chi lo applica salta il posto invece di scalare a caso. Elenco vuoto → `[]`, nessun
+ *  `Math.max` su niente. Pura apposta: senza WebGL il ciclo di `rendi` non si prova, e cancellarlo
+ *  lasciava tutti i raggi a 1 mm — aste invisibili — col fumo e i test a unità verdi (#85). */
+export function scaleDeiTratti(oggetti, camera, altezza) {
+  return oggetti.map((o) => (o.userData?.tratto
+    ? raggioCilindro(camera.posizione, o.userData.estremi, camera.fov, altezza, o.userData.tratto)
+    : null));
 }
 
 /** Non rigetta **mai**: un guasto qui torna uno spazio che si dichiara assente, e il piano
@@ -120,6 +171,23 @@ async function costruisci(contenitore) {
   scena.background = new THREE.Color(0xdcdad5);
   const camera = new THREE.PerspectiveCamera(45, 1, 1, 1e6);
   contenitore.replaceChildren(renderer.domElement);
+  // R5 della critique 15b — un `<canvas>` nudo e' un buco muto: nessun ruolo, nessun nome
+  // accessibile, e fuori dal giro di ⇥ (WCAG 1.1.1 e 2.1.1). Il detector non lo vede nemmeno
+  // (`docs/ricerca/07-ux-modellatore.md:123`), quindi questi attributi sono l'unica cosa che dica
+  // a una tecnologia assistiva che qui c'e' un disegno e cosa disegna.
+  //
+  // `group` e non `img` (fix round 1): `img` e' un ruolo **statico**, e metterlo nel giro di ⇥
+  // dice all'assistive technology «immagine» e all'utente «operabile» — due cose che si
+  // contraddicono. `aria-roledescription` rimette la parola giusta al posto di «gruppo». E non
+  // `application`: li' l'AT cede tutta la tastiera alla pagina, e qui la tastiera ha quattro
+  // tasti soli.
+  //
+  // Il nome dice **cosa c'e'**, non come si usa: l'istruzione sui tasti stava dentro il nome e
+  // un'AT la rileggeva a ogni fuoco.
+  renderer.domElement.setAttribute("role", "group");
+  renderer.domElement.setAttribute("aria-roledescription", "vista spaziale");
+  renderer.domElement.setAttribute("aria-label", "vista spaziale del modello");
+  renderer.domElement.tabIndex = 0;
 
   // Le linee WebGL non si ispessiscono (`linewidth` ignorato quasi ovunque): aste e deformata sono
   // cilindri, tutti sulla **stessa** geometria — alta 1 e di raggio 1 sull'asse y — che `rendi`
@@ -128,6 +196,11 @@ async function costruisci(contenitore) {
   // del tratto dopo, e con tratti corti la deformata esce a trattini neri (visto in Chrome).
   const cilindro = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
   const asseY = new THREE.Vector3(0, 1, 0);
+  // Gli appoggi della sonda dello spessore, tenuti qui fuori per non rifarli a ogni giro.
+  // ponytail: nessuna misura dietro, ed è innocua — nello stesso fotogramma `disegna` costruisce
+  // 68 mesh e qualche centinaio di vettori, e #87 dice che il giro intero non si vede dentro i
+  // 16,7 ms: tre oggetti stanno due ordini di grandezza sotto il rumore.
+  const destra = new THREE.Vector3(), centroNDC = new THREE.Vector3(), bordoNDC = new THREE.Vector3();
   const inchiostro = new THREE.MeshBasicMaterial({ color: INCHIOSTRO });
   const rosso = new THREE.MeshBasicMaterial({ color: ROSSO });
   // L'ombra dell'indeformata sotto la deformata: l'opacità la dicono le misure, riscritta a ogni `disegna`.
@@ -178,10 +251,45 @@ async function costruisci(contenitore) {
     // pochi passi di profondità, e da lontano la deformata usciva a chiazze nere.
     const near = distanza / 100;
     if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
-    for (const o of disegnato.children) if (o.userData.tratto) {
-      o.scale.x = o.scale.z = raggioCilindro(camera.position, o.userData.estremi, camera.fov, contenitore.clientHeight, o.userData.tratto);
-    }
+    const figli = disegnato.children;
+    const scale = scaleDeiTratti(figli, { posizione: camera.position, fov: camera.fov }, contenitore.clientHeight);
+    for (let k = 0; k < figli.length; k++) if (scale[k] !== null) figli[k].scale.x = figli[k].scale.z = scale[k];
     renderer.render(scena, camera);
+    // La sonda **dopo** il render, non prima (fix round 1). Legge `matrixWorld` e
+    // `matrixWorldInverse` della camera, e chi le aggiorna è il render: `lookAt` in r185 aggiorna
+    // la matrice e **poi** scrive il quaternione, quindi prima del render la camera porta la
+    // posizione nuova e ancora l'orientamento vecchio. Dopo un trascinamento di 200×60 px il
+    // diametro usciva 9,48 px invece di 6,03, e ci restava. Il fumo non se ne accorgeva perché
+    // nessun copione trascinava: ora `presentazione` trascina, e quel numero è asserito.
+    sonda(figli);
+  }
+
+  /** La sonda dello spessore (#85): sul canvas, il diametro **reso** in pixel del primo cilindro e
+   *  quello voluto in `--asta-tratto`. È l'unico posto da cui il fumo può vedere se il ciclo qui
+   *  sopra è stato applicato davvero: legge `o.scale.x` **dalla mesh**, non il numero appena
+   *  calcolato, e lo proietta con la camera vera invece che con `pixelInMondo` — una sonda che
+   *  ricalcolasse la formula proverebbe sé stessa. Misurata dall'architect il 13/09 sul canvas di
+   *  `#spazio`: 0,332 µs a scrittura, cioè 0,0003 ms per fotogramma, invisibili nei 16,7 ms del
+   *  vsync (#87). Nessun cilindro in scena → le due voci **spariscono**: un fotogramma con meno
+   *  aste non deve lasciare in giro il numero di quello di prima.
+   *
+   *  Misura il **primo** cilindro della scena, che oggi è un'asta perché `disegna` cicla le aste
+   *  prima della deformata. Tre condizioni implicite, e non stanno scritte altrove: quell'ordine,
+   *  nessun'asta selezionata (che porterebbe `--asta-tratto-scelta`) e almeno un'asta nel modello.
+   *  Rompendone una la sonda misura un altro cilindro e il numero resta vero, ma non è più quello
+   *  dell'asta d'aula — per questo il fumo non dà la colpa al CSS quando `trattoVoluto` non è 6. */
+  function sonda(figli) {
+    const dati = renderer.domElement.dataset;
+    const o = figli.find((f) => f.userData.tratto);
+    if (!o) { delete dati.trattoReso; delete dati.trattoVoluto; return; }
+    // Lo stesso capo su cui `raggioCilindro` ha preso la misura, e **la stessa funzione**: finché
+    // erano due conti paralleli l'invariante viveva in un commento.
+    const lontano = capoLontano(camera.position, o.userData.estremi);
+    destra.setFromMatrixColumn(camera.matrixWorld, 0);   // l'asse orizzontale della camera: l'offset resta alla stessa profondità
+    centroNDC.copy(lontano).project(camera);
+    bordoNDC.copy(lontano).addScaledVector(destra, o.scale.x).project(camera);
+    dati.trattoReso = diametroInPixel(centroNDC.x, bordoNDC.x, contenitore.clientWidth).toFixed(2);
+    dati.trattoVoluto = String(o.userData.tratto);
   }
 
   // Orbita e zoom a mano: venti righe contro un secondo file vendorizzato per un giro di
@@ -202,15 +310,46 @@ async function costruisci(contenitore) {
     orbita.distanza = Math.max(DISTANZA_MINIMA / 8, orbita.distanza * (e.deltaY > 0 ? 1.1 : 0.9));
     rendi();
   }, { passive: false });
-  window.addEventListener("resize", () => { ridimensiona(); rendi(); });
+  // Da tastiera (R5): le frecce girano la vista, e nient'altro la tocca. Sulla **tela** e non
+  // sulla finestra, cosi' il tasto arriva qui solo quando il fuoco e' qui — chi sta scrivendo nel
+  // campo di comando si tiene le sue frecce, che li' muovono il cursore, e l'ingresso degenere si
+  // chiude per costruzione invece che con una guardia da ricordare.
+  // `stopPropagation` perche' il `keydown` globale sta su `window` (`app.js:912`) e la sua guardia
+  // cerca `input, button, select, textarea, [role="button"]`: una tela non e' nessuno di quelli, e
+  // senza questa riga `←`/`→` scorrerebbero **anche** i passi della pushover mentre girano la
+  // vista — due gesti su un tasto solo. Un tasto che non e' una freccia non viene fermato:
+  // `orbitaDaTasto` torna `null`, e `P` resta la presentazione anche col fuoco quaggiu'.
+  renderer.domElement.addEventListener("keydown", (e) => {
+    const girata = orbitaDaTasto(orbita, e.key);
+    if (!girata) return;
+    e.preventDefault();
+    e.stopPropagation();
+    orbita.theta = girata.theta;
+    orbita.phi = girata.phi;
+    rendi();
+  });
+  const rimisura = () => { ridimensiona(); rendi(); };
+  window.addEventListener("resize", rimisura);
+  // Come per il piano (`app.js`): il riquadro cambia anche **dentro** la griglia, senza `resize`.
+  // Entrando in aula la striscia dei risultati si allarga e `#spazio` si accorcia, ma `ridimensiona`
+  // era già passato sulla griglia di prima: la tela restava alta com'era — misurati 745 px dentro un
+  // riquadro di 592 a 1280×800, e `#spazio { overflow: hidden }` ne tagliava via un quarto in
+  // silenzio — e con lei restava vecchio `camera.aspect`. La sonda dello spessore legge la scala
+  // vera e proietta con quella camera: 7,68 px di diametro contro i 6 voluti, cioè esattamente
+  // 745/592. Il difetto si **vede** solo al primo `rendi` dopo il cambio, che è un'orbita.
+  //
+  // Nessun ciclo: `setSize(w, h, false)` non scrive lo stile della tela, e il riquadro osservato è
+  // `#spazio`, che la tela non può allargare (`min-height: 0`, `overflow: hidden`).
+  new ResizeObserver(rimisura).observe(contenitore);
 
   function disegna(m, { selezione = null, deformata = null } = {}) {
     scena.remove(disegnato);
     disegnato.traverse((o) => { if (o.geometry !== cilindro) o.geometry?.dispose(); });
     disegnato = new THREE.Group();
 
-    // Come in `piano.js`: senza `getComputedStyle` (i test) `leggiMisure` cade sui numeri d'oggi.
-    const misure = leggiMisure(globalThis.getComputedStyle?.(contenitore));
+    // Una volta per cambio di layout, non a ogni fotogramma dell'animazione (`misure.js`). Come in
+    // `piano.js`: senza `getComputedStyle` (i test) cade sui numeri d'oggi.
+    const misure = misureDi(contenitore);
     inchiostroTenue.opacity = misure.ombra;
     puntoInchiostro.size = 2 * misure.raggioNodo;
     puntoRosso.size = 2 * misure.raggioNodo * 1.6;

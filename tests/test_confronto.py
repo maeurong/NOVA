@@ -611,7 +611,7 @@ def test_pavimento_con_entrambi_i_lati_sotto_non_nomina_i_valori():
     comunque senso — la ragione dice solo il pavimento, non i valori."""
     pct, classe, ragione = _confronto._scarto_classe(1e-6, -2e-6, "N")
     assert pct is None and classe == "non_confrontabile"
-    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01)"
 
 
 def test_pavimento_con_un_solo_lato_sotto_nomina_i_due_valori():
@@ -630,7 +630,7 @@ def test_zero_esatto_su_entrambi_eredita_la_ragione_del_pavimento():
     pavimento (0 è sotto qualunque pavimento positivo), non con `ragione: None`."""
     pct, classe, ragione = _confronto._scarto_classe(0.0, 1.7e-5, "N")
     assert pct is None and classe == "non_confrontabile"
-    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0.01)"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01)"
 
 
 def test_zero_esatto_senza_pavimento_dichiarato_ha_comunque_una_ragione():
@@ -657,6 +657,48 @@ def test_pavimento_mm_piu_stretto_non_marca_rumore_un_valore_reale():
     assert _confronto._PAVIMENTO["mm"] == 1e-4
     pct, classe, ragione = _confronto._scarto_classe(5e-4, 5e-4, "mm")
     assert ragione is None and classe != "non_confrontabile"
+
+
+def test_la_ragione_del_pavimento_ha_una_sola_grafia():
+    """#82, Step 4 del brief: `{pavimento:g}` stampava `1e-04`, `_it()` scrive all'italiana —
+    due grafie nella stessa frase. Il pavimento passa da `_it`, niente più esponente."""
+    _, _, ragione = _confronto._scarto_classe(1e-9, 3.5, "mm")
+    assert "e-" not in ragione and "1e-04" not in ragione
+    assert "0,0001" in ragione
+
+
+def test_la_soglia_non_porta_precisione_che_non_ha():
+    """La soglia **non è una misura**: `_it` le dava le stesse quattro cifre significative dei
+    valori veri (`0,01000` per una soglia che di decimali ne ha due), e una precisione finta
+    accanto a una vera, con la stessa grafia, si legge come vera. `_it_soglia` taglia gli zeri in
+    coda alla sola soglia; i valori misurati restano a `_it_meno`, con tutte le loro cifre."""
+    assert _confronto._it_soglia(1e-2) == "0,01"
+    assert _confronto._it_soglia(1e-4) == "0,0001"
+    assert _confronto._it_soglia(1e-6) == "0,000001"
+    assert _confronto._it_soglia(1.0) == "1"          # intera: mai `1,`
+    _, _, ragione = _confronto._scarto_classe(-754.5, -1.48e-5, "N")
+    assert "(< 0,01)" in ragione                       # la soglia, corta
+    assert "−0,00001480" in ragione                    # il valore misurato, per intero
+
+
+def test_pavimento_1e_meno_6_resta_posizionale_non_esponenziale():
+    """Riga degenere: `_PAVIMENTO["t"]` è 1e-6, il caso di bordo più vicino al limite di
+    `_it` (4 cifre significative sotto 1e-4). Deve restare posizionale (`0,000001...`), mai
+    `1e-06` — se non ci riuscisse il difetto sarebbe in `_it`, non qui."""
+    assert _confronto._PAVIMENTO["t"] == 1e-6
+    _, classe, ragione = _confronto._scarto_classe(1e-7, 2e-7, "t")
+    assert classe == "non_confrontabile"
+    assert "e-" not in ragione and "e+" not in ragione
+    assert "0,000001" in ragione
+
+
+def test_valore_negativo_sotto_il_pavimento_usa_il_meno_tipografico():
+    """Riga degenere: un valore negativo sotto il pavimento (qui −5e−16 mm, C8) deve uscire
+    col meno tipografico (`−`, U+2212), non l'ASCII `-` — e una sola grafia nella frase."""
+    _, classe, ragione = _confronto._scarto_classe(-5e-16, 3.5, "mm")
+    assert classe == "non_confrontabile"
+    assert "−" in ragione
+    assert "-" not in ragione
 
 
 def _modi_telaio_x_e_y():
