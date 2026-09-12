@@ -4,6 +4,7 @@
 
 import { vociDelCaso, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
 import { conciso, leggiEspressione } from "./numeri.js";
+import { leggiMisure } from "./misure.js";
 import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -109,6 +110,14 @@ const UNITA_STRISCIA = { M: "kN·m", V: "kN", N: "kN" };
 export function creaSrotolato(contenitore, { suPasso = null } = {}) {
   const el = (nome, attributi = {}) => { const e = document.createElementNS(NS, nome); for (const [k, v] of Object.entries(attributi)) e.setAttribute(k, v); return e; };
   const titolo = () => { const p = document.createElement("p"); p.className = "titolo"; return p; };
+  // 15b: le misure dell'aula dalle variabili CSS, come fanno `piano.js` e `spazio.js` — l'altezza
+  // della striscia (`--srotolato-alto`) e il corpo dei testi (`--etichetta`). Senza
+  // `getComputedStyle` (il DOM finto dei test) `leggiMisure` cade sui numeri d'oggi, e fuori dalla
+  // presentazione il disegno resta identico al pixel.
+  const misure = () => leggiMisure(globalThis.getComputedStyle?.(contenitore));
+  // Gli scostamenti dei testi sono scritti per un corpo di 11: a un corpo diverso valgono
+  // `n · carattere / 11`, o in aula il numero resterebbe posato dove stava a 11 px.
+  const scalato = (n, carattere) => (n * carattere) / 11;
 
   function disegna({ risultati, modello, selezione }) {
     contenitore.hidden = !risultati;
@@ -159,7 +168,15 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     // mai, o l'SVG sfora il contenuto e (con `min-width: auto` sulla traccia) la allarga, e il
     // giro dopo si misura più larga — +16 px a ogni ridisegno, senza tetto. I 200 valgono per
     // il solo contenitore non ancora impaginato, dove `clientWidth` è 0.
-    const W = contenitore.clientWidth || 200, H = 96, M = 14;
+    //
+    // `H` viene da `--srotolato-alto` (96 alla scrivania, 160 in aula): sotto i 119 px il numero
+    // del picco di sopra **esce** dall'SVG, che a 46 px di corpo ha 43 px d'ascesa sopra la linea
+    // di base (misurati in Chrome il 13/09) e sta a `y0 − 4·c/11`. `M` invece **non** scala: è il
+    // solo margine del diagramma, i testi non ci passano (stanno dall'altra parte della linea), e
+    // scalarlo schiaccerebbe l'ampiezza proprio in aula — a `H = 160` resterebbero 21 px contro i
+    // 66 che dà il 14 di sempre. Sulla curva è l'opposto, e infatti là scala: vedi `disegnaCurva`.
+    const { carattere, srotolatoAlto } = misure();
+    const W = contenitore.clientWidth || 200, H = srotolatoAlto, M = 14;
     const svg = el("svg", { width: W, height: H, "aria-label": `${vista} srotolato dell'asta ${asta.id}` });
     const y0 = H / 2;
     // M positivo in giù (il lato teso), V e N positivi in su — a sinistra di i→j, come nel piano
@@ -177,7 +194,8 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     // non possono sovrapporsi. Un posatore qui sarebbe codice che non risolve niente.
     for (const picco of picchi(stazioni, chiave)) {
       const sopra = segno * picco.valore > 0;   // il testo dalla parte opposta al diagramma
-      const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - 4 : y0 + 12, "font-size": 11, fill: colore, "font-family": MONO,
+      const t = el("text", { x: x(picco.x_rel), y: sopra ? y0 - scalato(4, carattere) : y0 + scalato(12, carattere),
+                             "font-size": carattere, fill: colore, "font-family": MONO,
                              "text-anchor": picco.x_rel < 0.1 ? "start" : picco.x_rel > 0.9 ? "end" : "middle" });
       t.textContent = testoValore(vista, picco.valore);
       svg.append(t);
@@ -193,22 +211,29 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     const { punti = [], uMax = 0, vMax = 0, caduta = null } = risultati.curva ?? {};
     const colore = risultati.stantia ? ROSSO : INCHIOSTRO;
     // 28 px a sinistra per il numero del taglio, 14 sopra e sotto: sotto ci va lo spostamento.
-    const W = contenitore.clientWidth || 200, H = 96, M = 14, ML = 28;
+    // Qui il margine **scala**, al contrario dello srotolato: sotto l'asse ci va un numero, posato
+    // a `H − M + 10·c/11`, che a 46 px di corpo scende di altri 11 px sotto la linea di base
+    // (discesa misurata in Chrome il 13/09). Con `M = 14` fisso uscirebbe dall'SVG; `14·c/11` vale
+    // 58,5 a 46, sopra i 52,5 che il contenimento chiede. `ML` scala per la stessa ragione: a
+    // sinistra dell'asse ci sta lo zero, che a 46 px è largo 28 px.
+    const { carattere, srotolatoAlto } = misure();
+    const sc = (n) => scalato(n, carattere);
+    const W = contenitore.clientWidth || 200, H = srotolatoAlto, M = sc(14), ML = sc(28);
     const larghezza = Math.max(0, W - M - ML), altezza = Math.max(0, H - 2 * M);
     // Una corsa che si ferma al primo passo ha `uMax` e `vMax` a zero: il rapporto non si fa,
     // il punto sta nell'origine. Senza questa guardia uscirebbe `cx="NaN"` e nessun cerchio.
     const x = (u) => ML + (uMax > 0 ? (Number(u) || 0) / uMax : 0) * larghezza;
     const y = (V) => H - M - (vMax > 0 ? (Number(V) || 0) / vMax : 0) * altezza;
     const svg = el("svg", { width: W, height: H, "aria-label": "curva taglio–spostamento della pushover" });
-    const testo = (attributi, contenuto) => { const t = el("text", { "font-size": 11, fill: colore, "font-family": MONO, ...attributi }); t.textContent = contenuto; return t; };
+    const testo = (attributi, contenuto) => { const t = el("text", { "font-size": carattere, fill: colore, "font-family": MONO, ...attributi }); t.textContent = contenuto; return t; };
     svg.append(el("line", { x1: ML, y1: H - M, x2: W - M, y2: H - M, stroke: colore, "stroke-width": 1 }),
                el("line", { x1: ML, y1: M, x2: ML, y2: H - M, stroke: colore, "stroke-width": 1 }),
-               testo({ x: ML - 3, y: H - M + 10, "text-anchor": "end" }, "0"),
-               testo({ x: W - M, y: H - M + 10, "text-anchor": "end" }, `${conciso(uMax)} mm`),
+               testo({ x: ML - sc(3), y: H - M + sc(10), "text-anchor": "end" }, "0"),
+               testo({ x: W - M, y: H - M + sc(10), "text-anchor": "end" }, `${conciso(uMax)} mm`),
                // Il taglio massimo **dentro** il grafico, come «60 mm» sta già in basso a destra:
                // a sinistra dell'asse ci sono 28 px e «72,12 kN» ne vuole più del doppio — usciva
                // tagliato a «2 kN», cioè un numero diverso e plausibile.
-               testo({ x: ML + 2, y: M + 10, "text-anchor": "start" }, `${conciso(vMax)} kN`));
+               testo({ x: ML + sc(2), y: M + sc(10), "text-anchor": "start" }, `${conciso(vMax)} kN`));
     svg.append(el("polyline", { points: punti.map((q) => `${x(q.u)},${y(q.V)}`).join(" "),
                                 fill: "none", stroke: colore, "stroke-width": 1.5 }));
     const corrente = risultati.passo?.k;
@@ -227,9 +252,9 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
       // chiamava `n`, che nella caduta è il **numero** del passo del server: letto come conteggio
       // teneva i due testi sempre a destra, e il commento raccontava la confusione al contrario.
       const destra = k < punti.length / 2;
-      const cx = x(u) + (destra ? 7 : -7), ancora = destra ? "start" : "end";
-      svg.append(testo({ x: cx, y: y(V) - 4, "text-anchor": ancora }, `u ${conciso(u)} mm`),
-                 testo({ x: cx, y: y(V) + 12, "text-anchor": ancora }, `V ${conciso(V)} kN`));
+      const cx = x(u) + (destra ? sc(7) : -sc(7)), ancora = destra ? "start" : "end";
+      svg.append(testo({ x: cx, y: y(V) - sc(4), "text-anchor": ancora }, `u ${conciso(u)} mm`),
+                 testo({ x: cx, y: y(V) + sc(12), "text-anchor": ancora }, `V ${conciso(V)} kN`));
     }
     const qCaduta = caduta ? punti[caduta.k] : null;
     if (qCaduta) {
@@ -241,7 +266,7 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
                  // è lo stesso numero.
                  // Story 50: dove si è fermata **e di quanto**. L'algoritmo no — qui è una riga
                  // sopra la croce, e ci sta un numero, non una frase; sta nell'equilibrio.
-                 testo({ x: cx, y: M - 4, "text-anchor": "middle", fill: ROSSO },
+                 testo({ x: cx, y: M - sc(4), "text-anchor": "middle", fill: ROSSO },
                        `caduta al passo ${caduta.n} · u ${conciso(caduta.u)} mm`));
     }
     // R11: 120 cerchi da 2,5 px non si prendono col mouse, e 120 listener sono 120 chiusure da

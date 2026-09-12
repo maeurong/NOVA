@@ -4,10 +4,11 @@
 // disegno; i ripieghi sono i numeri che stavano scritti a mano in `piano.js` e `spazio.js`, così
 // fuori dalla presentazione il disegno resta identico al pixel.
 export const MISURE_BASE = Object.freeze({ raggioNodo: 5, trattoAsta: 2, trattoScelta: 3, trattoDeformata: 2,
-                                           bordoDeformata: 2, carattere: 11, ombra: 0.3 });
+                                           bordoDeformata: 2, carattere: 11, ombra: 0.3, srotolatoAlto: 96 });
 export const VARIABILI = Object.freeze({ raggioNodo: "--nodo-raggio", trattoAsta: "--asta-tratto",
                                          trattoScelta: "--asta-tratto-scelta", trattoDeformata: "--deformata-tratto",
-                                         bordoDeformata: "--deformata-bordo", carattere: "--etichetta", ombra: "--ombra-opacita" });
+                                         bordoDeformata: "--deformata-bordo", carattere: "--etichetta", ombra: "--ombra-opacita",
+                                         srotolatoAlto: "--srotolato-alto" });
 
 export function leggiMisure(stile) {
   const misure = { ...MISURE_BASE };

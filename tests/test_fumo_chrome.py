@@ -382,8 +382,16 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     assert r["errori"] == [], r["errori"]
     t = r["trovato"]
     assert t["bottoneFuori"] == "none", "«pannelli» si vede fuori dalla presentazione"
-    # Tolleranza di un centesimo: il CTM rende 46,0000003 o 45,9999997 secondo il riquadro.
-    assert t["misure"]["etichette"] >= 45.99, t["misure"]
+    # Un decimo di tolleranza, come nel test qui sotto e per la stessa ragione misurata: `piano.js`
+    # calcola i mm per pixel su `clientWidth`/`clientHeight`, che sono **arrotondati**, mentre il
+    # browser rende sul riquadro vero. Qui il piano è largo 1151 di `clientWidth` contro 1152 veri, e
+    # quel pixel basta a far uscire 45,9898 invece di 46.
+    # Il 45,99 di prima non misurava questo: lo passava per **0,00035 px**. Misurato il 13/09 a
+    # 1920×1080, statica, con la striscia dell'M srotolato accesa e spenta — 45,989835 e 45,990349,
+    # cioè lo stesso numero: non è la striscia della 15b a spostarlo, è l'arrotondamento di sempre,
+    # che stava mezzo decimillesimo dal lato buono della soglia. La grandezza dichiarata resta 46 px
+    # (`--etichetta`) e la soglia della ricerca è 45 (`docs/ricerca/07-ux-modellatore.md:133`).
+    assert t["misure"]["etichette"] >= 45.9, t["misure"]
     assert t["misure"]["aste"] >= 5.99, t["misure"]
     assert t["misure"]["nodi"] >= 13.99, t["misure"]
     assert t["misure"]["striscia"] >= 32, t["misure"]
@@ -409,7 +417,14 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     # brief (striscia alta 489 px) il test sarebbe restato verde. Misurati 112 e 944 in statica a
     # 1920: la striscia dei controlli resta una striscia, e il piano si prende il resto.
     assert t["altezzaStriscia"] <= 130, t["altezzaStriscia"]
+    # 15b — la striscia dell'M srotolato è tornata in aula e il piano ne paga 49 px: 944 → 919. La
+    # soglia resta 900 perché quel che promette è «il piano si prende il resto», non il numero di ieri.
     assert t["piano"][1] >= 900, t["piano"]
+    # Senza un'asta scelta la striscia porta la sola riga «Seleziona un'asta per il suo M
+    # srotolato.»: in aula è il testo che dice cosa fare **adesso**, e a 11 px da 8 m non si leggeva.
+    s = t["srotolato"]
+    assert s is not None and s["titolo"] >= 32, f"la riga dell'invito sotto i 32 px: {s}"
+    assert s["svg"] is None and s["scatola"] <= 60, f"senza asta la striscia è la sola riga: {s}"
     assert t["uscito"] is True
     # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
     assert t["legendaModo"] and "forma del modo" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
@@ -483,9 +498,22 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     assert t["accesaPrimaDellaCorsa"] is True, "P prima di ⌘⏎: la corsa deve girare in presentazione"
     assert t["attesaInAula"]["fasi"] > 0, t["attesaInAula"]
     assert t["attesaInAula"]["corpo"] >= 32, f"le fasi della corsa in aula sotto i 32 px: {t['attesaInAula']}"
-    # C1 — la striscia dell'M srotolato non ha misure d'aula (curva e riga «Seleziona un'asta…»
-    # restano a 11 px): in presentazione si toglie di mezzo, e il piano si prende la sua riga.
-    assert t["srotolatoInAula"] is False, "l'M srotolato resta a 11 px: in aula non ci va"
+    # 15b — la striscia torna in aula con misure sue (C1 chiuso). A 1920×1080 ci sta, e ci si legge:
+    # l'SVG alto `--srotolato-alto`, i suoi numeri a `--etichetta`, il titolo a 32 px come le altre
+    # strisce del piano. Misurato: scatola 247, SVG 160, cinque testi a 46, titolo 32.
+    assert t["srotolatoInAula"] is True, "a 1920×1080 la striscia in aula ci sta: deve vedersi"
+    s = t["srotolato"]
+    assert s is not None and s["svg"] == 160, f"l'SVG non è alto `--srotolato-alto`: {s}"
+    assert s["quantiTesti"] > 0, f"nessun testo nella curva: il test sarebbe vuoto — {s}"
+    assert s["corpo"] >= 46, f"i numeri della curva sotto i 46 px, illeggibili da 8 m: {s}"
+    assert s["titolo"] >= 32, f"la riga che dice cosa si sta guardando sotto i 32 px: {s}"
+    # R9 — la ragione dei 160 px è il **contenimento**: a 96 il numero del picco di sopra esce dal
+    # riquadro di 12 px. Qui si misura sul reso, non sulla geometria dedotta.
+    assert s["fuori"] == [], f"testi fuori dal proprio SVG: {s['fuori']}"
+    # E il telaio deve reggere lo stesso: accendere la striscia gli ruba proprio l'altezza che i
+    # Task 2 e 3 gli hanno appena restituito. Misurati piano 674, fascia 192, banda 482.
+    assert s["scatola"] <= 260, f"la striscia costa più di quanto il budget preveda: {s}"
+    assert t["telaio"]["piano"] - t["telaio"]["fascia"] >= 100, t["telaio"]
     s = t["strisce"]
     # Il test non è vuoto: le tre strisce del caso peggiore ci sono davvero.
     assert set(s["visibili"]) >= {"badge", "stati", "colori"}, s["visibili"]
@@ -530,6 +558,14 @@ def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(
     # di alto dentro una banda di 211. Quel che il criterio promette è la banda, non il disegno.
     assert tel["piano"] - tel["fascia"] >= 100, tel
     assert tel["alto"] > 0, "nessun nodo disegnato: il telaio non c'è"
+    # 15b, R8 — a questo riquadro la striscia dell'M srotolato non ci sta a **nessuna** altezza
+    # utile: accesa costa 285 px (il titolo va a capo tre volte a questa larghezza) su un piano di
+    # 403 che ne riserva già 192 alle strisce, e al telaio resterebbero −74 px. La regola di ripiego
+    # non è condizionale. L'oracolo non è «sparisce», è **il piano si tiene i suoi 403 px interi**:
+    # senza la seconda riga, l'assert passerebbe identico anche se sparisse il piano con lei.
+    assert t["srotolatoInAula"] is False, "a 1280×657 la striscia in aula si mangia tutto il disegno"
+    assert t["srotolato"] is None, t["srotolato"]
+    assert tel["piano"] == 403, f"il piano non si tiene la sua altezza: {tel}"
     # La legenda dei colori su **una** riga: è la leva che toglie i piedi da sotto di lei. A 32 px
     # una riga è alta ~38 px; le 89 misurate col testo intero erano tre righe.
     assert t["altaColori"] <= 70, t["altaColori"]

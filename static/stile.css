@@ -17,6 +17,8 @@
      `misure.js` li legge; cambiare un numero qui cambia il disegno, e nessun'altra copia resta indietro. */
   --nodo-raggio: 5px; --asta-tratto: 2px; --asta-tratto-scelta: 3px;
   --deformata-tratto: 2px; --deformata-bordo: 2px; --etichetta: 11px; --ombra-opacita: 0.3;
+  /* L'altezza dell'SVG della striscia sotto il piano, che `esito.js` legge come le altre (15b). */
+  --srotolato-alto: 96px;
 }
 
 * { box-sizing: border-box; }
@@ -524,6 +526,10 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 body[data-presentazione] {
   --nodo-raggio: 7px; --asta-tratto: 6px; --asta-tratto-scelta: 9px;
   --deformata-tratto: 6px; --deformata-bordo: 2px; --etichetta: 46px; --ombra-opacita: 0.55;
+  /* 15b — 160 e non 288: sotto i 119 px il numero del picco di sopra esce dall'SVG (43 px d'ascesa
+     a 46 px di corpo, misurati), e sopra i 160 il piano perde altezza senza che il diagramma ne
+     guadagni. A 160 l'ampiezza del diagramma vale 66 px. Il perché del 288 scartato: piano R8. */
+  --srotolato-alto: 160px;
   grid-template-columns: 1fr; grid-template-rows: 1fr auto auto auto;
   grid-template-areas: "viste" "striscia" "messaggio" "comando"; font-size: 32px;
 }
@@ -547,11 +553,22 @@ body[data-presentazione]:not([data-pannelli]) #risultati-equilibrio { margin: 0;
 body[data-presentazione][data-pannelli] { grid-template-columns: minmax(180px, 22rem) 1fr minmax(220px, 30rem);
   grid-template-rows: 1fr auto auto; grid-template-areas: "albero viste pannello" "messaggio messaggio messaggio" "comando comando comando"; }
 body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori) { font-size: 32px; }
-/* C1 — la striscia dell'M srotolato non ha misure d'aula: la curva della pushover, i suoi numeri e la
-   riga «Seleziona un'asta…» restano a 11 px, illeggibili da 8 m, e si prendono la riga sotto il piano.
-   Qui si toglie di mezzo e il piano si prende l'altezza; portarla in aula con misure sue è un debito
-   della 15b (già in issue). Il piano non la misura, quindi nessun conto della fascia cambia. */
-body[data-presentazione] #srotolato { display: none; }
+/* 15b — la striscia torna in aula con misure sue, e il suo **titolo** con lei: a 11 px la riga
+   «Seleziona un'asta per il suo M srotolato.» era il testo più piccolo dello schermo, e la striscia
+   in aula esiste per essere letta da 8 m. 32 px come le altre strisce del piano (la regola qui
+   sopra) e non 46: i 46 sono le etichette **dentro** l'SVG, e un titolo a 46 va a capo tre volte
+   e rende 162 px — più alto del diagramma che presenta. */
+body[data-presentazione] #srotolato .titolo { font-size: 32px; }
+/* R8 — in aula la striscia costa `--srotolato-alto` più il suo titolo, il padding e il bordo:
+   **285 px** misurati a 1280 di larghezza (titolo su tre righe), 247 a 1920 (due). A 1280×657 il
+   riquadro del piano ne ha 403 in tutto e le strisce alte se ne riservano 192: al telaio
+   resterebbero **−74 px**, cioè nessun disegno. Non è condizionale, è obbligatoria.
+   Misurato il 13/09 a larghezza 1280 — il caso peggiore, perché lì la striscia dei controlli va a
+   capo di più e mangia il riquadro del piano: la banda torna sopra i 100 px di `TELAIO_MINIMO`
+   fra gli 800 px di finestra (69) e gli 840 (109), cioè verso gli 833. La soglia sta a 899 e non
+   al pareggio, che non è un posto dove stare: a 900 la banda vale 169. Sull'altezza della
+   **finestra** perché il CSS il riquadro del piano non lo sa. */
+@media (max-height: 899px) { body[data-presentazione] #srotolato { display: none; } }
 /* C4 — la coda dei tasti negli stati vuoti: alla scrivania insegna, in aula è un muro di testo su
    una striscia che deve dire cosa fare **adesso**. */
 body[data-presentazione] .vuoto .aiuto { display: none; }

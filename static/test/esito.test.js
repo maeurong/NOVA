@@ -563,3 +563,113 @@ test("creaSrotolato: il riquadro dice a voce quel che porta davvero", () => {
                      modello, selezione: { tipo: "asta", id: 1 } });
   assert.equal(contenitore.getAttribute("aria-label"), "V srotolato dell'asta selezionata");
 });
+
+// --- la 15b: lo srotolato e la curva della pushover tornano in aula ----------------
+
+// `esito.js` legge le variabili CSS come `piano.js` e `spazio.js`: `getComputedStyle` del
+// contenitore. Nel DOM finto la globale non c'è, e `leggiMisure` cade sui numeri d'oggi — che è
+// esattamente il regime «fuori dalla presentazione». `null` lo lascia così com'è.
+function conVariabili(variabili, azione) {
+  const prima = globalThis.getComputedStyle;
+  if (variabili) globalThis.getComputedStyle = () => ({ getPropertyValue: (n) => variabili[n] ?? "" });
+  try { return azione(); } finally {
+    if (prima === undefined) delete globalThis.getComputedStyle; else globalThis.getComputedStyle = prima;
+  }
+}
+
+const AULA = { "--srotolato-alto": "160px", "--etichetta": "46px" };
+const TRAVE = { nodi: [{ id: 1, x: 0, z: 0 }, { id: 2, x: 6000, z: 0 }], aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }] };
+const STAZIONI = { sollecitazioni: { 1: [{ x_rel: 0, My: 0 }, { x_rel: 0.5, My: 45e6 }, { x_rel: 1, My: -12e6 }] } };
+
+const srotolatoCon = (variabili, larghezza = 800) => conVariabili(variabili, () => {
+  const contenitore = contenitoreFinto(larghezza);
+  creaSrotolato(contenitore).disegna({ risultati: { vista: "M", caso: "Z1", perCaso: STAZIONI, stantia: false },
+                                       modello: TRAVE, selezione: { tipo: "asta", id: 1 } });
+  return contenitore;
+});
+const svgDi = (c) => c._figli.find((f) => f.nome === "svg");
+const testiDi = (c) => tutti(svgDi(c), "text");
+
+test("creaSrotolato: fuori dall'aula 96 px e testi a 11; in aula 160 px e testi a 46", () => {
+  const fuori = srotolatoCon(null);
+  assert.equal(svgDi(fuori).getAttribute("height"), "96");
+  assert.equal(testiDi(fuori)[0].getAttribute("font-size"), "11");
+  const aula = srotolatoCon(AULA);
+  assert.equal(svgDi(aula).getAttribute("height"), "160");
+  assert.equal(testiDi(aula)[0].getAttribute("font-size"), "46");
+});
+
+// R9 — il vincolo dell'altezza non è la sovrapposizione dei due numeri (non si sovrappongono mai,
+// a nessuna altezza: stanno ai due lati della linea di base) ma il **contenimento**. Ascesa e
+// discesa del mono di sistema misurate in Chrome il 13/09 su un `<text>` SVG vero, con lo stesso
+// `font-family` di `esito.js`: 43 e 11 px a un corpo di 46, 10 e 3 a un corpo di 11.
+const ASCESA_46 = 43, DISCESA_46 = 11;
+
+test("creaSrotolato in aula: i numeri dei picchi stanno dentro l'SVG — a 96 px uscirebbero", () => {
+  const y = (c) => testiDi(c).map((t) => Number(t.getAttribute("y")));
+  for (const yPicco of y(srotolatoCon(AULA))) {
+    assert.ok(yPicco - ASCESA_46 >= 0, `il picco esce di sopra: ${yPicco - ASCESA_46} px`);
+    assert.ok(yPicco + DISCESA_46 <= 160, `il picco esce di sotto: ${yPicco + DISCESA_46 - 160} px`);
+  }
+  // Il lato che discrimina: sono i 160 a contenerli, non i testi a stare buoni da sé. Con
+  // l'altezza d'oggi e i testi d'aula il numero di sopra esce dal riquadro.
+  const basso = Math.min(...y(srotolatoCon({ ...AULA, "--srotolato-alto": "96px" })));
+  assert.ok(basso - ASCESA_46 < 0, `a 96 px il picco di sopra deve uscire, esce di ${ASCESA_46 - basso}`);
+});
+
+const CURVA = { punti: [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }], uMax: 1, vMax: 2.3,
+                caduta: { k: 1, n: 2, u: 1, motivo: "non converge" } };
+const curvaCon = (variabili) => conVariabili(variabili, () => {
+  const contenitore = contenitoreFinto(400);
+  creaSrotolato(contenitore, { suPasso: () => {} }).disegna({
+    risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                 passo: { k: 1, n: 2, u: 1, V: 2.3 }, curva: CURVA, stantia: false },
+    modello: null, selezione: null });
+  return contenitore;
+});
+
+// R10 — i due margini non sono lo stesso numero. Sulla curva, sotto l'asse, ci sta un numero: il
+// margine deve tenerci dentro anche la sua discesa, e `M = carattere` non basta.
+test("creaSrotolato con la pushover in aula: l'etichetta sotto l'asse resta dentro l'SVG; con `M = carattere` uscirebbe", () => {
+  const sotto = (c) => tutti(c._figli[1], "text")
+    .map((t) => Number(t.getAttribute("y"))).filter((y) => y > 160 / 2);
+  const aula = sotto(curvaCon(AULA));
+  assert.ok(aula.length > 0, "il test non è vuoto: sotto l'asse un'etichetta c'è");
+  for (const y of aula) assert.ok(y + DISCESA_46 <= 160, `esce di sotto di ${y + DISCESA_46 - 160} px`);
+  // Con `M = carattere` (il margine che il piano dava per unico) la stessa etichetta sta a
+  // `H − 46 + 10·c/11` e con la sua discesa esce: è la misura che separa i due margini.
+  const M = 46, yStretto = 160 - M + (10 * 46) / 11;
+  assert.ok(yStretto + DISCESA_46 > 160, "con M = carattere l'etichetta uscirebbe: il margine della curva è più largo");
+});
+
+// «variabile CSS assente o 0 → ripiego ai numeri d'oggi, disegno identico al pixel»: non «quasi
+// identico». Il confronto è su **tutti** gli attributi di **tutti** gli elementi dell'SVG.
+test("creaSrotolato: senza variabili, con variabili vuote o a zero il disegno è identico al pixel", () => {
+  const attributi = (c) => tutti(svgDi(c), "text").concat(tutti(svgDi(c), "line"), tutti(svgDi(c), "circle"),
+                                                          tutti(svgDi(c), "polygon")).map((e) => ({ ...e._attrs }));
+  const oggi = attributi(srotolatoCon(null));
+  assert.deepEqual(attributi(srotolatoCon({})), oggi, "variabili assenti: i numeri d'oggi");
+  assert.deepEqual(attributi(srotolatoCon({ "--srotolato-alto": "0px", "--etichetta": "0px" })), oggi, "a zero: i numeri d'oggi");
+  assert.equal(svgDi(srotolatoCon({})).getAttribute("height"), "96");
+});
+
+// La guardia dello zero vale anche in aula: i numeri nuovi sono più grandi, non più sicuri.
+test("creaSrotolato in aula: una curva a un passo solo (uMax = vMax = 0) disegna gli assi senza NaN", () => {
+  const contenitore = conVariabili(AULA, () => {
+    const c = contenitoreFinto(400);
+    creaSrotolato(c, { suPasso: () => {} }).disegna({
+      risultati: { tipo: "pushover", vista: "deformata", caso: "pushover", passo: { k: 0, n: 1, u: 0, V: 0 },
+                   curva: { punti: [{ k: 0, u: 0, V: 0 }], uMax: 0, vMax: 0, caduta: null }, stantia: false },
+      modello: null, selezione: null });
+    return c;
+  });
+  const svg = contenitore._figli[1];
+  assert.equal(svg.getAttribute("height"), "160");
+  const cerchi = tutti(svg, "circle").filter((c) => c.getAttribute("class") === "passo");
+  assert.equal(cerchi.length, 1);
+  // L'origine: `ML` e `H − M`, coi margini dell'aula — non `NaN`, e non i numeri di 11 px.
+  assert.equal(Number(cerchi[0].getAttribute("cx")).toFixed(2), ((28 * 46) / 11).toFixed(2));
+  for (const e of tutti(svg, "line").concat(tutti(svg, "text"), tutti(svg, "rect"), cerchi)) {
+    for (const [k, v] of Object.entries(e._attrs)) assert.ok(!String(v).includes("NaN"), `NaN in ${k}=${v}`);
+  }
+});

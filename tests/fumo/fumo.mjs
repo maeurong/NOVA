@@ -106,6 +106,26 @@ const TELAIO_E_FASCIA = `(() => {
            piano: Math.round(p.height) };
 })()`;
 
+// La striscia sotto il piano (15b): se si vede, quanto costa e con quali misure rese. `null` quando
+// una regola la nasconde — che sotto i 900 px di finestra in aula è quel che deve succedere.
+// `fuori` è il contenimento **reso** dei testi dentro il proprio SVG: la ragione dei 160 px di
+// `--srotolato-alto` è che a 96 il numero del picco di sopra esce dal riquadro.
+const SROTOLATO = `(() => {
+  const s = document.getElementById("srotolato");
+  if (!s || s.hidden || s.offsetParent === null) return null;
+  const svg = s.querySelector("svg"), t = s.querySelector(".titolo");
+  const testi = [...s.querySelectorAll("svg text")];
+  const r = svg ? svg.getBoundingClientRect() : null;
+  return { scatola: Math.round(s.getBoundingClientRect().height),
+           svg: svg ? Math.round(r.height) : null,
+           titolo: t ? Math.round(parseFloat(getComputedStyle(t).fontSize)) : null,
+           quantiTesti: testi.length,
+           corpo: testi.length ? Math.min(...testi.map((e) => parseFloat(getComputedStyle(e).fontSize))) : null,
+           fuori: testi.map((e) => { const b = e.getBoundingClientRect();
+             const q = Math.max(r.top - b.top, b.bottom - r.bottom);
+             return q > 0.5 ? [e.textContent, Math.round(q)] : null; }).filter(Boolean) };
+})()`;
+
 // Il contrasto **reso** del testo della legenda dei colori sulla sua piastra: i colori li compone il
 // browser, non li deduce il CSS. `alfa` sta accanto al rapporto perché una piastra trasparente
 // lascerebbe il testo sul disegno — viridis o ombra dell'indeformata — e il rapporto misurato contro
@@ -430,6 +450,9 @@ const COPIONI = {
     const strisciaSotto = await ev(`document.getElementById("pannello").getBoundingClientRect().top >= document.getElementById("viste").getBoundingClientRect().bottom - 1`);
     const altezzaStriscia = await ev(`document.getElementById("pannello").getBoundingClientRect().height`);
     const piano = await ev(`[document.getElementById("piano").clientWidth, document.getElementById("piano").clientHeight]`);
+    // 15b — senza un'asta scelta la striscia porta la sola riga «Seleziona un'asta…», e **quella**
+    // in aula non può restare a 11 px: è il testo che dice cosa fare adesso.
+    const srotolato = await ev(SROTOLATO);
     const proporzione = await ev(`document.getElementById("piano").clientWidth / document.getElementById("spazio").clientWidth`);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
@@ -475,7 +498,7 @@ const COPIONI = {
     menu.escEsce = await ev(`!${ACCESA}`);
 
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, proporzione, sovrapposte, scorre,
+    return { bottoneFuori, misure, nascosti, strisciaSotto, altezzaStriscia, piano, srotolato, proporzione, sovrapposte, scorre,
              colori, legendaColori, contrasto, bn, uscito, legendaModo, menu, messaggio };
   },
 
@@ -506,12 +529,17 @@ const COPIONI = {
     await scegliCaso("pushover");
     await pausa(700);
     const srotolatoInAula = await ev(`document.getElementById("srotolato").offsetParent !== null`);
+    // 15b — la striscia torna in aula con misure sue, e il telaio deve reggere lo stesso: qui si
+    // leggono tutte e due le cose, perché accenderla ruba al piano proprio l'altezza che i Task 2
+    // e 3 gli hanno appena restituito.
+    const srotolato = await ev(SROTOLATO);
+    const telaio = await ev(TELAIO_E_FASCIA);
     const strisce = await ev(STRISCE_ADDOSSO);
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const legendaColori = await ev(COLORI);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, strisce, sovrapposte, scorre, legendaColori, messaggio };
+    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, srotolato, telaio, strisce, sovrapposte, scorre, legendaColori, messaggio };
   },
 
   // Il collaudo della 15b, a **1280×657** in aula: il riquadro basso dove le strisce costano di più.
@@ -535,6 +563,9 @@ const COPIONI = {
     await pausa(700);
     const strisce = await ev(STRISCE_ADDOSSO);
     const telaio = await ev(TELAIO_E_FASCIA);
+    // 15b — a questo riquadro la striscia non ci sta a nessuna altezza utile: `null` è la promessa.
+    const srotolato = await ev(SROTOLATO);
+    const srotolatoInAula = await ev(`document.getElementById("srotolato").offsetParent !== null`);
     const contrasto = await ev(CONTRASTO_COLORI);
     const legendaColori = await ev(COLORI);
     const altaColori = await ev(`document.querySelector("#piano .risultati-colori").getBoundingClientRect().height`);
@@ -551,7 +582,7 @@ const COPIONI = {
       const p = document.getElementById("piano").getBoundingClientRect(), b = l.getBoundingClientRect();
       return { alta: Math.round(b.height), larga: Math.round(b.width), piano: [Math.round(p.width), Math.round(p.height)] }; })()`),
       strisce: await ev(STRISCE_ADDOSSO) };
-    return { accesa, strisce, telaio, contrasto, legendaColori, altaColori, sovrapposte, scorre, stretto, messaggio };
+    return { accesa, strisce, telaio, srotolato, srotolatoInAula, contrasto, legendaColori, altaColori, sovrapposte, scorre, stretto, messaggio };
   },
 
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost
