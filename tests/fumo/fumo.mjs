@@ -74,6 +74,16 @@ const ETICHETTE_NODI = ["#piano svg g[data-tipo=nodo] text", "font-size"];
 const ACCESA = `document.body.hasAttribute("data-presentazione")`;
 const COLORI = `(() => { const l = document.querySelector("#piano .risultati-colori"); return l && !l.hidden ? l.textContent : null; })()`;
 
+// Lo spessore dei cilindri del 3D (#85). `spazio.js` scrive sul canvas il diametro **reso** in px
+// dell'asta e quello voluto da `--asta-tratto`: è l'unica finestra sulla tela WebGL, che nessuno
+// strumento che guarda il DOM sa leggere (`docs/ricerca/07-ux-modellatore.md:123`). `null` se la
+// sonda non c'è — senza WebGL `creaSpazio` si dichiara assente e non c'è niente da misurare;
+// `SPAZIO_ASSENTE` dice quale dei due casi è, così un `null` non passa per silenzio.
+const TRATTO_3D = `(() => { const c = document.querySelector("#spazio canvas");
+  if (!c || c.dataset.trattoReso === undefined) return null;
+  return { reso: parseFloat(c.dataset.trattoReso), voluto: parseFloat(c.dataset.trattoVoluto) }; })()`;
+const SPAZIO_ASSENTE = `!!document.querySelector("#spazio p.vuoto")`;
+
 // I riquadri delle strisce di testo sopra il piano contro i nomi e i cerchi dei nodi (15a, fix A).
 // `SOVRAPPOSTE` qui sopra non serve: confronta i `<text>` dell'SVG **fra loro**, e i nomi dei nodi
 // non passano da `disponi` — il telaio finiva sotto la legenda degli stati con il fumo tutto verde.
@@ -180,8 +190,15 @@ const CONTRASTO_COLORI = `(() => {
 // Si legge due volte — animazione che gira e animazione ferma — perché è la differenza fra le due
 // a dire quanto costa il nostro giro, non il valore assoluto (che il vsync tiene fermo comunque).
 const INTERVALLI = `new Promise((ok) => { const t = []; const g = () => { t.push(performance.now()); if (t.length < 31) requestAnimationFrame(g); else ok(t.slice(1).map((v, i) => v - t[i])); }; requestAnimationFrame(g); })`;
-const riassunto = (v) => ({ media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
-                            massimo: Math.round(Math.max(...v) * 100) / 100 });
+// La **mediana** accanto alla media: il primo fotogramma dopo un cambio di stato è quello di avvio
+// (misurati 18,16 ms di media contro 16,70 di mediana, e 16,66 alla seconda lettura), cioè banda e
+// non valore. La mediana non se ne accorge, ed è il numero su cui l'issue #87 fissa le sue soglie.
+const riassunto = (v) => {
+  const ordinati = [...v].sort((a, b) => a - b);
+  return { mediana: Math.round(ordinati[Math.floor(ordinati.length / 2)] * 100) / 100,
+           media: Math.round(v.reduce((a, b) => a + b, 0) / v.length * 100) / 100,
+           massimo: Math.round(Math.max(...v) * 100) / 100 };
+};
 
 const COPIONI = {
   // La pagina si apre, la tastiera risponde dal primo secondo, un nodo si posa da tastiera.
@@ -476,6 +493,8 @@ const COPIONI = {
       aste: await reso("#piano svg line[data-tipo=asta]", "stroke-width"),
       nodi: await reso("#piano svg g[data-tipo=nodo] circle", "r", 2),
       striscia: await ev(`parseFloat(getComputedStyle(document.getElementById("risultati-caso")).fontSize)`),
+      tratto3d: await ev(TRATTO_3D),
+      spazioAssente: await ev(SPAZIO_ASSENTE),
     };
     const nascosti = await ev(`["colonna", "barra", "storia-elenco"].map((id) => getComputedStyle(document.getElementById(id)).display === "none" || document.getElementById(id).offsetParent === null)`);
     const strisciaSotto = await ev(`document.getElementById("pannello").getBoundingClientRect().top >= document.getElementById("viste").getBoundingClientRect().bottom - 1`);

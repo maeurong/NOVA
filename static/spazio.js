@@ -87,6 +87,17 @@ export function raggioCilindro(occhio, estremi, fov, altezza, tratto) {
   return (pixelInMondo(lontano, fov, altezza) * tratto) / 2;
 }
 
+/** La scala da dare a **ogni** figlio della scena perché il suo cilindro esca dello spessore voluto.
+ *  Chi non è un cilindro (i punti dei nodi) prende `null`, non uno zero: l'array resta lungo quanto i
+ *  figli, e chi lo applica salta il posto invece di scalare a caso. Elenco vuoto → `[]`, nessun
+ *  `Math.max` su niente. Pura apposta: senza WebGL il ciclo di `rendi` non si prova, e cancellarlo
+ *  lasciava tutti i raggi a 1 mm — aste invisibili — col fumo e i test a unità verdi (#85). */
+export function scaleDeiTratti(oggetti, camera, altezza) {
+  return oggetti.map((o) => (o.userData?.tratto
+    ? raggioCilindro(camera.posizione, o.userData.estremi, camera.fov, altezza, o.userData.tratto)
+    : null));
+}
+
 /** Non rigetta **mai**: un guasto qui torna uno spazio che si dichiara assente, e il piano
  *  SVG regge da solo. Con la `Promise` respinta il chiamante restava con `spazio = null` e la
  *  pagina continuava a dire «Vista spaziale in caricamento» per sempre — un guasto travestito
@@ -128,6 +139,9 @@ async function costruisci(contenitore) {
   // del tratto dopo, e con tratti corti la deformata esce a trattini neri (visto in Chrome).
   const cilindro = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
   const asseY = new THREE.Vector3(0, 1, 0);
+  // Gli appoggi della sonda dello spessore, allocati una volta: `rendi` gira a ogni fotogramma e
+  // tre `Vector3` nuovi per giro sarebbero spazzatura che il raccoglitore paga dentro il budget.
+  const destra = new THREE.Vector3(), centroNDC = new THREE.Vector3(), bordoNDC = new THREE.Vector3();
   const inchiostro = new THREE.MeshBasicMaterial({ color: INCHIOSTRO });
   const rosso = new THREE.MeshBasicMaterial({ color: ROSSO });
   // L'ombra dell'indeformata sotto la deformata: l'opacità la dicono le misure, riscritta a ogni `disegna`.
@@ -178,10 +192,36 @@ async function costruisci(contenitore) {
     // pochi passi di profondità, e da lontano la deformata usciva a chiazze nere.
     const near = distanza / 100;
     if (camera.near !== near) { camera.near = near; camera.updateProjectionMatrix(); }
-    for (const o of disegnato.children) if (o.userData.tratto) {
-      o.scale.x = o.scale.z = raggioCilindro(camera.position, o.userData.estremi, camera.fov, contenitore.clientHeight, o.userData.tratto);
-    }
+    const figli = disegnato.children;
+    const scale = scaleDeiTratti(figli, { posizione: camera.position, fov: camera.fov }, contenitore.clientHeight);
+    for (let k = 0; k < figli.length; k++) if (scale[k] !== null) figli[k].scale.x = figli[k].scale.z = scale[k];
+    sonda(figli);
     renderer.render(scena, camera);
+  }
+
+  /** La sonda dello spessore (#85): sul canvas, il diametro **reso** in pixel del primo cilindro e
+   *  quello voluto in `--asta-tratto`. È l'unico posto da cui il fumo può vedere se il ciclo qui
+   *  sopra è stato applicato davvero: legge `o.scale.x` **dalla mesh**, non il numero appena
+   *  calcolato, e lo proietta con la camera vera invece che con `pixelInMondo` — una sonda che
+   *  ricalcolasse la formula proverebbe sé stessa. Misurata dall'architect il 13/09 sul canvas di
+   *  `#spazio`: 0,332 µs a scrittura, cioè 0,0003 ms per fotogramma, invisibili nei 16,7 ms del
+   *  vsync (#87). Nessun cilindro in scena → le due voci **spariscono**: un fotogramma con meno
+   *  aste non deve lasciare in giro il numero di quello di prima. */
+  function sonda(figli) {
+    const dati = renderer.domElement.dataset;
+    const o = figli.find((f) => f.userData.tratto);
+    if (!o) { delete dati.trattoReso; delete dati.trattoVoluto; return; }
+    const [a, b] = o.userData.estremi;
+    // Lo stesso capo su cui `raggioCilindro` ha preso la misura, scelto qui per conto proprio: se
+    // quella scegliesse il capo vicino, qui il diametro uscirebbe più sottile del voluto e si vedrebbe.
+    const lontano = a.distanceTo(camera.position) >= b.distanceTo(camera.position) ? a : b;
+    destra.setFromMatrixColumn(camera.matrixWorld, 0);   // l'asse orizzontale della camera: l'offset resta alla stessa profondità
+    centroNDC.copy(lontano).project(camera);
+    bordoNDC.copy(lontano).addScaledVector(destra, o.scale.x).project(camera);
+    // x in NDC copre [-1, 1] sulla larghezza del riquadro: metà larghezza per unità di NDC, quindi
+    // lo scarto per un **raggio** moltiplicato per la larghezza intera è il **diametro** in px.
+    dati.trattoReso = (Math.abs(bordoNDC.x - centroNDC.x) * contenitore.clientWidth).toFixed(2);
+    dati.trattoVoluto = String(o.userData.tratto);
   }
 
   // Orbita e zoom a mano: venti righe contro un secondo file vendorizzato per un giro di

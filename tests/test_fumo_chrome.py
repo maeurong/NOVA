@@ -298,6 +298,17 @@ def test_muro_1_il_modo_2_si_anima_e_spazio_lo_ferma(chrome_e_server, binario_op
     # regressione da ordine di grandezza, non a misurare il vsync di questa macchina.
     with_, senza = t["fotogramma"]["conAnimazione"], t["fotogramma"]["senzaAnimazione"]
     assert with_["media"] < 50, f"fotogrammi lenti con l'animazione: {with_} contro {senza}"
+    # #87 — il costo per fotogramma **registrato**, non ottimizzato. Misurato dall'architect il 13/09
+    # sul modo 2 del MURO 1, a 1920×1080 e a 1280×657, con l'animazione accesa e ferma: mediana
+    # 16,6-16,7 ms in tutte e quattro le condizioni, cioè il periodo del vsync a 60 Hz. Il ridisegno
+    # non sfora il budget in nessuna, e fra acceso e fermo non c'è differenza leggibile — il riuso
+    # delle mesh produrrebbe un «dopo» identico al «prima». Queste due soglie sono quelle che
+    # riaprirebbero l'issue, e stanno qui perché senza il «prima» scritto da qualche parte
+    # «ottimizzato» resta un'opinione. Sulla mediana e non sulla media: il primo fotogramma dopo un
+    # cambio di stato è quello di avvio (18,16 contro 16,66 alla seconda lettura), banda e non valore.
+    assert with_["mediana"] <= 20, f"il fotogramma con l'animazione ha superato il vsync: {with_}"
+    assert abs(with_["mediana"] - senza["mediana"]) <= 2, \
+        f"animazione accesa e ferma non costano più lo stesso: {with_} contro {senza}"
 
 
 def test_muro_1_la_pushover_si_scorre_con_le_frecce_e_il_clic(chrome_e_server, binario_opensees):
@@ -398,6 +409,19 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     # millesimo di pixel manda a caccia di un difetto che non esiste. Le grandezze dichiarate
     # restano 6 px (`--asta-tratto`) e 14 (`--nodo-raggio` × 2).
     assert t["misure"]["aste"] >= 5.9, t["misure"]
+    # #85 — le aste del **3D**, che l'assert qui sopra non vede: quello misura le `<line>` dell'SVG
+    # del piano. Cancellando il ciclo delle scale in `rendi` ogni cilindro resta di raggio 1 mm — aste
+    # invisibili in aula — e i test a unità restano tutti verdi, perché senza WebGL quel ciclo non si
+    # prova. La sonda porta il diametro **reso** in pixel, letto dalla scala applicata alla mesh e
+    # proiettato con la camera vera. La banda non è stretta come le altre di qui: `raggioCilindro`
+    # misura sul capo lontano con la distanza euclidea, quindi un'asta di sbieco esce un po' più
+    # spessa del voluto e mai più sottile.
+    tr = t["misure"]["tratto3d"]
+    assert tr is not None or t["misure"]["spazioAssente"], \
+        "la sonda dello spessore manca e il 3D non si dichiara assente: il rilievo è muto, non verde"
+    if tr is not None:
+        assert tr["voluto"] == 6, f"`--asta-tratto` dell'aula non arriva al 3D: {tr}"
+        assert 5.5 <= tr["reso"] <= 7.5, f"lo spessore reso dei cilindri non è quello voluto: {tr}"
     assert t["misure"]["nodi"] >= 13.9, t["misure"]
     assert t["misure"]["striscia"] >= 32, t["misure"]
     assert all(t["nascosti"]), t["nascosti"]
