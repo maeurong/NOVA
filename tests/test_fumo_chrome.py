@@ -532,6 +532,7 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     passi = t["srotolatoAiPassi"]
     assert len(passi) == 3, passi
     # Il test non è vuoto: i tre passi sono davvero tre, non tre misure sullo stesso.
+    assert all(p["preso"] for p in passi), f"un clic sulla striscia non è partito: {[(p['frazione'], p['preso']) for p in passi]}"
     assert len({p["passo"] for p in passi}) == 3, [p["passo"] for p in passi]
     for p in passi:
         assert p["addosso"] == [], f"al passo {p['passo']} due testi si sovrappongono: {p['addosso']}"
@@ -593,7 +594,21 @@ def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(
     # senza la seconda riga, l'assert passerebbe identico anche se sparisse il piano con lei.
     assert t["srotolatoInAula"] is False, "a 1280×657 la striscia in aula si mangia tutto il disegno"
     assert t["srotolato"] is None, t["srotolato"]
-    assert tel["piano"] == 403, f"il piano non si tiene la sua altezza: {tel}"
+    # `>= 400` e non `== 403`: un'uguaglianza esatta su un'altezza **resa** cade al primo pixel che
+    # qualcuno muove altrove, stampando un motivo che non c'entra — è la patologia opposta a quella
+    # che questo stesso giro ha curato allargando le soglie di mezzo decimillesimo. L'oracolo resta
+    # quello: il piano si tiene la sua altezza invece di cederla alla striscia, che ne costa 285.
+    assert tel["piano"] >= 400, f"il piano non si tiene la sua altezza: {tel}"
+    # Fix round 3 — la finestra **stretta e alta**, che la regola d'altezza non copre: 1000 px di
+    # altezza passano i 899, ma a 1120 di larghezza la colonna del piano è 671 px, sotto i 673 che il
+    # patto della banda bassa chiede, e i tre numeri si toccherebbero. La nasconde la soglia di
+    # **larghezza**: senza questo blocco quella riga di CSS si cancellerebbe senza far cadere niente.
+    # La seconda e la terza riga sono l'oracolo della promessa: non «sparisce tutto», ma «sparisce
+    # lei e il piano resta».
+    sa = t["strettoAlto"]
+    assert sa["visibile"] is False, f"a 1120×1000 in aula la striscia si vede, e i suoi numeri si toccano: {sa}"
+    assert sa["srotolato"] is None, sa
+    assert sa["piano"] > 0, f"a 1120×1000 non è rimasto nemmeno il piano: {sa}"
     # La legenda dei colori su **una** riga: è la leva che toglie i piedi da sotto di lei. A 32 px
     # una riga è alta ~38 px; le 89 misurate col testo intero erano tre righe.
     assert t["altaColori"] <= 70, t["altaColori"]

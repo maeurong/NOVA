@@ -136,8 +136,12 @@ const SROTOLATO = `(() => {
            titolo: t ? Math.round(parseFloat(getComputedStyle(t).fontSize)) : null,
            quantiTesti: testi.length,
            corpo: testi.length ? Math.min(...testi.map((e) => parseFloat(getComputedStyle(e).fontSize))) : null,
+           // Contenimento su **tutte e quattro** le componenti, non solo in verticale: il difetto
+           // storico che aveva messo il taglio massimo dentro il grafico era orizzontale —
+           // «72,12 kN» tagliato a «2 kN», cioè un numero diverso e plausibile. Il controllo
+           // orizzontale esisteva (staDentro) ma girava solo nel copione della scrivania.
            fuori: testi.map((e) => { const b = e.getBoundingClientRect();
-             const q = Math.max(r.top - b.top, b.bottom - r.bottom);
+             const q = Math.max(r.top - b.top, b.bottom - r.bottom, r.left - b.left, b.right - r.right);
              return q > 0.5 ? [e.textContent, Math.round(q)] : null; }).filter(Boolean),
            // I testi della striscia **fra loro**, come STRISCE_ADDOSSO fa per le strisce del
            // piano: SOVRAPPOSTE confronta i testi di #piano e questi non ci passano, ed è per
@@ -572,8 +576,10 @@ const COPIONI = {
     // davvero — tre misure sullo stesso passo non proverebbero niente.
     const srotolatoAiPassi = [];
     for (const frazione of [0, 0.5, 0.98]) {
-      await vaiAlPasso(frazione);
-      srotolatoAiPassi.push({ passo: await ev(BADGE), ...(await ev(SROTOLATO)) });
+      // `preso` viaggia col resto: `vaiAlPasso` sa dire che il clic non è partito, e senza questo
+      // il test parlerebbe di «tre passi uguali» invece che del bersaglio che non c'era.
+      const preso = await vaiAlPasso(frazione);
+      srotolatoAiPassi.push({ frazione, preso, passo: await ev(BADGE), ...(await ev(SROTOLATO)) });
     }
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, srotolato, srotolatoAiPassi, telaio, strisce, sovrapposte, scorre, legendaColori, messaggio };
@@ -609,6 +615,16 @@ const COPIONI = {
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    // Fix round 3 — la finestra **stretta e alta**, che la regola d'altezza non copre: 1000 px di
+    // altezza passano la soglia dei 899, ma a 1120 di larghezza la colonna del piano è 671 px e i
+    // tre numeri della banda sotto l'asse si toccherebbero (il patto si rompe sotto i 673, misurato
+    // chiamando `creaSrotolato` vero). A nasconderla qui è la soglia di **larghezza**: senza questo
+    // blocco quella riga di CSS si potrebbe cancellare senza far cadere niente.
+    await viewport(1120, 1000);
+    await pausa(500);
+    const strettoAlto = { srotolato: await ev(SROTOLATO),
+                          visibile: await ev(`document.getElementById("srotolato").offsetParent !== null`),
+                          piano: await ev(`document.getElementById("piano").clientWidth`) };
     // Il riquadro strettissimo, sempre in aula: 640×400 a dpr 2, lo zoom 200 % delle giornate 11c-12.
     // La piastra è opaca, quindi qui la domanda non è se il testo si legge ma se **copre il disegno**:
     // quanto del piano si prende, e quanti nodi restano visibili sotto di lei.
@@ -619,7 +635,7 @@ const COPIONI = {
       const p = document.getElementById("piano").getBoundingClientRect(), b = l.getBoundingClientRect();
       return { alta: Math.round(b.height), larga: Math.round(b.width), piano: [Math.round(p.width), Math.round(p.height)] }; })()`),
       strisce: await ev(STRISCE_ADDOSSO) };
-    return { accesa, strisce, telaio, srotolato, srotolatoInAula, contrasto, legendaColori, altaColori, sovrapposte, scorre, stretto, messaggio };
+    return { accesa, strisce, telaio, srotolato, srotolatoInAula, contrasto, legendaColori, altaColori, sovrapposte, scorre, strettoAlto, stretto, messaggio };
   },
 
   // I bordi della presentazione, senza corsa: il campo del percorso, il bottone «pannelli», il ghost

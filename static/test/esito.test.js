@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { creaEsito, creaSrotolato } from "../esito.js";
+import { avanzamentoMono } from "../misure.js";
 
 // Il DOM finto è quello di `corsa.test.js:127-160` e di `piano.test.js:117-133`, copiato invece
 // che importato: un test che importa dall'altro li lega, e il giorno che uno dei due cambia
@@ -619,14 +620,32 @@ test("creaSrotolato in aula: i numeri dei picchi stanno dentro l'SVG — a 96 px
 
 const CURVA = { punti: [{ k: 0, u: 0.5, V: 1.2 }, { k: 1, u: 1, V: 2.3 }], uMax: 1, vMax: 2.3,
                 caduta: { k: 1, n: 2, u: 1, motivo: "non converge" } };
-const curvaCon = (variabili) => conVariabili(variabili, () => {
-  const contenitore = contenitoreFinto(400);
-  creaSrotolato(contenitore, { suPasso: () => {} }).disegna({
-    risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
-                 passo: { k: 1, n: 2, u: 1, V: 2.3 }, curva: CURVA, stantia: false },
-    modello: null, selezione: null });
-  return contenitore;
-});
+// I numeri veri del MURO 1: «72,12 kN» e «60 mm» sono i testi più lunghi che la banda sotto l'asse
+// deve tenere, e sono quelli che il patto rischia di far toccare. Un fixture coi numeri piccoli
+// direbbe di sì a un disegno che in aula si sovrappone.
+const CURVA_MURO1 = { punti: [{ k: 0, u: 0.5, V: 11.05 }, { k: 119, u: 60, V: 70.93 }],
+                      uMax: 60, vMax: 72.12, caduta: null };
+// **1151 e non 400**: è la larghezza vera della striscia a 1920 in aula, misurata. Con un riquadro
+// finto stretto i tre numeri della banda bassa si sovrappongono comunque, e un test che gira lì
+// dentro passa verde su un disegno rotto — il patto dipende dalla larghezza, quindi la larghezza
+// dev'essere quella vera.
+const curvaCon = (variabili, larghezza = 1151, curva = CURVA, passo = { k: 1, n: 2, u: 1, V: 2.3 }) =>
+  conVariabili(variabili, () => {
+    const contenitore = contenitoreFinto(larghezza);
+    creaSrotolato(contenitore, { suPasso: () => {} }).disegna({
+      risultati: { tipo: "pushover", vista: "deformata", caso: "pushover",
+                   passo, curva, stantia: false },
+      modello: null, selezione: null });
+    return contenitore;
+  });
+
+// La banda orizzontale che un testo occupa davvero, ancora compresa: le larghezze si stimano con
+// `avanzamentoMono`, lo stesso attrezzo con cui `piano.js` stima gli ostacoli delle etichette.
+const bandaDi = (t, carattere = 46) => {
+  const x = Number(t.getAttribute("x")), w = t.textContent.length * avanzamentoMono(carattere);
+  const ancora = t.getAttribute("text-anchor");
+  return ancora === "end" ? [x - w, x] : ancora === "middle" ? [x - w / 2, x + w / 2] : [x, x + w];
+};
 
 // R10 — i due margini non sono lo stesso numero. Sulla curva, sotto l'asse, ci sta un numero: il
 // margine deve tenerci dentro anche la sua discesa, e `M = carattere` non basta.
@@ -651,6 +670,19 @@ test("creaSrotolato: senza variabili, con variabili vuote o a zero il disegno è
   assert.deepEqual(attributi(srotolatoCon({})), oggi, "variabili assenti: i numeri d'oggi");
   assert.deepEqual(attributi(srotolatoCon({ "--srotolato-alto": "0px", "--etichetta": "0px" })), oggi, "a zero: i numeri d'oggi");
   assert.equal(svgDi(srotolatoCon({})).getAttribute("height"), "96");
+});
+
+// Lo stesso patto per la **curva**, che di scostamenti convertiti ne ha otto e alla scrivania era
+// provata da tre asserzioni sparse. Oggi non c'è difetto perché `n · 11 / 11` è esatto in binario;
+// il confronto totale è il ripiego che regge il giorno che uno di quegli otto cambia forma.
+test("creaSrotolato: la curva senza variabili, con variabili vuote o a zero è identica al pixel", () => {
+  const attributi = (c) => tutti(c._figli[1], "text").concat(tutti(c._figli[1], "line"), tutti(c._figli[1], "circle"),
+                                                             tutti(c._figli[1], "polyline"), tutti(c._figli[1], "rect"))
+    .map((e) => ({ ...e._attrs }));
+  const oggi = attributi(curvaCon(null));
+  assert.deepEqual(attributi(curvaCon({})), oggi, "variabili assenti: i numeri d'oggi");
+  assert.deepEqual(attributi(curvaCon({ "--curva-alta": "0px", "--etichetta": "0px" })), oggi, "a zero: i numeri d'oggi");
+  assert.equal(curvaCon({})._figli[1].getAttribute("height"), "96");
 });
 
 // La guardia dello zero vale anche in aula: i numeri nuovi sono più grandi, non più sicuri.
@@ -690,19 +722,29 @@ test("creaSrotolato: la curva legge `--curva-alta`, non l'altezza dello srotolat
 // e sopra l'asse ancora 3 (10, 15, 21), perché il margine alto è già dove vanno le etichette del
 // passo quando il taglio è alto e lo spostamento ancora piccolo. La banda sotto l'asse, al centro,
 // è l'unica libera: «0» finisce a 105, lo spostamento massimo comincia a 954.
-test("creaSrotolato: in aula il taglio massimo sta sotto l'asse, al centro; alla scrivania resta dentro", () => {
-  const tagliomax = (c) => tutti(c._figli[1], "text").find((t) => t.textContent === "2,3 kN");
-  const H = 240, M = (14 * 46) / 11, ML = (28 * 46) / 11, W = 400;
-  const aula = tagliomax(curvaCon(AULA));
-  assert.ok(aula, "il taglio massimo si scrive anche in aula");
-  assert.equal(aula.getAttribute("text-anchor"), "middle");
+test("creaSrotolato: in aula il taglio massimo sta sotto l'asse e non tocca gli altri due numeri della banda", () => {
+  const c = curvaCon(AULA, 1151, CURVA_MURO1, { k: 119, n: 120, u: 60, V: 70.93 });
+  const testi = tutti(c._figli[1], "text");
+  const H = 240, M = (14 * 46) / 11;
+  const tagliomax = testi.find((t) => t.textContent === "72,12 kN");
+  assert.ok(tagliomax, "il taglio massimo si scrive anche in aula");
+  assert.equal(tagliomax.getAttribute("text-anchor"), "middle");
   // Sotto l'asse, non dentro il grafico: la linea dell'ascissa sta a `H − M`.
-  assert.ok(Number(aula.getAttribute("y")) > H - M,
-            `sotto l'asse: y=${aula.getAttribute("y")} contro l'asse a ${H - M}`);
-  // E al centro della banda, dove non stanno né lo zero né lo spostamento massimo.
-  assert.equal(Number(aula.getAttribute("x")).toFixed(1), ((ML + (W - M)) / 2).toFixed(1));
+  assert.ok(Number(tagliomax.getAttribute("y")) > H - M,
+            `sotto l'asse: y=${tagliomax.getAttribute("y")} contro l'asse a ${H - M}`);
+  // **Il patto, non la formula.** Asserire `x === (ML + (W − M)) / 2` ricopia il calcolo: l'unico
+  // numero che la farebbe cadere è la formula stessa, né la larghezza della striscia né la
+  // lunghezza del numero — cioè nessuno dei due da cui il patto dipende davvero. Quel che conta è
+  // che nella banda sotto l'asse i tre numeri non si tocchino.
+  const [, destraZero] = bandaDi(testi.find((t) => t.textContent === "0"));
+  const [sinistraSpostamento] = bandaDi(testi.find((t) => t.textContent === "60 mm"));
+  const [sinistra, destra] = bandaDi(tagliomax);
+  assert.ok(sinistra > destraZero,
+            `il taglio massimo tocca lo zero: comincia a ${sinistra.toFixed(0)}, lo zero finisce a ${destraZero.toFixed(0)}`);
+  assert.ok(destra < sinistraSpostamento,
+            `il taglio massimo tocca lo spostamento massimo: finisce a ${destra.toFixed(0)}, l'altro comincia a ${sinistraSpostamento.toFixed(0)}`);
   // Alla scrivania non cambia un pixel: dentro il grafico, in alto a sinistra, ancorato a `start`.
-  const scrivania = tagliomax(curvaCon(null));
+  const scrivania = tutti(curvaCon(null, 1151, CURVA_MURO1)._figli[1], "text").find((t) => t.textContent === "72,12 kN");
   assert.equal(scrivania.getAttribute("text-anchor"), "start");
   assert.equal(Number(scrivania.getAttribute("y")), 14 + 10);
   assert.equal(Number(scrivania.getAttribute("x")), 28 + 2);

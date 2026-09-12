@@ -582,7 +582,18 @@ body[data-presentazione] #srotolato .titolo { font-size: 32px; }
    fra gli 800 px di finestra (69) e gli 840 (109), cioè verso gli 833. La soglia sta a 899 e non
    al pareggio, che non è un posto dove stare: a 900 la banda vale 169. Sull'altezza della
    **finestra** perché il CSS il riquadro del piano non lo sa. */
-@media (max-height: 899px) { body[data-presentazione] #srotolato { display: none; } }
+/* E una soglia di **larghezza** accanto a quella d'altezza, misurata come lei. Nella banda sotto
+   l'asse stanno tre numeri: lo zero a sinistra, lo spostamento massimo a destra, il taglio massimo
+   al centro (fix round 2). Il taglio massimo e' quello che si allarga da entrambi i lati, quindi
+   sotto una certa larghezza tocca lo spostamento: misurato chiamando `creaSrotolato` vero, il patto
+   regge a **W = 673** (per 0,3 px) e si rompe a **W = 672**. La striscia e' larga quanto la colonna
+   del piano, cioe' `0,6 x finestra - 1`: 1125 px di finestra danno 674 e reggono, 1120 ne danno 671
+   e no. La soglia sta a 1279 e non al pareggio di ~1124 perche' la larghezza dei tre numeri dipende
+   dal modello — `conciso(vMax)` con una cifra in piu' costa 28 px per lato — e perche' una soglia
+   non si mette dove il conto pareggia. A 1280 la colonna e' 767, cioe' 95 px di margine sul patto.
+   Senza questa riga il difetto era raggiungibile: la regola d'altezza non copre una finestra
+   stretta e alta, che in aula ci arriva benissimo. */
+@media (max-height: 899px), (max-width: 1279px) { body[data-presentazione] #srotolato { display: none; } }
 /* C4 — la coda dei tasti negli stati vuoti: alla scrivania insegna, in aula è un muro di testo su
    una striscia che deve dire cosa fare **adesso**. */
 body[data-presentazione] .vuoto .aiuto { display: none; }
