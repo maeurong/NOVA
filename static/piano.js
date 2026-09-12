@@ -407,7 +407,8 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // `compatta` quando il corpo è più grande di quello di sempre, cioè in aula: è il solo segnale
     // che il piano ha, perché le misure gli arrivano dalle variabili CSS e `body[data-presentazione]`
     // porta `--etichetta` a 46. Alla scrivania `carattere` vale 11 come in `MISURE_BASE`, e il testo
-    // resta quello di ieri parola per parola.
+    // resta quello di ieri parola per parola. Attenzione: `--etichetta` dice 46, ma la **striscia**
+    // rende a 32 (`stile.css:520`) — il tetto dei caratteri si conta su quelli, non su questi.
     legenda.textContent = testoLegendaStati(carattere > MISURE_BASE.carattere);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
@@ -600,12 +601,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const cx = vista.x0 + vista.larghezza / 2, cy = vista.z0 + vista.altezza / 2;   // `vista` = il riquadro
     const viewport = { x0: cx - larghezzaPx * s / 2, y0: cy - altezzaPx * s / 2,
                        x1: cx + larghezzaPx * s / 2, y1: cy + altezzaPx * s / 2 };
-    // I numeri vengono da `stile.css`: `left`/`right: 8px` più 0,6 em per carattere del corpo
-    // `--etichetta` fanno la larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il
-    // badge sta su una riga sua e non si tronca — la scala non può mancare. Se là cambiano, qui le
-    // etichette iniziano a passare sotto il testo senza che nessun test se ne accorga.
+    // I numeri vengono da `stile.css`: `left`/`right: 8px` più 0,6 em per carattere fanno la
+    // larghezza. Il titolo sta a `top: 6` e si tronca al `max-width: 45%`; il badge sta su una riga
+    // sua e non si tronca — la scala non può mancare. Se là cambiano, qui le etichette iniziano a
+    // passare sotto il testo senza che nessun test se ne accorga.
     // I `top` li ha già scritti il conto della fascia, qui sopra: questi sono i soli ostacoli.
-    const dentro = (testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, carattere), (larghezzaPx - 16) * s);
+    //
+    // Il corpo è quello **reso** dalla striscia, non `--etichetta`: in aula `stile.css:520` le porta
+    // a 32 px mentre `--etichetta` dice 46, e stimare a 46 gonfia ogni larghezza di 1,44 volte. Con
+    // la legenda dei colori in basso l'ostacolo arrivava a coprire tutta la banda bassa, e
+    // un'etichetta che non trova posto non si sposta: esce `nascosta` e **non si scrive affatto**
+    // (`etichette.js:100-102`). Un numero che sparisce in silenzio è peggio di un numero affollato.
+    // Senza `getComputedStyle` (il DOM finto dei test) si ricade su `carattere`, com'era.
+    const corpoStriscia = parseFloat(globalThis.getComputedStyle?.(badge)?.fontSize) || carattere;
+    const dentro = (testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, corpoStriscia), (larghezzaPx - 16) * s);
     const ostacoloStriscia = (e, top, alta, testo, extra) => {
       if (e.hidden) return;
       ostacoli.push({ x0: viewport.x1 - dentro(testo, extra), x1: viewport.x1,
@@ -622,13 +631,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // «0 mm»), quindi la stima li segue invece di contarli come tre spazi da 0,6 em: 0,4 em l'uno.
     if (!colori.hidden) {
       const alta = colori.offsetHeight || 2 * (carattere + 3);
-      const larga = dentro(`${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * carattere);
+      const larga = dentro(`${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * corpoStriscia);
       ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + larga,
                       y0: viewport.y1 - (8 + alta) * s, y1: viewport.y1 });
     }
     // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
-                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, carattere), 0.45 * larghezzaPx * s) });
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, corpoStriscia), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro

@@ -4,7 +4,7 @@ import { versoLibero, estensione, creaPiano } from "../piano.js";
 import { modelloVuoto } from "../modello.js";
 import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
 import { siSovrappongono } from "../etichette.js";
-import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS } from "../risultati.js";
+import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS, testoLegendaStati } from "../risultati.js";
 
 const LATO_MINIMO = 2000;
 const MARGINE = 0.12;
@@ -1677,41 +1677,69 @@ test("piano: fra 300 e 400 px con le misure d'aula — o la fascia ci sta col te
 
 // --- 15b: le strisce si accorciano, e la fascia del caso di collaudo ---------------------------
 
-test("15b: stati a una riga e colori fuori dalla colonna — la fascia si riserva e vale 231 px", () => {
+test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legenda degli stati in una riga", () => {
   // Il caso di collaudo della giornata: 1280×657 in aula, pushover, riquadro del piano 403 px.
-  // Misurato in Chrome il 13/09 (R1-R3): oggi le quattro strisce fanno 346 px su 403, la fascia
-  // varrebbe 367 e W4 la rifiuta in blocco — i nodi ripartono da 152 px e dodici fra nomi, cerchi e
-  // deformata finiscono sotto il badge e la legenda degli stati. Con la legenda degli stati a una
-  // riga (54 px) e i colori fuori dalla colonna la fascia scende a 231, e i 172 px che restano al
-  // telaio stanno sopra i 100 di `TELAIO_MINIMO`.
+  // Misurato in Chrome il 13/09: oggi le quattro strisce fanno 346 px su 403, la fascia varrebbe 367
+  // e W4 la rifiuta in blocco — i nodi ripartono da 152 px e dodici fra nomi, cerchi e deformata
+  // finiscono sotto il badge e la legenda degli stati.
+  //
+  // Le altezze iniettate qui sotto sono quelle **rese in Chrome**, non numeri di comodo: titolo 38,
+  // badge 108, legenda degli stati **38** — la striscia rende a 32 px (`stile.css:520`), non a 46,
+  // quindi una riga è alta 38 e non 54. Da lì la fascia vale **215**, non i 231 che il piano
+  // prevedeva contando 46: `6 + 38 → 44`; `+108 + 2 → 154`; `+38 + 2 → 194`; `−2 + 23` (mezzo corpo
+  // di `--etichetta`) = 215. Al telaio restano 188 px su 403, sopra i 100 di `TELAIO_MINIMO`.
   const w = 1280, h = 403;
   const AZIONE = { id: 1, nome: "peso proprio", carichi: [] };
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
-  contenitoreTitolo(contenitore).offsetHeight = 38;   // il titolo dei carichi, una riga a 46 px
-  badgeDi(contenitore).offsetHeight = 108;            // due righe a 46 px: la scala non si tronca (15a)
-  legendaDi(contenitore).offsetHeight = 54;           // una riga: 27 caratteri a 46 px stanno in 751 px
+  contenitoreTitolo(contenitore).offsetHeight = 38;
+  badgeDi(contenitore).offsetHeight = 108;
+  legendaDi(contenitore).offsetHeight = 38;
+  // Il corpo **reso** della striscia, che in aula è 32 px: `piano.js` lo legge da `getComputedStyle`
+  // per stimare le larghezze degli ostacoli, e il DOM finto lo rende da qui.
+  badgeDi(contenitore).stile = { fontSize: "32px" };
   piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
   assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
   assert.ok(!coloriDi(contenitore).style.top, "niente `top`: la legenda dei colori non è in colonna");
   assert.ok(altezzaDelRiquadro(svg()) > estensione(MURO).altezza, "la fascia si riserva (W4 passa)");
-  // 6 + 38 (titolo) → 44; + 108 + 2 → 154; + 54 + 2 → 210; − 2 + 23 (mezzo corpo) = 231.
+  // **Due lati.** Il modo di fallire di questa giornata è la fascia che **cresce**: un `>=` da solo
+  // sopravvive a una fascia gonfiata del 30 %, ed è proprio il difetto che il task chiude. La fascia
+  // si rilegge esatta dal `viewBox`, che qui è alto `h · s`: di lì `s`, e dal riquadro utile la
+  // fascia. Il margine di 1 px assorbe l'arrotondamento, non un errore di conto.
+  const s = altezzaDelRiquadro(svg()) / h;
+  const fascia = h - estensione(MURO).altezza / s;
+  assert.ok(Math.abs(fascia - 215) <= 1, `la fascia vale ${fascia.toFixed(1)} px, non 215`);
   const cima = Math.min(...yDeiNodi(svg(), w, h));
-  assert.ok(cima >= 231, `il nodo più alto sta a ${cima.toFixed(1)} px, non sotto la fascia di 231`);
+  assert.ok(cima >= 215, `il nodo più alto sta a ${cima.toFixed(1)} px, non sotto la fascia`);
+  // La compattazione la deve chiedere **il piano**, non solo saperla fare `testoLegendaStati`: con
+  // `testoLegendaStati(false)` cablato al posto della scelta, questa riga muore.
+  const inAula = legendaDi(contenitore).textContent;
+  assert.ok(inAula.length <= 38, `in aula la legenda è di ${inAula.length} caratteri: non sta in una riga`);
+  // E alla scrivania il testo lungo resta, parola per parola: il compatto è per l'aula.
+  const scrivania = pianoCon(undefined, w, h);
+  scrivania.piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
+  assert.equal(legendaDi(scrivania.contenitore).textContent, testoLegendaStati(),
+               "alla scrivania la legenda non si accorcia");
+  // Niente etichette perse: chi non trova posto non si sposta, esce `nascosta` e **non si scrive
+  // affatto** (`etichette.js:100-102`). In aula se ne devono scrivere quante alla scrivania.
+  assert.equal(tutti(strato(svg()), "text").length, tutti(strato(scrivania.svg()), "text").length,
+               "in aula si scrivono meno etichette che alla scrivania: una è sparita in silenzio");
 });
 
 test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in basso non costa un pixel di disegno", () => {
-  // 1280×300 in aula: la fascia varrebbe 209 (22 + 108 + 2 → 132, + 54 + 2 → 188, − 2 + 23) e al
-  // telaio ne resterebbero 91, sotto i 100 del minimo — W4 la rifiuta, com'è giusto. La legenda dei
-  // colori intanto sta **dentro** il riquadro, posata sul disegno, ed è qui che si vede il punto
-  // della 15b: lì non ruba altezza a nessuno. L'oracolo è la stessa scena senza di lei — la
-  // deformata stantia la nasconde e non tocca le altre due strisce — e dev'essere la stessa
-  // inquadratura, al millimetro. Non le si chiede di stare lontana dalle etichette: su un riquadro
-  // così basso la banda in fondo è tutto ciò che c'è, e schivarla non è possibile né utile.
-  const w = 1280, h = 300;
+  // 1280×280 in aula, titolo nascosto: la fascia varrebbe 193 (22 + 108 + 2 → 132, + 38 + 2 → 172,
+  // − 2 + 23) e al telaio ne resterebbero 87, sotto i 100 del minimo — W4 la rifiuta, com'è giusto.
+  // Le altezze sono quelle rese in Chrome: badge 108, legenda degli stati 38 su una riga, legenda
+  // dei colori **89**, che a 32 px va a capo tre volte. La legenda dei colori intanto sta **dentro**
+  // il riquadro, posata sul disegno, ed è qui che si vede il punto della 15b: lì non ruba altezza a
+  // nessuno. L'oracolo è la stessa scena senza di lei — la deformata stantia la nasconde e non tocca
+  // le altre due strisce — e dev'essere la stessa inquadratura, al millimetro. Non le si chiede di
+  // stare lontana dalle etichette: su un riquadro così basso la banda in fondo è tutto ciò che c'è,
+  // e schivarla non è possibile né utile.
+  const w = 1280, h = 280;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).offsetHeight = 108;
-  legendaDi(contenitore).offsetHeight = 54;
-  coloriDi(contenitore).offsetHeight = 54;
+  legendaDi(contenitore).offsetHeight = 38;
+  coloriDi(contenitore).offsetHeight = 89;
   piano.disegna(MURO, { risultati: PUSHOVER() });
   assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
   assert.ok(!coloriDi(contenitore).style.top, "in colonna non scende: la posa `stile.css`, in basso");

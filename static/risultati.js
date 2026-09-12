@@ -652,15 +652,25 @@ export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(mot
 export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
   .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
 
-/** `compatta`: il testo dell'aula (15b, R18). Misurato il 13/09 a 46 px nei 751 px utili di un piano
- *  a 1280×657: i 119 caratteri del testo lungo fanno 3 296 px e vanno a **quattro righe**, 152 px
- *  che il telaio paga in altezza. Dei tre candidati provati solo il terzo entra in una riga —
- *  ≤ 27 caratteri, 748 px — e la riga è il bersaglio, perché sotto le strisce deve restare disegno.
- *  Il prezzo è dichiarato: i nomi degli stati del calcestruzzo se ne vanno e restano i simboli, in
- *  ordine di danno crescente. Alla scrivania il testo lungo ci sta, e resta quello. */
+/** `compatta`: il testo dell'aula (15b, R18). Il testo lungo è di 119 caratteri e in aula va a
+ *  quattro righe: 152 px che il telaio paga in altezza, perché la fascia delle strisce gli toglie
+ *  riquadro. Una riga sola è il bersaglio.
+ *
+ *  **Il tetto è 38 caratteri, non 27.** In aula la striscia rende a **32 px**, non a 46:
+ *  `stile.css:520` (`body[data-presentazione] #piano :is(…, .risultati-legenda, …)`, specificità
+ *  (1,2,1)) batte il `font-size: var(--etichetta, 11px)` di `stile.css:110` (1,1,0). I 46 px sono le
+ *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
+ *  nei 751 px utili di un piano a 1280×657 una riga ne tiene **38**. Misurato in Chrome il 13/09:
+ *  27 caratteri resi larghi 520 px, cioè 19,26 px l'uno — stima e vero combaciano.
+ *
+ *  Con 38 caratteri i nomi ci stanno, e a 8 m un simbolo nudo non si decifra
+ *  (`docs/ricerca/07-ux-modellatore.md:157`). `○` resta fuori per scelta: è la sezione **illesa**, e
+ *  la legenda si mostra solo quando almeno un simbolo non è quello dell'elastica
+ *  (`legendaStatiServe`) — chi la legge sta cercando i danneggiati. Alla scrivania il testo lungo ci
+ *  sta, e resta quello. */
 export const testoLegendaStati = (compatta = false) =>
   compatta
-    ? "○ ◐ ● cls · ✕ acciaio rotto"
+    ? "◐ fessurata ● schiacciata · ✕ rotta"
     : "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
 /** La forma modale del nodo nell'ispettore: adimensionale, senza unità e senza rotazioni. */

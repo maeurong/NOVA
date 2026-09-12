@@ -725,18 +725,21 @@ test("testoLegendaStati: i due canali in una riga", () => {
   for (const p of ["elastica", "fessurata", "schiacciata", "snervata", "rotta"]) assert.ok(t.includes(p), p);
 });
 
-test("testoLegendaStati: in aula il testo compatto sta in **una** riga — 27 caratteri (15b, R18)", () => {
-  // La proprietà verificabile senza browser è il conteggio dei caratteri. Misurato il 13/09 col mono
-  // di sistema (avanzamento 0,602 em): a 46 px nei 751 px utili di un piano a 1280×657 una riga vuol
-  // dire **≤ 27 caratteri**. Il testo d'oggi ne ha 119 e va a quattro righe, 152 px che il telaio
-  // paga in altezza; il candidato da 50 ne vuole ancora due. Se questo cresce, la riga si spezza e
-  // la fascia torna a mangiarsi il disegno.
+test("testoLegendaStati: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, R18)", () => {
+  // La proprietà verificabile senza browser è il conteggio dei caratteri. Il tetto si conta sul corpo
+  // **reso** della striscia, che in aula è 32 px (`stile.css:520` batte per specificità il
+  // `var(--etichetta, 11px)` di `:110`), non sui 46 di `--etichetta`, che sono le etichette dentro
+  // l'SVG: 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una
+  // riga ne tiene **38**. Contato a 46 il tetto uscirebbe 27, e la legenda resterebbe amputata di
+  // undici caratteri che stavano sulla stessa riga.
   const t = testoLegendaStati(true);
-  assert.ok(t.length <= 27, `«${t}» è di ${t.length} caratteri: a 46 px non sta in una riga`);
-  for (const p of ["○", "◐", "●", "✕"]) assert.ok(t.includes(p), `manca il simbolo ${p}`);
+  assert.ok(t.length <= 38, `«${t}» è di ${t.length} caratteri: a 32 px non sta in una riga`);
+  // Ogni simbolo che si mostra porta il suo nome: a 8 m un glifo nudo non si decifra. `○` non c'è —
+  // è la sezione illesa, e la legenda parla solo quando qualcosa non è più elastico.
+  for (const p of ["◐ fessurata", "● schiacciata", "✕ rotta"]) assert.ok(t.includes(p), `manca «${p}»`);
   // Alla scrivania il testo lungo ci sta, e resta quello: il compatto è una perdita di parole
   // accettata per l'aula, non un miglioramento da estendere a tutti.
-  assert.ok(testoLegendaStati().length > 27, "il testo lungo non va accorciato di riflesso");
+  assert.ok(testoLegendaStati().length > 38, "il testo lungo non va accorciato di riflesso");
   assert.notEqual(t, testoLegendaStati());
 });
 test("i casi statici di `testoBadge` non cambiano", () => {
