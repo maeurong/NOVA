@@ -84,6 +84,27 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
   assert.deepEqual(e.punti[1], { x: 3003, y: 4, z: 0, r: 0.5, u: 5 });
 });
 
+test("puntiDeformata: forma di un modo — fra i nodi è una retta, non una S (#84)", () => {
+  // Rotazioni entrambe nulle (come le manda `formaComeSpostamenti` per un modo): l'Hermite deve
+  // degenerare in una retta. A s = 0,5 lo smoothstep del difetto vale già la stessa cosa della
+  // retta (0,000 mm di scarto misurato sul MURO 1): un test lì passerebbe anche col difetto dentro.
+  // Lo scarto vero sta ai quarti, dove lo smoothstep vale 0,15625/0,84375 invece di 0,25/0,75.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -4, 0, 0, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[2].z - -1) < 1e-9, `a s = 0,25 atteso z = -1, letto ${d.punti[2].z}`);
+  assert.ok(Math.abs(d.punti[4].z - -2) < 1e-9, "a s = 0,5 retta e smoothstep coincidono già: nessuna prova qui");
+  assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3, letto ${d.punti[6].z}`);
+});
+
+test("puntiDeformata: una sola rotazione nulla (nodo incernierato) resta sull'Hermite, non sulla retta", () => {
+  // p0 = 0, p1 ≠ 0: non è una forma modale (lì sono nulle entrambe), è un nodo incernierato di una
+  // deformata vera. Deve restare sulla cubica — se `dritta` fosse `p0 === 0 || p1 === 0` (mutante),
+  // qui uscirebbe lineare, cioè piatta a zero: la prova è che non lo è.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, -0.02, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[4].z - -15) < 1e-9, `a s = 0,5 atteso z = -15 (Hermite), letto ${d.punti[4].z}`);
+});
+
 test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spostamenti fermo, lista vuota", () => {
   assert.deepEqual(puntiDeformata({ nodi: [], aste: [] }, Z1, 1), []);
   const orfana = { nodi: trave.nodi, aste: [{ id: 7, nodo_i: 1, nodo_j: 99 }] };

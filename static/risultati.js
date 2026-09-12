@@ -221,7 +221,14 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
       // uscirebbe due volte e la polilinea avrebbe un punto doppio a ogni suddivisione.
       for (let k = t2 === 0 ? 0 : 1; k <= n; k++) {
         const s = k / n, s2 = s * s, s3 = s2 * s;
-        const w = (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
+        // Con `p0` e `p1` entrambi nulli l'Hermite degenera in uno smoothstep — una curvatura che
+        // il solutore non ha calcolato (#84). `formaComeSpostamenti` (sotto) azzera le rotazioni
+        // apposta per le forme modali: lì la retta è la verità. La deformata vera ha le rotazioni
+        // (anche una sola, per un nodo incernierato) e resta sull'Hermite di sempre.
+        const dritta = p0 === 0 && p1 === 0;
+        const w = dritta
+          ? (1 - s) * w0 + s * w1
+          : (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
         const u = (1 - s) * a0 + s * a1;
         const r = q0.x_rel + s * (q1.x_rel - q0.x_rel);
         const x = i.x + e1.x * (r * L + scala * u) + e2.x * scala * w;
