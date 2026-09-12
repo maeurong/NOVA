@@ -684,3 +684,26 @@ test("creaSrotolato: la curva legge `--curva-alta`, non l'altezza dello srotolat
   // E fuori dall'aula la curva resta quella d'oggi, al pixel.
   assert.equal(curvaCon(null)._figli[1].getAttribute("height"), "96");
 });
+
+// Fix round 2 — in aula il taglio massimo esce dal grafico. Dentro è il posto dove passa la curva:
+// misurati i rettangoli resi su 14 passi del MURO 1, dentro sono 8 scontri (passi 1, 3, 10, 15, 21)
+// e sopra l'asse ancora 3 (10, 15, 21), perché il margine alto è già dove vanno le etichette del
+// passo quando il taglio è alto e lo spostamento ancora piccolo. La banda sotto l'asse, al centro,
+// è l'unica libera: «0» finisce a 105, lo spostamento massimo comincia a 954.
+test("creaSrotolato: in aula il taglio massimo sta sotto l'asse, al centro; alla scrivania resta dentro", () => {
+  const tagliomax = (c) => tutti(c._figli[1], "text").find((t) => t.textContent === "2,3 kN");
+  const H = 240, M = (14 * 46) / 11, ML = (28 * 46) / 11, W = 400;
+  const aula = tagliomax(curvaCon(AULA));
+  assert.ok(aula, "il taglio massimo si scrive anche in aula");
+  assert.equal(aula.getAttribute("text-anchor"), "middle");
+  // Sotto l'asse, non dentro il grafico: la linea dell'ascissa sta a `H − M`.
+  assert.ok(Number(aula.getAttribute("y")) > H - M,
+            `sotto l'asse: y=${aula.getAttribute("y")} contro l'asse a ${H - M}`);
+  // E al centro della banda, dove non stanno né lo zero né lo spostamento massimo.
+  assert.equal(Number(aula.getAttribute("x")).toFixed(1), ((ML + (W - M)) / 2).toFixed(1));
+  // Alla scrivania non cambia un pixel: dentro il grafico, in alto a sinistra, ancorato a `start`.
+  const scrivania = tagliomax(curvaCon(null));
+  assert.equal(scrivania.getAttribute("text-anchor"), "start");
+  assert.equal(Number(scrivania.getAttribute("y")), 14 + 10);
+  assert.equal(Number(scrivania.getAttribute("x")), 28 + 2);
+});

@@ -4,7 +4,7 @@
 
 import { vociDelCaso, testoEquilibrio, srotolato, testoValore, picchi, assiDi } from "./risultati.js";
 import { conciso, leggiEspressione } from "./numeri.js";
-import { leggiMisure } from "./misure.js";
+import { leggiMisure, MISURE_BASE } from "./misure.js";
 import { nodo } from "./modello.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -225,6 +225,10 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
     // riquadro è più corto di una riga — quindi la leva è l'altezza (fix round 1 della 15b).
     const { carattere, curvaAlta } = misure();
     const sc = (n) => scalato(n, carattere);
+    // Lo stesso interruttore di `testoLegendaStati(compatta)` in `piano.js`: il corpo è il solo
+    // segnale che il disegno ha dell'aula, e fuori dalla presentazione vale il ripiego, quindi
+    // alla scrivania il ramo è quello di sempre e non cambia un pixel.
+    const inAula = carattere > MISURE_BASE.carattere;
     const W = contenitore.clientWidth || 200, H = curvaAlta, M = sc(14), ML = sc(28);
     const larghezza = Math.max(0, W - M - ML), altezza = Math.max(0, H - 2 * M);
     // Una corsa che si ferma al primo passo ha `uMax` e `vMax` a zero: il rapporto non si fa,
@@ -237,10 +241,21 @@ export function creaSrotolato(contenitore, { suPasso = null } = {}) {
                el("line", { x1: ML, y1: M, x2: ML, y2: H - M, stroke: colore, "stroke-width": 1 }),
                testo({ x: ML - sc(3), y: H - M + sc(10), "text-anchor": "end" }, "0"),
                testo({ x: W - M, y: H - M + sc(10), "text-anchor": "end" }, `${conciso(uMax)} mm`),
-               // Il taglio massimo **dentro** il grafico, come «60 mm» sta già in basso a destra:
-               // a sinistra dell'asse ci sono 28 px e «72,12 kN» ne vuole più del doppio — usciva
+               // Il taglio massimo. **Dentro** il grafico alla scrivania, in alto a sinistra: là a
+               // sinistra dell'asse ci sono 28 px e «72,12 kN» ne vuole più del doppio — usciva
                // tagliato a «2 kN», cioè un numero diverso e plausibile.
-               testo({ x: ML + sc(2), y: M + sc(10), "text-anchor": "start" }, `${conciso(vMax)} kN`));
+               //
+               // In aula no: dentro il grafico è il posto dove passa la curva, e le due etichette
+               // del passo gli finiscono addosso ogni volta che il taglio è già alto e lo
+               // spostamento ancora piccolo. Misurati i rettangoli resi su 14 passi del MURO 1:
+               // dentro sono **8** scontri (passi 1, 3, 10, 15, 21), sopra l'asse ancora **3**
+               // (10, 15, 21) — il margine alto è già dove vanno quelle etichette — e nella banda
+               // sotto l'asse, al centro, **nessuno**: «0» finisce a 105 e «60 mm» comincia a 954,
+               // in mezzo c'è solo posto. Non è l'altezza a risolverlo: a 160 px l'area utile era
+               // troppo bassa (fix round 1), ma anche a 500 il numero fisso restava sulla strada.
+               inAula
+                 ? testo({ x: (ML + (W - M)) / 2, y: H - M + sc(10), "text-anchor": "middle" }, `${conciso(vMax)} kN`)
+                 : testo({ x: ML + sc(2), y: M + sc(10), "text-anchor": "start" }, `${conciso(vMax)} kN`));
     svg.append(el("polyline", { points: punti.map((q) => `${x(q.u)},${y(q.V)}`).join(" "),
                                 fill: "none", stroke: colore, "stroke-width": 1.5 }));
     const corrente = risultati.passo?.k;

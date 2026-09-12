@@ -524,6 +524,18 @@ def test_il_telaio_non_finisce_sotto_le_strisce_in_presentazione(chrome_e_server
     # e «V 70,93 kN», misurati addosso; a 240 l'area utile vale 123 px e non si toccano.
     assert s["addosso"] == [], f"due testi della striscia si sovrappongono: {s['addosso']}"
     assert s["svg"] == 240, f"la curva non legge `--curva-alta`: {s}"
+    # Fix round 2 — e non solo all'ultimo passo. Il taglio massimo sta **fisso**, le due etichette del
+    # passo seguono il punto: si incrociano quando il taglio è già alto e lo spostamento ancora
+    # piccolo, cioè ai passi bassi. Guardare il solo ultimo passo è la ragione per cui il difetto è
+    # sopravvissuto a due giri — misurati sul reso, col numero dentro il grafico erano 8 scontri su
+    # 14 passi, e sopra l'asse ancora 3; sotto l'asse al centro nessuno.
+    passi = t["srotolatoAiPassi"]
+    assert len(passi) == 3, passi
+    # Il test non è vuoto: i tre passi sono davvero tre, non tre misure sullo stesso.
+    assert len({p["passo"] for p in passi}) == 3, [p["passo"] for p in passi]
+    for p in passi:
+        assert p["addosso"] == [], f"al passo {p['passo']} due testi si sovrappongono: {p['addosso']}"
+        assert p["fuori"] == [], f"al passo {p['passo']} un testo esce dall'SVG: {p['fuori']}"
     # E il telaio deve reggere lo stesso: accendere la striscia gli ruba proprio l'altezza che i
     # Task 2 e 3 gli hanno appena restituito. Misurati, con la curva a 240: scatola 327, piano 594,
     # fascia 192, banda **402** — quattro volte `TELAIO_MINIMO`. Il tetto sulla scatola tiene conto

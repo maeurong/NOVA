@@ -40,6 +40,21 @@ const scegliCaso = (valore) => ev(`(() => { const s = document.getElementById("r
 
 const BADGE = `document.querySelector("#piano .risultati-badge").textContent`;
 
+// Un clic **vero** sul bersaglio della striscia, a una frazione della sua larghezza: `suPasso`
+// sceglie il punto più vicino all'ascissa, quindi così si arriva a un passo qualunque senza premere
+// 120 frecce. Serve al fix round 2: il difetto della collocazione si vede solo ai passi bassi.
+const vaiAlPasso = async (frazione) => {
+  const b = await ev(`(() => { const r = document.querySelector("#srotolato rect.passi");
+    if (!r) return null; const q = r.getBoundingClientRect(); return [q.left, q.top, q.width, q.height]; })()`);
+  if (!b) return false;
+  const x = Math.round(b[0] + frazione * b[2]), y = Math.round(b[1] + b[3] / 2);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await cmd("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+  }
+  await pausa(420);
+  return true;
+};
+
 // Se un elemento in pixel sta dentro il suo riquadro, misurato col rettangolo vero del browser.
 // A 1280 px la colonna del piano è ~430 px: il badge della pushover e quello di un modo a forma
 // nulla ne uscivano a sinistra, tagliati proprio dove il testo comincia («er · passo…»), e il
@@ -550,8 +565,18 @@ const COPIONI = {
     const sovrapposte = await ev(SOVRAPPOSTE);
     const scorre = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
     const legendaColori = await ev(COLORI);
+    // Fix round 2 — i **tre passi**, in coda a tutto il resto per non spostare le misure qui sopra.
+    // Il difetto della collocazione si vede solo ai passi bassi, dove il taglio è già alto e lo
+    // spostamento ancora piccolo: guardare il solo ultimo passo è la ragione per cui è sopravvissuto
+    // a due giri. `passo` sta accanto ai rettangoli perché il test possa dire che i tre sono diversi
+    // davvero — tre misure sullo stesso passo non proverebbero niente.
+    const srotolatoAiPassi = [];
+    for (const frazione of [0, 0.5, 0.98]) {
+      await vaiAlPasso(frazione);
+      srotolatoAiPassi.push({ passo: await ev(BADGE), ...(await ev(SROTOLATO)) });
+    }
     const messaggio = await ev(`document.getElementById("messaggio").textContent`);
-    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, srotolato, telaio, strisce, sovrapposte, scorre, legendaColori, messaggio };
+    return { accesaPrimaDellaCorsa, attesaInAula, srotolatoInAula, srotolato, srotolatoAiPassi, telaio, strisce, sovrapposte, scorre, legendaColori, messaggio };
   },
 
   // Il collaudo della 15b, a **1280×657** in aula: il riquadro basso dove le strisce costano di più.
