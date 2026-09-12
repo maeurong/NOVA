@@ -611,7 +611,7 @@ def test_pavimento_con_entrambi_i_lati_sotto_non_nomina_i_valori():
     comunque senso — la ragione dice solo il pavimento, non i valori."""
     pct, classe, ragione = _confronto._scarto_classe(1e-6, -2e-6, "N")
     assert pct is None and classe == "non_confrontabile"
-    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01000)"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01)"
 
 
 def test_pavimento_con_un_solo_lato_sotto_nomina_i_due_valori():
@@ -630,7 +630,7 @@ def test_zero_esatto_su_entrambi_eredita_la_ragione_del_pavimento():
     pavimento (0 è sotto qualunque pavimento positivo), non con `ragione: None`."""
     pct, classe, ragione = _confronto._scarto_classe(0.0, 1.7e-5, "N")
     assert pct is None and classe == "non_confrontabile"
-    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01000)"
+    assert ragione == "entrambi i valori sotto il pavimento di rumore per «N» (< 0,01)"
 
 
 def test_zero_esatto_senza_pavimento_dichiarato_ha_comunque_una_ragione():
@@ -665,6 +665,20 @@ def test_la_ragione_del_pavimento_ha_una_sola_grafia():
     _, _, ragione = _confronto._scarto_classe(1e-9, 3.5, "mm")
     assert "e-" not in ragione and "1e-04" not in ragione
     assert "0,0001" in ragione
+
+
+def test_la_soglia_non_porta_precisione_che_non_ha():
+    """La soglia **non è una misura**: `_it` le dava le stesse quattro cifre significative dei
+    valori veri (`0,01000` per una soglia che di decimali ne ha due), e una precisione finta
+    accanto a una vera, con la stessa grafia, si legge come vera. `_it_soglia` taglia gli zeri in
+    coda alla sola soglia; i valori misurati restano a `_it_meno`, con tutte le loro cifre."""
+    assert _confronto._it_soglia(1e-2) == "0,01"
+    assert _confronto._it_soglia(1e-4) == "0,0001"
+    assert _confronto._it_soglia(1e-6) == "0,000001"
+    assert _confronto._it_soglia(1.0) == "1"          # intera: mai `1,`
+    _, _, ragione = _confronto._scarto_classe(-754.5, -1.48e-5, "N")
+    assert "(< 0,01)" in ragione                       # la soglia, corta
+    assert "−0,00001480" in ragione                    # il valore misurato, per intero
 
 
 def test_pavimento_1e_meno_6_resta_posizionale_non_esponenziale():
