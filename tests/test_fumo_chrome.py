@@ -471,8 +471,11 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
     assert s is not None and s["titolo"] >= 32, f"la riga dell'invito sotto i 32 px: {s}"
     assert s["svg"] is None and s["scatola"] <= 60, f"senza asta la striscia è la sola riga: {s}"
     assert t["uscito"] is True
-    # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri.
-    assert t["legendaModo"] and "forma del modo" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
+    # Un modo: |u| sulla forma, adimensionale — la legenda dice 0 … 1, mai millimetri. Dal fix finale
+    # della 15b dice anche **cosa valgono** i due estremi: sono adimensionali, e in aula chi guarda
+    # non può chiedere. Prima il compatto si appoggiava al titolo «forma del modo», che nel ramo
+    # compatto quei due numeri non li spiegava più.
+    assert t["legendaModo"] and "0 fermo, 1 max" in t["legendaModo"] and "mm" not in t["legendaModo"], t["legendaModo"]
     assert t["menu"] == {"pTiene": True, "escEsce": True}, t["menu"]
     assert t["messaggio"] == "", t["messaggio"]
 

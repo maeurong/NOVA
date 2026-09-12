@@ -385,6 +385,9 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // porta `--etichetta` a 46. È il solo segnale che il piano ha, e ora lo chiedono in due — la
     // legenda degli stati e quella dei colori. Alla scrivania `carattere` vale 11 come in
     // `MISURE_BASE`, e i due testi restano quelli di ieri parola per parola.
+    // Attenzione: `--etichetta` dice 46, ma le strisce che `body[data-presentazione] #piano
+    // :is(.carichi-titolo, .risultati-legenda, .risultati-colori)` elenca rendono a **32** — il
+    // tetto dei caratteri (`TETTO_COMPATTO`) si conta su quelli, non su questi.
     const inAula = carattere > MISURE_BASE.carattere;
     // `vistaRis` e non `vista`: `vista` è il **riquadro**, e serve al badge più giù.
     const vistaRis = risultati?.vista ?? null;
@@ -410,11 +413,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // La legenda parla solo quando i simboli ci sono **e dicono cose diverse**: in vista M non c'è
     // niente da decifrare, e con tutte le sezioni elastiche i simboli sono tutti uguali — la riga
     // resterebbe gergo, e in aula costa 114 px su tre righe con «rotta» da sola sull'ultima (C7b).
-    // `compatta` quando il corpo è più grande di quello di sempre, cioè in aula: è il solo segnale
-    // che il piano ha, perché le misure gli arrivano dalle variabili CSS e `body[data-presentazione]`
-    // porta `--etichetta` a 46. Alla scrivania `carattere` vale 11 come in `MISURE_BASE`, e il testo
-    // resta quello di ieri parola per parola. Attenzione: `--etichetta` dice 46, ma la **striscia**
-    // rende a 32 (`stile.css:549`) — il tetto dei caratteri si conta su quelli, non su questi.
     legenda.textContent = testoLegendaStati(inAula);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
@@ -616,17 +614,20 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // passare sotto il testo senza che nessun test se ne accorga.
     // I `top` li ha già scritti il conto della fascia, qui sopra: questi sono i soli ostacoli.
     //
-    // Il corpo è quello **reso** dalla striscia, non `--etichetta`: in aula `stile.css:549` le porta
-    // a 32 px mentre `--etichetta` dice 46, e stimare a 46 gonfia ogni larghezza di 1,44 volte. Con
-    // la legenda dei colori in basso l'ostacolo arrivava a coprire tutta la banda bassa, e
-    // un'etichetta che non trova posto non si sposta: esce `nascosta` e **non si scrive affatto**
-    // (`etichette.js:100-102`). Un numero che sparisce in silenzio è peggio di un numero affollato.
+    // Il corpo è quello reso **da ogni striscia**, letto su di lei e non sul vicino. In aula
+    // `body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori)`
+    // porta a 32 px le tre strisce che elenca; il badge in quell'elenco **non c'è**, e resta a
+    // `--etichetta`, cioè 46 (`#piano .risultati-badge`). Un corpo solo, preso dal badge, stimava a
+    // 46 anche le altre tre e gonfiava le loro larghezze di 1,44 volte: l'ostacolo della legenda dei
+    // colori copriva tutta la banda bassa, e un'etichetta che non trova posto non si sposta — esce
+    // `nascosta` e **non si scrive affatto** (`etichette.js:100-102`). Un numero che sparisce in
+    // silenzio è peggio di un numero affollato.
     // Senza `getComputedStyle` (il DOM finto dei test) si ricade su `carattere`, com'era.
-    const corpoStriscia = parseFloat(globalThis.getComputedStyle?.(badge)?.fontSize) || carattere;
-    const dentro = (testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, corpoStriscia), (larghezzaPx - 16) * s);
+    const corpoDi = (e) => parseFloat(globalThis.getComputedStyle?.(e)?.fontSize) || carattere;
+    const dentro = (e, testo, extra = 8) => Math.min(larghezzaMono(testo, s, extra, corpoDi(e)), (larghezzaPx - 16) * s);
     const ostacoloStriscia = (e, top, alta, testo, extra) => {
       if (e.hidden) return;
-      ostacoli.push({ x0: viewport.x1 - dentro(testo, extra), x1: viewport.x1,
+      ostacoli.push({ x0: viewport.x1 - dentro(e, testo, extra), x1: viewport.x1,
                       y0: viewport.y0 + top * s, y1: viewport.y0 + (top + alta) * s });
     };
     ostacoloStriscia(badge, topBadge, altaBadge(), badge.textContent);
@@ -649,13 +650,13 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // un ostacolo fantasma alto quanto tutto il piano a 640×400, dove il piano è alto 99.
     if (!colori.hidden && colori.offsetHeight !== 0) {
       const alta = colori.offsetHeight || 2 * (carattere + 3);
-      const larga = dentro(`${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * corpoStriscia);
+      const larga = dentro(colori, `${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * corpoDi(colori));
       ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + larga,
                       y0: viewport.y1 - (8 + alta) * s, y1: viewport.y1 });
     }
     // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
-                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, corpoStriscia), 0.45 * larghezzaPx * s) });
+                                        x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, corpoDi(titolo)), 0.45 * larghezzaPx * s) });
 
     // I vincoli: il triangolo del disegno tecnico sotto il nodo, pieno se dichiarato,
     // tratteggiato se è una proposta del rilievo — un ghost, non un errore, quindi inchiostro

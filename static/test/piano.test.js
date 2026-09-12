@@ -4,7 +4,8 @@ import { versoLibero, estensione, creaPiano } from "../piano.js";
 import { modelloVuoto } from "../modello.js";
 import { creaNodo, estrudi, creaAzione, aggiungiCarico, impostaVincolo } from "../comandi.js";
 import { siSovrappongono } from "../etichette.js";
-import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS, testoLegendaStati } from "../risultati.js";
+import { puntiDeformata, massimoSpostamento, coloreSpostamento, VIRIDIS, testoLegendaStati,
+         TETTO_COMPATTO } from "../risultati.js";
 import { dimenticaMisure } from "../misure.js";
 
 const LATO_MINIMO = 2000;
@@ -1689,7 +1690,8 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   // finiscono sotto il badge e la legenda degli stati.
   //
   // Le altezze iniettate qui sotto sono quelle **rese in Chrome**, non numeri di comodo: titolo 38,
-  // badge 108, legenda degli stati **38** — la striscia rende a 32 px (`stile.css:549`), non a 46,
+  // badge 108, legenda degli stati **38** — la legenda rende a 32 px, non a 46
+  // (`body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda, .risultati-colori)`),
   // quindi una riga è alta 38 e non 54. Da lì la fascia vale **215**, non i 231 che il piano
   // prevedeva contando 46: `6 + 38 → 44`; `+108 + 2 → 154`; `+38 + 2 → 194`; `−2 + 23` (mezzo corpo
   // di `--etichetta`) = 215. Al telaio restano 188 px su 403, sopra i 100 di `TELAIO_MINIMO`.
@@ -1699,9 +1701,9 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   contenitoreTitolo(contenitore).offsetHeight = 38;
   badgeDi(contenitore).offsetHeight = 108;
   legendaDi(contenitore).offsetHeight = 38;
-  // Il corpo **reso** della striscia, che in aula è 32 px: `piano.js` lo legge da `getComputedStyle`
-  // per stimare le larghezze degli ostacoli, e il DOM finto lo rende da qui.
-  badgeDi(contenitore).stile = { fontSize: "32px" };
+  // Nessun corpo iniettato: qui si misurano **altezze**, non larghezze, e la fascia non dipende dal
+  // corpo reso delle strisce. Il badge a 32 px che stava qui non era una misura ma un numero di
+  // comodo — in Chrome il badge rende a 46, perché `.risultati-badge` nella regola dei 32 non c'è.
   piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
   assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
   assert.ok(!coloriDi(contenitore).style.top, "niente `top`: la legenda dei colori non è in colonna");
@@ -1718,7 +1720,7 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   // La compattazione la deve chiedere **il piano**, non solo saperla fare `testoLegendaStati`: con
   // `testoLegendaStati(false)` cablato al posto della scelta, questa riga muore.
   const inAula = legendaDi(contenitore).textContent;
-  assert.ok(inAula.length <= 38, `in aula la legenda è di ${inAula.length} caratteri: non sta in una riga`);
+  assert.ok(inAula.length <= TETTO_COMPATTO, `in aula la legenda è di ${inAula.length} caratteri: non sta in una riga`);
   // E alla scrivania il testo lungo resta, parola per parola: il compatto è per l'aula.
   const scrivania = pianoCon(undefined, w, h);
   scrivania.piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
@@ -1727,8 +1729,10 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
 });
 
 test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non su `--etichetta`", () => {
-  // In aula la striscia rende a 32 px (`stile.css:549`) mentre `--etichetta` dice 46: stimare le
-  // larghezze a 46 gonfia l'ostacolo di 1,44 volte. Con la legenda dei colori in basso la differenza
+  // In aula la legenda dei colori rende a 32 px — `body[data-presentazione] #piano
+  // :is(.carichi-titolo, .risultati-legenda, .risultati-colori)` — mentre `--etichetta` dice 46, che
+  // è il corpo del **badge** (nella regola dei 32 `.risultati-badge` non c'è) e delle etichette
+  // dentro l'SVG. Stimare questa striscia a 46 gonfia l'ostacolo di 1,44 volte. La differenza
   // non è estetica — un'etichetta che non trova posto **non si sposta**: esce `nascosta` e non si
   // scrive affatto (`etichette.js:100-102`), e un numero che sparisce in silenzio è peggio di uno
   // affollato.
@@ -1740,7 +1744,11 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
   // quindi un posto dove ripiegare ci sarebbe — il punto è che con la stima giusta non serve.
   const w = 1280, h = 500;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
-  badgeDi(contenitore).stile = { fontSize: "32px" };   // il corpo reso della striscia, come in Chrome
+  // I corpi resi **in Chrome**, ognuno sul suo elemento: il badge a 46 (tiene `--etichetta`), la
+  // legenda dei colori a 32 (sta nella regola dei 32). Il 32 iniettato sul badge, che era il mock di
+  // prima, è un valore che quell'elemento in Chrome non ha mai — e teneva in vita il difetto.
+  badgeDi(contenitore).stile = { fontSize: "46px" };
+  coloriDi(contenitore).stile = { fontSize: "32px" };
   // L'altezza vera **dopo** il testo compatto: in Chrome, in aula a 1280×657, la legenda rende 47,59 px
   // e `piano.js` ne legge 48 — una riga sola, che è il punto del Task 3. L'89 di prima (tre righe)
   // gonfiava la banda e teneva in piedi la prova per conto suo: con 48 la prova sta al pelo del vero,
@@ -1775,6 +1783,36 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
             + `${((scatola(32).x1 - sinistra) / s).toFixed(0)} a ${((scatola(46).x1 - sinistra) / s).toFixed(0)} px (${caratteri} caratteri)`);
 });
 
+test("15b: ogni striscia porta il **suo** corpo reso, non quello del vicino (fix finale)", () => {
+  // In Chrome, in aula, il badge rende a 46 (`#piano .risultati-badge` tiene `--etichetta`) mentre
+  // titolo, legenda degli stati e legenda dei colori rendono a 32 — `body[data-presentazione] #piano
+  // :is(.carichi-titolo, .risultati-legenda, .risultati-colori)`. Un corpo solo sbaglia comunque:
+  // preso dal badge gonfia le altre tre a 46, preso da una delle tre stringe il badge a 32. Qui si
+  // guarda **su chi** il piano misura, ed è il lato che il test della legenda dei colori non copre —
+  // quello vede solo la striscia in basso, questo vede la dispersione in entrambi i versi.
+  const w = 1280, h = 500;
+  const { contenitore, piano } = pianoCon(PRESENTAZIONE, w, h);
+  contenitoreTitolo(contenitore).stile = { fontSize: "32px" };
+  badgeDi(contenitore).stile = { fontSize: "46px" };
+  legendaDi(contenitore).stile = { fontSize: "32px" };
+  coloriDi(contenitore).stile = { fontSize: "32px" };
+  const vero = globalThis.getComputedStyle;
+  const misurate = new Set();
+  globalThis.getComputedStyle = (e) => { misurate.add(e); return vero(e); };
+  try {
+    piano.disegna(MURO, { azioneInVista: { id: 1, nome: "peso proprio", carichi: [] }, risultati: PUSHOVER() });
+  } finally {
+    globalThis.getComputedStyle = vero;
+  }
+  for (const [nome, e] of [["il titolo dei carichi", contenitoreTitolo(contenitore)],
+                           ["il badge", badgeDi(contenitore)],
+                           ["la legenda degli stati", legendaDi(contenitore)],
+                           ["la legenda dei colori", coloriDi(contenitore)]]) {
+    assert.equal(e.hidden, false, `${nome}: striscia nascosta, il test non proverebbe niente`);
+    assert.ok(misurate.has(e), `${nome}: il corpo non è stato letto su di lei, e il suo ostacolo prende quello di un'altra striscia`);
+  }
+});
+
 test("15b: in aula il piano chiede il testo compatto **anche** alla legenda dei colori", () => {
   // Il patto, non l'unità: `testoScalaColori` sa accorciare, ma a chiederlo dev'essere **il piano**,
   // con lo stesso segnale della legenda degli stati (`carattere > MISURE_BASE.carattere`, il solo
@@ -1789,7 +1827,7 @@ test("15b: in aula il piano chiede il testo compatto **anche** alla legenda dei 
   const aula = pianoCon(PRESENTAZIONE, w, h);
   aula.piano.disegna(MURO, { risultati: PUSHOVER() });
   assert.equal(coloriDi(aula.contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
-  assert.ok(caratteri(aula.contenitore) <= 38,
+  assert.ok(caratteri(aula.contenitore) <= TETTO_COMPATTO,
             `in aula la legenda dei colori occupa ${caratteri(aula.contenitore)} caratteri: a 32 px non sta in una riga, e a capo si posa sui piedi del telaio`);
   // Alla scrivania le parole intere, com'erano: 11 px, e i 43 caratteri ci stanno.
   const scrivania = pianoCon(undefined, w, h);

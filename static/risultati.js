@@ -664,25 +664,39 @@ export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(mot
 export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
   .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
 
+/** Il tetto dei testi compatti dell'aula, in caratteri del mono — **38, non 27**. In aula le tre
+ *  strisce che `body[data-presentazione] #piano :is(.carichi-titolo, .risultati-legenda,
+ *  .risultati-colori)` elenca rendono a **32 px**: quella regola, di specificità (1,2,1), batte il
+ *  `font-size: var(--etichetta, 11px)` che ognuna porta nel proprio `#piano .<classe>` (1,1,0). Il
+ *  badge in quell'elenco **non c'è** e resta a `--etichetta`, cioè 46; e 46 sono anche le etichette
+ *  dentro l'SVG, che non sono strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e nei
+ *  751 px utili di un piano a 1280×657 una riga ne tiene 38. Contato a 46 il tetto uscirebbe 27, e i
+ *  testi resterebbero amputati di undici caratteri che sulla riga ci stavano. Misurato in Chrome il
+ *  13/09: 27 caratteri resi larghi 520 px, cioè 19,26 px l'uno — stima e vero combaciano.
+ *
+ *  Della riga fa parte anche ciò che testo non è: nella legenda dei colori la rampa vale 6 em, cioè
+ *  dieci caratteri del mono, e i tre `gap` da 0,4 em ne valgono due — la stessa somma che `piano.js`
+ *  usa per l'ostacolo. Chi aggiunge un testo compatto lo misura contro questa costante: il test che
+ *  ci cicla sopra lo pinza, e il numero non torna a vivere dentro sei commenti. */
+export const TETTO_COMPATTO = 38;
+
 /** `compatta`: il testo dell'aula (15b, R18). Il testo lungo è di 119 caratteri e in aula va a
  *  quattro righe: 152 px che il telaio paga in altezza, perché la fascia delle strisce gli toglie
- *  riquadro. Una riga sola è il bersaglio.
+ *  riquadro. Una riga sola è il bersaglio, e il tetto è `TETTO_COMPATTO`.
  *
- *  **Il tetto è 38 caratteri, non 27.** In aula la striscia rende a **32 px**, non a 46:
- *  `stile.css:549` (`body[data-presentazione] #piano :is(…, .risultati-legenda, …)`, specificità
- *  (1,2,1)) batte il `font-size: var(--etichetta, 11px)` di `stile.css:110` (1,1,0). I 46 px sono le
- *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
- *  nei 751 px utili di un piano a 1280×657 una riga ne tiene **38**. Misurato in Chrome il 13/09:
- *  27 caratteri resi larghi 520 px, cioè 19,26 px l'uno — stima e vero combaciano.
+ *  **La punteggiatura è quella del testo lungo, e non è un vezzo**: `·` separa i valori di uno
+ *  stesso canale, `—` separa i due canali. `◐` e `●` sono calcestruzzo, `✕` è acciaio; col `·` sul
+ *  confine, da 8 m «rotta» si legge come un terzo stato del calcestruzzo.
  *
- *  Con 38 caratteri i nomi ci stanno, e a 8 m un simbolo nudo non si decifra
- *  (`docs/ricerca/07-ux-modellatore.md:157`). `○` resta fuori per scelta: è la sezione **illesa**, e
- *  la legenda si mostra solo quando almeno un simbolo non è quello dell'elastica
+ *  Ogni simbolo mostrato porta il suo nome. È un **giudizio nostro**, non della ricerca: a 8 m un
+ *  glifo nudo non si decifra, mentre `docs/ricerca/07-ux-modellatore.md:157` parla di spessori,
+ *  scala e contrasto, non di simboli senza nome. `○` resta fuori per scelta: è la sezione **illesa**,
+ *  e la legenda si mostra solo quando almeno un simbolo non è quello dell'elastica
  *  (`legendaStatiServe`) — chi la legge sta cercando i danneggiati. Alla scrivania il testo lungo ci
  *  sta, e resta quello. */
 export const testoLegendaStati = (compatta = false) =>
   compatta
-    ? "◐ fessurata ● schiacciata · ✕ rotta"
+    ? "◐ fessurata · ● schiacciata — ✕ rotta"
     : "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
 /** La forma modale del nodo nell'ispettore: adimensionale, senza unità e senza rotazioni. */
@@ -720,23 +734,22 @@ export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
  *  grandezza si scrive per nome. C3 — «max» davanti al numero perché il badge, due righe sopra,
  *  dice «u 60 mm» (lo spostamento del **nodo di controllo**) mentre qui c'è «64,34 mm» (il massimo
  *  di |u| su tutto il telaio): due numeri della stessa grandezza, e niente diceva quale fosse quale.
- *  Un modo non ha millimetri, e il suo titolo dice già cosa valgono 0 e 1: lì «max» sarebbe un terzo
- *  modo di dire la stessa cosa.
+ *  Un modo non ha millimetri, e lì «max» sarebbe un terzo modo di dire la stessa cosa.
  *
  *  `compatta`: il testo dell'aula (15b, Task 3), gemello di `testoLegendaStati` e con lo stesso
- *  tetto — **38 caratteri, non 27**. In aula la striscia rende a **32 px**, non a 46: `stile.css:549`
- *  (`body[data-presentazione] #piano :is(…, .risultati-colori)`, specificità (1,2,1)) batte il
- *  `font-size: var(--etichetta, 11px)` del blocco a `stile.css:136` (1,1,0), e i 46 px sono le
- *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
- *  nei 751 px utili di un piano a 1280×657 una riga ne tiene 38. Della riga fanno parte anche la
- *  rampa (6 em, cioè dieci caratteri del mono) e i tre `gap` da 0,4 em (due caratteri): col titolo
- *  intero la somma fa 43, la striscia va a capo su 89 px e si posa su «piede sx», «piede dx» e i loro
- *  cerchi — che non passano da `disponi`, e che nessun ostacolo può spostare. Con «|u|» la somma fa
- *  31, la striscia torna alta una riga e i piedi restano scoperti. Si perde la parola «spostamento»,
- *  che il simbolo ridice in tre caratteri; le unità no, quelle restano su entrambi gli estremi.
- *  Alla scrivania, dove i 43 caratteri ci stanno, il testo resta intero. */
+ *  tetto, `TETTO_COMPATTO`. Col titolo intero la riga del caso fa 43 caratteri: la striscia va a
+ *  capo su 89 px e si posa su «piede sx», «piede dx» e i loro cerchi — che non passano da `disponi`,
+ *  e che nessun ostacolo può spostare. Con «|u|» la somma fa 31, la striscia torna alta una riga e i
+ *  piedi restano scoperti. Si perde la parola «spostamento», che il simbolo ridice in tre caratteri;
+ *  le unità no, quelle restano su entrambi gli estremi.
+ *
+ *  **Il modo, in aula, dice cosa valgono 0 e 1.** Sono due numeri adimensionali su uno schermo dove
+ *  il pubblico non può chiedere, e il compatto che li taceva si appoggiava a un titolo — «forma del
+ *  modo» — che nel ramo compatto non li diceva più. Il budget c'era: quel titolo ne spendeva 28 su
+ *  `TETTO_COMPATTO`, «modo · 0 fermo, 1 max» ne spende 35. Alla scrivania, dove i 43 caratteri ci
+ *  stanno, entrambi i testi restano interi. */
 export function testoScalaColori({ uMax, tipo, compatta = false }) {
-  if (tipo === "modo") return { min: "0", max: "1", titolo: compatta ? "forma del modo" : "forma del modo · 0 fermo, 1 massimo" };
+  if (tipo === "modo") return { min: "0", max: "1", titolo: compatta ? "modo · 0 fermo, 1 max" : "forma del modo · 0 fermo, 1 massimo" };
   return { min: "0 mm", max: `max ${conciso(Number.isFinite(uMax) ? uMax : 0)} mm`,
            titolo: compatta ? "|u|" : "spostamento |u|" };
 }

@@ -7,7 +7,8 @@ import { VISTE, assiDi, asteRuotate, casiDi, scala125, latoMaggiore, frecciaMass
          vociDelCaso, casoScelto, formaComeSpostamenti, stazioniDiAsta, scalaModo, ampiezzaModo,
          percento, direzioneDominante, simboloStato, curvaPushover, testoLegendaStati, legendaStatiServe, righeModo,
          tipoDelCaso, passoDiRiferimento, motivoInParole,
-         VIRIDIS, viridis, massimoSpostamento, coloreSpostamento, testoScalaColori } from "../risultati.js";
+         VIRIDIS, viridis, massimoSpostamento, coloreSpostamento, testoScalaColori,
+         TETTO_COMPATTO } from "../risultati.js";
 
 // C7a — `testoBadge` mette uno spazio insecabile **prima** di ogni `·`, così il badge va a capo
 // dopo il separatore e la scala scende intera invece di aprire la riga con «· ×2 (auto)». Qui gli
@@ -755,22 +756,43 @@ test("testoLegendaStati: i due canali in una riga", () => {
   for (const p of ["elastica", "fessurata", "schiacciata", "snervata", "rotta"]) assert.ok(t.includes(p), p);
 });
 
-test("testoLegendaStati: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, R18)", () => {
-  // La proprietà verificabile senza browser è il conteggio dei caratteri. Il tetto si conta sul corpo
-  // **reso** della striscia, che in aula è 32 px (`stile.css:549` batte per specificità il
-  // `var(--etichetta, 11px)` di `:110`), non sui 46 di `--etichetta`, che sono le etichette dentro
-  // l'SVG: 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una
-  // riga ne tiene **38**. Contato a 46 il tetto uscirebbe 27, e la legenda resterebbe amputata di
-  // undici caratteri che stavano sulla stessa riga.
+test("testoLegendaStati: in aula sta in **una** riga, e il confine fra i materiali resta (15b, R18)", () => {
+  // La proprietà verificabile senza browser è il conteggio dei caratteri, contro `TETTO_COMPATTO`
+  // (il conto sta là, una volta sola).
   const t = testoLegendaStati(true);
-  assert.ok(t.length <= 38, `«${t}» è di ${t.length} caratteri: a 32 px non sta in una riga`);
+  assert.ok(t.length <= TETTO_COMPATTO, `«${t}» è di ${t.length} caratteri: a 32 px non sta in una riga`);
   // Ogni simbolo che si mostra porta il suo nome: a 8 m un glifo nudo non si decifra. `○` non c'è —
   // è la sezione illesa, e la legenda parla solo quando qualcosa non è più elastico.
   for (const p of ["◐ fessurata", "● schiacciata", "✕ rotta"]) assert.ok(t.includes(p), `manca «${p}»`);
+  // **Il confine fra i materiali.** Nel testo lungo `·` separa i valori di uno stesso canale e `—`
+  // separa i due canali: `◐` e `●` sono calcestruzzo, `✕` è acciaio. Col punto mediano sul confine,
+  // da 8 m «rotta» si legge come un terzo stato del calcestruzzo — il compatto teneva la stessa
+  // punteggiatura del lungo dappertutto tranne che lì.
+  assert.ok(t.includes("● schiacciata — ✕ rotta"),
+            `«${t}»: fra calcestruzzo e acciaio ci vuole il trattone del testo lungo, non il punto mediano`);
   // Alla scrivania il testo lungo ci sta, e resta quello: il compatto è una perdita di parole
   // accettata per l'aula, non un miglioramento da estendere a tutti.
-  assert.ok(testoLegendaStati().length > 38, "il testo lungo non va accorciato di riflesso");
+  assert.ok(testoLegendaStati().length > TETTO_COMPATTO, "il testo lungo non va accorciato di riflesso");
   assert.notEqual(t, testoLegendaStati());
+});
+
+test("i testi compatti dell'aula stanno tutti sotto `TETTO_COMPATTO` (15b, fix finale)", () => {
+  // Il tetto era prosa in cinque posti e codice in nessuno. Qui è codice: ogni testo che l'aula può
+  // mostrare passa di qui, e chi ne aggiunge uno lo aggiunge a questa lista, non a un commento.
+  // La riga della legenda dei colori non è solo testo — la rampa vale dieci caratteri del mono
+  // (6 em) e i tre `gap` da 0,4 em ne valgono due: la stessa somma che `piano.js` usa per l'ostacolo.
+  const righe = [["legenda degli stati", testoLegendaStati(true).length]];
+  for (const tipo of ["pushover", "caso", "modo"]) {
+    const { titolo, min, max } = testoScalaColori({ uMax: 64.34, tipo, compatta: true });
+    righe.push([`scala dei colori (${tipo})`, titolo.length + min.length + max.length + 10 + 2]);
+  }
+  for (const [nome, quanti] of righe) {
+    assert.ok(quanti <= TETTO_COMPATTO,
+              `«${nome}» occupa ${quanti} caratteri, oltre i ${TETTO_COMPATTO} del tetto: a 32 px va a capo`);
+  }
+  // E se anche i testi interi ci stessero, il tetto non proverebbe niente: il compatto esiste perché
+  // il lungo non ci sta.
+  assert.ok(testoLegendaStati().length > TETTO_COMPATTO);
 });
 test("i casi statici di `testoBadge` non cambiano", () => {
   assert.equal(badge({ vista: "deformata", caso: "Z1", scala: 10, auto: true }), "deformata · Z1 · ×10 (auto)");
@@ -880,18 +902,16 @@ test("testoScalaColori: «spostamento |u|» per esteso, «max» sull'estremo, e 
                    { min: "0 mm", max: "max 0 mm", titolo: "spostamento |u|" });
 });
 
-test("testoScalaColori: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, Task 3)", () => {
-  // Stesso tetto della legenda degli stati, e stesso conto: in aula la striscia rende a 32 px
-  // (`stile.css:549` batte per specificità il `font-size: var(--etichetta, 11px)` di `stile.css:136`),
-  // 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una riga ne
-  // tiene 38. I caratteri non sono solo quelli scritti: la rampa è larga 6 em, cioè **dieci**
-  // caratteri del mono, e i tre `gap` da 0,4 em ne valgono **due** — la stessa somma che `piano.js`
-  // usa per l'ostacolo. Misurato in Chrome il 13/09: col testo intero la striscia va a capo su
-  // 89 px e si posa sui due piedi del telaio; su una riga rende 47,59 px.
+test("testoScalaColori: in aula il testo compatto sta in **una** riga (15b, Task 3)", () => {
+  // Stesso tetto della legenda degli stati, `TETTO_COMPATTO`, e il conto sta là. I caratteri non
+  // sono solo quelli scritti: la rampa è larga 6 em, cioè **dieci** caratteri del mono, e i tre
+  // `gap` da 0,4 em ne valgono **due** — la stessa somma che `piano.js` usa per l'ostacolo.
+  // Misurato in Chrome il 13/09: col testo intero la striscia va a capo su 89 px e si posa sui due
+  // piedi del telaio; su una riga rende 47,59 px.
   const riga = ({ titolo, min, max }) => titolo.length + min.length + max.length + 10 + 2;
   for (const tipo of ["pushover", "caso", "modo"]) {
     const t = testoScalaColori({ uMax: 64.34, tipo, compatta: true });
-    assert.ok(riga(t) <= 38,
+    assert.ok(riga(t) <= TETTO_COMPATTO,
               `«${t.titolo} ${t.min} ▮ ${t.max}» occupa ${riga(t)} caratteri: a 32 px non sta in una riga`);
   }
   // Quel che si perde è la parola «spostamento», che «|u|» ridice in tre caratteri. L'unità resta:
@@ -902,13 +922,14 @@ test("testoScalaColori: in aula il testo compatto sta in **una** riga — 38 car
   // Tutti gli spostamenti nulli: la legenda parla lo stesso, e nessuno divide per zero.
   assert.deepEqual(testoScalaColori({ uMax: 0, tipo: "pushover", compatta: true }),
                    { min: "0 mm", max: "max 0 mm", titolo: "|u|" });
-  // Il modo perde la coda che spiega gli estremi: 0 e 1 stanno scritti ai due capi della rampa,
-  // e ridirlo a parole è il terzo modo di dire la stessa cosa.
+  // Il modo **dice** cosa valgono 0 e 1 anche in aula: sono due numeri adimensionali, e in aula chi
+  // guarda non può chiedere. Il compatto che li taceva si appoggiava a «forma del modo», che di quei
+  // due estremi non diceva più niente. Il budget c'era: 28 caratteri su `TETTO_COMPATTO`, ora 35.
   assert.deepEqual(testoScalaColori({ uMax: 0.8, tipo: "modo", compatta: true }),
-                   { min: "0", max: "1", titolo: "forma del modo" });
+                   { min: "0", max: "1", titolo: "modo · 0 fermo, 1 max" });
   // Alla scrivania il testo intero resta, parola per parola: il compatto è una perdita accettata
   // per l'aula, non un miglioramento da estendere a tutti.
   assert.equal(testoScalaColori({ uMax: 64.34, tipo: "pushover" }).titolo, "spostamento |u|");
-  assert.ok(riga(testoScalaColori({ uMax: 64.34, tipo: "pushover" })) > 38,
+  assert.ok(riga(testoScalaColori({ uMax: 64.34, tipo: "pushover" })) > TETTO_COMPATTO,
             "il testo intero non va accorciato di riflesso: a 32 px non ci sta, ed è perché non ci sta che l'aula ne ha uno suo");
 });

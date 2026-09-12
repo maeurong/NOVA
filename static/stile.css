@@ -134,7 +134,7 @@ body {
    quando si va a capo. `[hidden]` va ridetto: `display: flex` batte la regola del browser.
    **La piastra** (15b, Task 3) è di `--fondo` e il suo mestiere è **coprire il disegno che le passa
    sotto**, non scurire la rampa: quaggiù la legenda sta sopra le aste, e un testo sopra un viewport
-   va su lastra opaca, non nudo (`docs/ricerca/07-ux-modellatore.md:100`). Di `--fondo` e non
+   va su lastra opaca, non nudo (`docs/ricerca/07-ux-modellatore.md:132`). Di `--fondo` e non
    d'inchiostro perché l'inchiostro **ribalta** il difetto invece di toglierlo: misurato, il giallo di
    punta passa da 1,11:1 a 14,59 ma il viola di coda crolla da 10,91 a 1,21 e il bordo della rampa da
    13,19 a 1,00 — sparisce proprio lo `stroke` d'inchiostro che stacca il giallo dal fondo

@@ -21,7 +21,7 @@ export function leggiMisure(stile) {
 
 let misureInCache = null;
 /** Le misure d'oggi, lette una volta e ricordate finché non si `dimenticaMisure()`: cache
- *  **globale** (R14) — le sette variabili si definiscono solo in `:root`/`body[data-presentazione]`,
+ *  **globale** (R14) — le nove variabili si definiscono solo in `:root`/`body[data-presentazione]`,
  *  nessun elemento le ridefinisce, quindi non serve una chiave per elemento. `sorgenteStile` è
  *  **solo** l'elemento su cui chiamare `getComputedStyle` la prima volta (i mock di `piano.test.js`
  *  lo richiedono, legato al contenitore); a cache piena è ignorato in silenzio — chiamarla con un
