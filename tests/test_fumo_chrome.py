@@ -680,6 +680,95 @@ def test_aula_1280_la_legenda_dei_colori_sta_sulla_sua_piastra_e_non_sul_telaio(
     assert t["messaggio"] == "", t["messaggio"]
 
 
+def test_aula_coi_pannelli_i_corpi_crescono_il_3d_si_gira_da_tastiera_e_niente_scorre(
+        chrome_e_server, binario_opensees):
+    """I quattro rilievi `Important` della critique 15b che nessun altro task copriva, a 1280×657.
+
+    **R1** — `--testo-tenue` su `--pannello` rendeva **4,45:1**, sotto il 4,5 di AA per il testo:
+    i quattordici `<kbd>` degli stati vuoti, più l'etichetta «coordinate» e l'aiuto «x; z in mm»
+    del campo di comando. Il rapporto è quello **composto** in pagina — il colore porta un alfa —
+    non il valore dichiarato nel foglio di stile.
+
+    **R2** — in aula coi pannelli riaperti i sette `h2` restavano a **11 px** e il corpo dei
+    pannelli a 13, contro i ≥ 32 che la story dichiara (`PRODUCT.md:96-101`): la regola alzava il
+    solo `#risultati`, e il bottone «pannelli» esiste proprio per far vedere l'ispettore in aula.
+
+    **R3** — e gli stessi pannelli scorrevano in orizzontale: `#pannello` 625 su 479, `#corsa` 617
+    su 463, `#albero` 351 su 335 (WCAG 1.4.10).
+
+    **R5** — la tela del 3D non aveva nome accessibile, né ruolo, né `tabindex`, e orbita e zoom
+    stavano solo su `pointer` e `wheel`: da tastiera il 3D non si toccava (WCAG 2.1.1) e uno
+    screen reader non sapeva cosa fosse (1.1.1).
+
+    Più i due minori da una riga: il landmark `main#viste` senza nome (R7) e l'anello di fuoco
+    dello UA sulla casella degli assi (R8), unica fermata su 45 fuori dalla palette della pagina.
+    """
+    porta, cdp = chrome_e_server
+    r = copione("aulaPannelli", porta, cdp, fixture=str(FIXTURE / "muro_1.nova.json"))
+    assert r["ok"], r
+    assert r["errori"] == [], r["errori"]
+    t = r["trovato"]
+
+    # R1 — prima che il rapporto significhi qualcosa: i `<kbd>` ci sono davvero, e sono quattordici
+    # come li ha contati la critique. Senza questa riga un selettore che non pesca niente lascerebbe
+    # il ciclo qui sotto a girare a vuoto, verde e muto.
+    assert len(t["kbdVuoti"]) == 14, t["kbdVuoti"]
+    assert len(t["comando"]) == 2, t["comando"]
+    for k in t["kbdVuoti"] + t["comando"]:
+        assert k["rapporto"] >= 4.5, k
+
+    # R7
+    assert t["viste"] == "viste", t["viste"]
+
+    # R8 — l'anello è quello della pagina: `2px solid` rosso come le altre 44 fermate. Il test vale
+    # solo se il ⇥ è arrivato davvero alla casella **e** con la modalità da tastiera.
+    a = t["anello"]
+    assert a["id"] == "confronto-assi", a
+    assert a["visibile"] is True, a
+    assert a["colore"] == "rgb(184, 50, 30)", a
+    assert a["spessore"] >= 2 and a["stile"] == "solid", a
+
+    # R5 — il rilievo si prova solo se WebGL c'è: senza, `creaSpazio` si dichiara assente e qui non
+    # ci sarebbe nessuna tela da nominare. Il messaggio lo dice invece di far passare un `None`.
+    tela = t["tela"]
+    # Il nome del **riquadro** prima di quello della tela: e' l'unico che regge anche quando WebGL
+    # non c'e' — li' `creaSpazio` mette una riga che dice perche' (provato in `spazio.test.js`), e
+    # «spazio» non descriveva ne' l'una ne' l'altra cosa.
+    assert tela["sezione"] == "vista spaziale", tela
+    assert tela["tela"] is True, f"nessuna tela (WebGL assente?): R5 non si prova qui, {tela}"
+    assert tela["tabindex"] == "0", tela
+    assert tela["ruolo"] == "img", tela
+    assert tela["nome"] and "spaziale" in tela["nome"], tela
+    assert tela["prendeIlFuoco"] is True, tela
+    assert t["telaAFuoco"] is True, "la tela non tiene il fuoco: da tastiera non ci si arriva"
+
+    # ...e da tastiera la vista si **muove**. La sonda dello spessore è l'unica finestra sulla tela
+    # WebGL: un `aria-label` e un `tabindex` senza rotazione sarebbero un 2.1.1 ancora aperto.
+    o = t["orbita"]
+    assert o["prima"] is not None and o["dopo"] is not None, o
+    assert o["prima"]["reso"] != o["dopo"]["reso"], f"le frecce non girano la vista: {o}"
+
+    # L'ingresso degenere: la freccia dentro un campo è di chi scrive, non della tela.
+    c = t["conIlCampoAperto"]
+    assert c["fuoco"] == "comando-campo", c
+    assert c["prima"]["reso"] == c["dopo"]["reso"], f"le frecce hanno mosso il 3D da dentro un campo: {c}"
+
+    # R2 — `quanti` prima del minimo, per la stessa ragione dei quattordici `<kbd>`: un selettore
+    # che non pesca niente darebbe `minimo: None` e non un fallimento.
+    assert t["accesa"] is True and t["pannelli"] is True, t
+    assert t["corpo"]["quanti"] >= 20, t["corpo"]
+    assert t["corpo"]["minimo"] >= 32, t["corpo"]
+
+    # R3 — col percorso del solutore dettato dal copione, così il difetto è raggiungibile dovunque
+    # giri il fumo e non solo dove OpenSees sta sotto una cartella lunga.
+    assert t["solutore"].endswith("/.local/bin/OpenSees"), t["solutore"]
+    for b in t["scorrimento"]:
+        assert b is not None, t["scorrimento"]
+        assert b["scrollWidth"] <= b["clientWidth"] + 0.5, b
+    assert t["scorrePagina"] is False
+    assert t["messaggio"] == "", t["messaggio"]
+
+
 def test_chrome_assente_salta_col_motivo(monkeypatch, tmp_path):
     monkeypatch.setattr("test_fumo_chrome._chrome", lambda: None)
     gen = chrome_e_server.__wrapped__(tmp_path)

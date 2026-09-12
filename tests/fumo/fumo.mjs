@@ -201,6 +201,71 @@ const CONTRASTO_COLORI = `(() => {
            alfa: sfondo.length > 3 ? sfondo[3] : 1, sfondo: st.backgroundColor, testo: st.color };
 })()`;
 
+// Il contrasto **composto** di un testo qualunque, non solo della legenda: `--testo-tenue` porta
+// un alfa (`stile.css:12`), e il fondo va cercato risalendo gli antenati finche'
+// uno non e' opaco — un `<kbd>` porta il proprio `background` addosso, e sta su `--pannello` anche
+// quando il blocco attorno e' di `--fondo`. Il valore dichiarato nel CSS non dice niente da solo:
+// il colore che si legge lo compone il browser (`docs/ricerca/07-ux-modellatore.md:100`).
+const contrastoDi = (sel) => `(() => {
+  const canali = (c) => (c.match(/[0-9.]+/g) ?? []).map(Number);
+  const L = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+  const fondoDi = (e) => { for (let n = e; n; n = n.parentElement) {
+      const c = canali(getComputedStyle(n).backgroundColor);
+      if (c.length < 4 || c[3] > 0.99) return c.slice(0, 3); } return [255, 255, 255]; };
+  const sopra = (fg, bg) => fg.slice(0, 3).map((c, i) => c * (fg[3] ?? 1) + bg[i] * (1 - (fg[3] ?? 1)));
+  return [...document.querySelectorAll(${JSON.stringify(sel)})]
+    .filter((e) => e.offsetParent !== null)
+    .map((e) => { const st = getComputedStyle(e), bg = fondoDi(e), t = sopra(canali(st.color), bg);
+      const [chiaro, scuro] = [L(t), L(bg)].sort((x, y) => y - x);
+      return { testo: e.textContent.slice(0, 12), px: parseFloat(st.fontSize),
+               rapporto: Math.round((chiaro + 0.05) / (scuro + 0.05) * 100) / 100,
+               reso: t.map(Math.round).join(","), fondo: bg.join(",") }; });
+})()`;
+
+// La tela del 3D come la vedono una tecnologia assistiva e il tasto di tabulazione (R5): senza
+// nome, ruolo e `tabindex` un `<canvas>` e' un buco muto e irraggiungibile (WCAG 1.1.1 e 2.1.1), e
+// il detector non sa nemmeno che c'e' (`docs/ricerca/07-ux-modellatore.md:123`). `vuoto` dice
+// l'altro caso — niente WebGL — dove a descrivere il riquadro deve essere quella riga li'.
+const TELA_3D = `(() => {
+  const s = document.getElementById("spazio"), c = s.querySelector("canvas"), p = s.querySelector("p.vuoto");
+  return { sezione: s.getAttribute("aria-label"), tela: Boolean(c), vuoto: p ? p.textContent : null,
+           nome: c ? c.getAttribute("aria-label") : null, ruolo: c ? c.getAttribute("role") : null,
+           tabindex: c ? c.getAttribute("tabindex") : null,
+           prendeIlFuoco: c ? (c.focus(), document.activeElement === c) : null }; })()`;
+
+// Il corpo **reso** piu' piccolo fra i testi visibili di albero e ispettore. In aula coi pannelli
+// riaperti la story ne chiede almeno 32 px (`PRODUCT.md:96-101`) e la regola d'oggi alzava il solo
+// `#risultati`. Gli `svg` restano fuori: dentro un `viewBox` il corpo e' in unita' del disegno e
+// non in pixel — lo stesso numero senza significato che la critique ha scartato invece di riportare.
+const CORPO_MINIMO_PANNELLI = `(() => {
+  const f = [];
+  for (const e of document.querySelectorAll("#colonna *, #pannello *")) {
+    if (e.offsetParent === null || e.children.length || !e.textContent.trim() || e.closest("svg")) continue;
+    f.push([Math.round(parseFloat(getComputedStyle(e).fontSize) * 10) / 10,
+            e.tagName + (e.id ? "#" + e.id : ""), e.textContent.trim().slice(0, 20)]);
+  }
+  f.sort((a, b) => a[0] - b[0]);
+  return { minimo: f.length ? f[0][0] : null, quanti: f.length, piuPiccoli: f.slice(0, 4) };
+})()`;
+
+// Lo scorrimento orizzontale dei blocchi del pannello (WCAG 1.4.10, «nessuno scorrimento in
+// orizzontale»). `fuori` serve solo al messaggio di fallimento, e lascia fuori i `<input>`: un
+// campo di testo scorre il **proprio** contenuto per mestiere, e il suo riquadro resta dentro.
+const SCORRE_ORIZZONTALE = `["#pannello", "#corsa", "#albero"].map((sel) => {
+  const e = document.querySelector(sel);
+  if (!e) return null;
+  return { sel, scrollWidth: e.scrollWidth, clientWidth: e.clientWidth,
+           fuori: [...e.querySelectorAll("*")]
+             .filter((x) => x.offsetParent !== null && x.tagName !== "INPUT" && x.scrollWidth > x.clientWidth + 0.5)
+             .map((x) => [x.tagName + (x.id ? "#" + x.id : ""), x.scrollWidth, x.clientWidth]).slice(0, 6) };
+})`;
+
+// Il percorso del solutore lo scrive la macchina che corre (`corsa.js:118`): su una con
+// `/usr/bin/OpenSees` il difetto di R3 non si presenterebbe, e il test sarebbe verde per il motivo
+// sbagliato. Qui il testo lo detta il copione — stessa forma, lunghezza dichiarata.
+const PERCORSO_LUNGO = "OpenSees 3.8.0 \u00b7 /Users/qualcuno/.local/bin/OpenSees";
+
 // Trenta intervalli fra fotogrammi, in ms. R5 aveva misurato `piano.disegna` nel DOM finto, che è
 // un **pavimento** e non il costo in pagina: qui il numero è quello del browser vero, e la
 // domanda a cui risponde è se il ridisegno sfori il budget di un fotogramma (16,7 ms a 60 Hz).
@@ -792,6 +857,100 @@ const COPIONI = {
     await pausa(200);
     t.rientro = { acceso: await acceso(), colonna: await ev(nascosto("colonna")) };
     await tasto("p");
+    t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
+    return t;
+  },
+
+  // L'aula **coi pannelli riaperti** a 1280x657: il riquadro che nessun copione guardava. Quello
+  // della 15a li apre a 1920x1080 e chiede cosa si vede, non quanto e' grande ne' se scorre. Qui
+  // stanno i quattro rilievi `Important` della critique 15b che nessun altro task copriva — il
+  // contrasto degli stati vuoti (1), i corpi in aula coi pannelli (2), lo scorrimento orizzontale
+  // (3), la tela del 3D da tastiera (5) — piu' i due minori da una riga (7 e 8).
+  async aulaPannelli() {
+    await apri(url, arg.cdp, { larghezza: 1280, altezza: 657 });
+    const t = {};
+
+    // R1 — gli stati vuoti, **senza nessuna corsa**: i `<kbd>` si portano `--pannello` addosso come
+    // fondo, e li' `--testo-tenue` non arrivava a 4,5:1. Alla scrivania, che e' dove la critique
+    // l'ha misurato: il difetto non e' dell'aula.
+    t.kbdVuoti = await ev(contrastoDi(".vuoto kbd"));
+    await tasto("n");
+    await pausa(200);
+    t.comando = await ev(contrastoDi("#comando label, #comando .aiuto"));
+    await tasto("Escape");
+    await pausa(150);
+
+    // R7 — l'unico landmark senza nome accessibile su dieci.
+    t.viste = await ev(`document.getElementById("viste").getAttribute("aria-label")`);
+
+    // R8 — l'unica fermata di tabulazione con l'anello del browser invece del rosso della pagina.
+    // Un solo tasto, dal campo dei nodi: `.focus()` non basta, Chrome da' `:focus-visible` a una
+    // **casella** solo dopo un tasto vero (misurato il 12/09: col solo `focus()` torna `false`,
+    // mentre sul campo di testo accanto torna `true`).
+    await ev(`(() => { document.getElementById("confronto-nodi").focus(); return true; })()`);
+    await tasto("Tab");
+    await pausa(150);
+    t.anello = await ev(`(() => { const a = document.activeElement, st = getComputedStyle(a);
+      return { id: a.id, visibile: a.matches(":focus-visible"), colore: st.outlineColor,
+               spessore: parseFloat(st.outlineWidth), stile: st.outlineStyle }; })()`);
+    await ev(`(() => { document.activeElement.blur(); return true; })()`);
+
+    // R5 — nome, ruolo e `tabindex` sulla tela, prima ancora di girarla.
+    t.tela = await ev(TELA_3D);
+
+    await ev(`(() => { const c = document.getElementById("file-percorso"); c.value = ${JSON.stringify(arg.fixture)}; return true; })()`);
+    await tasto("o", { meta: true });
+    await finche(`document.querySelectorAll("#piano svg circle").length > 0`, 10000);
+    await tasto("Enter", { meta: true });
+    await finche(`(() => { const t = document.getElementById("corsa-ultima").textContent; return t.startsWith("corsa") ? t : ""; })()`, 100000, 500);
+    await finche(`!document.getElementById("risultati-controlli").hidden`, 5000);
+
+    // R5, la parte che conta: da tastiera il 3D si **muove**. L'oracolo e' la sonda dello spessore
+    // (#85), che porta il diametro reso del primo cilindro proiettato con la camera vera: cambia
+    // con la camera, ed e' l'unica finestra sulla tela WebGL che il DOM sappia leggere. Dieci
+    // frecce e non una: un giro di 1,2 rad sposta il capo lontano dell'asta di sicuro, mentre una
+    // pressione sola potrebbe lasciare il diametro uguale ai centesimi e far cadere il test per una
+    // ragione che non e' la sua.
+    await ev(`(() => { const c = document.querySelector("#spazio canvas"); if (!c) return false; c.focus(); return true; })()`);
+    t.telaAFuoco = await ev(`document.activeElement === document.querySelector("#spazio canvas")`);
+    const primaDelleFrecce = await ev(TRATTO_3D);
+    for (let k = 0; k < 10; k++) await tasto("ArrowRight");
+    await pausa(200);
+    t.orbita = { prima: primaDelleFrecce, dopo: await ev(TRATTO_3D) };
+
+    // L'ingresso degenere: col campo di comando aperto il fuoco e' nel campo, non sulla tela, e la
+    // freccia muove il cursore nel testo. La vista **non** si deve spostare.
+    await tasto("n");
+    await pausa(200);
+    const primaNelCampo = await ev(TRATTO_3D);
+    await tasto("ArrowLeft");
+    await tasto("ArrowLeft");
+    await pausa(200);
+    t.conIlCampoAperto = { fuoco: await ev(`document.activeElement.id`),
+                           prima: primaNelCampo, dopo: await ev(TRATTO_3D) };
+    await tasto("Escape");
+    await pausa(200);
+
+    // L'aula, e i pannelli riaperti col bottone — che e' il gesto vero, non un attributo scritto a
+    // mano sul `body`.
+    await tasto("g");
+    await pausa(200);
+    await tasto("p");
+    await pausa(300);
+    t.accesa = await ev(ACCESA);
+    await ev(`(() => { document.getElementById("riapri-pannelli").click(); return true; })()`);
+    await pausa(500);
+    t.pannelli = await ev(`document.body.hasAttribute("data-pannelli")`);
+
+    // R2 — il corpo piu' piccolo di albero e ispettore, in aula coi pannelli.
+    t.corpo = await ev(CORPO_MINIMO_PANNELLI);
+
+    // R3 — e lo scorrimento, col percorso del solutore dettato dal copione (vedi `PERCORSO_LUNGO`).
+    await ev(`(() => { document.getElementById("corsa-solutore").textContent = ${JSON.stringify(PERCORSO_LUNGO)}; return true; })()`);
+    await pausa(300);
+    t.scorrimento = await ev(SCORRE_ORIZZONTALE);
+    t.scorrePagina = await ev(`document.documentElement.scrollWidth > window.innerWidth`);
+    t.solutore = await ev(`document.getElementById("corsa-solutore").textContent`);
     t.messaggio = await ev(`document.getElementById("messaggio").textContent`);
     return t;
   },
