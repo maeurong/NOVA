@@ -221,11 +221,12 @@ export function puntiDeformata(m, perCaso, scala, segmenti = 8) {
       // uscirebbe due volte e la polilinea avrebbe un punto doppio a ogni suddivisione.
       for (let k = t2 === 0 ? 0 : 1; k <= n; k++) {
         const s = k / n, s2 = s * s, s3 = s2 * s;
-        // Con `p0` e `p1` entrambi nulli l'Hermite degenera in uno smoothstep — una curvatura che
-        // il solutore non ha calcolato (#84). `formaComeSpostamenti` (sotto) azzera le rotazioni
-        // apposta per le forme modali: lì la retta è la verità. La deformata vera ha le rotazioni
-        // (anche una sola, per un nodo incernierato) e resta sull'Hermite di sempre.
-        const dritta = p0 === 0 && p1 === 0;
+        // `p0 === 0 && p1 === 0` non basta (#84 fix round 1): un'asta incastro-incastro vera ha
+        // anch'essa le rotazioni a zero esatto (`fix` in OpenSees, non un residuo), e finirebbe
+        // dritta con una freccia vera in mezzo. Solo `formaComeSpostamenti` (sotto) sa di essere
+        // un modo: legge il suo segnale esplicito, non deduce dai numeri. Chi non lo dichiara
+        // resta sull'Hermite di sempre — il default è il comportamento vecchio.
+        const dritta = perCaso?.modale === true;
         const w = dritta
           ? (1 - s) * w0 + s * w1
           : (1 - 3 * s2 + 2 * s3) * w0 + (s - 2 * s2 + s3) * Lt * p0 + (3 * s2 - 2 * s3) * w1 + (-s2 + s3) * Lt * p1;
@@ -546,8 +547,12 @@ export function vociDelCaso(stato) {
 
 /** La forma modale nella stessa forma di `per_caso[caso]`, così il piano e il 3D la disegnano con
  *  il codice della deformata. Niente rotazioni: la forma è lineare fra i nodi (R4), e una rotazione
- *  inventata darebbe una curva che il solutore non ha mai calcolato. */
+ *  inventata darebbe una curva che il solutore non ha mai calcolato. `modale: true` è il segnale
+ *  esplicito che `puntiDeformata` legge per scegliere la retta (#84 fix round 1): solo chi
+ *  costruisce una forma modale sa di esserlo, non si deduce dalle rotazioni a zero, che un
+ *  incastro-incastro vero ha anche lui. */
 export const formaComeSpostamenti = (modo) => ({
+  modale: true,
   spostamenti: Object.fromEntries(Object.entries(modo?.forma ?? {})
     .map(([id, u]) => [id, [Number(u?.[0]) || 0, Number(u?.[1]) || 0, Number(u?.[2]) || 0, 0, 0, 0]])),
 });

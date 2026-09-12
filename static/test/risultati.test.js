@@ -85,24 +85,33 @@ test("puntiDeformata: Hermite — gli estremi restano sui nodi spostati, la mezz
 });
 
 test("puntiDeformata: forma di un modo — fra i nodi è una retta, non una S (#84)", () => {
-  // Rotazioni entrambe nulle (come le manda `formaComeSpostamenti` per un modo): l'Hermite deve
-  // degenerare in una retta. A s = 0,5 lo smoothstep del difetto vale già la stessa cosa della
-  // retta (0,000 mm di scarto misurato sul MURO 1): un test lì passerebbe anche col difetto dentro.
-  // Lo scarto vero sta ai quarti, dove lo smoothstep vale 0,15625/0,84375 invece di 0,25/0,75.
-  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -4, 0, 0, 0] } };
+  // `modale: true`, come lo dichiara `formaComeSpostamenti`: solo con quel segnale la retta è la
+  // verità. A s = 0,5 lo smoothstep del difetto vale già la stessa cosa della retta (0,000 mm di
+  // scarto misurato sul MURO 1): un test lì passerebbe anche col difetto dentro. Lo scarto vero
+  // sta ai quarti, dove lo smoothstep vale 0,15625/0,84375 invece di 0,25/0,75.
+  const perCaso = { modale: true, spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -4, 0, 0, 0] } };
   const [d] = puntiDeformata(trave, perCaso, 1, 8);
   assert.ok(Math.abs(d.punti[2].z - -1) < 1e-9, `a s = 0,25 atteso z = -1, letto ${d.punti[2].z}`);
   assert.ok(Math.abs(d.punti[4].z - -2) < 1e-9, "a s = 0,5 retta e smoothstep coincidono già: nessuna prova qui");
   assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3, letto ${d.punti[6].z}`);
 });
 
-test("puntiDeformata: una sola rotazione nulla (nodo incernierato) resta sull'Hermite, non sulla retta", () => {
-  // p0 = 0, p1 ≠ 0: non è una forma modale (lì sono nulle entrambe), è un nodo incernierato di una
-  // deformata vera. Deve restare sulla cubica — se `dritta` fosse `p0 === 0 || p1 === 0` (mutante),
-  // qui uscirebbe lineare, cioè piatta a zero: la prova è che non lo è.
+test("puntiDeformata: una sola rotazione nulla, non modale — resta sull'Hermite", () => {
+  // p0 = 0, p1 ≠ 0, nessun `modale`: deve restare sulla cubica.
   const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, -0.02, 0] } };
   const [d] = puntiDeformata(trave, perCaso, 1, 8);
   assert.ok(Math.abs(d.punti[4].z - -15) < 1e-9, `a s = 0,5 atteso z = -15 (Hermite), letto ${d.punti[4].z}`);
+});
+
+test("puntiDeformata: incastro-incastro vero, rotazioni zero esatto ma non modale — curva, non retta (#84 fix round 1)", () => {
+  // Le rotazioni a zero non bastano a dire «è un modo» (fix round 1): un `fix` in OpenSees le
+  // azzera anche in una statica vera (`nova/corsa.py:328-335`, `nova/deck.py:1029`). Stesso
+  // ingresso numerico del test sopra — p0 = p1 = 0, frecce diverse — ma senza `modale: true`:
+  // deve uscire la cubica (freccia in mezzo che non coincide con la retta), non la retta.
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -6, 0, 0, 0] } };
+  const [d] = puntiDeformata(trave, perCaso, 1, 8);
+  assert.ok(Math.abs(d.punti[2].z - -0.9375) < 1e-9,
+    `incastro-incastro: atteso z = -0,9375 a s = 0,25 (Hermite), letto ${d.punti[2].z} — la retta darebbe -1,5`);
 });
 
 test("puntiDeformata: ingressi degeneri — asta orfana saltata, nodo senza spostamenti fermo, lista vuota", () => {
@@ -659,8 +668,8 @@ test("R3: un modo senza massa dice «massa trascurabile», non «ux 0 %»", () =
                "modo 3 · 35,85 Hz · T 0,0279 s · ×50 (auto)");
 });
 test("formaComeSpostamenti: forma mancante o vettori corti", () => {
-  assert.deepEqual(formaComeSpostamenti(null), { spostamenti: {} });
-  assert.deepEqual(formaComeSpostamenti({}), { spostamenti: {} });
+  assert.deepEqual(formaComeSpostamenti(null), { modale: true, spostamenti: {} });
+  assert.deepEqual(formaComeSpostamenti({}), { modale: true, spostamenti: {} });
   assert.deepEqual(formaComeSpostamenti({ forma: { 7: [0.5] } }).spostamenti[7], [0.5, 0, 0, 0, 0, 0]);
   assert.deepEqual(formaComeSpostamenti({ forma: { 7: null } }).spostamenti[7], [0, 0, 0, 0, 0, 0]);
 });
