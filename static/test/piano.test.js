@@ -1783,6 +1783,38 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
             + `${((scatola(32).x1 - sinistra) / s).toFixed(0)} a ${((scatola(46).x1 - sinistra) / s).toFixed(0)} px (${caratteri} caratteri)`);
 });
 
+test("15b: legenda dei colori spenta dal CSS (`offsetHeight` 0) → nessun ostacolo, e il numero si scrive", () => {
+  // Il riquadro stretto: a 640×400 con dpr 2 il piano scende a **518** px di larghezza, e
+  // `@media (max-height: 480px)` **spegne** la legenda dei colori, che allora rende `offsetHeight` 0.
+  // Senza la guardia il ripiego scatta lo stesso e stima un ostacolo alto 2·(46+3) = 98 px, e
+  // un'etichetta che non trova posto **non si sposta**: esce `nascosta` e sparisce. L'oracolo è di
+  // **presenza**, non di non-sovrapposizione — una non-sovrapposizione è verde anche quando il testo
+  // non c'è affatto.
+  //
+  // **A discriminare è la larghezza, non l'altezza**, e sta misurato con una spazzolata, non
+  // indovinato. A 518 px l'ostacolo fantasma prende tutta la banda bassa e l'etichetta non ha dove
+  // ripiegare; a 1280 la stima si ferma sulla lunghezza del testo, resta spazio a destra e `disponi`
+  // la sposta invece di perderla — con quella scena il mutante sopravviveva, 924 verdi.
+  // L'altezza è 400 e **non** i 99 del caso misurato: a 99 px le strisce da 46 si prendono il piano e
+  // il numero non si scrive nemmeno col guardiano al suo posto, quindi lì un oracolo di presenza non
+  // esiste. A questa larghezza la finestra che discrimina è continua fra 300 e 500 px.
+  const w = 518, h = 400;
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  badgeDi(contenitore).stile = { fontSize: "46px" };
+  coloriDi(contenitore).stile = { fontSize: "32px" };
+  coloriDi(contenitore).offsetHeight = 0;   // spenta da una regola CSS, non «non ancora misurata»
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 8000, z: 0 }, { x: 0, z: 6000 }]) mo = creaNodo(mo, p);
+  const elle = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 1, nodo_j: 3 }] };
+  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, -50, 0, 0, 0],
+                                   3: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+  piano.disegna(elle, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1, auto: true,
+                                     stantia: false, tipo: "caso", badge: {} } });
+  assert.equal(coloriDi(contenitore).offsetHeight, 0, "la legenda è spenta dal CSS: il test è quello giusto");
+  assert.ok(tutti(strato(svg()), "text").find((t) => t.textContent === "50 mm"),
+            "lo spostamento massimo non si scrive: l'ostacolo fantasma della legenda spenta se l'è preso");
+});
+
 test("15b: ogni striscia porta il **suo** corpo reso, non quello del vicino (fix finale)", () => {
   // In Chrome, in aula, il badge rende a 46 (`#piano .risultati-badge` tiene `--etichetta`) mentre
   // titolo, legenda degli stati e legenda dei colori rendono a 32 — `body[data-presentazione] #piano

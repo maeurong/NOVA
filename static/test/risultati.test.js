@@ -97,6 +97,21 @@ test("puntiDeformata: forma di un modo — fra i nodi è una retta, non una S (#
   assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3, letto ${d.punti[6].z}`);
 });
 
+test("casoScelto → puntiDeformata: il segnale del modo arriva fino al disegno (#84)", () => {
+  // Il test qui sopra inietta `modale: true` a mano: prova la **fabbrica**, non la catena. Togliendo
+  // il campo a `formaComeSpostamenti` — l'unico punto che lo mette sulla via del disegno — quello
+  // resta verde mentre il modo torna a disegnarsi a S, cioè Hermite su rotazioni che il solutore non
+  // ha mai calcolato. Qui `perCaso` arriva da `casoScelto`, come in `app.js`.
+  const stato = { lavoro: { fin: { risultati: { modi: [{ n: 1, forma: { 1: [0, 0, 0], 2: [0, 0, -4] } }] } } } };
+  const scelto = casoScelto(stato, "modo:1");
+  assert.ok(scelto && scelto.tipo === "modo", "il modo si sceglie: il test non è vuoto");
+  const [d] = puntiDeformata(trave, scelto.perCaso, 1, 8);
+  // Ai **quarti**, non a metà: a s = 0,5 smoothstep e retta coincidono già, ed è la trappola su cui
+  // questa giornata è inciampata una volta.
+  assert.ok(Math.abs(d.punti[2].z - -1) < 1e-9, `a s = 0,25 atteso z = -1 (retta), letto ${d.punti[2].z}`);
+  assert.ok(Math.abs(d.punti[6].z - -3) < 1e-9, `a s = 0,75 atteso z = -3 (retta), letto ${d.punti[6].z}`);
+});
+
 test("puntiDeformata: una sola rotazione nulla, non modale — resta sull'Hermite", () => {
   // p0 = 0, p1 ≠ 0, nessun `modale`: deve restare sulla cubica.
   const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, -0.02, 0] } };

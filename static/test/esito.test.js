@@ -660,10 +660,16 @@ test("creaSrotolato con la pushover in aula: l'etichetta sotto l'asse resta dent
   const aula = sotto(curvaCon(AULA));
   assert.ok(aula.length > 0, "il test non è vuoto: sotto l'asse un'etichetta c'è");
   for (const y of aula) assert.ok(y + DISCESA_46 <= 240, `esce di sotto di ${y + DISCESA_46 - 240} px`);
-  // Con `M = carattere` (il margine che il piano dava per unico) la stessa etichetta sta a
-  // `H − 46 + 10·c/11` e con la sua discesa esce: è la misura che separa i due margini.
-  const M = 46, yStretto = 240 - M + (10 * 46) / 11;
-  assert.ok(yStretto + DISCESA_46 > 240, "con M = carattere l'etichetta uscirebbe: il margine della curva è più largo");
+  // **Il lato che discrimina, letto dal disegno.** `yStretto + DISCESA_46 > 240` era aritmetica su
+  // costanti: vera qualunque cosa facesse il codice, e dichiarata prova. Il margine vero si legge
+  // dall'asse, che `esito.js` posa a `H − M`: se M valesse `carattere` la stessa etichetta, posata a
+  // `H − M + 10·c/11`, uscirebbe con la sua discesa.
+  const orizzontali = tutti(curvaCon(AULA)._figli[1], "line")
+    .filter((l) => l.getAttribute("y1") === l.getAttribute("y2"))
+    .map((l) => Number(l.getAttribute("y1")));
+  assert.ok(orizzontali.length > 0, "l'asse orizzontale c'è: il test non è vuoto");
+  const M = 240 - Math.max(...orizzontali);
+  assert.ok(M > 46, `il margine della curva vale ${M}: non è più largo del corpo (46), e l'etichetta sotto l'asse uscirebbe`);
 });
 
 // «variabile CSS assente o 0 → ripiego ai numeri d'oggi, disegno identico al pixel»: non «quasi
@@ -674,6 +680,10 @@ test("creaSrotolato: senza variabili, con variabili vuote o a zero il disegno è
   const oggi = attributi(srotolatoCon(null));
   assert.deepEqual(attributi(srotolatoCon({})), oggi, "variabili assenti: i numeri d'oggi");
   assert.deepEqual(attributi(srotolatoCon({ "--srotolato-alto": "0px", "--etichetta": "0px" })), oggi, "a zero: i numeri d'oggi");
+  // `null` e `{}` finiscono **entrambi** sui ripieghi: fra loro non discriminano niente, e da soli
+  // non provano che le variabili si leggano davvero. Il lato che discrimina è l'aula.
+  assert.notDeepEqual(attributi(srotolatoCon(AULA)), oggi,
+                      "con le variabili dell'aula il disegno deve cambiare: se non cambia non le legge nessuno");
   assert.equal(svgDi(srotolatoCon({})).getAttribute("height"), "96");
 });
 
@@ -687,6 +697,9 @@ test("creaSrotolato: la curva senza variabili, con variabili vuote o a zero è i
   const oggi = attributi(curvaCon(null));
   assert.deepEqual(attributi(curvaCon({})), oggi, "variabili assenti: i numeri d'oggi");
   assert.deepEqual(attributi(curvaCon({ "--curva-alta": "0px", "--etichetta": "0px" })), oggi, "a zero: i numeri d'oggi");
+  // Come sopra: fra `null` e `{}` non c'è niente da discriminare, il lato vero è l'aula.
+  assert.notDeepEqual(attributi(curvaCon(AULA)), oggi,
+                      "con le variabili dell'aula la curva deve cambiare: se non cambia non le legge nessuno");
   assert.equal(curvaCon({})._figli[1].getAttribute("height"), "96");
 });
 
