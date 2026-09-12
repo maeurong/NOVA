@@ -757,7 +757,7 @@ test("testoLegendaStati: i due canali in una riga", () => {
 
 test("testoLegendaStati: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, R18)", () => {
   // La proprietà verificabile senza browser è il conteggio dei caratteri. Il tetto si conta sul corpo
-  // **reso** della striscia, che in aula è 32 px (`stile.css:520` batte per specificità il
+  // **reso** della striscia, che in aula è 32 px (`stile.css:549` batte per specificità il
   // `var(--etichetta, 11px)` di `:110`), non sui 46 di `--etichetta`, che sono le etichette dentro
   // l'SVG: 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una
   // riga ne tiene **38**. Contato a 46 il tetto uscirebbe 27, e la legenda resterebbe amputata di
@@ -882,12 +882,12 @@ test("testoScalaColori: «spostamento |u|» per esteso, «max» sull'estremo, e 
 
 test("testoScalaColori: in aula il testo compatto sta in **una** riga — 38 caratteri (15b, Task 3)", () => {
   // Stesso tetto della legenda degli stati, e stesso conto: in aula la striscia rende a 32 px
-  // (`stile.css:520` batte per specificità il `font-size: var(--etichetta, 11px)` di `stile.css:125`),
+  // (`stile.css:549` batte per specificità il `font-size: var(--etichetta, 11px)` di `stile.css:136`),
   // 0,602 em × 32 = 19,26 px per carattere, e nei 751 px utili di un piano a 1280×657 una riga ne
   // tiene 38. I caratteri non sono solo quelli scritti: la rampa è larga 6 em, cioè **dieci**
   // caratteri del mono, e i tre `gap` da 0,4 em ne valgono **due** — la stessa somma che `piano.js`
   // usa per l'ostacolo. Misurato in Chrome il 13/09: col testo intero la striscia va a capo su
-  // 89 px e si posa sui due piedi del telaio; su una riga scende a ~32.
+  // 89 px e si posa sui due piedi del telaio; su una riga rende 47,59 px.
   const riga = ({ titolo, min, max }) => titolo.length + min.length + max.length + 10 + 2;
   for (const tipo of ["pushover", "caso", "modo"]) {
     const t = testoScalaColori({ uMax: 64.34, tipo, compatta: true });

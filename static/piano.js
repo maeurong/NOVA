@@ -413,7 +413,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // che il piano ha, perché le misure gli arrivano dalle variabili CSS e `body[data-presentazione]`
     // porta `--etichetta` a 46. Alla scrivania `carattere` vale 11 come in `MISURE_BASE`, e il testo
     // resta quello di ieri parola per parola. Attenzione: `--etichetta` dice 46, ma la **striscia**
-    // rende a 32 (`stile.css:520`) — il tetto dei caratteri si conta su quelli, non su questi.
+    // rende a 32 (`stile.css:549`) — il tetto dei caratteri si conta su quelli, non su questi.
     legenda.textContent = testoLegendaStati(inAula);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
@@ -615,7 +615,7 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // passare sotto il testo senza che nessun test se ne accorga.
     // I `top` li ha già scritti il conto della fascia, qui sopra: questi sono i soli ostacoli.
     //
-    // Il corpo è quello **reso** dalla striscia, non `--etichetta`: in aula `stile.css:520` le porta
+    // Il corpo è quello **reso** dalla striscia, non `--etichetta`: in aula `stile.css:549` le porta
     // a 32 px mentre `--etichetta` dice 46, e stimare a 46 gonfia ogni larghezza di 1,44 volte. Con
     // la legenda dei colori in basso l'ostacolo arrivava a coprire tutta la banda bassa, e
     // un'etichetta che non trova posto non si sposta: esce `nascosta` e **non si scrive affatto**
@@ -634,10 +634,19 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // rettangolo si costruisce di lì — `left: 8px` e `bottom: 8px` di `stile.css`, con gli 8 px del
     // fondo dentro l'ostacolo, che è la lettura pessimista. Va a capo (`flex-wrap`), quindi il
     // ripiego del DOM finto sono **due** righe e non una.
+    // Il `padding` della piastra (0,35 em per lato: ~22 px in aula, 7,7 alla scrivania) **non** entra
+    // in questa stima. È un debito dichiarato, non una svista: gli 8 px di margine lo coprono a 11 px
+    // e non a 32, e gonfiare l'ostacolo fa **sparire** le etichette invece di spostarle
+    // (`etichette.js:100-102`) — il fumo misura i rettangoli veri, e a 1280 e a 1920 non c'è niente
+    // addosso. Se un giorno un'etichetta finisce sotto la piastra in aula, 22 è il numero da sommare.
     // La rampa è larga 6 em, cioè dieci caratteri del mono. I tre `gap` di `.risultati-colori` sono
     // in `em` (`stile.css`, fix B: a 32 px sei pixel fissi non reggevano e «|u|» si incollava a
     // «0 mm»), quindi la stima li segue invece di contarli come tre spazi da 0,6 em: 0,4 em l'uno.
-    if (!colori.hidden) {
+    // `offsetHeight === 0` vuol dire che una regola CSS la **spegne** (il riquadro strettissimo,
+    // `stile.css`): allora di ostacolo non ce n'è. Il ripiego serve al solo DOM finto dei test, dove
+    // `offsetHeight` non esiste affatto; senza la distinzione quel ripiego — 98 px in aula — sarebbe
+    // un ostacolo fantasma alto quanto tutto il piano a 640×400, dove il piano è alto 99.
+    if (!colori.hidden && colori.offsetHeight !== 0) {
       const alta = colori.offsetHeight || 2 * (carattere + 3);
       const larga = dentro(`${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * corpoStriscia);
       ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + larga,

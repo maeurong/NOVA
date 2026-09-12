@@ -1684,7 +1684,7 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
   // finiscono sotto il badge e la legenda degli stati.
   //
   // Le altezze iniettate qui sotto sono quelle **rese in Chrome**, non numeri di comodo: titolo 38,
-  // badge 108, legenda degli stati **38** — la striscia rende a 32 px (`stile.css:520`), non a 46,
+  // badge 108, legenda degli stati **38** — la striscia rende a 32 px (`stile.css:549`), non a 46,
   // quindi una riga è alta 38 e non 54. Da lì la fascia vale **215**, non i 231 che il piano
   // prevedeva contando 46: `6 + 38 → 44`; `+108 + 2 → 154`; `+38 + 2 → 194`; `−2 + 23` (mezzo corpo
   // di `--etichetta`) = 215. Al telaio restano 188 px su 403, sopra i 100 di `TELAIO_MINIMO`.
@@ -1722,7 +1722,7 @@ test("15b: in aula la fascia vale 215 px — altezze vere, due lati, e la legend
 });
 
 test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non su `--etichetta`", () => {
-  // In aula la striscia rende a 32 px (`stile.css:520`) mentre `--etichetta` dice 46: stimare le
+  // In aula la striscia rende a 32 px (`stile.css:549`) mentre `--etichetta` dice 46: stimare le
   // larghezze a 46 gonfia l'ostacolo di 1,44 volte. Con la legenda dei colori in basso la differenza
   // non è estetica — un'etichetta che non trova posto **non si sposta**: esce `nascosta` e non si
   // scrive affatto (`etichette.js:100-102`), e un numero che sparisce in silenzio è peggio di uno
@@ -1730,13 +1730,17 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
   //
   // La scena è costruita perché la freccia cada **nella striscia contesa**: a 1280 l'ostacolo vero è
   // largo 757 px, quello stimato a 46 ne vorrebbe 1 084, e l'etichetta si posa fra i due — misurata
-  // a 793-931 px dal bordo sinistro, dentro la banda alta 97 px del fondo. Una L con la colonna a
+  // a 793-931 px dal bordo sinistro, dentro la banda alta 56 px del fondo. Una L con la colonna a
   // **sinistra**: il nodo 2 è l'estremo libero in basso a destra e sopra di lui non passa niente,
   // quindi un posto dove ripiegare ci sarebbe — il punto è che con la stima giusta non serve.
   const w = 1280, h = 500;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).stile = { fontSize: "32px" };   // il corpo reso della striscia, come in Chrome
-  coloriDi(contenitore).offsetHeight = 89;             // l'altezza vera: a 32 px va a capo tre volte
+  // L'altezza vera **dopo** il testo compatto: in Chrome, in aula a 1280×657, la legenda rende 47,59 px
+  // e `piano.js` ne legge 48 — una riga sola, che è il punto del Task 3. L'89 di prima (tre righe)
+  // gonfiava la banda e teneva in piedi la prova per conto suo: con 48 la prova sta al pelo del vero,
+  // ed è lì che deve stare. Sweep col mutante `corpoStriscia = carattere`: muore da 47 in su.
+  coloriDi(contenitore).offsetHeight = 48;
   let mo = modelloVuoto();
   for (const p of [{ x: 0, z: 0 }, { x: 8000, z: 0 }, { x: 0, z: 6000 }]) mo = creaNodo(mo, p);
   const elle = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 1, nodo_j: 3 }] };
@@ -1751,7 +1755,7 @@ test("15b: l'ostacolo della legenda dei colori si misura sul corpo **reso**, non
   const [ti, mi, ma] = testiColori(contenitore);
   const caratteri = `${ti}${mi}${"x".repeat(10)}${ma}`.length;
   // L'ostacolo com'è e come lo si stimava prima: stessa formula di `piano.js`, corpo diverso.
-  const scatola = (corpo) => ({ x0: sinistra, y0: fondo - (8 + 89) * s, y1: fondo,
+  const scatola = (corpo) => ({ x0: sinistra, y0: fondo - (8 + 48) * s, y1: fondo,
                                 x1: sinistra + Math.min(caratteri * 0.6 * corpo + 8 + 3 * 0.4 * corpo, w - 16) * s });
   const freccia = tutti(strato(svg()), "text").find((t) => t.textContent === "50 mm");
   assert.ok(freccia, "la freccia dello spostamento massimo non si scrive: l'etichetta è sparita");
@@ -1793,7 +1797,7 @@ test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in bas
   // 1280×280 in aula, titolo nascosto: la fascia varrebbe 193 (22 + 108 + 2 → 132, + 38 + 2 → 172,
   // − 2 + 23) e al telaio ne resterebbero 87, sotto i 100 del minimo — W4 la rifiuta, com'è giusto.
   // Le altezze sono quelle rese in Chrome: badge 108, legenda degli stati 38 su una riga, legenda
-  // dei colori **89**, che a 32 px va a capo tre volte. La legenda dei colori intanto sta **dentro**
+  // dei colori **48**, che dal Task 3 è una riga sola (47,59 px resi). La legenda dei colori sta **dentro**
   // il riquadro, posata sul disegno, ed è qui che si vede il punto della 15b: lì non ruba altezza a
   // nessuno. L'oracolo è la stessa scena senza di lei — la deformata stantia la nasconde e non tocca
   // le altre due strisce — e dev'essere la stessa inquadratura, al millimetro. Non le si chiede di
@@ -1803,7 +1807,7 @@ test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in bas
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).offsetHeight = 108;
   legendaDi(contenitore).offsetHeight = 38;
-  coloriDi(contenitore).offsetHeight = 89;
+  coloriDi(contenitore).offsetHeight = 48;
   piano.disegna(MURO, { risultati: PUSHOVER() });
   assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
   assert.ok(!coloriDi(contenitore).style.top, "in colonna non scende: la posa `stile.css`, in basso");

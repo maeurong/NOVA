@@ -669,7 +669,7 @@ export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
  *  riquadro. Una riga sola è il bersaglio.
  *
  *  **Il tetto è 38 caratteri, non 27.** In aula la striscia rende a **32 px**, non a 46:
- *  `stile.css:520` (`body[data-presentazione] #piano :is(…, .risultati-legenda, …)`, specificità
+ *  `stile.css:549` (`body[data-presentazione] #piano :is(…, .risultati-legenda, …)`, specificità
  *  (1,2,1)) batte il `font-size: var(--etichetta, 11px)` di `stile.css:110` (1,1,0). I 46 px sono le
  *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
  *  nei 751 px utili di un piano a 1280×657 una riga ne tiene **38**. Misurato in Chrome il 13/09:
@@ -724,9 +724,9 @@ export const coloreSpostamento = (u, uMax) => viridis(uMax > 0 ? u / uMax : 0);
  *  modo di dire la stessa cosa.
  *
  *  `compatta`: il testo dell'aula (15b, Task 3), gemello di `testoLegendaStati` e con lo stesso
- *  tetto — **38 caratteri, non 27**. In aula la striscia rende a **32 px**, non a 46: `stile.css:520`
+ *  tetto — **38 caratteri, non 27**. In aula la striscia rende a **32 px**, non a 46: `stile.css:549`
  *  (`body[data-presentazione] #piano :is(…, .risultati-colori)`, specificità (1,2,1)) batte il
- *  `font-size: var(--etichetta, 11px)` del blocco a `stile.css:125` (1,1,0), e i 46 px sono le
+ *  `font-size: var(--etichetta, 11px)` del blocco a `stile.css:136` (1,1,0), e i 46 px sono le
  *  etichette dentro l'SVG, non queste strisce. Conto: 0,602 em × 32 px = 19,26 px per carattere, e
  *  nei 751 px utili di un piano a 1280×657 una riga ne tiene 38. Della riga fanno parte anche la
  *  rampa (6 em, cioè dieci caratteri del mono) e i tre `gap` da 0,4 em (due caratteri): col titolo
