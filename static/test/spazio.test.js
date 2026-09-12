@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dimensioniSicure, calcolaAspect, calcolaInquadratura, creaSpazio, pixelInMondo, tratti,
-         trattiDellaDeformata, raggioCilindro, scaleDeiTratti, orbitaDaTasto } from "../spazio.js";
+         trattiDellaDeformata, raggioCilindro, scaleDeiTratti, orbitaDaTasto,
+         capoLontano, diametroInPixel } from "../spazio.js";
 import { coloreSpostamento, massimoSpostamento, VIRIDIS } from "../risultati.js";
 
 test("contenitore di dimensione 0: nessun NaN nell'aspect della camera", () => {
@@ -100,6 +101,43 @@ test("raggioCilindro: preso sull'estremo lontano, mai sotto tratto/2 px su nessu
     assert.ok(pxAlCapo >= 3 - 1e-9, `capo a ${p.z}: ${pxAlCapo} px`);
   }
   assert.equal(raggioCilindro(occhio, estremi, 90, 0, 6), 0); // riquadro non misurato: spessore nullo, non NaN
+});
+
+// #85, fix finale — il conto della sonda dello spessore, provato a unità. Finora stava tutto dentro
+// `sonda`, che senza WebGL non gira: i quattro assert del fumo che ne dipendono cadrebbero insieme a
+// lui, e quell'attrezzo ha già mentito una volta (9,48 px letti contro 6,03 veri).
+
+test("capoLontano: il capo più lontano, in qualunque ordine arrivi; elenco vuoto o assente → null", () => {
+  const occhio = { x: 0, y: 0, z: 0 };
+  const vicino = { x: 0, y: 0, z: 1000 }, lontano = { x: 0, y: 0, z: 2000 };
+  assert.equal(capoLontano(occhio, [vicino, lontano]), lontano);
+  assert.equal(capoLontano(occhio, [lontano, vicino]), lontano, "non è «l'ultimo dell'elenco», è il più lontano");
+  // Euclidea, non profondità lungo un asse: di sbieco vince chi è davvero più distante.
+  const sbieco = { x: 3000, y: 0, z: 0 };
+  assert.equal(capoLontano(occhio, [sbieco, lontano]), sbieco);
+  // L'occhio non è l'origine: la distanza si misura da lui.
+  assert.equal(capoLontano({ x: 0, y: 0, z: 2100 }, [vicino, lontano]), vicino);
+  assert.equal(capoLontano(occhio, []), null);
+  assert.equal(capoLontano(occhio, undefined), null);
+});
+
+test("capoLontano: è lo stesso capo su cui `raggioCilindro` prende la misura (l'invariante della sonda)", () => {
+  // La sonda proietta **questo** punto e `raggioCilindro` ci prende la misura: finché erano due
+  // conti paralleli, divergere voleva dire un diametro reso più sottile del voluto e nessun test che
+  // lo vedesse. Ora è la stessa funzione, e questa riga lo pinza.
+  const occhio = { x: 0, y: 0, z: 0 };
+  const estremi = [{ x: 0, y: 0, z: 2000 }, { x: 0, y: 0, z: 1000 }];
+  const p = capoLontano(occhio, estremi);
+  const d = Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z);
+  assert.ok(Math.abs(raggioCilindro(occhio, estremi, 90, 500, 6) - (pixelInMondo(d, 90, 500) * 6) / 2) < 1e-9);
+});
+
+test("diametroInPixel: uno scarto di un raggio in NDC vale un diametro sulla larghezza intera", () => {
+  // x in NDC copre [-1, 1] sulla larghezza, cioè metà larghezza per unità: uno scarto di 0,01 —
+  // che è un **raggio** — su un riquadro di 1200 px fa 12 px di **diametro**.
+  assert.ok(Math.abs(diametroInPixel(0.2, 0.21, 1200) - 12) < 1e-9);
+  assert.ok(Math.abs(diametroInPixel(0.21, 0.2, 1200) - 12) < 1e-9, "il verso non conta: è un modulo");
+  assert.equal(diametroInPixel(0.2, 0.2, 1200), 0, "raggio nullo: diametro nullo, non NaN");
 });
 
 test("scaleDeiTratti: il raggio è quello che rende il tratto voluto, e senza il ciclo resterebbe 1", () => {

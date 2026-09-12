@@ -430,14 +430,17 @@ def test_muro_1_in_presentazione_si_legge_da_otto_metri(chrome_e_server, binario
         # arrivata lo stesso. Le tre condizioni stanno scritte sopra `sonda`, in `spazio.js`.
         assert tr["voluto"] == 6, \
             f"il primo cilindro della scena non porta i 6 px di `--asta-tratto`: {tr}"
-        assert 5.5 <= tr["reso"] <= 7.5, f"lo spessore reso dei cilindri non è quello voluto: {tr}"
+        # Il lato basso è **5,9**, non 5,5: `raggioCilindro` misura sul capo lontano, quindi il reso
+        # non scende mai sotto il voluto e il decimo è tolleranza d'arrotondamento, non margine. A
+        # 5,5 passava mezzo pixel **sotto** i 6 px che la story chiede per le aste in aula.
+        assert 5.9 <= tr["reso"] <= 7.5, f"lo spessore reso dei cilindri non è quello voluto: {tr}"
     # C1 — lo stesso spessore **dopo un'orbita**. La sonda leggeva `matrixWorld` prima che il render
     # la aggiornasse: dopo un trascinamento di 200×60 px leggeva 9,48 px invece di 6,03, e ci
     # restava. Era verde solo perché nessun copione trascinava — l'attrezzo costruito perché il 3D
     # non mentisse mentiva lui, e avrebbe mandato a caccia di un difetto dei cilindri inesistente.
     tro = t["misure"]["tratto3dDopoOrbita"]
     if tro is not None:
-        assert 5.5 <= tro["reso"] <= 7.5, f"dopo un'orbita lo spessore reso non regge più: {tro}"
+        assert 5.9 <= tro["reso"] <= 7.5, f"dopo un'orbita lo spessore reso non regge più: {tro}"
     assert t["misure"]["nodi"] >= 13.9, t["misure"]
     assert t["misure"]["striscia"] >= 32, t["misure"]
     assert all(t["nascosti"]), t["nascosti"]

@@ -94,13 +94,36 @@ export function trattiDellaDeformata(deformata) {
   return deformata.stantia ? fuori.map((t) => ({ ...t, colore: null })) : fuori;
 }
 
+/** Il capo più lontano dall'occhio, in distanza euclidea. Pura e **condivisa apposta**:
+ *  `raggioCilindro` ci prende la misura e la sonda dello spessore ci prende il punto da proiettare.
+ *  Se scegliessero capi diversi il diametro reso uscirebbe più sottile del voluto senza che nessuno
+ *  se ne accorgesse — un'invariante che stava in un commento e in due conti paralleli, e che ora
+ *  regge per costruzione. Elenco vuoto → `null`: nessun `Math.max` su niente. */
+export function capoLontano(occhio, estremi) {
+  let scelto = null, massima = -1;
+  for (const p of estremi ?? []) {
+    const d = Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z);
+    if (d > massima) { massima = d; scelto = p; }
+  }
+  return scelto;
+}
+
+/** Il diametro in pixel da due ascisse NDC: il centro del cilindro e il suo bordo, distante un
+ *  **raggio**. x in NDC copre [-1, 1] sulla larghezza del riquadro, cioè metà larghezza per unità;
+ *  quindi lo scarto di un raggio moltiplicato per la larghezza intera è il diametro. Pura perché è
+ *  il conto della sonda, e una sonda che sbaglia manda a caccia di un difetto dei cilindri che non
+ *  esiste: è già successo (9,48 px letti contro 6,03 veri). */
+export const diametroInPixel = (centroX, bordoX, larghezza) => Math.abs(bordoX - centroX) * larghezza;
+
 /** Raggio in mondo di un cilindro che deve uscire `tratto` px di diametro. Misurato sull'estremo
  *  più lontano dall'occhio: la prospettiva ingrossa il capo vicino, e il lontano non scende mai
  *  sotto il voluto. */
 export function raggioCilindro(occhio, estremi, fov, altezza, tratto) {
   // ponytail: distanza euclidea, non profondità lungo l'asse della camera: è più grande, quindi il
   // tratto esce appena più spesso del voluto e mai più sottile.
-  const lontano = Math.max(...estremi.map((p) => Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z)));
+  const p = capoLontano(occhio, estremi);
+  if (!p) return 0;
+  const lontano = Math.hypot(p.x - occhio.x, p.y - occhio.y, p.z - occhio.z);
   return (pixelInMondo(lontano, fov, altezza) * tratto) / 2;
 }
 
@@ -259,16 +282,13 @@ async function costruisci(contenitore) {
     const dati = renderer.domElement.dataset;
     const o = figli.find((f) => f.userData.tratto);
     if (!o) { delete dati.trattoReso; delete dati.trattoVoluto; return; }
-    const [a, b] = o.userData.estremi;
-    // Lo stesso capo su cui `raggioCilindro` ha preso la misura, scelto qui per conto proprio: se
-    // quella scegliesse il capo vicino, qui il diametro uscirebbe più sottile del voluto e si vedrebbe.
-    const lontano = a.distanceTo(camera.position) >= b.distanceTo(camera.position) ? a : b;
+    // Lo stesso capo su cui `raggioCilindro` ha preso la misura, e **la stessa funzione**: finché
+    // erano due conti paralleli l'invariante viveva in un commento.
+    const lontano = capoLontano(camera.position, o.userData.estremi);
     destra.setFromMatrixColumn(camera.matrixWorld, 0);   // l'asse orizzontale della camera: l'offset resta alla stessa profondità
     centroNDC.copy(lontano).project(camera);
     bordoNDC.copy(lontano).addScaledVector(destra, o.scale.x).project(camera);
-    // x in NDC copre [-1, 1] sulla larghezza del riquadro: metà larghezza per unità di NDC, quindi
-    // lo scarto per un **raggio** moltiplicato per la larghezza intera è il **diametro** in px.
-    dati.trattoReso = (Math.abs(bordoNDC.x - centroNDC.x) * contenitore.clientWidth).toFixed(2);
+    dati.trattoReso = diametroInPixel(centroNDC.x, bordoNDC.x, contenitore.clientWidth).toFixed(2);
     dati.trattoVoluto = String(o.userData.tratto);
   }
 
