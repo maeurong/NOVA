@@ -652,8 +652,16 @@ export const motivoInParole = (motivo) => MOTIVI[motivo] ?? (motivo ? String(mot
 export const legendaStatiServe = (stati) => Object.values(stati ?? {}).flat()
   .some((s) => simboloStato(s) && (s.calcestruzzo !== "elastica" || s.acciaio !== "elastica"));
 
-export const testoLegendaStati = () =>
-  "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
+/** `compatta`: il testo dell'aula (15b, R18). Misurato il 13/09 a 46 px nei 751 px utili di un piano
+ *  a 1280×657: i 119 caratteri del testo lungo fanno 3 296 px e vanno a **quattro righe**, 152 px
+ *  che il telaio paga in altezza. Dei tre candidati provati solo il terzo entra in una riga —
+ *  ≤ 27 caratteri, 748 px — e la riga è il bersaglio, perché sotto le strisce deve restare disegno.
+ *  Il prezzo è dichiarato: i nomi degli stati del calcestruzzo se ne vanno e restano i simboli, in
+ *  ordine di danno crescente. Alla scrivania il testo lungo ci sta, e resta quello. */
+export const testoLegendaStati = (compatta = false) =>
+  compatta
+    ? "○ ◐ ● cls · ✕ acciaio rotto"
+    : "calcestruzzo: ○ elastica · ◐ fessurata · ● schiacciata — acciaio: contorno sottile elastica · spesso snervata · ✕ rotta";
 
 /** La forma modale del nodo nell'ispettore: adimensionale, senza unità e senza rotazioni. */
 export function righeModo(modo, id) {

@@ -1424,7 +1424,9 @@ test("piano: le strisce scendono dal titolo solo quando il titolo c'è, e dalle 
                                       uMax: 10, stantia: false, tipo: "pushover",
                                       badge: { passo: { k: 0, n: 1, u: 0.5, V: 1.2 } }, ...extra });
   const AZIONE = { id: 1, nome: "peso proprio", carichi: [] };
-  const tops = (contenitore) => [badgeDi, legendaDi, coloriDi].map((f) => f(contenitore).style.top);
+  // La legenda dei colori è uscita dalla colonna (15b): un `top` non ce l'ha più, quindi non è più
+  // in questa catena. Le due che restano scendono con gli stessi numeri di prima.
+  const tops = (contenitore) => [badgeDi, legendaDi].map((f) => f(contenitore).style.top);
   const stati = { stati: { 1: [{ calcestruzzo: "elastica", acciaio: "elastica" }, FESSURATA] } };
   // **W1** — senza azione in vista il titolo è vuoto **e** nascosto: il badge tiene il distacco
   // d'oggi, 16 px, che a 11 px fanno il `top: 22` di `stile.css`. Prima scendeva del ripiego
@@ -1433,53 +1435,65 @@ test("piano: le strisce scendono dal titolo solo quando il titolo c'è, e dalle 
   const oggi = pianoCon(undefined);
   oggi.piano.disegna(traveR, { risultati: pushover(stati) });
   assert.equal(contenitoreTitolo(oggi.contenitore).hidden, true, "nessuna azione in vista: il titolo è nascosto");
-  assert.deepEqual(tops(oggi.contenitore), ["22px", "38px", "68px"], "11 px: badge 6 + 16, legenda 22 + 14 + 2, colori 38 + 28 + 2");
+  assert.deepEqual(tops(oggi.contenitore), ["22px", "38px"], "11 px: badge 6 + 16, legenda 22 + 14 + 2");
   const aula = pianoCon(variabili({ "--etichetta": "46px" }));
   aula.piano.disegna(traveR, { risultati: pushover(stati) });
-  assert.deepEqual(tops(aula.contenitore), ["22px", "73px", "173px"], "46 px: badge 6 + 16 e non 6 + 51, legenda 22 + 49 + 2, colori 73 + 98 + 2");
+  assert.deepEqual(tops(aula.contenitore), ["22px", "73px"], "46 px: badge 6 + 16 e non 6 + 51, legenda 22 + 49 + 2");
   // Titolo **visibile**: la fascia torna a partire da lui, col ripiego `corpo + 5` stretto a 16.
   aula.piano.disegna(traveR, { azioneInVista: AZIONE, risultati: pushover(stati) });
   assert.equal(contenitoreTitolo(aula.contenitore).hidden, false, "con l'azione in vista il titolo parla");
-  assert.deepEqual(tops(aula.contenitore), ["57px", "108px", "208px"], "46 px col titolo: badge 6 + 51");
-  // Senza gli stati delle sezioni la legenda tace e la legenda dei colori le prende il posto.
+  assert.deepEqual(tops(aula.contenitore), ["57px", "108px"], "46 px col titolo: badge 6 + 51");
+  // Senza gli stati delle sezioni la legenda tace. La legenda dei colori non le prende più il posto:
+  // sta in basso, e in colonna non scende nessuno (15b).
   aula.piano.disegna(traveR, { risultati: pushover() });
   assert.equal(legendaDi(aula.contenitore).hidden, true);
-  assert.equal(coloriDi(aula.contenitore).style.top, "73px", "senza legenda degli stati, sotto il badge");
-  // Le altezze misurate vincono sui ripieghi — quella del titolo solo se il titolo si vede.
+  assert.ok(!coloriDi(aula.contenitore).style.top, "la legenda dei colori non ha un `top`: la posa `stile.css`");
+  // Le altezze misurate vincono sui ripieghi — quella del titolo solo se il titolo si vede. La quota
+  // si legge sulla legenda degli stati, che `scendi` scrive anche quando è nascosta.
   contenitoreTitolo(aula.contenitore).offsetHeight = 70;
   badgeDi(aula.contenitore).offsetHeight = 100;
   aula.piano.disegna(traveR, { risultati: pushover() });
-  assert.deepEqual([badgeDi(aula.contenitore).style.top, coloriDi(aula.contenitore).style.top], ["22px", "124px"],
+  assert.deepEqual([badgeDi(aula.contenitore).style.top, legendaDi(aula.contenitore).style.top], ["22px", "124px"],
                    "titolo nascosto: la sua altezza misurata non entra nel conto");
   aula.piano.disegna(traveR, { azioneInVista: AZIONE, risultati: pushover() });
-  assert.deepEqual([badgeDi(aula.contenitore).style.top, coloriDi(aula.contenitore).style.top], ["76px", "178px"],
+  assert.deepEqual([badgeDi(aula.contenitore).style.top, legendaDi(aula.contenitore).style.top], ["76px", "178px"],
                    "titolo visibile: 6 + 70 misurati, poi il badge misurato");
 });
 
-test("piano: la legenda dei colori è un ostacolo alto quanto misura, e l'etichetta della freccia non le finisce sotto", () => {
+test("piano: la legenda dei colori è un ostacolo in basso a sinistra, e l'etichetta della freccia non le finisce sotto", () => {
   const { contenitore, piano, svg } = pianoCon(undefined);
-  // Alta 40 px misurati, non i 14 del ripiego: con una riga sola la freccia dello spigolo cade appena
-  // sotto la fascia, e il test passerebbe anche senza l'ostacolo (provato a mutante).
+  // Una L: trave bassa e colonna a **destra**. Il nodo 1 è lo spigolo in basso a sinistra — dalla
+  // 15b l'angolo della legenda dei colori — e sopra di lui non passa niente, quindi l'etichetta un
+  // posto dove andare ce l'ha. Su `telaio43` non l'avrebbe: lì il nodo 1 ha la colonna sopra e la
+  // trave a destra, e un'etichetta senza uscite non prova niente sull'ostacolo.
+  let mo = modelloVuoto();
+  for (const p of [{ x: 0, z: 0 }, { x: 8000, z: 0 }, { x: 8000, z: 6000 }]) mo = creaNodo(mo, p);
+  const elle = { ...mo, aste: [{ id: 1, nodo_i: 1, nodo_j: 2 }, { id: 2, nodo_i: 2, nodo_j: 3 }] };
+  // Alta 40 px misurati, non i 28 del ripiego a due righe. La freccia dello spostamento massimo
+  // punta in giù, cioè proprio dentro la striscia: è il caso che l'ostacolo esiste per risolvere.
   coloriDi(contenitore).offsetHeight = 40;
-  const perCaso = { spostamenti: { 1: [0, 0, 0, 0, 0, 0], 2: [0, 0, 0, 0, 0, 0],
-                                   3: [0, 0, -50, 0, 0, 0], 4: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
-  piano.disegna(telaio43, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1, auto: true,
-                                         stantia: false, tipo: "caso", badge: {} } });
+  const perCaso = { spostamenti: { 1: [0, 0, -50, 0, 0, 0], 2: [0, 0, 0, 0, 0, 0],
+                                   3: [0, 0, 0, 0, 0, 0] }, reazioni: {} };
+  piano.disegna(elle, { risultati: { vista: "deformata", caso: "C1", perCaso, scala: 1, auto: true,
+                                     stantia: false, tipo: "caso", badge: {} } });
   const colori = coloriDi(contenitore);
   assert.equal(colori.hidden, false);
-  // 38: col titolo dei carichi nascosto il badge parte da 22 (6 + 16) e la legenda dei colori gli
-  // va sotto, 22 + 14 del ripiego + 2 (W1).
-  assert.equal(colori.style.top, "38px");
-  // Il box come lo stima `piano.js`: alto quanto misura, largo quanto i suoi testi più la rampa di 6 em.
-  const s = 12.4, cx = -960 + 9920 / 2, cy = -720 + 7440 / 2;
-  const x1 = cx + 800 * s / 2, bordo = cy - 600 * s / 2;
+  // In colonna non scende più: il `top` non lo scrive nessuno, la quota la dà `bottom: 8px`.
+  assert.ok(!colori.style.top, "la legenda dei colori non è più in colonna");
+  // Il box come lo stima `piano.js`: `left: 8px`, `bottom: 8px`, alto quanto misura più gli 8 px del
+  // fondo, largo quanto i suoi testi più la rampa di 6 em.
+  const [vx0, vz0, vlarga, valta] = svg().getAttribute("viewBox").split(" ").map(Number);
+  const s = Math.max(vlarga / 800, valta / 600);
+  const cx = vx0 + vlarga / 2, cy = vz0 + valta / 2;
+  const sinistra = cx - 800 * s / 2, fondo = cy + 600 * s / 2;
   const [titolo, min, max] = testiColori(contenitore);
-  const larga = (`${titolo} ${min} ${"x".repeat(10)} ${max}`.length * 6.6 + 8) * s;
-  const scatola = { x0: x1 - larga, y0: bordo + 38 * s, x1, y1: bordo + (38 + 40) * s };
+  const larga = Math.min(`${titolo}${min}${"x".repeat(10)}${max}`.length * 6.6 + 8 + 3 * 0.4 * 11, 800 - 16) * s;
+  const scatola = { x0: sinistra, x1: sinistra + larga, y0: fondo - (8 + 40) * s, y1: fondo };
   const testi = tutti(strato(svg()), "text");
-  assert.ok(testi.length >= 1, "l'etichetta della freccia si scrive: il test non è vuoto");
+  assert.ok(testi.some((t) => t.textContent === "50 mm"), `la freccia si scrive: ${testi.map((t) => t.textContent)}`);
   for (const t of testi) {
-    assert.ok(!siSovrappongono(boxTesto(t, s), scatola), `«${t.textContent}» finisce sotto la legenda dei colori`);
+    assert.ok(!siSovrappongono(boxTesto(t, s), scatola),
+              `«${t.textContent}» finisce sotto la legenda dei colori: ${JSON.stringify(boxTesto(t, s))} contro ${JSON.stringify(scatola)}`);
   }
 });
 
@@ -1635,23 +1649,80 @@ test("piano: strisce che non lascerebbero `TELAIO_MINIMO` → nessuna fascia, il
 test("piano: fra 300 e 400 px con le misure d'aula — o la fascia ci sta col telaio sopra il minimo, o niente (W4)", () => {
   // La banda che il criterio di prima (`h >= 3 · TELAIO_MINIMO`, sul **riquadro**) sbagliava: a 350 px
   // passava la soglia e poi cadeva su `h / 3`, cioè su un telaio di 117 px con nomi da 46. Con le
-  // misure d'aula e il DOM finto la fascia vale 229 px (badge 6 + 49 + 2, legenda + 98 + 2, colori
-  // + 49 + 2 = 208, meno 2, più mezzo corpo).
+  // misure d'aula e il DOM finto la fascia vale **194 px** (badge a 22, alto 49, + 2 → 73; legenda
+  // alta 98, + 2 → 173; meno 2, più mezzo corpo). Valeva 229 finché la legenda dei colori scendeva
+  // in colonna sotto le altre: dalla 15b sta in basso e non entra nel conto, e i 35 px che portava
+  // via sono tornati al disegno. Con loro si è spostata anche la soglia del ripiego: 294 px, non 329.
   const w = 1152;
   const conAltezza = (h) => {
     const { piano, svg } = pianoCon(PRESENTAZIONE, w, h);
     piano.disegna(MURO, { risultati: PUSHOVER() });
     return svg();
   };
-  // 350 − 229 = 121 px di telaio: sopra i 100 del minimo, la fascia si riserva.
+  // 350 − 194 = 156 px di telaio: sopra i 100 del minimo, la fascia si riserva.
   const largo = conAltezza(350);
   assert.ok(altezzaDelRiquadro(largo) > estensione(MURO).altezza,
             "a 350 px il telaio che resta regge: la fascia va riservata");
   const ys = yDeiNodi(largo, w, 350);
-  assert.ok(Math.min(...ys) >= 229, `il nodo più alto sta a ${Math.min(...ys).toFixed(1)} px, sopra la fascia`);
-  // 320 − 229 = 91 px: sotto il minimo, e allora niente fascia — mai un telaio di 91 px.
-  assert.equal(altezzaDelRiquadro(conAltezza(320)), estensione(MURO).altezza,
-               "a 320 px il telaio che resta è sotto il minimo: nessuna fascia");
+  assert.ok(Math.min(...ys) >= 194, `il nodo più alto sta a ${Math.min(...ys).toFixed(1)} px, sopra la fascia`);
+  // 290 − 194 = 96 px: sotto il minimo, e allora niente fascia — mai un telaio di 96 px.
+  assert.equal(altezzaDelRiquadro(conAltezza(290)), estensione(MURO).altezza,
+               "a 290 px il telaio che resta è sotto il minimo: nessuna fascia");
+  // I due lati della soglia nuova, 294 px. A 300 la fascia ci sta — e ci sta **perché** la legenda
+  // dei colori è uscita dal conto: con i 229 px di prima ne sarebbero restati 71, e il ripiego
+  // avrebbe tolto la fascia. È qui che si vede il guadagno della 15b, non in un numero più piccolo.
+  assert.ok(altezzaDelRiquadro(conAltezza(300)) > estensione(MURO).altezza,
+            "a 300 px la fascia si riserva: 300 − 194 = 106 px di telaio, sopra il minimo");
+});
+
+// --- 15b: le strisce si accorciano, e la fascia del caso di collaudo ---------------------------
+
+test("15b: stati a una riga e colori fuori dalla colonna — la fascia si riserva e vale 231 px", () => {
+  // Il caso di collaudo della giornata: 1280×657 in aula, pushover, riquadro del piano 403 px.
+  // Misurato in Chrome il 13/09 (R1-R3): oggi le quattro strisce fanno 346 px su 403, la fascia
+  // varrebbe 367 e W4 la rifiuta in blocco — i nodi ripartono da 152 px e dodici fra nomi, cerchi e
+  // deformata finiscono sotto il badge e la legenda degli stati. Con la legenda degli stati a una
+  // riga (54 px) e i colori fuori dalla colonna la fascia scende a 231, e i 172 px che restano al
+  // telaio stanno sopra i 100 di `TELAIO_MINIMO`.
+  const w = 1280, h = 403;
+  const AZIONE = { id: 1, nome: "peso proprio", carichi: [] };
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  contenitoreTitolo(contenitore).offsetHeight = 38;   // il titolo dei carichi, una riga a 46 px
+  badgeDi(contenitore).offsetHeight = 108;            // due righe a 46 px: la scala non si tronca (15a)
+  legendaDi(contenitore).offsetHeight = 54;           // una riga: 27 caratteri a 46 px stanno in 751 px
+  piano.disegna(MURO, { azioneInVista: AZIONE, risultati: PUSHOVER() });
+  assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
+  assert.ok(!coloriDi(contenitore).style.top, "niente `top`: la legenda dei colori non è in colonna");
+  assert.ok(altezzaDelRiquadro(svg()) > estensione(MURO).altezza, "la fascia si riserva (W4 passa)");
+  // 6 + 38 (titolo) → 44; + 108 + 2 → 154; + 54 + 2 → 210; − 2 + 23 (mezzo corpo) = 231.
+  const cima = Math.min(...yDeiNodi(svg(), w, h));
+  assert.ok(cima >= 231, `il nodo più alto sta a ${cima.toFixed(1)} px, non sotto la fascia di 231`);
+});
+
+test("15b: riquadro sotto `TELAIO_MINIMO` → niente fascia, e la legenda in basso non costa un pixel di disegno", () => {
+  // 1280×300 in aula: la fascia varrebbe 209 (22 + 108 + 2 → 132, + 54 + 2 → 188, − 2 + 23) e al
+  // telaio ne resterebbero 91, sotto i 100 del minimo — W4 la rifiuta, com'è giusto. La legenda dei
+  // colori intanto sta **dentro** il riquadro, posata sul disegno, ed è qui che si vede il punto
+  // della 15b: lì non ruba altezza a nessuno. L'oracolo è la stessa scena senza di lei — la
+  // deformata stantia la nasconde e non tocca le altre due strisce — e dev'essere la stessa
+  // inquadratura, al millimetro. Non le si chiede di stare lontana dalle etichette: su un riquadro
+  // così basso la banda in fondo è tutto ciò che c'è, e schivarla non è possibile né utile.
+  const w = 1280, h = 300;
+  const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
+  badgeDi(contenitore).offsetHeight = 108;
+  legendaDi(contenitore).offsetHeight = 54;
+  coloriDi(contenitore).offsetHeight = 54;
+  piano.disegna(MURO, { risultati: PUSHOVER() });
+  assert.equal(coloriDi(contenitore).hidden, false, "la legenda dei colori si vede: il test non è vuoto");
+  assert.ok(!coloriDi(contenitore).style.top, "in colonna non scende: la posa `stile.css`, in basso");
+  assert.equal(altezzaDelRiquadro(svg()), estensione(MURO).altezza,
+               "il telaio che resterebbe è sotto il minimo: la fascia non si riserva");
+  const conLegenda = svg().getAttribute("viewBox");
+  piano.disegna(MURO, { risultati: PUSHOVER({ stantia: true }) });
+  assert.equal(coloriDi(contenitore).hidden, true, "la deformata stantia nasconde la legenda dei colori");
+  assert.equal(legendaDi(contenitore).hidden, false, "la legenda degli stati resta: cambia una striscia sola");
+  assert.equal(svg().getAttribute("viewBox"), conLegenda,
+               "con la legenda dei colori e senza, la stessa inquadratura: in basso non entra nella fascia");
 });
 
 test("piano: con tutte le sezioni elastiche la legenda degli stati tace, e non è un ostacolo (C7b)", () => {

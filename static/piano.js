@@ -13,7 +13,7 @@ import { puntiDeformata, diagramma, scalaDiagrammaAuto, picchi, testoValore, tes
          asteRuotate, simboloStato, stazioniDiAsta, testoLegendaStati, legendaStatiServe, VIRIDIS,
          coloreSpostamento, testoScalaColori } from "./risultati.js";
 import { disponi, sottoSoglia } from "./etichette.js";
-import { leggiMisure, avanzamentoMono } from "./misure.js";
+import { leggiMisure, avanzamentoMono, MISURE_BASE } from "./misure.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const MARGINE = 0.12;      // frazione dell'estensione, per non incollare il telaio ai bordi
@@ -404,7 +404,11 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // La legenda parla solo quando i simboli ci sono **e dicono cose diverse**: in vista M non c'è
     // niente da decifrare, e con tutte le sezioni elastiche i simboli sono tutti uguali — la riga
     // resterebbe gergo, e in aula costa 114 px su tre righe con «rotta» da sola sull'ultima (C7b).
-    legenda.textContent = testoLegendaStati();
+    // `compatta` quando il corpo è più grande di quello di sempre, cioè in aula: è il solo segnale
+    // che il piano ha, perché le misure gli arrivano dalle variabili CSS e `body[data-presentazione]`
+    // porta `--etichetta` a 46. Alla scrivania `carattere` vale 11 come in `MISURE_BASE`, e il testo
+    // resta quello di ieri parola per parola.
+    legenda.textContent = testoLegendaStati(carattere > MISURE_BASE.carattere);
     legenda.hidden = !(attivo && vistaRis === "deformata" && legendaStatiServe(attivo.stati));
     // La legenda dei colori parla quando i colori ci sono: deformata non stantia. I suoi **numeri**
     // si scrivono più giù, che vogliono `raccolto.uMax`; qui basta sapere se si vede, perché è alta
@@ -416,7 +420,6 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     const scendi = (e, top, alta) => { e.style.top = `${top}px`; return e.hidden ? top : top + alta + 2; };
     const altaBadge = () => badge.offsetHeight || carattere + 3;
     const altaLegenda = () => legenda.offsetHeight || 2 * (carattere + 3);
-    const altaColori = () => colori.offsetHeight || carattere + 3;
     // **W1** — `offsetHeight` di un elemento nascosto è 0, e il ripiego scattava lo stesso: in aula
     // 51 px di fascia riservati a una striscia che non c'è, su ogni piano senza azione in vista.
     // Col titolo nascosto si tiene il distacco d'oggi — 16 px, che a 11 px fanno il `top: 22` di
@@ -424,11 +427,14 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     // una striscia che non esiste, e fuori il disegno resta identico al pixel.
     const topBadge = 6 + (titolo.hidden ? 16 : Math.max(16, titolo.offsetHeight || carattere + 5));
     const topLegenda = scendi(badge, topBadge, altaBadge());
-    const topColori = scendi(legenda, topLegenda, altaLegenda());
-    const fine = scendi(colori, topColori, altaColori());
-    // Il fondo dell'ultima striscia visibile più mezzo corpo d'aria. Nessuna visibile (vista
-    // «niente», nessuna azione) → 0, e l'inquadratura resta identica a oggi.
-    const nessunaStriscia = titolo.hidden && badge.hidden && legenda.hidden && colori.hidden;
+    const fine = scendi(legenda, topLegenda, altaLegenda());
+    // La legenda dei colori è uscita dalla colonna (15b): sta in basso a sinistra, dove non ruba
+    // altezza al disegno, e la sua quota la dà `stile.css`. Resta un ostacolo per le etichette —
+    // alla sua quota, non a questa. Toglierla dal conto è il grosso del guadagno solo in apparenza:
+    // vale 38 px su 346, mentre la legenda degli stati ne vale 152 (R1), ed è lei ad accorciarsi.
+    // Nel conto di `nessunaStriscia` non manca niente: la legenda dei colori si vede solo con la
+    // deformata, e con la deformata il badge si vede sempre.
+    const nessunaStriscia = titolo.hidden && badge.hidden && legenda.hidden;
     const fascia = nessunaStriscia ? 0 : Math.max(0, fine - 2) + carattere / 2;
 
     inquadra(m, ghost, 0, fascia);
@@ -607,11 +613,19 @@ export function creaPiano(contenitore, { suSelezione, suSfondo }) {
     };
     ostacoloStriscia(badge, topBadge, altaBadge(), badge.textContent);
     ostacoloStriscia(legenda, topLegenda, altaLegenda(), legenda.textContent);
+    // La legenda dei colori non scende più in colonna (15b): sta in basso a sinistra, e il suo
+    // rettangolo si costruisce di lì — `left: 8px` e `bottom: 8px` di `stile.css`, con gli 8 px del
+    // fondo dentro l'ostacolo, che è la lettura pessimista. Va a capo (`flex-wrap`), quindi il
+    // ripiego del DOM finto sono **due** righe e non una.
     // La rampa è larga 6 em, cioè dieci caratteri del mono. I tre `gap` di `.risultati-colori` sono
     // in `em` (`stile.css`, fix B: a 32 px sei pixel fissi non reggevano e «|u|» si incollava a
     // «0 mm»), quindi la stima li segue invece di contarli come tre spazi da 0,6 em: 0,4 em l'uno.
-    ostacoloStriscia(colori, topColori, altaColori(),
-                     `${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * carattere);
+    if (!colori.hidden) {
+      const alta = colori.offsetHeight || 2 * (carattere + 3);
+      const larga = dentro(`${estremi.titolo}${estremi.min}${"x".repeat(10)}${estremi.max}`, 8 + 3 * 0.4 * carattere);
+      ostacoli.push({ x0: viewport.x0, x1: viewport.x0 + larga,
+                      y0: viewport.y1 - (8 + alta) * s, y1: viewport.y1 });
+    }
     // `6 +`: l'altezza misurata del titolo parte dal suo `top`, non dal bordo.
     if (!titolo.hidden) ostacoli.push({ x0: viewport.x0, y0: viewport.y0, y1: viewport.y0 + (6 + (titolo.offsetHeight || carattere + 3)) * s,
                                         x1: viewport.x0 + Math.min(larghezzaMono(titolo.textContent, s, 8, carattere), 0.45 * larghezzaPx * s) });

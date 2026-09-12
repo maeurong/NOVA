@@ -724,6 +724,21 @@ test("testoLegendaStati: i due canali in una riga", () => {
   const t = testoLegendaStati();
   for (const p of ["elastica", "fessurata", "schiacciata", "snervata", "rotta"]) assert.ok(t.includes(p), p);
 });
+
+test("testoLegendaStati: in aula il testo compatto sta in **una** riga — 27 caratteri (15b, R18)", () => {
+  // La proprietà verificabile senza browser è il conteggio dei caratteri. Misurato il 13/09 col mono
+  // di sistema (avanzamento 0,602 em): a 46 px nei 751 px utili di un piano a 1280×657 una riga vuol
+  // dire **≤ 27 caratteri**. Il testo d'oggi ne ha 119 e va a quattro righe, 152 px che il telaio
+  // paga in altezza; il candidato da 50 ne vuole ancora due. Se questo cresce, la riga si spezza e
+  // la fascia torna a mangiarsi il disegno.
+  const t = testoLegendaStati(true);
+  assert.ok(t.length <= 27, `«${t}» è di ${t.length} caratteri: a 46 px non sta in una riga`);
+  for (const p of ["○", "◐", "●", "✕"]) assert.ok(t.includes(p), `manca il simbolo ${p}`);
+  // Alla scrivania il testo lungo ci sta, e resta quello: il compatto è una perdita di parole
+  // accettata per l'aula, non un miglioramento da estendere a tutti.
+  assert.ok(testoLegendaStati().length > 27, "il testo lungo non va accorciato di riflesso");
+  assert.notEqual(t, testoLegendaStati());
+});
 test("i casi statici di `testoBadge` non cambiano", () => {
   assert.equal(badge({ vista: "deformata", caso: "Z1", scala: 10, auto: true }), "deformata · Z1 · ×10 (auto)");
   assert.equal(badge({ vista: "M", caso: "Z1", ruotate: 1 }), "M · Z1 · kN·m · lato teso · 1 asta con sezione ruotata non disegnata");

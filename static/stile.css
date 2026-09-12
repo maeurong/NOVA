@@ -110,20 +110,28 @@ body {
 #piano .risultati-legenda { position: absolute; top: 38px; right: 8px; margin: 0;
                             font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; color: var(--inchiostro); pointer-events: none;
                             white-space: normal; max-width: calc(100% - 16px); text-align: right; text-wrap: balance; }
-/* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm», sotto l'ultima striscia
-   visibile — il `top` lo scrive `piano.js`. La rampa è in `em`: segue il corpo, e a 32 px un'altezza
-   fissa di 10 sarebbe un filo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
-#piano .risultati-colori { position: absolute; top: 38px; right: 8px; margin: 0;
-                           display: flex; gap: 0.4em; align-items: center; white-space: nowrap;
+/* La legenda dei colori della deformata (15a): «|u| 0 mm ▮▮▮ 12,3 mm». Dalla 15b **in basso a
+   sinistra**, fuori dalla colonna delle strisce: là entrava nella fascia che `piano.js` riserva in
+   cima, e quell'altezza la pagava il telaio. Qui è fuori dalla fascia, quindi andare a capo non
+   costa un pixel di disegno — e andare a capo serve, perché a 1280×657 in aula la riga intera è
+   larga 847 px in un riquadro di 751: con `nowrap` usciva dal piano di 88 px, tagliata (R5).
+   `flex-wrap` perché a spezzare le righe è il contenitore flex, non `white-space` da solo: senza,
+   i figli si strizzerebbero dentro il `max-width` invece di scendere. La rampa è in `em`: segue il
+   corpo, e a 32 px un'altezza fissa di 10 sarebbe un filo; `flex: none` la tiene larga 6 em anche
+   quando si va a capo. `[hidden]` va ridetto: `display: flex` batte la regola del browser. */
+#piano .risultati-colori { position: absolute; left: 8px; bottom: 8px; margin: 0;
+                           display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center;
+                           white-space: normal; max-width: calc(100% - 16px); text-align: left;
                            font-size: var(--etichetta, 11px); font-family: var(--mono); line-height: normal; font-variant-numeric: tabular-nums;
                            color: var(--inchiostro); pointer-events: none; }
 #piano .risultati-colori[hidden] { display: none; }
-#piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; }
+#piano .risultati-colori svg { width: 6em; height: 0.6em; display: block; flex: none; }
 /* Il titolo, che una coda la può perdere (è il nome dell'azione, non un numero), sta sulla prima
    riga e si tronca. Questi numeri — 6 di `top`, 8 di `left`/`right`, 0,6 em per carattere del corpo
    `--etichetta` — li ricopia `piano.js` (`larghezzaMono` e gli `ostacoli.push`) per farne gli ostacoli
    delle etichette: cambiarli qui e non là fa passare un picco sotto il testo, in silenzio. I `top`
-   del badge e delle due legende invece li scrive `piano.js`, dalle altezze misurate. */
+   del badge e della legenda degli stati invece li scrive `piano.js`, dalle altezze misurate; quella
+   dei colori un `top` non ce l'ha più (15b), la posa il `bottom: 8px` qui sopra. */
 #piano .carichi-titolo { max-width: 45%; overflow: hidden;
                          text-overflow: ellipsis; white-space: nowrap; }
 
