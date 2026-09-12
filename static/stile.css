@@ -451,7 +451,7 @@ h2 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
 #palette-voci li kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--tratto-forte); border-radius: 3px; padding: 0 5px; }
 /* «non ora»: il rosso è il filetto, la parola è il canale che conta — il colore da solo non
    basterebbe comunque (WCAG 1.4.1), e il rosso come testo a 13px non regge AA (4,28:1 su
-   --fondo, `stile.css:133`). Restano i due canali, e il testo è leggibile come gli altri. */
+   --fondo, il commento sopra `.avviso`). Restano i due canali, e il testo è leggibile come gli altri. */
 #palette-voci li.non-ora { border-left: 3px solid var(--rosso); }
 /* «nessun comando»: un `<p role="status">` sotto l'elenco vuoto, non un `<li>` — un
    `listbox` possiede solo `option`. Stesso posto a schermo, un testo solo.
