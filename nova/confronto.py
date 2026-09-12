@@ -122,15 +122,15 @@ def _scarto_classe(telaio_val: float | None, altro_val: float | None,
         altro_sotto = abs(altro_val) < pavimento
         if telaio_sotto and altro_sotto:
             return None, classe(None), (f"entrambi i valori sotto il pavimento di rumore per "
-                                        f"«{unita}» (< {pavimento:g})")
+                                        f"«{unita}» (< {_it(pavimento)})").replace("-", "−")
         if telaio_sotto or altro_sotto:
             # un solo lato sotto: non è rumore reciproco, è un lato che non riporta la
             # grandezza — la percentuale non ha senso, ma i due valori restano leggibili
             chi_sotto, val_sotto = ("il telaio", telaio_val) if telaio_sotto else ("il riferimento", altro_val)
             chi_sopra, val_sopra = ("il riferimento", altro_val) if telaio_sotto else ("il telaio", telaio_val)
             return None, classe(None), (f"{chi_sotto} vale {_it(val_sotto)} {unita}, sotto il "
-                                        f"pavimento (< {pavimento:g}); {chi_sopra} {_it(val_sopra)}: "
-                                        "i due non concordano, la percentuale non è un numero utile")
+                                        f"pavimento (< {_it(pavimento)}); {chi_sopra} {_it(val_sopra)}: "
+                                        "i due non concordano, la percentuale non è un numero utile").replace("-", "−")
     elif telaio_val == 0 or altro_val == 0:
         return None, classe(None), "valore zero esatto: nessuno scarto"
     scarto = abs(altro_val - telaio_val) / abs(altro_val)
