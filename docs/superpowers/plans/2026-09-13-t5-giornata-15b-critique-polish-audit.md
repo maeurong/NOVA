@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** chiudere T5 con una pagina che regge lo sguardo di un estraneo e la proiezione in aula. Tre cose insieme, nell'ordine: (1) una **critique** e un **audit** misurati su tutta la pagina (decisione P5a), non solo sul modo presentazione; (2) i **debiti della 15a** dell'issue #85 — le strisce più grandi del disegno a 1920 e a 1280, la coda chiara di viridis a 1,10:1, lo srotolato e la curva della pushover nascosti in aula, lo spessore dei cilindri che nessun test prova, il costo per fotogramma con un modo animato; (3) due difetti aperti da fuori: l'**Hermite dei modi** che disegna una S fra i nodi (#84) e le **grafie miste** nelle ragioni del Confronto (#82). Verifica di fine giornata: MURO 1 in pushover a 1920×1080 **e** a 1280×657 con il telaio più alto delle strisce che lo sovrastano e zero sovrapposizioni; nessun rilievo `Important` dell'audit che resti senza fix o senza issue; test JS, fumo e pytest verdi.
+**Goal:** chiudere T5 con una pagina che regge lo sguardo di un estraneo e la proiezione in aula. Tre cose insieme, nell'ordine: (1) una **critique** e un **audit** misurati su tutta la pagina (decisione P5a), non solo sul modo presentazione; (2) i **debiti della 15a** dell'issue #85 — le strisce più grandi del disegno a 1920 e a 1280, la coda chiara di viridis a 1,10:1, lo srotolato e la curva della pushover nascosti in aula, lo spessore dei cilindri che nessun test prova, il costo per fotogramma con un modo animato; (3) due difetti aperti da fuori: l'**Hermite dei modi** che disegna una S fra i nodi (#84) e le **grafie miste** nelle ragioni del Confronto (#82). Verifica di fine giornata (**riscritta dopo R2**, che ha misurato come il fallimento sia a monte: a 1280×657 in aula la fascia oggi **non si riserva affatto** e le strisce tornano sopra il telaio intero): MURO 1 in pushover a 1920×1080 **e** a 1280×657 con la **fascia che si riserva davvero** — cioè `W4` che passa — **e** zero sovrapposizioni; nessun rilievo `Important` dell'audit che resti senza fix o senza issue; test JS, fumo e pytest verdi.
 
 **Architecture:** nessun cambio nel server tranne una stringa di `nova/confronto.py` (#82). Il resto è interfaccia. Le **strisce** sopra il piano restano il punto che decide tutto: `piano.js` le scrive, le misura col browser e riserva la loro `fascia` prima di inquadrare (`static/piano.js:387-434`), quindi accorciarle è l'unica leva che restituisce altezza al disegno — spostare il telaio non la restituisce. **Quale striscia si accorcia lo dice la misura, non l'intuizione** (annotazione, R1-R4): a 1280×657 in aula, in pushover, le quattro strisce fanno 346 px su un riquadro di 403, e la legenda dei colori ne è **38**. La leva vera è la **legenda degli stati** (152 px, quattro righe) e poi il badge (108 px, due righe irriducibili). La legenda dei colori esce lo stesso dalla colonna e si posa **in basso a sinistra del piano**, ma vale l'11 % del problema, non il suo cuore. Insieme portano la `fascia` da 367 px (oggi non riservata affatto: scatta W4) a **231 px riservati, con 172 px di banda per il telaio**. La **coda chiara di viridis** non si risolve con una piastra d'inchiostro: misurata, la piastra scura ribalta il difetto invece di toglierlo (giallo 1,11 → 14,59, viola 10,91 → **1,21**, R6). La piastra serve, ma è di `--fondo` — opaca, non scura: in basso la legenda sta **sopra il disegno**, e quel che le serve è un fondo che non sia un'asta in viridis (`07-ux-modellatore.md:100`), non un fondo nero. Il giallo di punta il suo bordo ce l'ha già: la rampa porta uno `stroke: INCHIOSTRO` da 1 px, 13,19:1 sul fondo. Lo **srotolato** e la **curva della pushover** tornano in aula con misure proprie: le stesse variabili CSS della 15a (`--etichetta` per i testi dell'SVG, un'altezza `--srotolato-alto`), lette dove oggi ci sono i numeri scritti a mano (`esito.js:162`, `:180`, `:196`, `:203`). L'altezza misurata è **160 px, non 288** (R8-R9), e a 1280×657 in aula lo srotolato **non si mostra affatto**: a 288 px lascerebbe al piano 137 px. Lo **spessore dei cilindri** diventa osservabile: il ciclo di `rendi` (`spazio.js:181-183`) si estrae in una pura `scaleDeiTratti(oggetti, camera, altezza)` che i test chiamano senza WebGL, e il fumo legge un `data-` sul canvas (sonda misurata: 0,332 µs a scrittura, R12). Il **costo per fotogramma** non si tocca: misurato prima, sta a **16,6-16,7 ms di mediana in tutte e quattro le condizioni** — animazione accesa e ferma, 1920 e 1280 — cioè al pavimento del vsync, con 68 mesh in scena (R11). Il riuso delle mesh esce dal ramo e va in issue col numero di prima; resta la lettura delle misure **una volta per cambio di layout** invece che a ogni fotogramma, che è una questione di padrone unico e non di millisecondi: la cache si invalida su `resize`, su `data-presentazione` e su `data-pannelli`. L'**Hermite** (`risultati.js:224`) diventa lineare quando **entrambe** le rotazioni dei due capi sono nulle: è esattamente il caso della forma modale (`risultati.js:531-536`), e non tocca la deformata vera, che le rotazioni ce le ha (scarto misurato a metà asta: 18,7 / 13,1 / 13,1 / 76,9 mm). Attenzione al punto dove si misura: **a metà asta lo smoothstep è già la media dei due nodi** (vale 0,5 a s = 0,5), quindi la S si vede a s = 0,25 e 0,75 e non a 0,5 (R13).
 
@@ -119,7 +119,10 @@ test("15b: stati a una riga e colori fuori dalla colonna — la fascia si riserv
   const w = 1280, h = 403;
   const { contenitore, piano, svg } = pianoCon(PRESENTAZIONE, w, h);
   badgeDi(contenitore).offsetHeight = 108;    // due righe a 46 px: la scala non si tronca (15a)
-  legendaDi(contenitore).offsetHeight = 54;   // una riga: 27 caratteri a 46 px stanno in 751 px
+  legendaDi(contenitore).offsetHeight = 38;   // una riga. **Il 54 scritto qui era sbagliato**: in aula
+                                              // la striscia rende a 32 px (non ai 46 di `--etichetta`,
+                                              // che valgono per le etichette dell'SVG), quindi una riga
+                                              // è alta 38 px e il tetto vero è 38 caratteri, non 27.
   piano.disegna(MURO, { risultati: PUSHOVER() });
   assert.equal(coloriDi(contenitore).style.top, "", "niente top: la legenda dei colori non è in colonna");
   assert.ok(altezzaDelRiquadro(svg()) > estensione(MURO).altezza, "la fascia si riserva (W4 passa)");
@@ -164,7 +167,15 @@ In presentazione le stesse regole, corpo a 32 px come già previsto (`stile.css:
 
 - [ ] **Step 6: la legenda degli stati su una riga in aula — è questa la leva, non i colori**
 
-Misurato il 13/09 (font mono di sistema, avanzamento 0,602 em = 27,69 px a 46): il testo d'oggi è lungo **119 caratteri = 3 296 px**, e va a **quattro righe (152 px)** nei 751 px utili di 1280×657 in aula, tre (114 px) nei 1 135 di 1920. Una riga sola vuol dire **≤ 27 caratteri** a 1280 e ≤ 40 a 1920. I candidati misurati:
+Misurato il 13/09 (font mono di sistema, avanzamento 0,602 em = 27,69 px a 46): il testo d'oggi è lungo **119 caratteri = 3 296 px**, e va a **quattro righe (152 px)** nei 751 px utili di 1280×657 in aula, tre (114 px) nei 1 135 di 1920. I candidati misurati:
+
+> **Correzione misurata durante l'esecuzione — il tetto è 38, non 27.** Il conto qui sotto è fatto a
+> **46 px**, che è il corpo delle **etichette dell'SVG**; le **strisce** in aula rendono invece a **32 px**
+> (la regola della presentazione vince per specificità sul `font-size: var(--etichetta)`). A 32 px
+> l'avanzamento è 19,26 px e nei 751 px utili ci stanno **38 caratteri**, non 27. È lo stesso scarto che
+> ha fatto risultare la `fascia` **215** invece dei 231 previsti: la misura di R3 e R18 era giusta nel suo
+> metro e sbagliata nel corpo. Il codice e i test applicano **38**; la tabella qui sotto resta com'era
+> perché è il verbale della misura, non il patto.
 
 | testo | caratteri | px a 46 | righe a 1280 aula |
 |---|---|---|---|
@@ -172,7 +183,7 @@ Misurato il 13/09 (font mono di sistema, avanzamento 0,602 em = 27,69 px a 46): 
 | `○ elastica · ◐ fessurata · ● schiacciata · ✕ rotta` | 50 | 1 385 | 2 |
 | `○ ◐ ● cls · ✕ acciaio rotto` | 27 | 748 | **1** |
 
-Il testo esatto lo decide `testoLegendaStati(compatta = false)`, provato a unità sul **conteggio dei caratteri** (≤ 27), che è la proprietà verificabile senza browser. Il testo lungo resta alla scrivania, dove ci sta.
+Il testo esatto lo decide `testoLegendaStati(compatta = false)`, provato a unità sul **conteggio dei caratteri** (**≤ 38**, vedi la correzione sopra), che è la proprietà verificabile senza browser. Il testo lungo resta alla scrivania, dove ci sta.
 
 **Il badge non si comprime**: «pushover · 120/120 · u 60 mm · V 70,9 kN · ×2 (auto)» è 1 440 px a 46, e nemmeno la versione più corta ragionevole (`120/120 · 60 mm · 70,9 kN · ×2`, 831 px) entra nei 751. Resta a **due righe**, e non si tronca — ruling della 15a: la scala non può mancare. Le due righe sono un pavimento, non un difetto da chiudere qui.
 
@@ -539,7 +550,7 @@ git commit -m "fix(confronto): una sola grafia dei numeri nelle ragioni del pavi
 ## Mutanti da provare a fine ramo (con controllo nullo)
 
 1. `piano.js`: la legenda dei colori torna nel conto della `fascia` → deve morire nel test del Task 2.
-2. `risultati.js`: `testoLegendaStati(compatta)` rende il testo lungo anche in aula → muore sul test dei ≤ 27 caratteri del Task 2.
+2. `risultati.js`: `testoLegendaStati(compatta)` rende il testo lungo anche in aula → muore sul test del tetto dei caratteri del Task 2 (**38**, non i 27 scritti qui sotto: vedi la correzione allo Step 6).
 3. `stile.css`: via il `background` della legenda dei colori → muore nel fumo del Task 3, sull'asserzione che il fondo reso **non** è trasparente.
 4. `esito.js`: `H` fisso a 96 anche in aula → muore nel test del Task 4.
 5. `stile.css`: via la `@media (max-height: 899px)` → muore nel copione `aula1280` del Task 4, dove il riquadro del piano crolla da 403 a 137 px.
